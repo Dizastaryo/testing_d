@@ -25,20 +25,11 @@ class MapPage extends StatefulWidget {
 }
 
 class _MapPageState extends State<MapPage> {
-  // Размер карты в пикселях
   final double imageSize = 6160.0;
 
-  // Точка №1: GPS ↔ пиксели
-  final double lat1 = 50.254141;
-  final double lon1 = 66.923138;
-  final double x1 = 3000;
-  final double y1 = 4162;
-
-  // Точка №2: GPS ↔ пиксели
-  final double lat2 = 50.248923;
-  final double lon2 = 66.902318;
-  final double x2 = 1504;
-  final double y2 = 4847;
+  // Привязка двух GPS-точек к пикселям
+  final double lat1 = 50.254141, lon1 = 66.923138, x1 = 3000, y1 = 4162;
+  final double lat2 = 50.248923, lon2 = 66.902318, x2 = 1504, y2 = 4847;
 
   Offset? userPixel;
   Offset? manualMarker;
@@ -47,94 +38,136 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
-    requestPermissionAndLocate();
+    _requestPermissionAndLocate();
   }
 
-  Future<void> requestPermissionAndLocate() async {
+  Future<void> _requestPermissionAndLocate() async {
     if (await Permission.location.request().isGranted) {
       final pos = await Geolocator.getCurrentPosition();
       setState(() {
-        userPixel = geoToPixel(pos.latitude, pos.longitude);
+        userPixel = _geoToPixel(pos.latitude, pos.longitude);
       });
     }
   }
 
-  // масштаб в пикс./градус
-  double get pixelsPerLat => (y2 - y1) / (lat1 - lat2);
-  double get pixelsPerLon => (x2 - x1) / (lon2 - lon1);
+  double get _pixelsPerLat => (y2 - y1) / (lat1 - lat2);
+  double get _pixelsPerLon => (x2 - x1) / (lon2 - lon1);
 
-  /// GPS → пиксели
-  Offset geoToPixel(double lat, double lon) {
-    final dx = (lon - lon1) * pixelsPerLon + x1;
-    final dy = (lat1 - lat) * pixelsPerLat + y1;
+  Offset _geoToPixel(double lat, double lon) {
+    final dx = (lon - lon1) * _pixelsPerLon + x1;
+    final dy = (lat1 - lat) * _pixelsPerLat + y1;
     return Offset(dx, dy);
   }
 
-  /// пиксели → GPS
-  LatLng pixelToGeo(Offset p) {
-    final lon = ((p.dx - x1) / pixelsPerLon) + lon1;
-    final lat = lat1 - ((p.dy - y1) / pixelsPerLat);
+  LatLng _pixelToGeo(Offset p) {
+    final lon = ((p.dx - x1) / _pixelsPerLon) + lon1;
+    final lat = lat1 - ((p.dy - y1) / _pixelsPerLat);
     return LatLng(lat, lon);
   }
 
-  void showCopiedSnackBar(String text) {
+  void _showCopiedSnackBar(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Скопировано: $text'), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text('Скопировано: $text'),
+        duration: const Duration(seconds: 2),
+      ),
     );
+  }
+
+  void _goToUserLocation() {
+    if (userPixel == null) return;
+    final scale = _controller.value.getMaxScaleOnAxis();
+    final size = MediaQuery.of(context).size;
+    final dx = -userPixel!.dx * scale + size.width / 2;
+    final dy = -userPixel!.dy * scale + size.height / 2;
+
+    setState(() {
+      _controller.value = Matrix4.identity()
+        ..translate(dx, dy)
+        ..scale(scale);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Custom SVG Map GPS')),
-      body: InteractiveViewer(
-        constrained: false,
-        boundaryMargin: const EdgeInsets.all(double.infinity),
-        minScale: 1,
-        maxScale: 5,
-        transformationController: _controller,
-        child: SizedBox(
-          width: imageSize,
-          height: imageSize,
-          child: Stack(children: [
-            // фон и тапы
-            GestureDetector(
-              onTapDown: (d) {
-                final p = d.localPosition;
-                setState(() => manualMarker = p);
-                final coords = pixelToGeo(p);
-                final txt = '${coords.lat.toStringAsFixed(6)}, ${coords.lng.toStringAsFixed(6)}';
-                Clipboard.setData(ClipboardData(text: txt));
-                showCopiedSnackBar(txt);
-              },
-              child: SvgPicture.asset(
-                'assets/map.svg',
-                width: imageSize,
-                height: imageSize,
-                fit: BoxFit.cover,
+      body: Stack(
+        children: [
+          InteractiveViewer(
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            minScale: 1,
+            maxScale: 5,
+            transformationController: _controller,
+            child: SizedBox(
+              width: imageSize,
+              height: imageSize,
+              child: Stack(
+                children: [
+                  // Фон и обработка тапов
+                  GestureDetector(
+                    onTapDown: (details) {
+                      final p = details.localPosition;
+                      setState(() => manualMarker = p);
+                      final coords = _pixelToGeo(p);
+                      final txt =
+                          '${coords.lat.toStringAsFixed(6)}, ${coords.lng.toStringAsFixed(6)}';
+                      Clipboard.setData(ClipboardData(text: txt));
+                      _showCopiedSnackBar(txt);
+                    },
+                    child: SvgPicture.asset(
+                      'assets/map.svg',
+                      width: imageSize,
+                      height: imageSize,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+
+                  // Ваш кастомный маркер "где я"
+                  if (userPixel != null)
+                    Positioned(
+                      left: userPixel!.dx - 24,
+                      top: userPixel!.dy - 24,
+                      child: Image.asset(
+                        'assets/me.png',
+                        width: 48,
+                        height: 48,
+                      ),
+                    ),
+
+                  // Маркер по тапу
+                  if (manualMarker != null)
+                    Positioned(
+                      left: manualMarker!.dx - 16,
+                      top: manualMarker!.dy - 32,
+                      child: const Icon(
+                        Icons.place,
+                        color: Colors.red,
+                        size: 32,
+                      ),
+                    ),
+                ],
               ),
             ),
-            // GPS-маркер
-            if (userPixel != null)
-              Positioned(
-                left: userPixel!.dx - 16,
-                top: userPixel!.dy - 32,
-                child: const Icon(Icons.my_location, color: Colors.blue, size: 32),
-              ),
-            // Маркер тапa
-            if (manualMarker != null)
-              Positioned(
-                left: manualMarker!.dx - 16,
-                top: manualMarker!.dy - 32,
-                child: const Icon(Icons.place, color: Colors.red, size: 32),
-              ),
-          ]),
-        ),
+          ),
+
+          // Кнопка "Моё местоположение"
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: FloatingActionButton(
+              onPressed: _goToUserLocation,
+              child: const Icon(Icons.my_location),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+// Класс для геокоординат
 class LatLng {
   final double lat, lng;
   LatLng(this.lat, this.lng);

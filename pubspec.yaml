@@ -25,4 +25,4 @@ flutter:
 
   assets:
     - assets/map.svg
-    
+    - assets/me.png
