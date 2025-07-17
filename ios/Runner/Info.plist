@@ -45,12 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Геолокация -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We need your location to show your position on the map.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Your location helps us provide accurate map placement.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>This app requires constant access to your location.</string>
 
 </dict>
 </plist>
