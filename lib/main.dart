@@ -150,7 +150,6 @@ class _MapPageState extends State<MapPage> {
                     ),
                   ),
                   if (userPixel != null) ...[
-                    // Радарный круг
                     Positioned(
                       left: userPixel!.dx - 75,
                       top: userPixel!.dy - 75,
@@ -159,13 +158,12 @@ class _MapPageState extends State<MapPage> {
                         painter: RadarPainter(heading: userHeading),
                       ),
                     ),
-                    // Иконка направления
                     Positioned(
-                      left: userPixel!.dx - 16,
-                      top: userPixel!.dy - 16,
+                      left: userPixel!.dx - 1,
+                      top: userPixel!.dy - 1,
                       child: Transform.rotate(
                         angle: userHeading * pi / 180,
-                        child: const Icon(Icons.navigation, size: 32),
+                        child: const Icon(Icons.navigation, size: 2),
                       ),
                     ),
                   ],
@@ -204,10 +202,8 @@ class RadarPainter extends CustomPainter {
       ..color = Colors.blue.withOpacity(0.4)
       ..style = PaintingStyle.fill;
 
-    // Рисуем круг
     canvas.drawCircle(center, radius, circlePaint);
 
-    // Рисуем сектор ±30° вокруг направления
     final startAngle = (heading - 30) * pi / 180;
     final sweepAngle = 60 * pi / 180;
     final path = Path()
