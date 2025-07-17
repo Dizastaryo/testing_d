@@ -49,6 +49,9 @@
 	<!-- Геолокация -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We need your location to show your position on the map.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>We need your location even when the app is in background to track your movement.</string>
+
 
 </dict>
 </plist>
