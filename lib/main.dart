@@ -33,8 +33,14 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final double imageSize = 6160.0;
-  final double lat1 = 50.254141, lon1 = 66.923138, x1 = 3000, y1 = 4162;
-  final double lat2 = 50.248923, lon2 = 66.902318, x2 = 1504, y2 = 4847;
+  // Опорная точка (север вверх):
+  static const double refLat = 50.248888;
+  static const double refLon = 66.919851;
+  static const double refX = 2745.0;
+  static const double refY = 4847.0;
+
+  late final double _degPerPxLat;
+  late final double _degPerPxLon;
 
   Offset? userPixel;
   double userHeading = 0;
@@ -44,6 +50,13 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
+    // Вычисляем градусы на пиксель
+    final metersPerDegLat = 111320.0;
+    final metersPerDegLon = 111320.0 * cos(refLat * pi / 180);
+    // 1 пиксель = 1 метр
+    _degPerPxLat = 1 / metersPerDegLat;
+    _degPerPxLon = 1 / metersPerDegLon;
+
     _requestPermissionAndTrack();
   }
 
@@ -78,18 +91,21 @@ class _MapPageState extends State<MapPage> {
     super.dispose();
   }
 
-  double get _pixelsPerLat => (y2 - y1) / (lat1 - lat2);
-  double get _pixelsPerLon => (x2 - x1) / (lon2 - lon1);
-
   Offset _geoToPixel(double lat, double lon) {
-    final dx = (lon - lon1) * _pixelsPerLon + x1;
-    final dy = (lat1 - lat) * _pixelsPerLat + y1;
-    return Offset(dx, dy);
+    // Δ градусы
+    final dLat = refLat - lat;
+    final dLon = lon - refLon;
+    // перевод в пиксели
+    final dy = dLat / _degPerPxLat;
+    final dx = dLon / _degPerPxLon;
+    return Offset(refX + dx, refY + dy);
   }
 
   LatLng _pixelToGeo(Offset p) {
-    final lon = ((p.dx - x1) / _pixelsPerLon) + lon1;
-    final lat = lat1 - ((p.dy - y1) / _pixelsPerLat);
+    final dx = p.dx - refX;
+    final dy = p.dy - refY;
+    final lon = refLon + dx * _degPerPxLon;
+    final lat = refLat - dy * _degPerPxLat;
     return LatLng(lat, lon);
   }
 
@@ -109,11 +125,9 @@ class _MapPageState extends State<MapPage> {
     final dx = -userPixel!.dx * scale + size.width / 2;
     final dy = -userPixel!.dy * scale + size.height / 2;
 
-    setState(() {
-      _controller.value = Matrix4.identity()
-        ..translate(dx, dy)
-        ..scale(scale);
-    });
+    _controller.value = Matrix4.identity()
+      ..translate(dx, dy)
+      ..scale(scale);
   }
 
   @override
