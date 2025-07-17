@@ -24,7 +24,7 @@
 <path d="M4206.34 3889L2495.05 750.852L2480.05 750.823" stroke="#535353" stroke-width="15"/>
 <path d="M3445 4582.3L4261.19 3750" stroke="#535353" stroke-width="15"/>
 <path d="M3900.5 4125.5L3464.5 3689.5" stroke="#535353" stroke-width="15"/>
-<path d="M2967 4845.5V4589.5" stroke="#535353" stroke-width="7"/>
+<path d="M2967 4846V4593" stroke="#535353" stroke-width="7"/>
 <path d="M2913 4775.5H2933V4742.5V4678.5" stroke="#535353" stroke-width="7"/>
 <path d="M2967 4817H2944" stroke="#535353" stroke-width="7"/>
 <path d="M2957 4813.5H2921" stroke="#535353" stroke-width="19" stroke-linejoin="round"/>
@@ -37,27 +37,27 @@
 <path d="M2228.51 4657.75H1843.49" stroke="#535353" stroke-width="6"/>
 <path d="M2229.22 4710.87L2042.55 4711.52C2042.55 4711.52 2006.11 4712.66 1981.86 4706.98C1964.93 4703.01 1957 4701 1946.5 4691C1936 4681 1937.5 4659 1937.5 4659" stroke="#535353" stroke-width="6"/>
 <path d="M1596 4378V4425.5" stroke="#535353" stroke-width="7"/>
-<path d="M2967 4844V5267.5" stroke="#535353" stroke-width="7"/>
+<path d="M2952.5 4844V5267.5" stroke="#535353" stroke-width="7"/>
 <path d="M2565 4958H2622" stroke="#535353" stroke-width="7"/>
 <path d="M2228 5070H2980" stroke="#535353" stroke-width="7"/>
-<path d="M2677 4434V4631" stroke="#535353" stroke-width="10"/>
+<path d="M2677 4434V4625.5" stroke="#535353" stroke-width="10"/>
 <path d="M2714 4589V4844.5" stroke="#535353" stroke-width="10"/>
-<path d="M2452.29 4628.56L2717.41 4628.56M2597.3 4588.09L2816.43 4588.09L3017.5 4588.09" stroke="#535353" stroke-width="7"/>
+<path d="M2452.29 4625.49L2717.41 4625.5M2597.3 4588.09L2816.43 4588.09L2904 4593L2966.5 4596.5L2996 4596.5L3025 4596.5" stroke="#535353" stroke-width="7"/>
 <path d="M1504 4586.09V4378V4844" stroke="#535353" stroke-width="11"/>
 <path d="M1137 4599.09V4371.5V4857" stroke="#535353" stroke-width="11"/>
-<path d="M2969 4680H2890H2799.5C2799.5 4680 2793 4688.5 2787 4692C2778.79 4696.79 2760.5 4696.5 2760.5 4696.5H2718" stroke="#535353" stroke-width="7"/>
+<path d="M2969 4680H2890H2799.5C2799.5 4680 2799 4684 2793 4687.5C2784.79 4692.29 2760.5 4692 2760.5 4692H2718" stroke="#535353" stroke-width="7"/>
 <path d="M2800 4681V4650.85V4623.06V4587" stroke="#535353" stroke-width="7"/>
 <path d="M2773 4589V4497" stroke="#535353" stroke-width="7"/>
-<path d="M2819 4590V4500" stroke="#535353" stroke-width="7"/>
-<path d="M2833 4500C2833 4500 2829.74 4496.68 2823.64 4487.48C2817.55 4478.28 2817 4419 2817 4419" stroke="#535353" stroke-width="7"/>
-<path d="M3051 4411.5L3021.5 4435.5L2978 4487L2953.36 4497.09L2919.96 4508H2903.69L2841 4499.5H2769" stroke="#535353" stroke-width="7"/>
-<path d="M2820 4780V4679" stroke="#535353" stroke-width="7"/>
-<path d="M2897 4778.5C2897 4778.5 2888 4778.5 2869 4778.5C2850 4778.5 2833.5 4778.5 2833.5 4778.5H2750" stroke="#535353" stroke-width="7"/>
-<path d="M2750.5 4844.01L2750.5 4696.5" stroke="#535353" stroke-width="7"/>
+<path d="M2823 4590V4500" stroke="#535353" stroke-width="7"/>
+<path d="M2839.5 4500.5C2839.5 4500.5 2834.59 4493.7 2828.5 4484.5C2822.41 4475.3 2817 4419 2817 4419" stroke="#535353" stroke-width="7"/>
+<path d="M3051 4411.5L3021.5 4435.5L2977.5 4464.5L2939 4488.5L2913.5 4496L2900.5 4499.5H2841H2769.5" stroke="#535353" stroke-width="7"/>
+<path d="M2820 4786.5V4679" stroke="#535353" stroke-width="7"/>
+<path d="M2897 4787C2897 4787 2888 4787 2869 4787C2850 4787 2833.5 4787 2833.5 4787L2756 4787" stroke="#535353" stroke-width="7"/>
+<path d="M2755.47 4839.02L2755.47 4776.01L2753 4692.01" stroke="#535353" stroke-width="7"/>
 <path d="M2622 5070V4846" stroke="#535353" stroke-width="7"/>
-<path d="M2881 4780V4679.5" stroke="#535353" stroke-width="7"/>
-<path d="M2920.5 4588V4509" stroke="#535353" stroke-width="7"/>
-<path d="M2941 4588V4502" stroke="#535353" stroke-width="7"/>
-<path d="M2977 4589V4487" stroke="#535353" stroke-width="7"/>
-<path d="M2745 4589V4506" stroke="#535353" stroke-width="7"/>
+<path d="M2881 4785V4680" stroke="#535353" stroke-width="7"/>
+<path d="M2920.25 4592V4495" stroke="#535353" stroke-width="7"/>
+<path d="M2941 4595V4488" stroke="#535353" stroke-width="7"/>
+<path d="M2977 4595V4464" stroke="#535353" stroke-width="7"/>
+<path d="M2746 4589V4506" stroke="#535353" stroke-width="7"/>
 </svg>
