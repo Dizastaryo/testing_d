@@ -33,11 +33,11 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final double imageSize = 6160.0;
-  // Опорная точка (север вверх):
-  static const double refLat = 50.248888;
-  static const double refLon = 66.919851;
-  static const double refX = 2745.0;
-  static const double refY = 4847.0;
+  // Опорная точка: GPS + пиксели
+  static const double refLat = 50.248886;
+  static const double refLon = 66.919850;
+  static const double refX = 2746.0;
+  static const double refY = 4846.0;
 
   late final double _degPerPxLat;
   late final double _degPerPxLon;
@@ -50,10 +50,11 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
-    // Вычисляем градусы на пиксель
-    final metersPerDegLat = 111320.0;
-    final metersPerDegLon = 111320.0 * cos(refLat * pi / 180);
-    // 1 пиксель = 1 метр
+
+    // Градусы на пиксель — 1 пиксель = 1 метр
+    const metersPerDegLat = 111320.0;
+    final metersPerDegLon = metersPerDegLat * cos(refLat * pi / 180);
+
     _degPerPxLat = 1 / metersPerDegLat;
     _degPerPxLon = 1 / metersPerDegLon;
 
@@ -92,10 +93,8 @@ class _MapPageState extends State<MapPage> {
   }
 
   Offset _geoToPixel(double lat, double lon) {
-    // Δ градусы
     final dLat = refLat - lat;
     final dLon = lon - refLon;
-    // перевод в пиксели
     final dy = dLat / _degPerPxLat;
     final dx = dLon / _degPerPxLon;
     return Offset(refX + dx, refY + dy);
@@ -112,7 +111,7 @@ class _MapPageState extends State<MapPage> {
   void _showCopiedSnackBar(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Скопировано: \$text'),
+        content: Text('Скопировано: $text'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -165,11 +164,11 @@ class _MapPageState extends State<MapPage> {
                   ),
                   if (userPixel != null)
                     Positioned(
-                      left: userPixel!.dx - 2.5,
-                      top: userPixel!.dy - 2.5,
+                      left: userPixel!.dx - 1,
+                      top: userPixel!.dy - 1,
                       child: Transform.rotate(
                         angle: userHeading * pi / 180,
-                        child: const Icon(Icons.navigation, size: 5),
+                        child: const Icon(Icons.navigation, size: 2),
                       ),
                     ),
                 ],
