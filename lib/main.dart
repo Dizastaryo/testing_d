@@ -149,24 +149,15 @@ class _MapPageState extends State<MapPage> {
                       fit: BoxFit.cover,
                     ),
                   ),
-                  if (userPixel != null) ...[
+                  if (userPixel != null)
                     Positioned(
-                      left: userPixel!.dx - 75,
-                      top: userPixel!.dy - 75,
-                      child: CustomPaint(
-                        size: const Size(150, 150),
-                        painter: RadarPainter(heading: userHeading),
-                      ),
-                    ),
-                    Positioned(
-                      left: userPixel!.dx - 1,
-                      top: userPixel!.dy - 1,
+                      left: userPixel!.dx - 2.5,
+                      top: userPixel!.dy - 2.5,
                       child: Transform.rotate(
                         angle: userHeading * pi / 180,
-                        child: const Icon(Icons.navigation, size: 2),
+                        child: const Icon(Icons.navigation, size: 5),
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
@@ -182,46 +173,6 @@ class _MapPageState extends State<MapPage> {
         ],
       ),
     );
-  }
-}
-
-class RadarPainter extends CustomPainter {
-  final double heading;
-  RadarPainter({required this.heading});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    final circlePaint = Paint()
-      ..color = Colors.blue.withOpacity(0.2)
-      ..style = PaintingStyle.fill;
-
-    final sectorPaint = Paint()
-      ..color = Colors.blue.withOpacity(0.4)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(center, radius, circlePaint);
-
-    final startAngle = (heading - 30) * pi / 180;
-    final sweepAngle = 60 * pi / 180;
-    final path = Path()
-      ..moveTo(center.dx, center.dy)
-      ..arcTo(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        sweepAngle,
-        false,
-      )
-      ..close();
-
-    canvas.drawPath(path, sectorPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant RadarPainter oldDelegate) {
-    return oldDelegate.heading != heading;
   }
 }
 
