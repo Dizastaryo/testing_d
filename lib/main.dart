@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -35,34 +37,45 @@ class _MapPageState extends State<MapPage> {
   final double lat2 = 50.248923, lon2 = 66.902318, x2 = 1504, y2 = 4847;
 
   Offset? userPixel;
-  Offset? manualMarker;
+  double userHeading = 0;
+  StreamSubscription<Position>? _positionStream;
   final TransformationController _controller = TransformationController();
 
   @override
   void initState() {
     super.initState();
-    _requestPermissionAndLocate();
+    _requestPermissionAndTrack();
   }
 
-  Future<void> _requestPermissionAndLocate() async {
-    // Проверяем статус разрешений
+  Future<void> _requestPermissionAndTrack() async {
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied) return;
     }
     if (perm == LocationPermission.deniedForever) {
-      // Предложим открыть настройки
       await openAppSettings();
       return;
     }
-    if (perm == LocationPermission.always ||
-        perm == LocationPermission.whileInUse) {
-      final pos = await Geolocator.getCurrentPosition();
-      setState(() {
-        userPixel = _geoToPixel(pos.latitude, pos.longitude);
-      });
-    }
+
+    _positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 5,
+          ),
+        ).listen((Position pos) {
+          setState(() {
+            userPixel = _geoToPixel(pos.latitude, pos.longitude);
+            userHeading = pos.heading;
+          });
+        });
+  }
+
+  @override
+  void dispose() {
+    _positionStream?.cancel();
+    super.dispose();
   }
 
   double get _pixelsPerLat => (y2 - y1) / (lat1 - lat2);
@@ -123,7 +136,6 @@ class _MapPageState extends State<MapPage> {
                   GestureDetector(
                     onTapDown: (details) {
                       final p = details.localPosition;
-                      setState(() => manualMarker = p);
                       final coords = _pixelToGeo(p);
                       final txt =
                           '${coords.lat.toStringAsFixed(6)}, ${coords.lng.toStringAsFixed(6)}';
@@ -137,26 +149,26 @@ class _MapPageState extends State<MapPage> {
                       fit: BoxFit.cover,
                     ),
                   ),
-                  if (userPixel != null)
+                  if (userPixel != null) ...[
+                    // Радарный круг
                     Positioned(
-                      left: userPixel!.dx - 24,
-                      top: userPixel!.dy - 24,
-                      child: Image.asset(
-                        'assets/me.png',
-                        width: 48,
-                        height: 48,
+                      left: userPixel!.dx - 75,
+                      top: userPixel!.dy - 75,
+                      child: CustomPaint(
+                        size: const Size(150, 150),
+                        painter: RadarPainter(heading: userHeading),
                       ),
                     ),
-                  if (manualMarker != null)
+                    // Иконка направления
                     Positioned(
-                      left: manualMarker!.dx - 16,
-                      top: manualMarker!.dy - 32,
-                      child: const Icon(
-                        Icons.place,
-                        color: Colors.red,
-                        size: 32,
+                      left: userPixel!.dx - 16,
+                      top: userPixel!.dy - 16,
+                      child: Transform.rotate(
+                        angle: userHeading * pi / 180,
+                        child: const Icon(Icons.navigation, size: 32),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -172,6 +184,48 @@ class _MapPageState extends State<MapPage> {
         ],
       ),
     );
+  }
+}
+
+class RadarPainter extends CustomPainter {
+  final double heading;
+  RadarPainter({required this.heading});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    final circlePaint = Paint()
+      ..color = Colors.blue.withOpacity(0.2)
+      ..style = PaintingStyle.fill;
+
+    final sectorPaint = Paint()
+      ..color = Colors.blue.withOpacity(0.4)
+      ..style = PaintingStyle.fill;
+
+    // Рисуем круг
+    canvas.drawCircle(center, radius, circlePaint);
+
+    // Рисуем сектор ±30° вокруг направления
+    final startAngle = (heading - 30) * pi / 180;
+    final sweepAngle = 60 * pi / 180;
+    final path = Path()
+      ..moveTo(center.dx, center.dy)
+      ..arcTo(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle,
+        sweepAngle,
+        false,
+      )
+      ..close();
+
+    canvas.drawPath(path, sectorPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant RadarPainter oldDelegate) {
+    return oldDelegate.heading != heading;
   }
 }
 
