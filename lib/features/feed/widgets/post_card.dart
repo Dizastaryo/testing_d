@@ -166,6 +166,7 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   void _onShareTap() {
+    final c = context.seeuColors;
     showSeeUBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -174,7 +175,7 @@ class _PostCardState extends ConsumerState<PostCard>
           children: [
             ListTile(
               leading: Icon(PhosphorIcons.link(),
-                  color: SeeUColors.textPrimary),
+                  color: c.ink),
               title: Text('Копировать ссылку', style: SeeUTypography.body),
               onTap: () {
                 Clipboard.setData(
@@ -189,7 +190,7 @@ class _PostCardState extends ConsumerState<PostCard>
             ),
             ListTile(
               leading: Icon(PhosphorIcons.clockCounterClockwise(),
-                  color: SeeUColors.textPrimary),
+                  color: c.ink),
               title: Text('Поделиться в историю', style: SeeUTypography.body),
               onTap: () {
                 Navigator.pop(ctx);
@@ -202,10 +203,10 @@ class _PostCardState extends ConsumerState<PostCard>
             ),
             ListTile(
               leading: Icon(PhosphorIcons.x(),
-                  color: SeeUColors.textTertiary),
+                  color: c.ink3),
               title: Text('Отмена',
                   style: SeeUTypography.body
-                      .copyWith(color: SeeUColors.textTertiary)),
+                      .copyWith(color: c.ink3)),
               onTap: () => Navigator.pop(ctx),
             ),
             const SizedBox(height: 8),
@@ -586,6 +587,7 @@ class _PostCardState extends ConsumerState<PostCard>
 
   // U14: Shared action row builder used by both wave and normal posts (DRY)
   Widget _buildActionsRow(BuildContext context, Post post) {
+    final c = context.seeuColors;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -606,7 +608,7 @@ class _PostCardState extends ConsumerState<PostCard>
                       ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
                       : PhosphorIcons.heart(),
                   color:
-                      post.isLiked ? SeeUColors.like : SeeUColors.textPrimary,
+                      post.isLiked ? SeeUColors.like : c.ink,
                   size: 22,
                 ),
               ),
@@ -651,11 +653,11 @@ class _PostCardState extends ConsumerState<PostCard>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   decoration: BoxDecoration(
-                    color: SeeUColors.surface,
+                    color: c.surface,
                     borderRadius: BorderRadius.circular(SeeURadii.pill),
                     boxShadow: SeeUShadows.lg,
                     border: Border.all(
-                      color: SeeUColors.borderSubtle,
+                      color: c.line,
                       width: 1,
                     ),
                   ),
@@ -687,6 +689,7 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildHeader(BuildContext context, Post post) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
@@ -698,10 +701,10 @@ class _PostCardState extends ConsumerState<PostCard>
               backgroundImage: post.author.avatarUrl != null
                   ? CachedNetworkImageProvider(post.author.avatarUrl!)
                   : null,
-              backgroundColor: SeeUColors.surfaceElevated,
+              backgroundColor: c.surface2,
               child: post.author.avatarUrl == null
                   ? Icon(PhosphorIcons.user(),
-                      color: SeeUColors.textTertiary, size: 18)
+                      color: c.ink3, size: 18)
                   : null,
             ),
           ),
@@ -744,7 +747,7 @@ class _PostCardState extends ConsumerState<PostCard>
             child: Padding(
               padding: const EdgeInsets.all(4),
               child: Icon(PhosphorIcons.dotsThreeOutline(),
-                  size: 20, color: SeeUColors.textSecondary),
+                  size: 20, color: c.ink2),
             ),
           ),
         ],
@@ -753,6 +756,7 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildMedia(BuildContext context, Post post) {
+    final c = context.seeuColors;
     if (post.media.isEmpty) {
       return Container(
         height: 200,
@@ -766,7 +770,7 @@ class _PostCardState extends ConsumerState<PostCard>
         ),
         child: Center(
           child: Icon(PhosphorIcons.imageSquare(),
-              color: SeeUColors.textTertiary, size: 48),
+              color: c.ink3, size: 48),
         ),
       );
     }
@@ -866,16 +870,17 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildMediaItem(PostMedia media) {
+    final c = context.seeuColors;
     return CachedNetworkImage(
       imageUrl: media.url,
       fit: BoxFit.cover,
       placeholder: (_, __) => Container(
-        color: SeeUColors.surfaceElevated,
+        color: c.surface2,
       ),
       errorWidget: (_, __, ___) => Container(
-        color: SeeUColors.surfaceElevated,
+        color: c.surface2,
         child: Icon(PhosphorIcons.imageSquare(),
-            color: SeeUColors.textTertiary, size: 48),
+            color: c.ink3, size: 48),
       ),
     );
   }
@@ -886,6 +891,7 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildLikesRow(BuildContext context, Post post) {
+    final c = context.seeuColors;
     if (post.likesCount == 0) return const SizedBox.shrink();
     // M18: Guard likesCount == 1 with likedByUsername — avoid "и ещё 0"
     String likesText;
@@ -903,7 +909,7 @@ class _PostCardState extends ConsumerState<PostCard>
       child: Text(
         likesText,
         style:
-            SeeUTypography.caption.copyWith(fontWeight: FontWeight.w700, color: SeeUColors.textPrimary),
+            SeeUTypography.caption.copyWith(fontWeight: FontWeight.w700, color: c.ink),
         overflow: TextOverflow.ellipsis,
         maxLines: 1,
       ),
@@ -925,6 +931,7 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildCommentsPreview(BuildContext context, Post post) {
+    final c = context.seeuColors;
     if (post.commentsCount == 0) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -932,7 +939,7 @@ class _PostCardState extends ConsumerState<PostCard>
         onTap: () => context.push('/post/${post.id}/comments'),
         child: SeeUChip(
           label: '${_formatCount(post.commentsCount)} комментариев',
-          bgColor: SeeUColors.accentSoft,
+          bgColor: c.accentSoft,
           fgColor: SeeUColors.accent,
         ),
       ),
@@ -950,9 +957,10 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   void _showPostOptions(BuildContext context, Post post) {
+    final c = context.seeuColors;
     showModalBottomSheet(
       context: context,
-      backgroundColor: SeeUColors.surface,
+      backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
         borderRadius:
             BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
@@ -966,13 +974,13 @@ class _PostCardState extends ConsumerState<PostCard>
               height: 4,
               margin: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: SeeUColors.borderSubtle,
+                color: c.line,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             ListTile(
               leading: Icon(PhosphorIcons.shareFat(),
-                  color: SeeUColors.textPrimary),
+                  color: c.ink),
               title: Text('Поделиться', style: SeeUTypography.body),
               onTap: () {
                 Clipboard.setData(
@@ -987,7 +995,7 @@ class _PostCardState extends ConsumerState<PostCard>
             ),
             ListTile(
               leading: Icon(PhosphorIcons.bookmarkSimple(),
-                  color: SeeUColors.textPrimary),
+                  color: c.ink),
               title: Text('Сохранить', style: SeeUTypography.body),
               onTap: () {
                 _savePost();
@@ -1036,6 +1044,7 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: onTap,
       scaleFactor: 0.90,
@@ -1043,7 +1052,7 @@ class _ActionButton extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: SeeUColors.surfaceElevated,
+          color: c.surface2,
           borderRadius: BorderRadius.circular(SeeURadii.small),
           boxShadow: SeeUShadows.sm,
         ),
@@ -1051,7 +1060,7 @@ class _ActionButton extends StatelessWidget {
           child: IconTheme(
             data: IconThemeData(
               size: 22,
-              color: SeeUColors.textPrimary,
+              color: c.ink,
             ),
             child: icon,
           ),
@@ -1072,11 +1081,12 @@ class _ActionButtonRaw extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: SeeUColors.surfaceElevated,
+        color: c.surface2,
         borderRadius: BorderRadius.circular(SeeURadii.small),
         boxShadow: SeeUShadows.sm,
       ),
@@ -1107,6 +1117,7 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     const maxLength = 100;
     final isLong = widget.caption.length > maxLength;
 
@@ -1131,7 +1142,7 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
                 child: Text(
                   ' ещё',
                   style: SeeUTypography.body
-                      .copyWith(color: SeeUColors.textTertiary),
+                      .copyWith(color: c.ink3),
                 ),
               ),
             ),

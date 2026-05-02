@@ -67,10 +67,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             widget.username == authState.user?.username);
 
     if (profileState.isLoading && profileState.user == null) {
+      final c = context.seeuColors;
       return Scaffold(
-        backgroundColor: SeeUColors.background,
+        backgroundColor: c.bg,
         appBar: AppBar(
-          backgroundColor: SeeUColors.background,
+          backgroundColor: c.bg,
           elevation: 0,
           title: Text(username, style: SeeUTypography.subtitle),
         ),
@@ -87,8 +88,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             fullName: '',
             createdAt: DateTime.now());
 
+    final c = context.seeuColors;
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           children: [
@@ -103,7 +105,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       child: Padding(
                         padding: const EdgeInsets.only(right: 12),
                         child: Icon(PhosphorIcons.arrowLeft(),
-                            size: 22, color: SeeUColors.textPrimary),
+                            size: 22, color: c.ink),
                       ),
                     ),
                   Expanded(
@@ -112,7 +114,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       style: SeeUTypography.mono.copyWith(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: SeeUColors.textPrimary,
+                        color: c.ink,
                       ),
                     ),
                   ),
@@ -140,7 +142,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       borderRadius:
                                           BorderRadius.circular(SeeURadii.pill),
                                       border: Border.all(
-                                          color: SeeUColors.background,
+                                          color: c.bg,
                                           width: 1.5),
                                     ),
                                     child: Text(
@@ -184,7 +186,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       decoration: BoxDecoration(
                         border: Border.symmetric(
                           horizontal: BorderSide(
-                            color: SeeUColors.borderSubtle,
+                            color: c.line,
                             width: 0.5,
                           ),
                         ),
@@ -232,6 +234,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     bool isOwnProfile,
     UserProfileState profileState,
   ) {
+    final c = context.seeuColors;
     final storyState = ref.watch(storyProvider);
     final userStoryGroup = storyState.storyGroups
         .where((g) => g.author.username == user.username)
@@ -319,7 +322,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 Text(
                   user.bio!,
                   style: SeeUTypography.body.copyWith(
-                    color: SeeUColors.textSecondary,
+                    color: c.ink2,
                     height: 1.4,
                     fontSize: 13,
                   ),
@@ -358,6 +361,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   Widget _buildAvatar(User user,
       {bool hasStories = false, bool hasUnseenStories = false}) {
+    final c = context.seeuColors;
     const double size = 84;
     const double ringPad = 2.5;
     const double innerBorder = 3;
@@ -370,7 +374,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               height: size,
               fit: BoxFit.cover,
               placeholder: (_, __) =>
-                  Container(color: SeeUColors.borderSubtle),
+                  Container(color: c.line),
               errorWidget: (_, __, ___) => _avatarPlaceholder(user, size),
             )
           : _avatarPlaceholder(user, size),
@@ -382,9 +386,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: SeeUColors.surface,
+        color: c.surface,
         border: Border.all(
-          color: SeeUColors.background,
+          color: c.bg,
           width: innerBorder,
         ),
       ),
@@ -414,17 +418,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: SeeUColors.borderSubtle, width: 1),
+        border: Border.all(color: c.line, width: 1),
       ),
       child: ClipOval(child: avatarImage),
     );
   }
 
   Widget _avatarPlaceholder(User user, double size) {
+    final c = context.seeuColors;
     return Container(
       width: size,
       height: size,
-      color: SeeUColors.textTertiary.withValues(alpha: 0.3),
+      color: c.ink3.withValues(alpha: 0.3),
       child: Center(
         child: Text(
           user.username[0].toUpperCase(),
@@ -488,18 +493,19 @@ class _HeaderIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: SeeUColors.surface,
+          color: c.surface,
           shape: BoxShape.circle,
-          border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+          border: Border.all(color: c.line, width: 0.5),
         ),
         child: Center(
-          child: Icon(icon, size: 18, color: SeeUColors.textPrimary),
+          child: Icon(icon, size: 18, color: c.ink),
         ),
       ),
     );
@@ -518,6 +524,7 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -528,7 +535,7 @@ class _TabButton extends StatelessWidget {
             border: Border(
               bottom: BorderSide(
                 color: isActive
-                    ? SeeUColors.textPrimary
+                    ? c.ink
                     : Colors.transparent,
                 width: 1.5,
               ),
@@ -539,8 +546,8 @@ class _TabButton extends StatelessWidget {
               icon,
               size: 20,
               color: isActive
-                  ? SeeUColors.textPrimary
-                  : SeeUColors.textTertiary,
+                  ? c.ink
+                  : c.ink3,
             ),
           ),
         ),

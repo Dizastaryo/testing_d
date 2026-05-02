@@ -238,7 +238,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                           icon: PhosphorIcon(
                                               PhosphorIcons
                                                   .chatCircleDots()),
-                                          onTap: () => context.go('/chat'),
+                                          onTap: () => context.push('/chat'),
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -453,6 +453,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 
   // U08: Error state with retry button
   Widget _buildError(String error) {
+    final c = context.seeuColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -462,20 +463,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             PhosphorIcon(
               PhosphorIcons.wifiSlash(),
               size: 56,
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
             const SizedBox(height: 16),
             Text(
               'Не удалось загрузить ленту',
               style: SeeUTypography.subtitle
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               error,
               style: SeeUTypography.caption
-                  .copyWith(color: SeeUColors.textTertiary),
+                  .copyWith(color: c.ink3),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -494,6 +495,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 
   // U09: Meaningful empty state with icon + CTA
   Widget _buildEmpty() {
+    final c = context.seeuColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -503,19 +505,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             PhosphorIcon(
               PhosphorIcons.usersThree(),
               size: 64,
-              color: SeeUColors.borderSubtle,
+              color: c.line,
             ),
             const SizedBox(height: 16),
             Text(
               'Пока нет постов',
               style: SeeUTypography.subtitle
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
             ),
             const SizedBox(height: 6),
             Text(
               'Подпишитесь на людей, чтобы видеть их посты',
               style: SeeUTypography.caption
-                  .copyWith(color: SeeUColors.textTertiary),
+                  .copyWith(color: c.ink3),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -547,6 +549,7 @@ class _HeaderIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: onTap,
       scaleFactor: 0.88,
@@ -557,17 +560,17 @@ class _HeaderIconButton extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: SeeUColors.surface,
+              color: c.surface,
               borderRadius: BorderRadius.circular(SeeURadii.pill),
               border: Border.all(
-                color: SeeUColors.borderSubtle,
+                color: c.line,
                 width: 0.5,
               ),
             ),
             child: Center(
               child: IconTheme(
-                data: const IconThemeData(
-                    size: 20, color: SeeUColors.textPrimary),
+                data: IconThemeData(
+                    size: 20, color: c.ink),
                 child: icon,
               ),
             ),
@@ -681,6 +684,7 @@ class _DailyPromptCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
       child: Container(
@@ -728,13 +732,13 @@ class _DailyPromptCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   // Serif question
-                  const Text(
+                  Text(
                     'что вас удивило\nсегодня?',
                     style: TextStyle(
                       fontSize: 22,
                       height: 1.15,
                       letterSpacing: -0.02 * 22,
-                      color: SeeUColors.textPrimary,
+                      color: c.ink,
                     ),
                   ),
                   const SizedBox(height: 10),

@@ -537,7 +537,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
           fit: StackFit.expand,
           children: [
             // Story image / gradient background
-            storyImageWidget,
+            SizedBox.expand(child: storyImageWidget),
 
             // Top gradient
             Positioned(

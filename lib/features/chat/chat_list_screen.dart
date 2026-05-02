@@ -57,11 +57,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final chatState = ref.watch(chatListProvider);
     final chats = _filteredChats(chatState.chats);
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -83,17 +84,17 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: SeeUColors.surface,
+                        color: c.surface,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: SeeUColors.borderSubtle,
+                          color: c.line,
                           width: 0.5,
                         ),
                       ),
                       child: Icon(
                         PhosphorIconsRegular.pencilSimple,
                         size: 18,
-                        color: SeeUColors.textPrimary,
+                        color: c.ink,
                       ),
                     ),
                   ),
@@ -106,7 +107,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               child: Container(
                 height: 40,
                 decoration: BoxDecoration(
-                  color: SeeUColors.surface2,
+                  color: c.surface2,
                   borderRadius: BorderRadius.circular(SeeURadii.small),
                 ),
                 child: TextField(
@@ -117,13 +118,13 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                     hintText: 'Поиск',
                     hintStyle: SeeUTypography.body.copyWith(
                       fontSize: 14,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                     ),
                     prefixIcon: Padding(
                       padding: const EdgeInsets.only(left: 12, right: 8),
                       child: Icon(
                         PhosphorIconsRegular.magnifyingGlass,
-                        color: SeeUColors.textTertiary,
+                        color: c.ink3,
                         size: 16,
                       ),
                     ),
@@ -141,7 +142,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                               padding: const EdgeInsets.only(right: 12),
                               child: Icon(
                                 PhosphorIconsFill.xCircle,
-                                color: SeeUColors.textTertiary,
+                                color: c.ink3,
                                 size: 16,
                               ),
                             ),
@@ -200,6 +201,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   }
 
   Widget _buildEmptyState() {
+    final c = context.seeuColors;
     final hasSearch = _searchQuery.isNotEmpty;
     return Center(
       child: Padding(
@@ -211,7 +213,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: SeeUColors.accentSoft,
+                color: c.accentSoft,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -234,7 +236,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                   : 'Начните общение с друзьями.\nНажмите карандаш чтобы написать первое сообщение!',
               textAlign: TextAlign.center,
               style: SeeUTypography.body.copyWith(
-                color: SeeUColors.textSecondary,
+                color: c.ink2,
                 height: 1.5,
               ),
             ),
@@ -260,6 +262,7 @@ class _ChatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final user = chat.otherUser;
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
@@ -294,10 +297,10 @@ class _ChatTile extends StatelessWidget {
                       Flexible(
                         child: Text(
                           user.fullName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: SeeUColors.textPrimary,
+                            color: c.ink,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -311,10 +314,10 @@ class _ChatTile extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: SeeUColors.accentSoft,
+                            color: c.accentSoft,
                             borderRadius: BorderRadius.circular(99),
                           ),
-                          child: const Text(
+                          child: Text(
                             'взаимный',
                             style: TextStyle(
                               fontSize: 9,
@@ -339,8 +342,8 @@ class _ChatTile extends StatelessWidget {
                       color: isTyping
                           ? SeeUColors.accent
                           : hasUnread
-                              ? SeeUColors.textPrimary
-                              : SeeUColors.textTertiary,
+                              ? c.ink
+                              : c.ink3,
                       fontWeight: (hasUnread || isTyping)
                           ? FontWeight.w500
                           : FontWeight.w400,
@@ -361,9 +364,9 @@ class _ChatTile extends StatelessWidget {
               children: [
                 Text(
                   _formatTime(lastMsgTime),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: SeeUColors.textTertiary,
+                    color: c.ink3,
                   ),
                 ),
                 if (hasUnread) ...[
@@ -423,6 +426,7 @@ class _OnlineAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return SizedBox(
       width: size,
       height: size,
@@ -433,7 +437,7 @@ class _OnlineAvatar extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: SeeUColors.surface2,
+              color: c.surface2,
             ),
             clipBehavior: Clip.antiAlias,
             child: avatarUrl != null && avatarUrl!.isNotEmpty
@@ -441,23 +445,23 @@ class _OnlineAvatar extends StatelessWidget {
                     imageUrl: avatarUrl!,
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(
-                      color: SeeUColors.borderSubtle,
+                      color: c.line,
                       child: Icon(
                         PhosphorIconsRegular.user,
                         size: size * 0.45,
-                        color: SeeUColors.textTertiary,
+                        color: c.ink3,
                       ),
                     ),
                     errorWidget: (_, __, ___) => Icon(
                       PhosphorIconsRegular.user,
                       size: size * 0.45,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                     ),
                   )
                 : Icon(
                     PhosphorIconsRegular.user,
                     size: size * 0.45,
-                    color: SeeUColors.textTertiary,
+                    color: c.ink3,
                   ),
           ),
           if (isOnline)
@@ -471,7 +475,7 @@ class _OnlineAvatar extends StatelessWidget {
                   color: SeeUColors.success,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: SeeUColors.background,
+                    color: c.bg,
                     width: 2.5,
                   ),
                 ),
@@ -541,10 +545,11 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Container(
       height: MediaQuery.of(context).size.height * 0.7,
       decoration: BoxDecoration(
-        color: SeeUColors.background,
+        color: c.bg,
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(SeeURadii.sheet),
         ),
@@ -557,7 +562,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: SeeUColors.borderSubtle,
+              color: c.line,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -573,7 +578,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
             child: Container(
               height: 40,
               decoration: BoxDecoration(
-                color: SeeUColors.surface2,
+                color: c.surface2,
                 borderRadius: BorderRadius.circular(SeeURadii.small),
               ),
               child: TextField(
@@ -585,13 +590,13 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                   hintText: 'Поиск пользователей...',
                   hintStyle: SeeUTypography.body.copyWith(
                     fontSize: 14,
-                    color: SeeUColors.textTertiary,
+                    color: c.ink3,
                   ),
                   prefixIcon: Padding(
                     padding: const EdgeInsets.only(left: 12, right: 8),
                     child: Icon(
                       PhosphorIconsRegular.magnifyingGlass,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                       size: 16,
                     ),
                   ),
@@ -623,7 +628,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                         child: Text(
                           'Скоро',
                           style: SeeUTypography.body.copyWith(
-                            color: SeeUColors.textSecondary,
+                            color: c.ink2,
                           ),
                         ),
                       )
@@ -662,7 +667,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                                           '@${user.username}',
                                           style:
                                               SeeUTypography.caption.copyWith(
-                                            color: SeeUColors.textSecondary,
+                                            color: c.ink2,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,

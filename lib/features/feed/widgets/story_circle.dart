@@ -23,6 +23,7 @@ class StoryCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final showGradientRing = !isSeen && !isOwn;
     final showSeenStyle = isSeen && !isOwn;
 
@@ -41,16 +42,18 @@ class StoryCircle extends StatelessWidget {
                 height: isOwn ? size : size + 4,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: showGradientRing
-                      ? SeeUColors.storyGradient
-                      : null,
+                  color: showGradientRing
+                      ? SeeUColors.accent
+                      : showSeenStyle
+                          ? SeeUColors.textQuaternary
+                          : null,
                 ),
                 child: Padding(
                   padding: EdgeInsets.all(showGradientRing ? 2.0 : 0),
                   child: Container(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: SeeUColors.background,
+                      color: c.bg,
                     ),
                     child: Padding(
                       padding: EdgeInsets.all(showGradientRing ? 2 : 0),
@@ -64,10 +67,10 @@ class StoryCircle extends StatelessWidget {
                                       Colors.grey, BlendMode.saturation),
                                   child: Opacity(
                                     opacity: 0.6,
-                                    child: _buildAvatar(),
+                                    child: _buildAvatar(c),
                                   ),
                                 )
-                              : _buildAvatar(),
+                              : _buildAvatar(c),
                         ),
                       ),
                     ),
@@ -86,7 +89,7 @@ class StoryCircle extends StatelessWidget {
                       color: SeeUColors.accent,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: SeeUColors.background,
+                        color: c.bg,
                         width: 2,
                       ),
                     ),
@@ -117,28 +120,28 @@ class StoryCircle extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _buildAvatar(SeeUThemeColors c) {
     if (imageUrl != null && imageUrl!.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: imageUrl!,
         width: size,
         height: size,
         fit: BoxFit.cover,
-        placeholder: (_, __) => _placeholder(),
-        errorWidget: (_, __, ___) => _placeholder(),
+        placeholder: (_, __) => _placeholder(c),
+        errorWidget: (_, __, ___) => _placeholder(c),
       );
     }
-    return _placeholder();
+    return _placeholder(c);
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(SeeUThemeColors c) {
     return Container(
       width: size,
       height: size,
-      color: SeeUColors.surfaceElevated,
+      color: c.surface2,
       child: Center(
         child: Icon(PhosphorIcons.user(),
-            color: SeeUColors.textTertiary, size: 24),
+            color: c.ink3, size: 24),
       ),
     );
   }

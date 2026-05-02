@@ -125,6 +125,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     _prevMessageCount = msgState.messages.length;
 
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: () {
         // Dismiss reaction picker when tapping outside
@@ -133,16 +134,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: SeeUColors.background,
+        backgroundColor: c.bg,
         body: Column(
           children: [
             // Header: back chevron + avatar 36px + name + online status + moreV
             Container(
               decoration: BoxDecoration(
-                color: SeeUColors.surface,
+                color: c.surface,
                 border: Border(
                   bottom: BorderSide(
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                     width: 0.5,
                   ),
                 ),
@@ -168,7 +169,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                           child: Icon(
                             PhosphorIconsRegular.caretLeft,
-                            color: SeeUColors.textPrimary,
+                            color: c.ink,
                             size: 22,
                           ),
                         ),
@@ -191,20 +192,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           children: [
                             Text(
                               otherUser?.fullName ?? 'Чат',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: SeeUColors.textPrimary,
+                                color: c.ink,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             if (otherUser != null)
-                              const Text(
+                              Text(
                                 'был недавно',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: SeeUColors.textTertiary,
+                                  color: c.ink3,
                                 ),
                               ),
                           ],
@@ -214,7 +215,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       Icon(
                         PhosphorIconsRegular.dotsThreeVertical,
                         size: 22,
-                        color: SeeUColors.textPrimary,
+                        color: c.ink,
                       ),
                     ],
                   ),
@@ -243,6 +244,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildEmptyChat(dynamic otherUser) {
+    final c = context.seeuColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -270,7 +272,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text(
               'Начните диалог',
               style: SeeUTypography.body.copyWith(
-                color: SeeUColors.textSecondary,
+                color: c.ink2,
               ),
             ),
             // Icebreaker suggestion chips
@@ -343,12 +345,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildInputBar() {
+    final c = context.seeuColors;
     return Container(
       decoration: BoxDecoration(
-        color: SeeUColors.surface,
+        color: c.surface,
         border: Border(
           top: BorderSide(
-            color: SeeUColors.borderSubtle,
+            color: c.line,
             width: 0.5,
           ),
         ),
@@ -372,13 +375,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: SeeUColors.surface2,
+                    color: c.surface2,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     PhosphorIconsRegular.plus,
                     size: 20,
-                    color: SeeUColors.textSecondary,
+                    color: c.ink2,
                   ),
                 ),
               ),
@@ -388,7 +391,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 120),
                   decoration: BoxDecoration(
-                    color: SeeUColors.surface2,
+                    color: c.surface2,
                     borderRadius: BorderRadius.circular(SeeURadii.pill),
                   ),
                   child: TextField(
@@ -401,7 +404,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       hintText: 'Сообщение',
                       hintStyle: SeeUTypography.body.copyWith(
                         fontSize: 14,
-                        color: SeeUColors.textTertiary,
+                        color: c.ink3,
                       ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(
@@ -477,12 +480,13 @@ class _IcebreakerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: SeeUColors.accentSoft,
+          color: c.accentSoft,
           borderRadius: BorderRadius.circular(SeeURadii.pill),
           border: Border.all(
             color: SeeUColors.accent.withValues(alpha: 0.3),
@@ -511,6 +515,7 @@ class _DateSeparator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
@@ -518,7 +523,7 @@ class _DateSeparator extends StatelessWidget {
           Expanded(
             child: Container(
               height: 0.5,
-              color: SeeUColors.borderSubtle,
+              color: c.line,
             ),
           ),
           Padding(
@@ -526,7 +531,7 @@ class _DateSeparator extends StatelessWidget {
             child: Text(
               label,
               style: SeeUTypography.micro.copyWith(
-                color: SeeUColors.textTertiary,
+                color: c.ink3,
                 fontSize: 11,
               ),
             ),
@@ -534,7 +539,7 @@ class _DateSeparator extends StatelessWidget {
           Expanded(
             child: Container(
               height: 0.5,
-              color: SeeUColors.borderSubtle,
+              color: c.line,
             ),
           ),
         ],
@@ -576,6 +581,7 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final time =
         '${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}';
 
@@ -596,7 +602,7 @@ class _MessageBubble extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: SeeUColors.surfaceElevated,
+                color: c.surface2,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: SeeUShadows.sm,
               ),
@@ -639,7 +645,7 @@ class _MessageBubble extends StatelessWidget {
                       time,
                       style: SeeUTypography.micro.copyWith(
                         fontSize: 10,
-                        color: SeeUColors.textTertiary,
+                        color: c.ink3,
                       ),
                     ),
                   ),
@@ -656,7 +662,7 @@ class _MessageBubble extends StatelessWidget {
                           // own = coral bg; other = surface bg + 0.5px border
                           color: isMine
                               ? SeeUColors.accent
-                              : SeeUColors.surface,
+                              : c.surface,
                           // own: 20 20 4 20 / other: 20 20 20 4
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(20),
@@ -667,7 +673,7 @@ class _MessageBubble extends StatelessWidget {
                           border: isMine
                               ? null
                               : Border.all(
-                                  color: SeeUColors.borderSubtle,
+                                  color: c.line,
                                   width: 0.5,
                                 ),
                         ),
@@ -676,7 +682,7 @@ class _MessageBubble extends StatelessWidget {
                           style: SeeUTypography.body.copyWith(
                             fontSize: 14,
                             color:
-                                isMine ? Colors.white : SeeUColors.textPrimary,
+                                isMine ? Colors.white : c.ink,
                             height: 1.4,
                           ),
                         ),
@@ -691,7 +697,7 @@ class _MessageBubble extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 4, vertical: 1),
                             decoration: BoxDecoration(
-                              color: SeeUColors.surface,
+                              color: c.surface,
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: SeeUShadows.sm,
                             ),
@@ -715,7 +721,7 @@ class _MessageBubble extends StatelessWidget {
                           time,
                           style: SeeUTypography.micro.copyWith(
                             fontSize: 10,
-                            color: SeeUColors.textTertiary,
+                            color: c.ink3,
                           ),
                         ),
                         const SizedBox(width: 2),
@@ -726,7 +732,7 @@ class _MessageBubble extends StatelessWidget {
                           size: 12,
                           color: message.isRead
                               ? const Color(0xFF4FC3F7)
-                              : SeeUColors.textTertiary,
+                              : c.ink3,
                         ),
                       ],
                     ),
@@ -758,6 +764,7 @@ class _SmallAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return SizedBox(
       width: size,
       height: size,
@@ -768,7 +775,7 @@ class _SmallAvatar extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: SeeUColors.surfaceElevated,
+              color: c.surface2,
             ),
             clipBehavior: Clip.antiAlias,
             child: avatarUrl != null && avatarUrl!.isNotEmpty
@@ -776,12 +783,12 @@ class _SmallAvatar extends StatelessWidget {
                     imageUrl: avatarUrl!,
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(
-                      color: SeeUColors.borderSubtle,
+                      color: c.line,
                     ),
                     errorWidget: (_, __, ___) => Icon(
                       PhosphorIconsRegular.user,
                       size: size * 0.45,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                     ),
                   )
                 : Icon(

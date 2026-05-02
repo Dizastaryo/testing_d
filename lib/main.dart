@@ -119,9 +119,8 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
             GoRoute(
               path: '/chat',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ChatListScreen(),
-                transitionsBuilder: _fadeTransition,
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: ChatListScreen(),
               ),
               routes: [
                 GoRoute(
@@ -220,9 +219,8 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
             GoRoute(
               path: '/notifications',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const NotificationsScreen(),
-                transitionsBuilder: _fadeTransition,
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: NotificationsScreen(),
               ),
             ),
           ],
