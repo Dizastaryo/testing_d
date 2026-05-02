@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../api/api_client.dart';
+import '../api/api_endpoints.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../models/highlight.dart';
-import '../../data/mock_service.dart';
 
 class UserProfileState {
   final User? user;
@@ -46,18 +47,48 @@ class UserProfileState {
 
 class UserProfileNotifier extends StateNotifier<UserProfileState> {
   final String username;
+  final ApiClient _api;
 
-  UserProfileNotifier(this.username) : super(const UserProfileState()) {
+  UserProfileNotifier(this.username, this._api) : super(const UserProfileState()) {
     loadProfile();
+  }
+
+  List<dynamic> _extractList(dynamic data) {
+    if (data is Map && data.containsKey('data')) {
+      final d = data['data'];
+      if (d is List) return d;
+      return [];
+    }
+    if (data is List) return data;
+    return [];
+  }
+
+  Map<String, dynamic> _extractMap(dynamic data) {
+    if (data is Map && data.containsKey('data')) {
+      return data['data'] as Map<String, dynamic>;
+    }
+    if (data is Map<String, dynamic>) return data;
+    return {};
   }
 
   Future<void> loadProfile() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final mock = MockService.instance;
-      final user = await mock.getProfile(username);
-      final posts = await mock.getUserPosts(username);
-      final highlights = await mock.getUserHighlights(username);
+      final userResp = await _api.get(ApiEndpoints.userProfile(username));
+      final user = User.fromJson(_extractMap(userResp.data));
+
+      final postsResp = await _api.get(ApiEndpoints.userPosts(username));
+      final posts = _extractList(postsResp.data)
+          .map((j) => Post.fromJson(j as Map<String, dynamic>))
+          .toList();
+
+      List<Highlight> highlights = [];
+      try {
+        final hlResp = await _api.get(ApiEndpoints.userHighlights(username));
+        highlights = _extractList(hlResp.data)
+            .map((j) => Highlight.fromJson(j as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
 
       state = UserProfileState(
         user: user,
@@ -65,24 +96,16 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
         highlights: highlights,
       );
     } catch (e) {
-      final demoUser = User.demoUsers.isNotEmpty
-          ? User.demoUsers.firstWhere(
-              (u) => u.username == username,
-              orElse: () => User.demoMe,
-            )
-          : User.demoMe;
-      state = UserProfileState(
-        user: demoUser,
-        posts: Post.demoPosts.where((p) => p.author.username == username).toList(),
-        highlights: Highlight.demoHighlights(demoUser),
-        error: e.toString(),
-      );
+      state = UserProfileState(error: e.toString());
     }
   }
 
   Future<void> loadSavedPosts() async {
     try {
-      final posts = await MockService.instance.getUserSavedPosts();
+      final resp = await _api.get(ApiEndpoints.userSavedPosts(username));
+      final posts = _extractList(resp.data)
+          .map((j) => Post.fromJson(j as Map<String, dynamic>))
+          .toList();
       state = state.copyWith(savedPosts: posts);
     } catch (_) {
       state = state.copyWith(savedPosts: []);
@@ -90,12 +113,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   }
 
   Future<void> loadTaggedPosts() async {
-    try {
-      final posts = await MockService.instance.getUserTaggedPosts(username);
-      state = state.copyWith(taggedPosts: posts);
-    } catch (_) {
-      state = state.copyWith(taggedPosts: []);
-    }
+    state = state.copyWith(taggedPosts: []);
   }
 
   Future<void> toggleFollow() async {
@@ -113,9 +131,12 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     );
 
     try {
-      await MockService.instance.toggleFollow(username);
+      if (wasFollowing) {
+        await _api.delete(ApiEndpoints.followUser(username));
+      } else {
+        await _api.post(ApiEndpoints.followUser(username));
+      }
     } catch (_) {
-      // Revert on error
       state = state.copyWith(user: user);
     }
   }
@@ -123,7 +144,8 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 
 final userProfileProvider = StateNotifierProvider.family<
     UserProfileNotifier, UserProfileState, String>((ref, username) {
-  return UserProfileNotifier(username);
+  final api = ref.watch(apiClientProvider);
+  return UserProfileNotifier(username, api);
 });
 
 // Search provider
@@ -142,7 +164,9 @@ class SearchState {
 }
 
 class SearchNotifier extends StateNotifier<SearchState> {
-  SearchNotifier() : super(const SearchState());
+  final ApiClient _api;
+
+  SearchNotifier(this._api) : super(const SearchState());
 
   Future<void> search(String query) async {
     if (query.trim().isEmpty) {
@@ -151,9 +175,26 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
     state = SearchState(query: query, isLoading: true);
     try {
-      final mock = MockService.instance;
-      final users = await mock.searchUsers(query);
-      final posts = await mock.searchPosts(query);
+      final resp = await _api.get(ApiEndpoints.search, queryParameters: {'q': query});
+      final data = resp.data;
+      final resultData = data is Map && data.containsKey('data') ? data['data'] : data;
+
+      List<User> users = [];
+      List<Post> posts = [];
+
+      if (resultData is Map) {
+        if (resultData['users'] is List) {
+          users = (resultData['users'] as List)
+              .map((j) => User.fromJson(j as Map<String, dynamic>))
+              .toList();
+        }
+        if (resultData['posts'] is List) {
+          posts = (resultData['posts'] as List)
+              .map((j) => Post.fromJson(j as Map<String, dynamic>))
+              .toList();
+        }
+      }
+
       state = SearchState(users: users, posts: posts, query: query);
     } catch (_) {
       state = SearchState(query: query);
@@ -164,14 +205,19 @@ class SearchNotifier extends StateNotifier<SearchState> {
 }
 
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
-  return SearchNotifier();
+  final api = ref.watch(apiClientProvider);
+  return SearchNotifier(api);
 });
 
 // Explore grid posts provider
 final explorePostsProvider = FutureProvider<List<Post>>((ref) async {
+  final api = ref.watch(apiClientProvider);
   try {
-    return await MockService.instance.getExplorePosts();
+    final resp = await api.get(ApiEndpoints.explore);
+    final data = resp.data;
+    final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+    return (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
   } catch (_) {
-    return Post.demoPosts;
+    return [];
   }
 });

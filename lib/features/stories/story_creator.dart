@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
-import '../../data/mock_service.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 
 class StoryCreatorScreen extends ConsumerStatefulWidget {
   const StoryCreatorScreen({super.key});
@@ -44,10 +44,11 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
     if (_selectedImage == null) return;
     setState(() => _isUploading = true);
     try {
-      await MockService.instance.createStory(
-        mediaUrl: 'https://picsum.photos/seed/story${DateTime.now().millisecondsSinceEpoch}/600/1000',
-        textOverlay: _textCtrl.text.trim(),
-      );
+      final api = ref.read(apiClientProvider);
+      await api.post(ApiEndpoints.stories, data: {
+        'media_url': 'https://picsum.photos/seed/story${DateTime.now().millisecondsSinceEpoch}/600/1000',
+        'text_overlay': _textCtrl.text.trim(),
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('История опубликована!')),
@@ -290,7 +291,8 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
           const SizedBox(height: 24),
           Text(
             'Добавить в историю',
-            style: GoogleFonts.fraunces(
+            style: TextStyle(
+              fontFamily: 'Georgia',
               fontSize: 28,
               fontWeight: FontWeight.w600,
               color: Colors.white,
@@ -299,7 +301,8 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
           const SizedBox(height: 8),
           Text(
             'Поделитесь фото, которое исчезнет через 24 часа',
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'Segoe UI',
               fontSize: 14,
               color: Colors.white70,
             ),

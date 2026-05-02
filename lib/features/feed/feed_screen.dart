@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import '../../core/design/design.dart';
-import '../../core/models/notification.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/notification_provider.dart';
+import '../camera/camera_screen.dart';
 import 'widgets/stories_row.dart';
 import 'widgets/post_card.dart';
 
@@ -19,19 +18,97 @@ class FeedScreen extends ConsumerStatefulWidget {
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends ConsumerState<FeedScreen> {
+class _FeedScreenState extends ConsumerState<FeedScreen>
+    with TickerProviderStateMixin {
   final _scrollController = ScrollController();
+  bool _showScrollToTop = false;
+
+  // PageView for camera swipe
+  late PageController _pageController;
+  bool _isCameraActive = false;
+
+  // Header icon entrance animations
+  late AnimationController _headerIconsController;
+  late Animation<double> _icon1Fade;
+  late Animation<Offset> _icon1Slide;
+  late Animation<double> _icon2Fade;
+  late Animation<Offset> _icon2Slide;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: 1);
     _scrollController.addListener(_onScroll);
+
+    // Header icons entrance animation controller
+    _headerIconsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    // First icon: 0ms - 300ms
+    _icon1Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _headerIconsController,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      ),
+    );
+    _icon1Slide = Tween<Offset>(
+      begin: const Offset(20, 0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _headerIconsController,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    // Second icon: 100ms offset -> ~0.2 - 0.8 of total
+    _icon2Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _headerIconsController,
+        curve: const Interval(0.2, 0.8, curve: Curves.easeOut),
+      ),
+    );
+    _icon2Slide = Tween<Offset>(
+      begin: const Offset(20, 0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _headerIconsController,
+        curve: const Interval(0.2, 0.8, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    // Start entrance animation
+    _headerIconsController.forward();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _pageController.dispose();
+    _headerIconsController.dispose();
     super.dispose();
+  }
+
+  void _onPageChanged(int page) {
+    final isCamera = page == 0;
+    if (isCamera != _isCameraActive) {
+      setState(() => _isCameraActive = isCamera);
+      if (isCamera) {
+        HapticFeedback.mediumImpact();
+        SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+          statusBarIconBrightness: Brightness.light,
+          statusBarColor: Colors.transparent,
+        ));
+      } else {
+        SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+          statusBarIconBrightness: Brightness.dark,
+          statusBarColor: Colors.transparent,
+        ));
+      }
+    }
   }
 
   void _onScroll() {
@@ -39,6 +116,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         _scrollController.position.maxScrollExtent - 300) {
       ref.read(feedProvider.notifier).loadMore();
     }
+
+    // Show/hide scroll-to-top button
+    final shouldShow = _scrollController.position.pixels > 500;
+    if (shouldShow != _showScrollToTop) {
+      setState(() {
+        _showScrollToTop = shouldShow;
+      });
+    }
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _onRefresh() async {
@@ -50,81 +143,192 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final feedState = ref.watch(feedProvider);
     final notifState = ref.watch(notificationProvider);
 
+    return PageView(
+      controller: _pageController,
+      onPageChanged: _onPageChanged,
+      children: [
+        // Page 0: Camera
+        CameraScreen(
+          onClose: () {
+            _pageController.animateToPage(
+              1,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+            );
+          },
+        ),
+        // Page 1: Feed
+        _buildFeedPage(feedState, notifState),
+      ],
+    );
+  }
+
+  Widget _buildFeedPage(dynamic feedState, dynamic notifState) {
     return Scaffold(
       backgroundColor: SeeUColors.background,
-      body: feedState.isLoading && feedState.posts.isEmpty
-          ? _buildShimmer()
-          : RefreshIndicator(
-              onRefresh: _onRefresh,
-              color: SeeUColors.accent,
-              child: feedState.posts.isEmpty
-                  ? _buildEmpty()
-                  : CustomScrollView(
-                      controller: _scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      slivers: [
-                        // Custom header
-                        SliverToBoxAdapter(
-                          child: SafeArea(
-                            bottom: false,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    'SeeU',
-                                    style: SeeUTypography.displayL,
-                                  ),
-                                  const Spacer(),
-                                  // DM button
-                                  _HeaderIconButton(
-                                    icon: PhosphorIcon(PhosphorIcons.chatCircleDots()),
-                                    onTap: () => context.go('/chat'),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  // Bell button
-                                  _HeaderIconButton(
-                                    icon: PhosphorIcon(PhosphorIcons.bell()),
-                                    badge: notifState.unreadCount,
-                                    onTap: () =>
-                                        _showNotificationsSheet(context),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SliverToBoxAdapter(child: StoriesRow()),
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              if (index == feedState.posts.length) {
-                                return feedState.isLoadingMore
-                                    ? _buildLoadingMore()
-                                    : const SizedBox(height: 100);
-                              }
-                              return AnimationConfiguration
-                                  .staggeredList(
-                                position: index,
-                                duration: const Duration(milliseconds: 400),
-                                delay: const Duration(milliseconds: 50),
-                                child: SlideAnimation(
-                                  verticalOffset: 30,
-                                  curve: Curves.easeOutCubic,
-                                  child: FadeInAnimation(
-                                    curve: Curves.easeOutCubic,
-                                    child: PostCard(
-                                        post: feedState.posts[index]),
+      body: Stack(
+        children: [
+          feedState.isLoading && feedState.posts.isEmpty
+              ? _buildShimmer()
+              : RefreshIndicator(
+                  onRefresh: _onRefresh,
+                  color: SeeUColors.accent,
+                  child: feedState.posts.isEmpty
+                      ? _buildEmpty()
+                      : CustomScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            // Custom header
+                            SliverToBoxAdapter(
+                              child: SafeArea(
+                                bottom: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      18, 12, 18, 12),
+                                  child: Row(
+                                    children: [
+                                      // EyeMark + Gradient "SeeU" header
+                                      Row(
+                                        children: [
+                                          const _EyeMarkLogo(size: 26),
+                                          const SizedBox(width: 8),
+                                          ShaderMask(
+                                            shaderCallback: (bounds) =>
+                                                SeeUColors.titleGradient
+                                                    .createShader(bounds),
+                                            blendMode: BlendMode.srcIn,
+                                            child: Text(
+                                              'SeeU',
+                                              style: SeeUTypography.displayL
+                                                  .copyWith(
+                                                      color: Colors.white),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const Spacer(),
+                                      // DM button with entrance animation
+                                      AnimatedBuilder(
+                                        animation: _headerIconsController,
+                                        builder: (context, child) {
+                                          return Transform.translate(
+                                            offset: _icon1Slide.value,
+                                            child: Opacity(
+                                              opacity: _icon1Fade.value,
+                                              child: child,
+                                            ),
+                                          );
+                                        },
+                                        child: _HeaderIconButton(
+                                          icon: PhosphorIcon(
+                                              PhosphorIcons
+                                                  .chatCircleDots()),
+                                          onTap: () => context.go('/chat'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      // Bell button with staggered entrance
+                                      AnimatedBuilder(
+                                        animation: _headerIconsController,
+                                        builder: (context, child) {
+                                          return Transform.translate(
+                                            offset: _icon2Slide.value,
+                                            child: Opacity(
+                                              opacity: _icon2Fade.value,
+                                              child: child,
+                                            ),
+                                          );
+                                        },
+                                        child: _HeaderIconButton(
+                                          icon: PhosphorIcon(
+                                              PhosphorIcons.bell()),
+                                          badge: notifState.unreadCount,
+                                          onTap: () =>
+                                              context.push('/notifications'),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            },
-                            childCount: feedState.posts.length + 1,
-                          ),
+                              ),
+                            ),
+                            const SliverToBoxAdapter(child: StoriesRow()),
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  if (index == feedState.posts.length) {
+                                    return feedState.isLoadingMore
+                                        ? _buildLoadingMore()
+                                        : const SizedBox(height: 100);
+                                  }
+                                  return AnimationConfiguration
+                                      .staggeredList(
+                                    position: index,
+                                    duration:
+                                        const Duration(milliseconds: 400),
+                                    delay:
+                                        const Duration(milliseconds: 50),
+                                    child: SlideAnimation(
+                                      verticalOffset: 30,
+                                      curve: Curves.easeOutCubic,
+                                      child: FadeInAnimation(
+                                        curve: Curves.easeOutCubic,
+                                        child: PostCard(
+                                            post: feedState.posts[index]),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                childCount: feedState.posts.length + 1,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                ),
+          // Scroll-to-top FAB
+          Positioned(
+            bottom: 88,
+            right: 20,
+            child: AnimatedOpacity(
+              opacity: _showScrollToTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              child: AnimatedScale(
+                scale: _showScrollToTop ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutBack,
+                child: IgnorePointer(
+                  ignoring: !_showScrollToTop,
+                  child: GestureDetector(
+                    onTap: _scrollToTop,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.surface,
+                        shape: BoxShape.circle,
+                        boxShadow: SeeUShadows.md,
+                        border: Border.all(
+                          color: SeeUColors.accent.withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Center(
+                        child: PhosphorIcon(
+                          PhosphorIconsRegular.arrowUp,
+                          size: 20,
+                          color: SeeUColors.accent,
+                        ),
+                      ),
                     ),
+                  ),
+                ),
+              ),
             ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -238,7 +442,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         children: [
           Text(
             '0',
-            style: GoogleFonts.fraunces(
+            style: TextStyle(
+              fontFamily: 'Georgia',
               fontSize: 120,
               fontWeight: FontWeight.w300,
               color: SeeUColors.borderSubtle,
@@ -262,191 +467,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
-  IconData _notifIcon(NotificationType type) {
-    switch (type) {
-      case NotificationType.like:
-        return PhosphorIcons.heart(PhosphorIconsStyle.fill);
-      case NotificationType.comment:
-        return PhosphorIcons.chatCircle(PhosphorIconsStyle.fill);
-      case NotificationType.follow:
-        return PhosphorIcons.userPlus(PhosphorIconsStyle.fill);
-      case NotificationType.mention:
-        return PhosphorIcons.at(PhosphorIconsStyle.fill);
-      case NotificationType.reply:
-        return PhosphorIcons.arrowBendUpLeft(PhosphorIconsStyle.fill);
-      case NotificationType.postTag:
-        return PhosphorIcons.tag(PhosphorIconsStyle.fill);
-    }
-  }
-
-  Color _notifIconColor(NotificationType type) {
-    switch (type) {
-      case NotificationType.like:
-        return SeeUColors.like;
-      case NotificationType.comment:
-        return SeeUColors.accent;
-      case NotificationType.follow:
-        return SeeUColors.success;
-      case NotificationType.mention:
-        return const Color(0xFFC04CFD);
-      case NotificationType.reply:
-        return const Color(0xFFFFB547);
-      case NotificationType.postTag:
-        return const Color(0xFF85B7EB);
-    }
-  }
-
-  void _showNotificationsSheet(BuildContext context) {
-    final notifState = ref.read(notificationProvider);
-    ref.read(notificationProvider.notifier).markAllRead();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: SeeUColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.95,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (_, controller) => Column(
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: SeeUColors.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Уведомления',
-                  style: SeeUTypography.title,
-                ),
-              ),
-            ),
-            Expanded(
-              child: notifState.notifications.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Нет уведомлений',
-                        style: SeeUTypography.caption,
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: controller,
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      itemCount: notifState.notifications.length,
-                      itemBuilder: (_, i) {
-                        final n = notifState.notifications[i];
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: n.isRead ? Colors.transparent : SeeUColors.accentSoft.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(SeeURadii.small),
-                          ),
-                          child: Row(
-                            children: [
-                              Stack(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 22,
-                                    backgroundImage: n.fromUser.avatarUrl != null
-                                        ? NetworkImage(n.fromUser.avatarUrl!)
-                                        : null,
-                                    backgroundColor: SeeUColors.surfaceElevated,
-                                    child: n.fromUser.avatarUrl == null
-                                        ? Text(
-                                            n.fromUser.username[0].toUpperCase(),
-                                            style: SeeUTypography.caption.copyWith(
-                                                color: SeeUColors.textPrimary),
-                                          )
-                                        : null,
-                                  ),
-                                  Positioned(
-                                    right: -2,
-                                    bottom: -2,
-                                    child: Container(
-                                      width: 18,
-                                      height: 18,
-                                      decoration: BoxDecoration(
-                                        color: _notifIconColor(n.type),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: SeeUColors.surface, width: 2),
-                                      ),
-                                      child: Center(
-                                        child: Icon(_notifIcon(n.type), size: 10, color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    RichText(
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      text: TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: '${n.fromUser.username} ',
-                                            style: SeeUTypography.caption
-                                                .copyWith(fontWeight: FontWeight.w700, color: SeeUColors.textPrimary),
-                                          ),
-                                          TextSpan(
-                                            text: n.message,
-                                            style: SeeUTypography.caption
-                                                .copyWith(color: SeeUColors.textPrimary),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      timeago.format(n.createdAt),
-                                      style: SeeUTypography.micro,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (n.postThumbnailUrl != null) ...[
-                                const SizedBox(width: 8),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(
-                                    width: 44,
-                                    height: 44,
-                                    child: Image.network(
-                                      n.postThumbnailUrl!,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ─── Header icon button ──────────────────────────────────────────────────
@@ -474,9 +494,12 @@ class _HeaderIconButton extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: SeeUColors.surfaceElevated,
+              color: SeeUColors.surface,
               borderRadius: BorderRadius.circular(SeeURadii.pill),
-              boxShadow: SeeUShadows.sm,
+              border: Border.all(
+                color: SeeUColors.borderSubtle,
+                width: 0.5,
+              ),
             ),
             child: Center(
               child: IconTheme(
@@ -500,7 +523,8 @@ class _HeaderIconButton extends StatelessWidget {
                 child: Center(
                   child: Text(
                     badge > 9 ? '9+' : badge.toString(),
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'Segoe UI',
                       color: Colors.white,
                       fontSize: 9,
                       fontWeight: FontWeight.w800,
@@ -513,6 +537,78 @@ class _HeaderIconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── EyeMark logo (matches design) ───────────────────────────────────────
+
+class _EyeMarkLogo extends StatelessWidget {
+  final double size;
+  const _EyeMarkLogo({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.22),
+        gradient: const RadialGradient(
+          center: Alignment(-0.2, -0.3),
+          colors: [Color(0xFFFF8060), Color(0xFFFF5A3C)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: SeeUColors.accent.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        size: Size(size, size),
+        painter: _EyeMarkPainter(),
+      ),
+    );
+  }
+}
+
+class _EyeMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    final center = Offset(s / 2, s / 2);
+
+    // White eye shape
+    final eyePath = Path();
+    eyePath.moveTo(s * 0.12, s / 2);
+    eyePath.quadraticBezierTo(s * 0.35, s * 0.2, s / 2, s * 0.2);
+    eyePath.quadraticBezierTo(s * 0.65, s * 0.2, s * 0.88, s / 2);
+    eyePath.quadraticBezierTo(s * 0.65, s * 0.8, s / 2, s * 0.8);
+    eyePath.quadraticBezierTo(s * 0.35, s * 0.8, s * 0.12, s / 2);
+    eyePath.close();
+    canvas.drawPath(
+      eyePath,
+      Paint()..color = const Color(0xFFFFF6F0),
+    );
+
+    // Iris gradient
+    final irisPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.2, -0.2),
+        colors: [const Color(0xFFFF6E50), const Color(0xFFC12A1A)],
+      ).createShader(Rect.fromCircle(center: center, radius: s * 0.18));
+    canvas.drawCircle(center, s * 0.18, irisPaint);
+
+    // Highlight
+    canvas.drawCircle(
+      Offset(s * 0.44, s * 0.44),
+      s * 0.04,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─── Dot pulse loading indicator ─────────────────────────────────────────

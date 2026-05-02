@@ -109,36 +109,4 @@ class AppNotification {
     );
   }
 
-  static List<AppNotification> get demoNotifications {
-    final users = User.demoUsers;
-    final now = DateTime.now();
-    return [
-      AppNotification(
-        id: 'n1',
-        type: NotificationType.like,
-        fromUser: users[0],
-        postId: '1',
-        postThumbnailUrl: 'https://picsum.photos/seed/p1/100/100',
-        isRead: false,
-        createdAt: now.subtract(const Duration(minutes: 5)),
-      ),
-      AppNotification(
-        id: 'n2',
-        type: NotificationType.follow,
-        fromUser: users[1],
-        isRead: false,
-        createdAt: now.subtract(const Duration(hours: 1)),
-      ),
-      AppNotification(
-        id: 'n3',
-        type: NotificationType.comment,
-        fromUser: users[2],
-        postId: '2',
-        postThumbnailUrl: 'https://picsum.photos/seed/p2/100/100',
-        commentText: 'Amazing shot!',
-        isRead: true,
-        createdAt: now.subtract(const Duration(hours: 3)),
-      ),
-    ];
-  }
 }

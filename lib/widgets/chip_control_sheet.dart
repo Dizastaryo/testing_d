@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../core/design/design.dart';
 import '../services/account_session.dart';
@@ -120,7 +119,8 @@ class _ChipControlSheetState extends State<ChipControlSheet> {
                   children: [
                     Text(
                       'Твой SeeU',
-                      style: GoogleFonts.fraunces(
+                      style: TextStyle(
+                        fontFamily: 'Georgia',
                         fontSize: 22,
                         fontWeight: FontWeight.w600,
                         color: SeeUColors.textPrimary,

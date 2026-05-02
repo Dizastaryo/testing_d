@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../core/design/design.dart';
 import '../models/ble_device_model.dart';
@@ -244,7 +243,8 @@ class _DeviceCardState extends State<DeviceCard> {
       ),
       child: Text(
         _badgeLabel,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'Segoe UI',
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: fg,
@@ -262,7 +262,8 @@ class _DeviceCardState extends State<DeviceCard> {
           children: [
             Text(
               '${device.rssi}',
-              style: GoogleFonts.fraunces(
+              style: TextStyle(
+                fontFamily: 'Georgia',
                 fontSize: 32,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -1,
@@ -309,7 +310,8 @@ class _DeviceCardState extends State<DeviceCard> {
               const SizedBox(width: 6),
               Text(
                 'Управлять',
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'Segoe UI',
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,

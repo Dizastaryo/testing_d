@@ -1,20 +1,88 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/mock_service.dart';
+import '../api/api_client.dart';
+import '../models/user.dart';
+
+// Chat models (kept inline since they were previously in mock_service)
+class Chat {
+  final String id;
+  final User otherUser;
+  final String lastMessage;
+  final DateTime lastMessageAt;
+  final int unreadCount;
+
+  const Chat({
+    required this.id,
+    required this.otherUser,
+    required this.lastMessage,
+    required this.lastMessageAt,
+    this.unreadCount = 0,
+  });
+
+  factory Chat.fromJson(Map<String, dynamic> json) {
+    return Chat(
+      id: json['id']?.toString() ?? '',
+      otherUser: User.fromJson(json['other_user'] as Map<String, dynamic>? ?? {}),
+      lastMessage: json['last_message']?.toString() ?? '',
+      lastMessageAt: json['last_message_at'] != null
+          ? DateTime.tryParse(json['last_message_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      unreadCount: (json['unread_count'] ?? 0) as int,
+    );
+  }
+}
+
+class ChatMessage {
+  final String id;
+  final String chatId;
+  final String senderId;
+  final String text;
+  final DateTime createdAt;
+  final bool isMe;
+  final bool isRead;
+
+  const ChatMessage({
+    required this.id,
+    required this.chatId,
+    required this.senderId,
+    required this.text,
+    required this.createdAt,
+    this.isMe = false,
+    this.isRead = false,
+  });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      id: json['id']?.toString() ?? '',
+      chatId: json['chat_id']?.toString() ?? '',
+      senderId: json['sender_id']?.toString() ?? '',
+      text: json['text']?.toString() ?? '',
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      isMe: (json['is_me'] ?? false) as bool,
+      isRead: (json['is_read'] ?? false) as bool,
+    );
+  }
+}
 
 class ChatListState {
   final List<Chat> chats;
   final bool isLoading;
   const ChatListState({this.chats = const [], this.isLoading = false});
-  ChatListState copyWith({List<Chat>? chats, bool? isLoading}) => ChatListState(chats: chats ?? this.chats, isLoading: isLoading ?? this.isLoading);
+  ChatListState copyWith({List<Chat>? chats, bool? isLoading}) =>
+      ChatListState(chats: chats ?? this.chats, isLoading: isLoading ?? this.isLoading);
 }
 
 class ChatListNotifier extends StateNotifier<ChatListState> {
-  ChatListNotifier() : super(const ChatListState()) { load(); }
+  final ApiClient _api;
+  ChatListNotifier(this._api) : super(const ChatListState()) {
+    load();
+  }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    final chats = await MockService.instance.getChats();
-    state = ChatListState(chats: chats);
+    // Chat API not implemented yet on backend — return empty
+    state = const ChatListState(chats: []);
   }
 }
 
@@ -23,24 +91,39 @@ class ChatMessagesState {
   final bool isLoading;
   final Chat? chat;
   const ChatMessagesState({this.messages = const [], this.isLoading = false, this.chat});
-  ChatMessagesState copyWith({List<ChatMessage>? messages, bool? isLoading, Chat? chat}) => ChatMessagesState(messages: messages ?? this.messages, isLoading: isLoading ?? this.isLoading, chat: chat ?? this.chat);
+  ChatMessagesState copyWith({List<ChatMessage>? messages, bool? isLoading, Chat? chat}) =>
+      ChatMessagesState(
+        messages: messages ?? this.messages,
+        isLoading: isLoading ?? this.isLoading,
+        chat: chat ?? this.chat,
+      );
 }
 
 class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final String chatId;
-  ChatMessagesNotifier(this.chatId) : super(const ChatMessagesState()) { load(); }
+  final ApiClient _api;
+  ChatMessagesNotifier(this.chatId, this._api) : super(const ChatMessagesState()) {
+    load();
+  }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    final messages = await MockService.instance.getChatMessages(chatId);
-    state = ChatMessagesState(messages: messages);
+    // Chat API not implemented yet on backend
+    state = const ChatMessagesState(messages: []);
   }
 
   Future<void> sendMessage(String text) async {
-    final message = await MockService.instance.sendMessage(chatId, text);
-    state = state.copyWith(messages: [...state.messages, message]);
+    // Chat API not implemented yet on backend
   }
 }
 
-final chatListProvider = StateNotifierProvider<ChatListNotifier, ChatListState>((ref) => ChatListNotifier());
-final chatMessagesProvider = StateNotifierProvider.family<ChatMessagesNotifier, ChatMessagesState, String>((ref, chatId) => ChatMessagesNotifier(chatId));
+final chatListProvider = StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
+  final api = ref.watch(apiClientProvider);
+  return ChatListNotifier(api);
+});
+
+final chatMessagesProvider =
+    StateNotifierProvider.family<ChatMessagesNotifier, ChatMessagesState, String>((ref, chatId) {
+  final api = ref.watch(apiClientProvider);
+  return ChatMessagesNotifier(chatId, api);
+});

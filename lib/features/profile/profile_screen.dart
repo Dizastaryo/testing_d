@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/user_provider.dart';
@@ -12,6 +12,7 @@ import '../feed/widgets/stories_row.dart';
 import '../../core/models/user.dart';
 import '../../core/models/post.dart';
 import '../../core/models/highlight.dart';
+import '../../core/models/story.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final String? username;
@@ -30,14 +31,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (_tabController.index == 1) {
         final username = _resolveUsername();
         ref.read(userProfileProvider(username).notifier).loadSavedPosts();
-      } else if (_tabController.index == 2) {
-        final username = _resolveUsername();
-        ref.read(userProfileProvider(username).notifier).loadTaggedPosts();
       }
       if (mounted) {
         setState(() => _selectedTab = _tabController.index);
@@ -79,136 +77,123 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       );
     }
 
-    final user = profileState.user ?? User.demoMe;
+    final user = profileState.user ??
+        User(
+            id: '',
+            username: username,
+            fullName: '',
+            createdAt: DateTime.now());
 
     return Scaffold(
       backgroundColor: SeeUColors.background,
-      appBar: AppBar(
-        backgroundColor: SeeUColors.background,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        automaticallyImplyLeading: widget.username != null,
-        leading: widget.username != null
-            ? IconButton(
-                icon: Icon(PhosphorIcons.arrowLeft(), size: 22, color: SeeUColors.textPrimary),
-                onPressed: () => Navigator.of(context).pop(),
-              )
-            : null,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        child: Column(
           children: [
-            Flexible(
-              child: Text(
-                user.username,
-                style: SeeUTypography.subtitle,
-                overflow: TextOverflow.ellipsis,
+            // ── Header ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
+              child: Row(
+                children: [
+                  if (widget.username != null)
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Icon(PhosphorIcons.arrowLeft(),
+                            size: 22, color: SeeUColors.textPrimary),
+                      ),
+                    ),
+                  Expanded(
+                    child: Text(
+                      '@${user.username}',
+                      style: SeeUTypography.mono.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: SeeUColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      _HeaderIconButton(
+                        icon: PhosphorIcons.bluetoothConnected(),
+                        onTap: () => context.push('/settings/chip'),
+                      ),
+                      const SizedBox(width: 8),
+                      _HeaderIconButton(
+                        icon: PhosphorIcons.gearSix(),
+                        onTap: () => context.push('/settings'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            if (user.isVerified) ...[
-              const SizedBox(width: 4),
-              Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
-                  color: SeeUColors.accent, size: 18),
-            ],
-          ],
-        ),
-        actions: [
-          if (isOwnProfile) ...[
-            IconButton(
-              icon: Icon(PhosphorIcons.plusSquare(), size: 24, color: SeeUColors.textPrimary),
-              onPressed: () => _showCreateMenu(context),
-            ),
-            IconButton(
-              icon: Icon(PhosphorIcons.gearSix(), size: 24, color: SeeUColors.textPrimary),
-              onPressed: () => context.push('/settings'),
-            ),
-          ] else ...[
-            IconButton(
-              icon: Icon(PhosphorIcons.dotsThreeVertical(), size: 24, color: SeeUColors.textPrimary),
-              onPressed: () {},
-            ),
-          ],
-        ],
-      ),
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverToBoxAdapter(
-            child: _buildProfileHeader(
-                context, user, isOwnProfile, profileState, ref),
-          ),
-        ],
-        body: Column(
-          children: [
-            // Pill-style segmented control
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: SeeUColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
-                ),
-                padding: const EdgeInsets.all(4),
-                child: Row(
+
+            // ── Scrollable body ─────────────────────────────────────
+            Expanded(
+              child: NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                  SliverToBoxAdapter(
+                    child: _buildProfileBody(
+                        context, user, isOwnProfile, profileState),
+                  ),
+                ],
+                body: Column(
                   children: [
-                    _buildTabPill(0, PhosphorIcons.squaresFour()),
-                    _buildTabPill(1, PhosphorIcons.bookmarkSimple()),
-                    _buildTabPill(2, PhosphorIcons.userCircle()),
+                    // ── Tabs ──────────────────────────────────────────
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.symmetric(
+                          horizontal: BorderSide(
+                            color: SeeUColors.borderSubtle,
+                            width: 0.5,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          _TabButton(
+                            icon: PhosphorIcons.squaresFour(),
+                            isActive: _selectedTab == 0,
+                            onTap: () => _tabController.animateTo(0),
+                          ),
+                          _TabButton(
+                            icon: PhosphorIcons.bookmarkSimple(),
+                            isActive: _selectedTab == 1,
+                            onTap: () => _tabController.animateTo(1),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // ── Grid ──────────────────────────────────────────
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _PostsGrid(posts: profileState.posts),
+                          isOwnProfile
+                              ? _PostsGrid(posts: profileState.savedPosts)
+                              : const _PrivateContent(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _PostsGrid(posts: profileState.posts),
-                  isOwnProfile
-                      ? _PostsGrid(posts: profileState.savedPosts)
-                      : const _PrivateContent(),
-                  _PostsGrid(posts: profileState.taggedPosts),
-                ],
-              ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTabPill(int index, IconData icon) {
-    final isActive = _selectedTab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          _tabController.animateTo(index);
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isActive ? SeeUColors.accentSoft : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Center(
-            child: Icon(
-              icon,
-              size: 22,
-              color: isActive ? SeeUColors.accent : SeeUColors.textTertiary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileHeader(
+  Widget _buildProfileBody(
     BuildContext context,
     User user,
     bool isOwnProfile,
     UserProfileState profileState,
-    WidgetRef ref,
   ) {
-    // Check if user has unseen stories
     final storyState = ref.watch(storyProvider);
     final userStoryGroup = storyState.storyGroups
         .where((g) => g.author.username == user.username)
@@ -216,16 +201,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final hasStories = userStoryGroup.isNotEmpty;
     final hasUnseenStories = hasStories && !userStoryGroup.first.allSeen;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Hero section: Avatar LEFT, Stats RIGHT
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Hero: avatar + stats ──────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Avatar — tappable if has stories
+              // Avatar with story ring
               GestureDetector(
                 onTap: hasStories
                     ? () {
@@ -238,181 +223,175 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               groups: storyState.storyGroups,
                               initialGroupIndex: groupIndex,
                             ),
-                            transitionsBuilder: (ctx, anim, secAnim, child) =>
-                                FadeTransition(opacity: anim, child: child),
+                            transitionsBuilder:
+                                (ctx, anim, secAnim, child) =>
+                                    FadeTransition(
+                                        opacity: anim, child: child),
                             transitionDuration:
                                 const Duration(milliseconds: 200),
                           ),
                         );
                       }
                     : null,
-                child: _buildAvatar(user, hasStories: hasStories, hasUnseenStories: hasUnseenStories),
+                child: _buildAvatar(user,
+                    hasStories: hasStories,
+                    hasUnseenStories: hasUnseenStories),
               ),
-              const SizedBox(width: 24),
-              // Stats column
+              const SizedBox(width: 18),
+              // Stats
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _StatItem(count: user.postsCount, label: 'ПУБЛИКАЦИИ'),
+                    _StatItem(
+                        count: user.postsCount, label: 'посты'),
                     GestureDetector(
                       onTap: () => context
                           .push('/profile/${user.username}/followers'),
                       child: _StatItem(
-                          count: user.followersCount, label: 'ПОДПИСЧИКИ'),
+                          count: user.followersCount,
+                          label: 'подписчики'),
                     ),
                     GestureDetector(
                       onTap: () => context
                           .push('/profile/${user.username}/following'),
                       child: _StatItem(
-                          count: user.followingCount, label: 'ПОДПИСКИ'),
+                          count: user.followingCount,
+                          label: 'подписки'),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+        ),
 
-          // Name
-          Text(user.fullName, style: SeeUTypography.title),
-          // Bio
-          if (user.bio != null && user.bio!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              user.bio!,
-              style: SeeUTypography.body.copyWith(height: 1.5),
-            ),
-          ],
-          // Website
-          if (user.website != null && user.website!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              user.website!,
-              style: SeeUTypography.body.copyWith(
-                color: SeeUColors.accent,
-                fontWeight: FontWeight.w500,
+        // ── Bio ────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                user.fullName.isNotEmpty ? user.fullName : user.username,
+                style: SeeUTypography.displayS,
               ),
-            ),
-          ],
-          const SizedBox(height: 14),
-
-          // Action buttons
-          if (isOwnProfile)
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: SeeUButton(
-                    label: 'Редактировать',
-                    variant: SeeUButtonVariant.secondary,
-                    height: 42,
-                    onTap: () => context.push('/profile/edit'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SeeUButton(
-                    label: 'Поделиться',
-                    variant: SeeUButtonVariant.secondary,
-                    height: 42,
-                    onTap: () {},
+              if (user.bio != null && user.bio!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  user.bio!,
+                  style: SeeUTypography.body.copyWith(
+                    color: SeeUColors.textSecondary,
+                    height: 1.4,
+                    fontSize: 13,
                   ),
                 ),
               ],
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: user.isFollowing
-                      ? SeeUButton(
-                          label: 'Отписаться',
-                          variant: SeeUButtonVariant.secondary,
-                          height: 42,
-                          onTap: () => ref
-                              .read(userProfileProvider(user.username).notifier)
-                              .toggleFollow(),
-                        )
-                      : SeeUButton(
-                          label: 'Подписаться',
-                          variant: SeeUButtonVariant.primary,
-                          height: 42,
-                          onTap: () => ref
-                              .read(userProfileProvider(user.username).notifier)
-                              .toggleFollow(),
-                        ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SeeUButton(
-                    label: 'Сообщение',
-                    variant: SeeUButtonVariant.secondary,
-                    height: 42,
-                    onTap: () {},
+              if (user.website != null && user.website!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  user.website!,
+                  style: SeeUTypography.caption.copyWith(
+                    color: SeeUColors.accent,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
-            ),
-          const SizedBox(height: 14),
-
-          // Highlights
-          if (profileState.highlights.isNotEmpty)
-            _HighlightsRow(highlights: profileState.highlights),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvatar(User user, {bool hasStories = false, bool hasUnseenStories = false}) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: hasUnseenStories ? SeeUColors.storyGradient : null,
-        border: hasUnseenStories
-            ? null
-            : Border.all(
-                color: hasStories
-                    ? SeeUColors.textTertiary.withValues(alpha: 0.3)
-                    : SeeUColors.borderSubtle,
-                width: hasStories ? 2 : 1,
-              ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(3),
-        child: Container(
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: SeeUColors.surfaceElevated,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(2),
-            child: ClipOval(
-              child: user.avatarUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: user.avatarUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                          color: SeeUColors.borderSubtle),
-                      errorWidget: (_, __, ___) => _avatarPlaceholder(user),
-                    )
-                  : _avatarPlaceholder(user),
-            ),
+            ],
           ),
         ),
-      ),
+
+        // ── Action buttons ─────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+          child: isOwnProfile
+              ? _OwnProfileButtons(user: user)
+              : _OtherProfileButtons(user: user),
+        ),
+
+        // ── Highlights ─────────────────────────────────────────────
+        if (profileState.highlights.isNotEmpty) ...[
+          _HighlightsRow(highlights: profileState.highlights),
+          const SizedBox(height: 4),
+        ],
+      ],
     );
   }
 
-  Widget _avatarPlaceholder(User user) {
+  Widget _buildAvatar(User user,
+      {bool hasStories = false, bool hasUnseenStories = false}) {
+    const double size = 84;
+    const double ringPad = 2.5;
+    const double innerBorder = 3;
+
+    Widget avatarImage = ClipOval(
+      child: user.avatarUrl != null
+          ? CachedNetworkImage(
+              imageUrl: user.avatarUrl!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              placeholder: (_, __) =>
+                  Container(color: SeeUColors.borderSubtle),
+              errorWidget: (_, __, ___) => _avatarPlaceholder(user, size),
+            )
+          : _avatarPlaceholder(user, size),
+    );
+
+    // Inner white border ring
+    Widget withBorder = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: SeeUColors.surface,
+        border: Border.all(
+          color: SeeUColors.background,
+          width: innerBorder,
+        ),
+      ),
+      child: ClipOval(child: avatarImage),
+    );
+
+    if (hasUnseenStories || hasStories) {
+      // Conic-gradient story ring via CustomPaint
+      return SizedBox(
+        width: size + ringPad * 2 + 2,
+        height: size + ringPad * 2 + 2,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(
+              size: Size(size + ringPad * 2 + 2, size + ringPad * 2 + 2),
+              painter: _StoryRingPainter(seen: !hasUnseenStories),
+            ),
+            withBorder,
+          ],
+        ),
+      );
+    }
+
     return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: SeeUColors.borderSubtle, width: 1),
+      ),
+      child: ClipOval(child: avatarImage),
+    );
+  }
+
+  Widget _avatarPlaceholder(User user, double size) {
+    return Container(
+      width: size,
+      height: size,
       color: SeeUColors.textTertiary.withValues(alpha: 0.3),
       child: Center(
         child: Text(
           user.username[0].toUpperCase(),
-          style: GoogleFonts.fraunces(
+          style: const TextStyle(
+            fontFamily: 'Georgia',
             fontSize: 32,
             fontWeight: FontWeight.w600,
             color: Colors.white,
@@ -422,44 +401,261 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
-  void _showCreateMenu(BuildContext context) {
-    showSeeUBottomSheet(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Создать', style: SeeUTypography.title),
-              ),
-            ),
-            ListTile(
-              leading: Icon(PhosphorIcons.image(), size: 22, color: SeeUColors.textPrimary),
-              title: Text('Новый пост', style: SeeUTypography.body),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/post/create');
-              },
-            ),
-            ListTile(
-              leading: Icon(PhosphorIcons.clock(), size: 22, color: SeeUColors.accent),
-              title: Text('Новая история', style: SeeUTypography.body),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/story/create');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+}
+
+// ── Story ring painter (conic-gradient approximation) ──────────────────────
+
+class _StoryRingPainter extends CustomPainter {
+  final bool seen;
+
+  const _StoryRingPainter({required this.seen});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..shader = seen
+          ? const LinearGradient(
+              colors: [SeeUColors.textQuaternary, SeeUColors.textQuaternary],
+            ).createShader(rect)
+          : const SweepGradient(
+              colors: [
+                Color(0xFFFFB547),
+                Color(0xFFFF5A3C),
+                Color(0xFFC04CFD),
+                Color(0xFFFFB547),
+              ],
+              stops: [0.0, 0.33, 0.66, 1.0],
+            ).createShader(rect);
+
+    canvas.drawOval(
+      Rect.fromLTWH(1.25, 1.25, size.width - 2.5, size.height - 2.5),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_StoryRingPainter old) => old.seen != seen;
+}
+
+// ── Header icon button ─────────────────────────────────────────────────────
+
+class _HeaderIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _HeaderIconButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: SeeUColors.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+        ),
+        child: Center(
+          child: Icon(icon, size: 18, color: SeeUColors.textPrimary),
         ),
       ),
     );
   }
-
 }
+
+// ── Tab button with bottom-border indicator ────────────────────────────────
+
+class _TabButton extends StatelessWidget {
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _TabButton(
+      {required this.icon, required this.isActive, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isActive
+                    ? SeeUColors.textPrimary
+                    : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              icon,
+              size: 20,
+              color: isActive
+                  ? SeeUColors.textPrimary
+                  : SeeUColors.textTertiary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Own-profile action buttons ─────────────────────────────────────────────
+
+class _OwnProfileButtons extends StatelessWidget {
+  final User user;
+
+  const _OwnProfileButtons({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ActionButton(
+            label: 'Редактировать',
+            onTap: () => context.push('/profile/edit'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ActionButton(
+            label: 'Поделиться',
+            onTap: () {
+              Clipboard.setData(ClipboardData(
+                  text: 'https://seeu.app/profile/${user.username}'));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Ссылка на профиль скопирована')),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        _ActionIconButton(
+          icon: PhosphorIcons.userPlus(),
+          onTap: () {},
+        ),
+      ],
+    );
+  }
+}
+
+// ── Other-profile action buttons ───────────────────────────────────────────
+
+class _OtherProfileButtons extends ConsumerWidget {
+  final User user;
+
+  const _OtherProfileButtons({required this.user});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      children: [
+        Expanded(
+          child: user.isFollowing
+              ? _ActionButton(
+                  label: 'Отписаться',
+                  onTap: () => ref
+                      .read(userProfileProvider(user.username).notifier)
+                      .toggleFollow(),
+                )
+              : _ActionButton(
+                  label: 'Подписаться',
+                  isPrimary: true,
+                  onTap: () => ref
+                      .read(userProfileProvider(user.username).notifier)
+                      .toggleFollow(),
+                ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ActionButton(
+            label: 'Сообщение',
+            onTap: () => context.push('/chat'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Shared action button components ───────────────────────────────────────
+
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final bool isPrimary;
+
+  const _ActionButton({
+    required this.label,
+    this.onTap,
+    this.isPrimary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 38,
+        decoration: BoxDecoration(
+          color: isPrimary ? SeeUColors.accent : SeeUColors.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: SeeUTypography.caption.copyWith(
+              fontWeight: FontWeight.w600,
+              color: isPrimary
+                  ? Colors.white
+                  : SeeUColors.textPrimary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _ActionIconButton({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: SeeUColors.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+        ),
+        child: Center(
+          child: Icon(icon, size: 18, color: SeeUColors.textPrimary),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Stat item ──────────────────────────────────────────────────────────────
 
 class _StatItem extends StatelessWidget {
   final int count;
@@ -467,9 +663,9 @@ class _StatItem extends StatelessWidget {
 
   const _StatItem({required this.count, required this.label});
 
-  String _formatCount(int n) {
+  static String _formatCount(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
     return n.toString();
   }
 
@@ -478,20 +674,31 @@ class _StatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          _formatCount(count),
-          style: SeeUTypography.displayL.copyWith(fontSize: 22),
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: count.toDouble()),
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+          builder: (context, value, child) {
+            return Text(
+              _formatCount(value.toInt()),
+              style: SeeUTypography.displayS,
+            );
+          },
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: SeeUTypography.micro.copyWith(fontSize: 9),
-          overflow: TextOverflow.ellipsis,
+          style: SeeUTypography.micro.copyWith(
+            fontSize: 11,
+            color: SeeUColors.textTertiary,
+          ),
         ),
       ],
     );
   }
 }
+
+// ── Highlights row ─────────────────────────────────────────────────────────
 
 class _HighlightsRow extends StatelessWidget {
   final List<Highlight> highlights;
@@ -500,64 +707,86 @@ class _HighlightsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.zero,
-            itemCount: highlights.length,
-            itemBuilder: (context, index) {
-              final h = highlights[index];
-              return Padding(
-                padding: EdgeInsets.only(right: index < highlights.length - 1 ? 16 : 0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: SeeUColors.borderSubtle,
-                          width: 1.5,
-                        ),
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        itemCount: highlights.length,
+        itemBuilder: (context, index) {
+          final h = highlights[index];
+          return Padding(
+            padding: EdgeInsets.only(
+                right: index < highlights.length - 1 ? 16 : 0),
+            child: GestureDetector(
+              onTap: () {
+                if (h.stories.isNotEmpty) {
+                  final group = StoryGroup(
+                    author: h.author,
+                    stories: h.stories,
+                    allSeen: false,
+                  );
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (ctx, anim, secAnim) =>
+                          StoryViewerRoute(
+                        groups: [group],
+                        initialGroupIndex: 0,
                       ),
-                      child: ClipOval(
-                        child: h.coverUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: h.coverUrl,
-                                fit: BoxFit.cover,
-                              )
-                            : Container(
-                                color: SeeUColors.surfaceElevated,
-                                child: Center(
-                                  child: Icon(PhosphorIcons.image(),
-                                      size: 28, color: SeeUColors.textTertiary),
-                                ),
+                      transitionsBuilder:
+                          (ctx, anim, secAnim, child) =>
+                              FadeTransition(opacity: anim, child: child),
+                      transitionDuration:
+                          const Duration(milliseconds: 200),
+                    ),
+                  );
+                }
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: SeeUColors.borderSubtle, width: 1.5),
+                    ),
+                    child: ClipOval(
+                      child: h.coverUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: h.coverUrl,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              color: SeeUColors.surfaceElevated,
+                              child: Center(
+                                child: Icon(PhosphorIcons.image(),
+                                    size: 28,
+                                    color: SeeUColors.textTertiary),
                               ),
-                      ),
+                            ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      h.title,
-                      style: SeeUTypography.caption,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    h.title,
+                    style: SeeUTypography.caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
+
+// ── Posts grid ─────────────────────────────────────────────────────────────
 
 class _PostsGrid extends StatelessWidget {
   final List<Post> posts;
@@ -573,7 +802,8 @@ class _PostsGrid extends StatelessWidget {
           children: [
             Text(
               '\u2022',
-              style: GoogleFonts.fraunces(
+              style: const TextStyle(
+                fontFamily: 'Georgia',
                 fontSize: 56,
                 color: SeeUColors.textTertiary,
               ),
@@ -581,42 +811,60 @@ class _PostsGrid extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Пока нет постов',
-              style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary),
+              style: SeeUTypography.body
+                  .copyWith(color: SeeUColors.textSecondary),
             ),
           ],
         ),
       );
     }
     return GridView.builder(
-      padding: const EdgeInsets.only(top: 2, bottom: 100),
+      padding: const EdgeInsets.only(bottom: 100),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
       ),
       itemCount: posts.length,
       itemBuilder: (context, index) {
         final post = posts[index];
         return GestureDetector(
           onTap: () => context.push('/post/${post.id}'),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: post.media.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: post.media.first.url,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        Container(color: SeeUColors.surfaceElevated),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: SeeUColors.surfaceElevated),
-                  )
-                : Container(color: SeeUColors.surfaceElevated),
-          ),
+          child: post.isWave
+              ? Container(
+                  color: post.waveColorValue != null
+                      ? Color(post.waveColorValue!)
+                      : SeeUColors.accent,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    post.caption ?? '',
+                    style: SeeUTypography.micro.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : post.media.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: post.media.first.url,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(color: SeeUColors.surfaceElevated),
+                      errorWidget: (_, __, ___) =>
+                          Container(color: SeeUColors.surfaceElevated),
+                    )
+                  : Container(color: SeeUColors.surfaceElevated),
         );
       },
     );
   }
 }
+
+// ── Private content placeholder ────────────────────────────────────────────
 
 class _PrivateContent extends StatelessWidget {
   const _PrivateContent();
@@ -627,9 +875,10 @@ class _PrivateContent extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
+          const Text(
             '\u2013',
-            style: GoogleFonts.fraunces(
+            style: TextStyle(
+              fontFamily: 'Georgia',
               fontSize: 56,
               color: SeeUColors.textTertiary,
             ),
@@ -637,10 +886,12 @@ class _PrivateContent extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Подпишитесь, чтобы видеть посты',
-            style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary),
+            style: SeeUTypography.body
+                .copyWith(color: SeeUColors.textSecondary),
           ),
         ],
       ),
     );
   }
 }
+

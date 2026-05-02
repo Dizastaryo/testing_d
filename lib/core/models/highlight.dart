@@ -45,36 +45,4 @@ class Highlight {
     'created_at': createdAt.toIso8601String(),
   };
 
-  static List<Highlight> demoHighlights(User author) {
-    return [
-      Highlight(
-        id: 'h1',
-        author: author,
-        title: 'Travel',
-        coverUrl: 'https://picsum.photos/seed/h1/200/200',
-        createdAt: DateTime(2024, 1, 1),
-      ),
-      Highlight(
-        id: 'h2',
-        author: author,
-        title: 'Food',
-        coverUrl: 'https://picsum.photos/seed/h2/200/200',
-        createdAt: DateTime(2024, 2, 1),
-      ),
-      Highlight(
-        id: 'h3',
-        author: author,
-        title: 'Work',
-        coverUrl: 'https://picsum.photos/seed/h3/200/200',
-        createdAt: DateTime(2024, 3, 1),
-      ),
-      Highlight(
-        id: 'h4',
-        author: author,
-        title: 'Friends',
-        coverUrl: 'https://picsum.photos/seed/h4/200/200',
-        createdAt: DateTime(2024, 4, 1),
-      ),
-    ];
-  }
 }

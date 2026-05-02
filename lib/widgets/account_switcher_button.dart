@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/design/design.dart';
 import '../data/mock_users.dart';
 import '../services/account_session.dart';
@@ -29,7 +28,8 @@ class AccountSwitcherButton extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   user.name,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'Segoe UI',
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: SeeUColors.textPrimary,

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../design/tokens.dart';
 
 class AppTheme {
   AppTheme._();
 
-  // Legacy accessors for code that still references these
   static const Color primaryBlue = SeeUColors.accent;
   static const Color likeRed = SeeUColors.like;
   static const Color secondaryText = SeeUColors.textSecondary;
@@ -20,7 +18,7 @@ class AppTheme {
   );
 
   static ThemeData get light {
-    final baseTextTheme = GoogleFonts.interTextTheme();
+    final baseTextTheme = ThemeData.light().textTheme;
 
     return ThemeData(
       useMaterial3: true,
@@ -34,7 +32,7 @@ class AppTheme {
         onError: Colors.white,
         surface: SeeUColors.surface,
         onSurface: SeeUColors.textPrimary,
-        surfaceContainerHighest: SeeUColors.surfaceElevated,
+        surfaceContainerHighest: SeeUColors.surface2,
         surfaceContainerLowest: SeeUColors.background,
         outline: SeeUColors.borderSubtle,
         outlineVariant: SeeUColors.borderSubtle,
@@ -50,7 +48,8 @@ class AppTheme {
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
         ),
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
+          fontFamily: 'Segoe UI',
           color: SeeUColors.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -65,7 +64,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: SeeUColors.surfaceElevated,
+        fillColor: SeeUColors.surface2,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
@@ -85,11 +84,13 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
-        hintStyle: GoogleFonts.inter(
+        hintStyle: TextStyle(
+          fontFamily: 'Segoe UI',
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: TextStyle(
+          fontFamily: 'Segoe UI',
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
@@ -110,15 +111,7 @@ class AppTheme {
   }
 
   static ThemeData get dark {
-    final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
-
-    const darkBg = Color(0xFF121212);
-    const darkSurface = Color(0xFF1E1E1E);
-    const darkSurfaceElevated = Color(0xFF2A2A2A);
-    const darkTextPrimary = Color(0xFFF5F5F5);
-    const darkTextSecondary = Color(0xFFA0A0A0);
-    const darkTextTertiary = Color(0xFF6A6A6A);
-    const darkBorder = Color(0xFF333333);
+    final baseTextTheme = ThemeData.dark().textTheme;
 
     return ThemeData(
       useMaterial3: true,
@@ -130,17 +123,17 @@ class AppTheme {
         onSecondary: Colors.white,
         error: SeeUColors.error,
         onError: Colors.white,
-        surface: darkSurface,
-        onSurface: darkTextPrimary,
-        surfaceContainerHighest: darkSurfaceElevated,
-        surfaceContainerLowest: darkBg,
-        outline: darkBorder,
-        outlineVariant: darkBorder,
+        surface: SeeUColors.darkSurface,
+        onSurface: SeeUColors.darkInk,
+        surfaceContainerHighest: SeeUColors.darkSurface2,
+        surfaceContainerLowest: SeeUColors.darkBg,
+        outline: SeeUColors.darkLine,
+        outlineVariant: SeeUColors.darkLine,
       ),
-      scaffoldBackgroundColor: darkBg,
+      scaffoldBackgroundColor: SeeUColors.darkBg,
       appBarTheme: AppBarTheme(
-        backgroundColor: darkBg,
-        foregroundColor: darkTextPrimary,
+        backgroundColor: SeeUColors.darkBg,
+        foregroundColor: SeeUColors.darkInk,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
@@ -148,22 +141,23 @@ class AppTheme {
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.light,
         ),
-        titleTextStyle: GoogleFonts.inter(
-          color: darkTextPrimary,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Segoe UI',
+          color: SeeUColors.darkInk,
           fontSize: 18,
           fontWeight: FontWeight.w600,
           letterSpacing: -0.3,
         ),
-        iconTheme: const IconThemeData(color: darkTextPrimary),
+        iconTheme: const IconThemeData(color: SeeUColors.darkInk),
       ),
       dividerTheme: const DividerThemeData(
-        color: darkBorder,
+        color: SeeUColors.darkLine,
         thickness: 0.5,
         space: 0,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: darkSurfaceElevated,
+        fillColor: SeeUColors.darkSurface2,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
@@ -182,20 +176,20 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
-        hintStyle: GoogleFonts.inter(color: darkTextTertiary, fontSize: 15),
-        labelStyle: GoogleFonts.inter(color: darkTextTertiary, fontSize: 15),
+        hintStyle: TextStyle(fontFamily: 'Segoe UI', color: SeeUColors.darkInk3, fontSize: 15),
+        labelStyle: TextStyle(fontFamily: 'Segoe UI', color: SeeUColors.darkInk3, fontSize: 15),
       ),
       textTheme: baseTextTheme.copyWith(
-        headlineLarge: SeeUTypography.displayXL.copyWith(color: darkTextPrimary),
-        headlineMedium: SeeUTypography.displayL.copyWith(color: darkTextPrimary),
-        titleLarge: SeeUTypography.title.copyWith(color: darkTextPrimary),
-        titleMedium: SeeUTypography.subtitle.copyWith(color: darkTextPrimary),
-        titleSmall: SeeUTypography.caption.copyWith(color: darkTextSecondary),
-        bodyLarge: SeeUTypography.body.copyWith(color: darkTextPrimary),
-        bodyMedium: SeeUTypography.caption.copyWith(color: darkTextSecondary),
-        bodySmall: SeeUTypography.micro.copyWith(color: darkTextTertiary),
-        labelLarge: SeeUTypography.subtitle.copyWith(color: darkTextPrimary),
-        labelSmall: SeeUTypography.micro.copyWith(color: darkTextTertiary),
+        headlineLarge: SeeUTypography.displayXL.copyWith(color: SeeUColors.darkInk),
+        headlineMedium: SeeUTypography.displayL.copyWith(color: SeeUColors.darkInk),
+        titleLarge: SeeUTypography.title.copyWith(color: SeeUColors.darkInk),
+        titleMedium: SeeUTypography.subtitle.copyWith(color: SeeUColors.darkInk),
+        titleSmall: SeeUTypography.caption.copyWith(color: SeeUColors.darkInk2),
+        bodyLarge: SeeUTypography.body.copyWith(color: SeeUColors.darkInk),
+        bodyMedium: SeeUTypography.caption.copyWith(color: SeeUColors.darkInk2),
+        bodySmall: SeeUTypography.micro.copyWith(color: SeeUColors.darkInk3),
+        labelLarge: SeeUTypography.subtitle.copyWith(color: SeeUColors.darkInk),
+        labelSmall: SeeUTypography.micro.copyWith(color: SeeUColors.darkInk3),
       ),
     );
   }

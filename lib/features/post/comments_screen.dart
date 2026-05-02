@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/comment.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../data/mock_service.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 
 final _commentsProvider =
     StateNotifierProvider.family<CommentsNotifier, CommentsState, String>(
-  (ref, postId) => CommentsNotifier(postId),
+  (ref, postId) => CommentsNotifier(postId, ref.watch(apiClientProvider)),
 );
 
 class CommentsState {
@@ -38,24 +38,36 @@ class CommentsState {
 
 class CommentsNotifier extends StateNotifier<CommentsState> {
   final String postId;
+  final ApiClient _api;
 
-  CommentsNotifier(this.postId) : super(const CommentsState()) {
+  CommentsNotifier(this.postId, this._api) : super(const CommentsState()) {
     load();
   }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    final comments = await MockService.instance.getComments(postId);
+    final resp = await _api.get(ApiEndpoints.postComments(postId));
+    final data = resp.data;
+    final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+    final comments = (listData as List)
+        .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+        .toList();
     state = CommentsState(comments: comments);
   }
 
   Future<void> addComment(String text) async {
-    final comment = await MockService.instance.addComment(postId, text);
+    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {'text': text});
+    final data = resp.data;
+    final commentData = data is Map && data.containsKey('data') ? data['data'] : data;
+    final comment = Comment.fromJson(commentData as Map<String, dynamic>);
     state = state.copyWith(comments: [comment, ...state.comments]);
   }
 
   Future<void> addReply(String parentId, String text) async {
-    final reply = await MockService.instance.addComment(postId, text, parentId: parentId);
+    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {'text': text, 'parent_id': parentId});
+    final data = resp.data;
+    final replyData = data is Map && data.containsKey('data') ? data['data'] : data;
+    final reply = Comment.fromJson(replyData as Map<String, dynamic>);
     final updated = state.comments.map((c) {
       if (c.id == parentId) {
         return c.copyWith(
@@ -78,7 +90,7 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
     state = state.copyWith(expandedReplies: set);
   }
 
-  void likeComment(String commentId) {
+  Future<void> likeComment(String commentId) async {
     final updated = state.comments.map((c) {
       if (c.id == commentId) {
         return c.copyWith(
@@ -89,6 +101,7 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
       return c;
     }).toList();
     state = state.copyWith(comments: updated);
+    _api.post(ApiEndpoints.likeComment(commentId));
   }
 }
 
@@ -168,7 +181,8 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                           children: [
                             Text(
                               '\u2026',
-                              style: GoogleFonts.fraunces(
+                              style: TextStyle(
+                                fontFamily: 'Georgia',
                                 fontSize: 56,
                                 color: SeeUColors.textTertiary,
                               ),
@@ -206,6 +220,10 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                                 _replyToId = comment.id;
                                 _replyToUsername = comment.author.username;
                               });
+                              _commentCtrl.text = '@${comment.author.username} ';
+                              _commentCtrl.selection = TextSelection.fromPosition(
+                                TextPosition(offset: _commentCtrl.text.length),
+                              );
                               _focusNode.requestFocus();
                             },
                             onToggleReplies: () => ref

@@ -21,12 +21,28 @@ class PostCard extends ConsumerStatefulWidget {
 }
 
 class _PostCardState extends ConsumerState<PostCard>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _heartAnimController;
   late Animation<double> _heartScaleAnim;
   late Animation<double> _heartOpacityAnim;
   bool _showHeart = false;
   final PageController _pageController = PageController();
+
+  // Reaction picker state
+  bool _showReactionPicker = false;
+  late AnimationController _reactionPickerController;
+  late Animation<double> _reactionPickerScaleAnim;
+  late Animation<double> _reactionPickerOpacityAnim;
+  String? _selectedEmoji;
+  bool _showSelectedEmoji = false;
+
+  static const List<String> _reactionEmojis = [
+    '\u{1F525}', // fire
+    '\u{2764}\u{FE0F}', // red heart
+    '\u{1F602}', // laughing
+    '\u{1F92F}', // exploding head
+    '\u{1F44F}', // clap
+  ];
 
   @override
   void initState() {
@@ -65,11 +81,26 @@ class _PostCardState extends ConsumerState<PostCard>
         if (mounted) setState(() => _showHeart = false);
       }
     });
+
+    // Reaction picker animation
+    _reactionPickerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _reactionPickerScaleAnim = CurvedAnimation(
+      parent: _reactionPickerController,
+      curve: Curves.easeOutBack,
+    );
+    _reactionPickerOpacityAnim = CurvedAnimation(
+      parent: _reactionPickerController,
+      curve: Curves.easeOut,
+    );
   }
 
   @override
   void dispose() {
     _heartAnimController.dispose();
+    _reactionPickerController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -93,6 +124,38 @@ class _PostCardState extends ConsumerState<PostCard>
     ref.read(feedProvider.notifier).toggleSave(widget.post.id);
   }
 
+  void _showReactionPickerUI() {
+    HapticFeedback.mediumImpact();
+    setState(() => _showReactionPicker = true);
+    _reactionPickerController.forward(from: 0);
+  }
+
+  void _hideReactionPicker() {
+    _reactionPickerController.reverse().then((_) {
+      if (mounted) {
+        setState(() => _showReactionPicker = false);
+      }
+    });
+  }
+
+  void _selectReaction(String emoji) {
+    HapticFeedback.lightImpact();
+    if (!widget.post.isLiked) {
+      ref.read(feedProvider.notifier).toggleLike(widget.post.id);
+    }
+    setState(() {
+      _selectedEmoji = emoji;
+      _showSelectedEmoji = true;
+    });
+    _hideReactionPicker();
+    // Hide the selected emoji indicator after a brief moment
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) {
+        setState(() => _showSelectedEmoji = false);
+      }
+    });
+  }
+
   void _onShareTap() {
     showSeeUBottomSheet(
       context: context,
@@ -114,12 +177,14 @@ class _PostCardState extends ConsumerState<PostCard>
               },
             ),
             ListTile(
-              leading: Icon(PhosphorIcons.paperPlaneTilt(),
+              leading: Icon(PhosphorIcons.clockCounterClockwise(),
                   color: SeeUColors.textPrimary),
-              title: Text('Отправить в чат', style: SeeUTypography.body),
+              title: Text('Поделиться в историю', style: SeeUTypography.body),
               onTap: () {
                 Navigator.pop(ctx);
-                context.push('/chat');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Скоро будет доступно')),
+                );
               },
             ),
             ListTile(
@@ -141,23 +206,280 @@ class _PostCardState extends ConsumerState<PostCard>
   Widget build(BuildContext context) {
     final post = widget.post;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(context, post),
-          const SizedBox(height: 10),
-          _buildMedia(context, post),
-          const SizedBox(height: 12),
-          _buildActions(context, post),
-          _buildLikesRow(context, post),
-          _buildCaption(context, post),
-          _buildCommentsPreview(context, post),
-          _buildTimeRow(context, post),
-          const SizedBox(height: 20),
-        ],
+    if (post.isWave) {
+      return _buildWaveCard(context, post);
+    }
+
+    return GestureDetector(
+      onTap: _showReactionPicker ? _hideReactionPicker : null,
+      behavior: _showReactionPicker ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context, post),
+            const SizedBox(height: 10),
+            _buildMedia(context, post),
+            const SizedBox(height: 12),
+            _buildActions(context, post),
+            _buildLikesRow(context, post),
+            _buildCaption(context, post),
+            _buildCommentsPreview(context, post),
+            _buildTimeRow(context, post),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildWaveCard(BuildContext context, Post post) {
+    final waveColor = post.waveColorValue != null
+        ? Color(post.waveColorValue!)
+        : SeeUColors.accent;
+
+    return GestureDetector(
+      onTap: _showReactionPicker ? _hideReactionPicker : null,
+      behavior: _showReactionPicker
+          ? HitTestBehavior.opaque
+          : HitTestBehavior.deferToChild,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Wave body with colored background
+            GestureDetector(
+              onDoubleTap: _onDoubleTap,
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 200),
+                decoration: BoxDecoration(
+                  color: waveColor,
+                  borderRadius: BorderRadius.circular(SeeURadii.card),
+                  boxShadow: SeeUShadows.md,
+                ),
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header inside wave
+                          Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () => context
+                                    .push('/profile/${post.author.username}'),
+                                child: CircleAvatar(
+                                  radius: 16,
+                                  backgroundImage: post.author.avatarUrl != null
+                                      ? CachedNetworkImageProvider(
+                                          post.author.avatarUrl!)
+                                      : null,
+                                  backgroundColor:
+                                      Colors.white.withValues(alpha: 0.3),
+                                  child: post.author.avatarUrl == null
+                                      ? Icon(PhosphorIcons.user(),
+                                          color: Colors.white, size: 16)
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => context
+                                      .push('/profile/${post.author.username}'),
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          post.author.username,
+                                          style: SeeUTypography.subtitle
+                                              .copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (post.author.isVerified) ...[
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          PhosphorIcons.sealCheck(
+                                              PhosphorIconsStyle.fill),
+                                          color: Colors.white,
+                                          size: 14,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                timeago
+                                    .format(post.createdAt,
+                                        locale: 'ru', allowFromNow: true)
+                                    .toUpperCase(),
+                                style: SeeUTypography.micro
+                                    .copyWith(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Wave text centered
+                          Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(
+                                post.caption ?? '',
+                                style: SeeUTypography.body.copyWith(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                  height: 1.4,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    // Double-tap heart animation
+                    if (_showHeart)
+                      Positioned.fill(
+                        child: Center(
+                          child: AnimatedBuilder(
+                            animation: _heartAnimController,
+                            builder: (_, __) => Opacity(
+                              opacity: _heartOpacityAnim.value,
+                              child: Transform.scale(
+                                scale: _heartScaleAnim.value,
+                                child: const Icon(
+                                  Icons.favorite,
+                                  color: Colors.white,
+                                  size: 80,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Actions row with white-on-wave style
+            _buildWaveActions(context, post),
+            _buildLikesRow(context, post),
+            _buildCommentsPreview(context, post),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaveActions(BuildContext context, Post post) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Row(
+          children: [
+            GestureDetector(
+              onTap: () {
+                if (_showReactionPicker) {
+                  _hideReactionPicker();
+                } else {
+                  _likePost();
+                }
+              },
+              onLongPress: _showReactionPickerUI,
+              child: _ActionButtonRaw(
+                icon: PhosphorIcon(
+                  post.isLiked
+                      ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
+                      : PhosphorIcons.heart(),
+                  color:
+                      post.isLiked ? SeeUColors.like : SeeUColors.textPrimary,
+                  size: 22,
+                ),
+              ),
+            ),
+            if (_showSelectedEmoji && _selectedEmoji != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  _selectedEmoji!,
+                  style: const TextStyle(fontSize: 18),
+                ),
+              ),
+            const SizedBox(width: 8),
+            _ActionButton(
+              icon: PhosphorIcon(PhosphorIcons.chatCircle()),
+              onTap: () => context.push('/post/${post.id}/comments'),
+            ),
+            const SizedBox(width: 8),
+            _ActionButton(
+              icon: PhosphorIcon(PhosphorIcons.shareFat()),
+              onTap: _onShareTap,
+            ),
+            const Spacer(),
+            _ActionButton(
+              icon: PhosphorIcon(post.isSaved
+                  ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                  : PhosphorIcons.bookmarkSimple()),
+              onTap: _savePost,
+            ),
+          ],
+        ),
+        if (_showReactionPicker)
+          Positioned(
+            bottom: 50,
+            left: 0,
+            child: FadeTransition(
+              opacity: _reactionPickerOpacityAnim,
+              child: ScaleTransition(
+                scale: _reactionPickerScaleAnim,
+                alignment: Alignment.bottomLeft,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.surface,
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
+                    boxShadow: SeeUShadows.lg,
+                    border: Border.all(
+                      color: SeeUColors.borderSubtle,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _reactionEmojis.map((emoji) {
+                      return GestureDetector(
+                        onTap: () => _selectReaction(emoji),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 26),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -337,32 +659,99 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildActions(BuildContext context, Post post) {
-    return Row(
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        _ActionButton(
-          icon: PhosphorIcon(post.isLiked
-              ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
-              : PhosphorIcons.heart()),
-          color: post.isLiked ? SeeUColors.like : SeeUColors.textPrimary,
-          onTap: _likePost,
+        Row(
+          children: [
+            // Like button with long-press for reaction picker
+            GestureDetector(
+              onTap: () {
+                if (_showReactionPicker) {
+                  _hideReactionPicker();
+                } else {
+                  _likePost();
+                }
+              },
+              onLongPress: _showReactionPickerUI,
+              child: _ActionButtonRaw(
+                icon: PhosphorIcon(
+                  post.isLiked
+                      ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
+                      : PhosphorIcons.heart(),
+                  color: post.isLiked ? SeeUColors.like : SeeUColors.textPrimary,
+                  size: 22,
+                ),
+              ),
+            ),
+            // Brief selected emoji indicator
+            if (_showSelectedEmoji && _selectedEmoji != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  _selectedEmoji!,
+                  style: const TextStyle(fontSize: 18),
+                ),
+              ),
+            const SizedBox(width: 8),
+            _ActionButton(
+              icon: PhosphorIcon(PhosphorIcons.chatCircle()),
+              onTap: () => context.push('/post/${post.id}/comments'),
+            ),
+            const SizedBox(width: 8),
+            _ActionButton(
+              icon: PhosphorIcon(PhosphorIcons.shareFat()),
+              onTap: _onShareTap,
+            ),
+            const Spacer(),
+            _ActionButton(
+              icon: PhosphorIcon(post.isSaved
+                  ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                  : PhosphorIcons.bookmarkSimple()),
+              onTap: _savePost,
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        _ActionButton(
-          icon: PhosphorIcon(PhosphorIcons.chatCircle()),
-          onTap: () => context.push('/post/${post.id}/comments'),
-        ),
-        const SizedBox(width: 8),
-        _ActionButton(
-          icon: PhosphorIcon(PhosphorIcons.shareFat()),
-          onTap: _onShareTap,
-        ),
-        const Spacer(),
-        _ActionButton(
-          icon: PhosphorIcon(post.isSaved
-              ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
-              : PhosphorIcons.bookmarkSimple()),
-          onTap: _savePost,
-        ),
+        // Reaction picker overlay
+        if (_showReactionPicker)
+          Positioned(
+            bottom: 50,
+            left: 0,
+            child: FadeTransition(
+              opacity: _reactionPickerOpacityAnim,
+              child: ScaleTransition(
+                scale: _reactionPickerScaleAnim,
+                alignment: Alignment.bottomLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.surface,
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
+                    boxShadow: SeeUShadows.lg,
+                    border: Border.all(
+                      color: SeeUColors.borderSubtle,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _reactionEmojis.map((emoji) {
+                      return GestureDetector(
+                        onTap: () => _selectReaction(emoji),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 26),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -447,7 +836,14 @@ class _PostCardState extends ConsumerState<PostCard>
               leading: Icon(PhosphorIcons.shareFat(),
                   color: SeeUColors.textPrimary),
               title: Text('Поделиться', style: SeeUTypography.body),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Clipboard.setData(
+                    ClipboardData(text: 'https://seeu.app/post/${post.id}'));
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Ссылка скопирована')),
+                );
+              },
             ),
             ListTile(
               leading: Icon(PhosphorIcons.bookmarkSimple(),
@@ -464,7 +860,12 @@ class _PostCardState extends ConsumerState<PostCard>
               title: Text('Пожаловаться',
                   style: SeeUTypography.body
                       .copyWith(color: SeeUColors.like)),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Жалоба отправлена. Спасибо!')),
+                );
+              },
             ),
             const SizedBox(height: 8),
           ],
@@ -480,16 +881,14 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 }
 
-// --- Action button -----------------------------------------------------------
+// --- Action button (tappable) ------------------------------------------------
 
 class _ActionButton extends StatelessWidget {
   final Widget icon;
-  final Color? color;
   final VoidCallback onTap;
 
   const _ActionButton({
     required this.icon,
-    this.color,
     required this.onTap,
   });
 
@@ -510,12 +909,36 @@ class _ActionButton extends StatelessWidget {
           child: IconTheme(
             data: IconThemeData(
               size: 22,
-              color: color ?? SeeUColors.textPrimary,
+              color: SeeUColors.textPrimary,
             ),
             child: icon,
           ),
         ),
       ),
+    );
+  }
+}
+
+// --- Action button raw (no Tappable wrapper, used for custom gesture) --------
+
+class _ActionButtonRaw extends StatelessWidget {
+  final Widget icon;
+
+  const _ActionButtonRaw({
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: SeeUColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(SeeURadii.small),
+        boxShadow: SeeUShadows.sm,
+      ),
+      child: Center(child: icon),
     );
   }
 }

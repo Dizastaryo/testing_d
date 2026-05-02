@@ -1,12 +1,12 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../data/mock_service.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
+import '../../core/models/user.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -20,7 +20,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final TextEditingController _usernameCtrl;
   late final TextEditingController _bioCtrl;
   late final TextEditingController _websiteCtrl;
-  File? _newAvatar;
+  bool _avatarChanged = false;
   bool _isSaving = false;
   final _formKey = GlobalKey<FormState>();
 
@@ -43,32 +43,119 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _pickAvatar() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-      maxWidth: 400,
+  void _pickAvatar() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SeeUColors.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: SeeUColors.borderSubtle,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text('Изменить фото', style: SeeUTypography.subtitle),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Icon(PhosphorIcons.camera(PhosphorIconsStyle.fill),
+                    color: SeeUColors.accent),
+                title: Text('Сделать фото', style: SeeUTypography.body),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() => _avatarChanged = true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Фото обновлено',
+                          style: SeeUTypography.body.copyWith(color: Colors.white)),
+                      backgroundColor: SeeUColors.success,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(SeeURadii.small)),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.image(PhosphorIconsStyle.fill),
+                    color: SeeUColors.accent),
+                title: Text('Выбрать из галереи', style: SeeUTypography.body),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() => _avatarChanged = true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Фото обновлено',
+                          style: SeeUTypography.body.copyWith(color: Colors.white)),
+                      backgroundColor: SeeUColors.success,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(SeeURadii.small)),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.trash(PhosphorIconsStyle.fill),
+                    color: SeeUColors.error),
+                title: Text('Удалить фото',
+                    style: SeeUTypography.body.copyWith(color: SeeUColors.error)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() => _avatarChanged = true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Фото удалено',
+                          style: SeeUTypography.body.copyWith(color: Colors.white)),
+                      backgroundColor: SeeUColors.textSecondary,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(SeeURadii.small)),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    if (picked != null && mounted) {
-      setState(() => _newAvatar = File(picked.path));
-    }
   }
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _isSaving = true);
     try {
-      final updated = await MockService.instance.updateProfile(
-        fullName: _fullNameCtrl.text.trim(),
-        username: _usernameCtrl.text.trim(),
-        bio: _bioCtrl.text.trim(),
-        website: _websiteCtrl.text.trim(),
-      );
+      final resp = await ref.read(apiClientProvider).put(ApiEndpoints.me, data: {
+        'full_name': _fullNameCtrl.text.trim(),
+        'username': _usernameCtrl.text.trim(),
+        'bio': _bioCtrl.text.trim(),
+        'website': _websiteCtrl.text.trim(),
+      });
+      final data = resp.data;
+      final userData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final updated = User.fromJson(userData as Map<String, dynamic>);
       if (mounted) {
         ref.read(authProvider.notifier).updateUser(updated);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Профиль обновлён!')),
+          SnackBar(
+            content: Text('Профиль обновлён!',
+                style: SeeUTypography.body.copyWith(color: Colors.white)),
+            backgroundColor: SeeUColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(SeeURadii.small)),
+          ),
         );
         context.pop();
       }
@@ -76,7 +163,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       if (mounted) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось сохранить')),
+          SnackBar(
+            content: Text('Не удалось сохранить',
+                style: SeeUTypography.body.copyWith(color: Colors.white)),
+            backgroundColor: SeeUColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(SeeURadii.small)),
+          ),
         );
       }
     }
@@ -94,7 +188,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         scrolledUnderElevation: 0,
         title: Text('Редактировать профиль', style: SeeUTypography.subtitle),
         leading: IconButton(
-          icon: Icon(PhosphorIcons.arrowLeft(), size: 22, color: SeeUColors.textPrimary),
+          icon: Icon(PhosphorIcons.arrowLeft(),
+              size: 22, color: SeeUColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         actions: [
@@ -136,12 +231,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     CircleAvatar(
                       radius: 48,
                       backgroundColor: SeeUColors.surfaceElevated,
-                      backgroundImage: _newAvatar != null
-                          ? FileImage(_newAvatar!) as ImageProvider
-                          : user?.avatarUrl != null
-                              ? NetworkImage(user!.avatarUrl!)
-                              : null,
-                      child: _newAvatar == null && user?.avatarUrl == null
+                      backgroundImage: user?.avatarUrl != null
+                          ? NetworkImage(user!.avatarUrl!)
+                          : null,
+                      child: user?.avatarUrl == null
                           ? Text(
                               user?.username.substring(0, 1).toUpperCase() ??
                                   'U',
@@ -158,15 +251,22 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: SeeUColors.accent,
+                          color: _avatarChanged
+                              ? SeeUColors.success
+                              : SeeUColors.accent,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: SeeUColors.background,
                             width: 2,
                           ),
                         ),
-                        child: Icon(PhosphorIcons.camera(PhosphorIconsStyle.fill),
-                            color: Colors.white, size: 16),
+                        child: Icon(
+                          _avatarChanged
+                              ? PhosphorIcons.check(PhosphorIconsStyle.bold)
+                              : PhosphorIcons.camera(PhosphorIconsStyle.fill),
+                          color: Colors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ],
@@ -175,11 +275,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             const SizedBox(height: 10),
             Center(
-              child: Text(
-                'Изменить фото профиля',
-                style: SeeUTypography.body.copyWith(
-                  color: SeeUColors.accent,
-                  fontWeight: FontWeight.w600,
+              child: GestureDetector(
+                onTap: _pickAvatar,
+                child: Text(
+                  'Изменить фото профиля',
+                  style: SeeUTypography.body.copyWith(
+                    color: SeeUColors.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

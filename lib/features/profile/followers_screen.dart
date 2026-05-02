@@ -2,15 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
-import '../../data/mock_service.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 
 final _followersProvider = FutureProvider.family<List<User>, String>((ref, username) async {
-  return MockService.instance.getFollowers(username);
+  final api = ref.watch(apiClientProvider);
+  final resp = await api.get(ApiEndpoints.userFollowers(username));
+  final data = resp.data;
+  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+  return (listData as List)
+      .map((e) => User.fromJson(e as Map<String, dynamic>))
+      .toList();
 });
 
 class FollowersScreen extends ConsumerWidget {
@@ -44,7 +50,8 @@ class FollowersScreen extends ConsumerWidget {
             children: [
               Text(
                 '!',
-                style: GoogleFonts.fraunces(
+                style: TextStyle(
+                  fontFamily: 'Georgia',
                   fontSize: 48,
                   color: SeeUColors.textTertiary,
                 ),
@@ -70,7 +77,8 @@ class FollowersScreen extends ConsumerWidget {
                   children: [
                     Text(
                       '\u2022',
-                      style: GoogleFonts.fraunces(
+                      style: TextStyle(
+                        fontFamily: 'Georgia',
                         fontSize: 48,
                         color: SeeUColors.textTertiary,
                       ),
@@ -128,7 +136,7 @@ class _UserRowState extends ConsumerState<_UserRow> {
 
   void _toggleFollow() {
     setState(() => _isFollowing = !_isFollowing);
-    MockService.instance.toggleFollow(widget.user.username);
+    ref.read(apiClientProvider).post(ApiEndpoints.followUser(widget.user.username));
   }
 
   @override

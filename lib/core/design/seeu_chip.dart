@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'tokens.dart';
 
 class SeeUChip extends StatelessWidget {
@@ -36,7 +35,8 @@ class SeeUChip extends StatelessWidget {
           ],
           Text(
             label,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'Segoe UI',
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: fg,

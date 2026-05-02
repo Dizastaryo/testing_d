@@ -7,7 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../data/mock_service.dart';
+// Chat uses existing chat_provider; no MockService needed
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String chatId;
@@ -18,26 +18,21 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen>
-    with TickerProviderStateMixin {
+class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
-  late AnimationController _sendBtnController;
-  late Animation<double> _sendBtnScale;
   bool _hasText = false;
+
+  /// Tracks message reactions: messageId -> emoji string
+  final Map<String, String> _reactions = {};
+
+  /// Which message currently shows the reaction picker (null = none)
+  String? _reactionPickerMessageId;
 
   @override
   void initState() {
     super.initState();
-    _sendBtnController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-    _sendBtnScale = CurvedAnimation(
-      parent: _sendBtnController,
-      curve: Curves.elasticOut,
-    );
     _textController.addListener(_onTextChanged);
   }
 
@@ -46,7 +41,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
-    _sendBtnController.dispose();
     super.dispose();
   }
 
@@ -54,11 +48,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final hasText = _textController.text.trim().isNotEmpty;
     if (hasText != _hasText) {
       setState(() => _hasText = hasText);
-      if (hasText) {
-        _sendBtnController.forward();
-      } else {
-        _sendBtnController.reverse();
-      }
     }
   }
 
@@ -79,15 +68,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
-  Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
+  Future<void> _sendMessage([String? overrideText]) async {
+    final text = overrideText ?? _textController.text.trim();
     if (text.isEmpty) return;
 
     HapticFeedback.lightImpact();
-    _textController.clear();
+    if (overrideText == null) {
+      _textController.clear();
+    }
 
-    await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(text);
+    await ref
+        .read(chatMessagesProvider(widget.chatId).notifier)
+        .sendMessage(text);
     _scrollToBottom();
+  }
+
+  void _onReactionSelected(String messageId, String emoji) {
+    setState(() {
+      if (_reactions[messageId] == emoji) {
+        _reactions.remove(messageId);
+      } else {
+        _reactions[messageId] = emoji;
+      }
+      _reactionPickerMessageId = null;
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _onMessageLongPress(String messageId) {
+    setState(() {
+      if (_reactionPickerMessageId == messageId) {
+        _reactionPickerMessageId = null;
+      } else {
+        _reactionPickerMessageId = messageId;
+      }
+    });
+    HapticFeedback.mediumImpact();
   }
 
   @override
@@ -107,102 +123,129 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _scrollToBottom(animate: false);
     }
 
-    return Scaffold(
-      backgroundColor: SeeUColors.background,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(64),
-        child: Container(
-          decoration: BoxDecoration(
-            color: SeeUColors.background,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF1A1A1A).withValues(alpha: 0.04),
-                offset: const Offset(0, 1),
-                blurRadius: 4,
+    return GestureDetector(
+      onTap: () {
+        // Dismiss reaction picker when tapping outside
+        if (_reactionPickerMessageId != null) {
+          setState(() => _reactionPickerMessageId = null);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: SeeUColors.background,
+        body: Column(
+          children: [
+            // Header: back chevron + avatar 36px + name + online status + moreV
+            Container(
+              decoration: BoxDecoration(
+                color: SeeUColors.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: SeeUColors.borderSubtle,
+                    width: 0.5,
+                  ),
+                ),
               ),
-            ],
-          ),
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  // Back button
-                  Tappable.scaled(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      context.go('/chat');
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Icon(
-                        PhosphorIconsRegular.caretLeft,
-                        color: SeeUColors.textPrimary,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                  // Avatar
-                  if (otherUser != null) ...[
-                    _SmallAvatar(
-                      avatarUrl: otherUser.avatarUrl,
-                      isOnline: isOnline,
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  // Name & status
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          otherUser?.fullName ?? 'Чат',
-                          style: SeeUTypography.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (isOnline)
-                          Text(
-                            'в сети',
-                            style: SeeUTypography.micro.copyWith(
-                              color: SeeUColors.success,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          )
-                        else if (otherUser != null)
-                          Text(
-                            'не в сети',
-                            style: SeeUTypography.micro,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Row(
+                    children: [
+                      // Back chevron
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.go('/chat');
+                        },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: const BoxDecoration(
+                            color: Colors.transparent,
+                            shape: BoxShape.circle,
                           ),
+                          child: Icon(
+                            PhosphorIconsRegular.caretLeft,
+                            color: SeeUColors.textPrimary,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      // Avatar 36px
+                      if (otherUser != null) ...[
+                        _SmallAvatar(
+                          avatarUrl: otherUser.avatarUrl,
+                          isOnline: isOnline,
+                          size: 36,
+                        ),
+                        const SizedBox(width: 10),
                       ],
-                    ),
+                      // Name + online status
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              otherUser?.fullName ?? 'Чат',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: SeeUColors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (_hasText)
+                              _TypingIndicator()
+                            else if (isOnline)
+                              const Text(
+                                'онлайн · 12 м рядом',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: SeeUColors.success,
+                                ),
+                              )
+                            else if (otherUser != null)
+                              const Text(
+                                'был недавно',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: SeeUColors.textTertiary,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      // More vertical icon
+                      Icon(
+                        PhosphorIconsRegular.dotsThreeVertical,
+                        size: 22,
+                        color: SeeUColors.textPrimary,
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+            // Messages
+            Expanded(
+              child: msgState.isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: SeeUColors.accent,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : msgState.messages.isEmpty
+                      ? _buildEmptyChat(otherUser)
+                      : _buildMessageList(msgState.messages, myId),
+            ),
+            // Input bar
+            _buildInputBar(),
+          ],
         ),
-      ),
-      body: Column(
-        children: [
-          // Messages
-          Expanded(
-            child: msgState.isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: SeeUColors.accent,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : msgState.messages.isEmpty
-                    ? _buildEmptyChat(otherUser)
-                    : _buildMessageList(msgState.messages, myId),
-          ),
-          // Input bar
-          _buildInputBar(),
-        ],
       ),
     );
   }
@@ -238,6 +281,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 color: SeeUColors.textSecondary,
               ),
             ),
+            // Icebreaker suggestion chips
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                _IcebreakerChip(
+                  text: 'Привет! Как дела? \u{1F44B}',
+                  onTap: () => _sendMessage('Привет! Как дела? \u{1F44B}'),
+                ),
+                _IcebreakerChip(
+                  text: 'Мы были рядом сегодня! \u{1F4CD}',
+                  onTap: () =>
+                      _sendMessage('Мы были рядом сегодня! \u{1F4CD}'),
+                ),
+                _IcebreakerChip(
+                  text: 'Классный профиль! \u{2728}',
+                  onTap: () => _sendMessage('Классный профиль! \u{2728}'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -255,7 +320,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final widgets = <Widget>[];
     for (final entry in groups.entries) {
       // Date separator
-      widgets.add(_DateSeparator(label: _formatDateLabel(entry.value.first.createdAt)));
+      widgets.add(
+          _DateSeparator(label: _formatDateLabel(entry.value.first.createdAt)));
       for (var i = 0; i < entry.value.length; i++) {
         final msg = entry.value[i];
         final isMine = msg.senderId == myId;
@@ -266,6 +332,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             message: msg,
             isMine: isMine,
             showTail: showTail,
+            reaction: _reactions[msg.id],
+            showReactionPicker: _reactionPickerMessageId == msg.id,
+            onLongPress: () => _onMessageLongPress(msg.id),
+            onReactionSelected: (emoji) => _onReactionSelected(msg.id, emoji),
           ),
         );
       }
@@ -282,28 +352,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Widget _buildInputBar() {
     return Container(
       decoration: BoxDecoration(
-        color: SeeUColors.surfaceElevated,
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1A1A1A).withValues(alpha: 0.06),
-            offset: const Offset(0, -2),
-            blurRadius: 8,
+        color: SeeUColors.surface,
+        border: Border(
+          top: BorderSide(
+            color: SeeUColors.borderSubtle,
+            width: 0.5,
           ),
-        ],
+        ),
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Text field
+              // Plus button: 38px, surface2
+              GestureDetector(
+                onTap: () => HapticFeedback.selectionClick(),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: SeeUColors.surface2,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    PhosphorIconsRegular.plus,
+                    size: 20,
+                    color: SeeUColors.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Text input: surface2, pill radius
               Expanded(
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 120),
                   decoration: BoxDecoration(
-                    color: SeeUColors.background,
+                    color: SeeUColors.surface2,
                     borderRadius: BorderRadius.circular(SeeURadii.pill),
                   ),
                   child: TextField(
@@ -311,39 +398,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     focusNode: _focusNode,
                     maxLines: null,
                     textCapitalization: TextCapitalization.sentences,
-                    style: SeeUTypography.body,
+                    style: SeeUTypography.body.copyWith(fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'Сообщение...',
+                      hintText: 'Сообщение',
                       hintStyle: SeeUTypography.body.copyWith(
+                        fontSize: 14,
                         color: SeeUColors.textTertiary,
                       ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 10,
+                        horizontal: 14,
+                        vertical: 9,
                       ),
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              // Send button
-              ScaleTransition(
-                scale: _sendBtnScale,
-                child: Tappable.scaled(
-                  onTap: _hasText ? _sendMessage : null,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _hasText ? SeeUColors.accent : SeeUColors.borderSubtle,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      PhosphorIconsFill.paperPlaneRight,
-                      color: _hasText ? Colors.white : SeeUColors.textTertiary,
-                      size: 20,
-                    ),
+              // Send button: 38px, coral
+              GestureDetector(
+                onTap: _hasText ? _sendMessage : null,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    PhosphorIconsFill.paperPlaneRight,
+                    size: 18,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -378,6 +464,122 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return days[dt.weekday - 1];
     }
     return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Icebreaker chip
+// ---------------------------------------------------------------------------
+
+class _IcebreakerChip extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+
+  const _IcebreakerChip({required this.text, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: SeeUColors.accentSoft,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(
+            color: SeeUColors.accent.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          text,
+          style: SeeUTypography.caption.copyWith(
+            color: SeeUColors.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Typing indicator (3 animated dots)
+// ---------------------------------------------------------------------------
+
+class _TypingIndicator extends StatefulWidget {
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'печатает',
+              style: SeeUTypography.micro.copyWith(
+                color: SeeUColors.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 2),
+            for (int i = 0; i < 3; i++) ...[
+              _buildDot(i),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDot(int index) {
+    // Stagger the dots: each starts at a different phase
+    final phase = (_controller.value + index * 0.2) % 1.0;
+    // Use a sine wave for smooth bounce
+    final t = (phase < 0.5) ? phase * 2 : (1.0 - phase) * 2;
+    final opacity = 0.3 + 0.7 * t;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 0),
+      child: Transform.translate(
+        offset: Offset(0, -2.0 * t),
+        child: Opacity(
+          opacity: opacity,
+          child: Text(
+            '.',
+            style: SeeUTypography.micro.copyWith(
+              color: SeeUColors.accent,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -424,18 +626,34 @@ class _DateSeparator extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Message bubble
+// Message bubble with reactions and read receipts
 // ---------------------------------------------------------------------------
+
+const List<String> _reactionEmojis = [
+  '\u{1F525}',
+  '\u{2764}\u{FE0F}',
+  '\u{1F602}',
+  '\u{1F92F}',
+  '\u{1F44F}',
+];
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMine;
   final bool showTail;
+  final String? reaction;
+  final bool showReactionPicker;
+  final VoidCallback onLongPress;
+  final void Function(String emoji) onReactionSelected;
 
   const _MessageBubble({
     required this.message,
     required this.isMine,
     this.showTail = true,
+    this.reaction,
+    this.showReactionPicker = false,
+    required this.onLongPress,
+    required this.onReactionSelected,
   });
 
   @override
@@ -446,68 +664,159 @@ class _MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(
         top: showTail ? 6 : 2,
-        bottom: 0,
+        bottom: reaction != null ? 10 : 0,
         left: isMine ? 48 : 0,
         right: isMine ? 0 : 48,
       ),
-      child: Row(
-        mainAxisAlignment:
-            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment:
+            isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (!isMine) ...[
-            // Time on the left
-            Padding(
-              padding: const EdgeInsets.only(right: 6, bottom: 2),
-              child: Text(
-                time,
-                style: SeeUTypography.micro.copyWith(
-                  fontSize: 10,
-                  color: SeeUColors.textTertiary,
-                ),
+          // Reaction picker (shown above the bubble on long press)
+          if (showReactionPicker)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: SeeUColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: _reactionEmojis.map((emoji) {
+                  final isSelected = reaction == emoji;
+                  return GestureDetector(
+                    onTap: () => onReactionSelected(emoji),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: isSelected
+                          ? BoxDecoration(
+                              color: SeeUColors.accentSoft,
+                              shape: BoxShape.circle,
+                            )
+                          : null,
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 20),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
-          ],
-          // Bubble
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isMine ? SeeUColors.accent : SeeUColors.surfaceElevated,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(
-                    !isMine && showTail ? 4 : 16,
+          // Bubble row
+          GestureDetector(
+            onLongPress: onLongPress,
+            child: Row(
+              mainAxisAlignment:
+                  isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!isMine) ...[
+                  // Time on the left
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6, bottom: 2),
+                    child: Text(
+                      time,
+                      style: SeeUTypography.micro.copyWith(
+                        fontSize: 10,
+                        color: SeeUColors.textTertiary,
+                      ),
+                    ),
                   ),
-                  bottomRight: Radius.circular(
-                    isMine && showTail ? 4 : 16,
+                ],
+                // Bubble
+                Flexible(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          // own = coral bg; other = surface bg + 0.5px border
+                          color: isMine
+                              ? SeeUColors.accent
+                              : SeeUColors.surface,
+                          // own: 20 20 4 20 / other: 20 20 20 4
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(20),
+                            topRight: const Radius.circular(20),
+                            bottomLeft: Radius.circular(isMine ? 20 : 4),
+                            bottomRight: Radius.circular(isMine ? 4 : 20),
+                          ),
+                          border: isMine
+                              ? null
+                              : Border.all(
+                                  color: SeeUColors.borderSubtle,
+                                  width: 0.5,
+                                ),
+                        ),
+                        child: Text(
+                          message.text,
+                          style: SeeUTypography.body.copyWith(
+                            fontSize: 14,
+                            color:
+                                isMine ? Colors.white : SeeUColors.textPrimary,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                      // Reaction badge below the bubble
+                      if (reaction != null)
+                        Positioned(
+                          bottom: -12,
+                          right: isMine ? 8 : null,
+                          left: isMine ? null : 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: SeeUColors.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: SeeUShadows.sm,
+                            ),
+                            child: Text(
+                              reaction!,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                boxShadow: isMine ? null : SeeUShadows.sm,
-              ),
-              child: Text(
-                message.text,
-                style: SeeUTypography.body.copyWith(
-                  color: isMine ? Colors.white : SeeUColors.textPrimary,
-                  height: 1.4,
-                ),
-              ),
+                if (isMine) ...[
+                  // Time + read receipt on the right
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          time,
+                          style: SeeUTypography.micro.copyWith(
+                            fontSize: 10,
+                            color: SeeUColors.textTertiary,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          message.isRead
+                              ? PhosphorIconsBold.checks
+                              : PhosphorIconsRegular.check,
+                          size: 12,
+                          color: message.isRead
+                              ? const Color(0xFF4FC3F7)
+                              : SeeUColors.textTertiary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (isMine) ...[
-            // Time on the right
-            Padding(
-              padding: const EdgeInsets.only(left: 6, bottom: 2),
-              child: Text(
-                time,
-                style: SeeUTypography.micro.copyWith(
-                  fontSize: 10,
-                  color: SeeUColors.textTertiary,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

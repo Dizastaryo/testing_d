@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter *)",
+      "Bash(dart *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(cd *)",
+      "Bash(rm -f pubspec.lock)",
+      "Bash(where *)",
+      "Bash(which *)",
+      "Bash(pip install *)",
+      "Bash(npx *)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "mcp__dart__*",
+      "mcp__flutter_docs__*"
+    ]
+  },
+  "mcpServers": {
+    "dart": {
+      "command": "dart",
+      "args": ["mcp-server", "--dart-sdk", "C:/flutter/bin/cache/dart-sdk"]
+    },
+    "flutter-docs": {
+      "command": "python",
+      "args": ["-m", "flutter_mcp", "--stdio"]
+    }
+  }
+}

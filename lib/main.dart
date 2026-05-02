@@ -6,6 +6,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import 'core/theme/app_theme.dart';
 import 'core/providers/auth_provider.dart';
+import 'core/providers/theme_provider.dart';
 import 'widgets/main_scaffold.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/register_screen.dart';
@@ -24,6 +25,7 @@ import 'features/chat/chat_list_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'features/notifications/notifications_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -183,6 +185,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/settings',
               builder: (_, __) => const SettingsScreen(),
             ),
+            GoRoute(
+              path: '/notifications',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const NotificationsScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
           ],
         ),
       ],
@@ -212,12 +221,14 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
       }
     });
 
+    final themeMode = ref.watch(themeProvider);
+
     return MaterialApp.router(
       title: 'SeeU',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.light,
+      themeMode: themeMode,
       routerConfig: _router,
     );
   }

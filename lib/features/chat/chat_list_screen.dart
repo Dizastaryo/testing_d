@@ -7,8 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
-// ignore: unused_import
-import '../../data/mock_service.dart';
+// MockService removed; chat backend not yet implemented
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -17,33 +16,13 @@ class ChatListScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends ConsumerState<ChatListScreen>
-    with SingleTickerProviderStateMixin {
+class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  late AnimationController _fabAnimController;
-  late Animation<double> _fabScaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _fabAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fabScaleAnim = CurvedAnimation(
-      parent: _fabAnimController,
-      curve: Curves.elasticOut,
-    );
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) _fabAnimController.forward();
-    });
-  }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _fabAnimController.dispose();
     super.dispose();
   }
 
@@ -53,7 +32,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
     return chats.where((c) {
       final name = c.otherUser.fullName.toLowerCase();
       final username = c.otherUser.username.toLowerCase();
-      final msg = c.lastMessage?.text.toLowerCase() ?? '';
+      final msg = c.lastMessage.toLowerCase();
       return name.contains(q) || username.contains(q) || msg.contains(q);
     }).toList();
   }
@@ -65,13 +44,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _NewChatBottomSheet(
-        onUserSelected: (user) async {
+        onUserSelected: (user) {
           Navigator.of(context).pop();
-          final chat = await MockService.instance.startChat(user.id);
           ref.read(chatListProvider.notifier).load();
-          if (mounted) {
-            context.go('/chat/${chat.id}');
-          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Создание чата пока недоступно')),
+          );
         },
       ),
     );
@@ -84,62 +62,73 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
 
     return Scaffold(
       backgroundColor: SeeUColors.background,
-      floatingActionButton: ScaleTransition(
-        scale: _fabScaleAnim,
-        child: FloatingActionButton(
-          onPressed: _showNewChatPicker,
-          backgroundColor: SeeUColors.accent,
-          elevation: 4,
-          shape: const CircleBorder(),
-          child: const Icon(
-            Icons.edit_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
-        ),
-      ),
       body: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header: serif "Сообщения" + edit button
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text(
-                'Сообщения',
-                style: SeeUTypography.displayL,
+              padding: const EdgeInsets.fromLTRB(18, 58, 18, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Сообщения',
+                    style: SeeUTypography.displayL,
+                  ),
+                  GestureDetector(
+                    onTap: _showNewChatPicker,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: SeeUColors.borderSubtle,
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Icon(
+                        PhosphorIconsRegular.pencilSimple,
+                        size: 18,
+                        color: SeeUColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            // Search bar
+            // Search bar: height 40, surface2 bg, borderRadius 12
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
               child: Container(
+                height: 40,
                 decoration: BoxDecoration(
-                  color: SeeUColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  boxShadow: SeeUShadows.sm,
+                  color: SeeUColors.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                 ),
                 child: TextField(
                   controller: _searchController,
                   onChanged: (v) => setState(() => _searchQuery = v),
-                  style: SeeUTypography.body,
+                  style: SeeUTypography.body.copyWith(fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'Поиск...',
+                    hintText: 'Поиск',
                     hintStyle: SeeUTypography.body.copyWith(
+                      fontSize: 14,
                       color: SeeUColors.textTertiary,
                     ),
                     prefixIcon: Padding(
-                      padding: const EdgeInsets.only(left: 16, right: 8),
+                      padding: const EdgeInsets.only(left: 12, right: 8),
                       child: Icon(
                         PhosphorIconsRegular.magnifyingGlass,
                         color: SeeUColors.textTertiary,
-                        size: 20,
+                        size: 16,
                       ),
                     ),
                     prefixIconConstraints: const BoxConstraints(
-                      minWidth: 40,
+                      minWidth: 36,
                       minHeight: 40,
                     ),
                     suffixIcon: _searchQuery.isNotEmpty
@@ -153,25 +142,24 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                               child: Icon(
                                 PhosphorIconsFill.xCircle,
                                 color: SeeUColors.textTertiary,
-                                size: 18,
+                                size: 16,
                               ),
                             ),
                           )
                         : null,
                     suffixIconConstraints: const BoxConstraints(
                       minWidth: 32,
-                      minHeight: 32,
+                      minHeight: 40,
                     ),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                      horizontal: 12,
+                      vertical: 10,
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
             // Chat list
             Expanded(
               child: chatState.isLoading
@@ -188,10 +176,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                           onRefresh: () =>
                               ref.read(chatListProvider.notifier).load(),
                           child: ListView.builder(
-                            padding: const EdgeInsets.only(
-                              top: 8,
-                              bottom: 100,
-                            ),
+                            padding: const EdgeInsets.only(bottom: 100),
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
@@ -199,17 +184,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
                             itemBuilder: (context, index) {
                               return _ChatTile(
                                 chat: chats[index],
-                                index: index,
                                 onTap: () {
                                   HapticFeedback.selectionClick();
                                   context.go('/chat/${chats[index].id}');
-                                },
-                                onDismissed: () {
-                                  HapticFeedback.mediumImpact();
-                                  // Remove chat locally for now
-                                  ref
-                                      .read(chatListProvider.notifier)
-                                      .load();
                                 },
                               );
                             },
@@ -254,35 +231,13 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
             Text(
               hasSearch
                   ? 'Попробуйте другой запрос'
-                  : 'Начните общение с друзьями.\nНажмите + чтобы написать первое сообщение!',
+                  : 'Начните общение с друзьями.\nНажмите карандаш чтобы написать первое сообщение!',
               textAlign: TextAlign.center,
               style: SeeUTypography.body.copyWith(
                 color: SeeUColors.textSecondary,
                 height: 1.5,
               ),
             ),
-            if (!hasSearch) ...[
-              const SizedBox(height: 24),
-              Tappable.scaled(
-                onTap: _showNewChatPicker,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: SeeUColors.accent,
-                    borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  ),
-                  child: Text(
-                    'Начать общение',
-                    style: SeeUTypography.subtitle.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -291,20 +246,16 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen>
 }
 
 // ---------------------------------------------------------------------------
-// Chat tile with swipe-to-delete
+// Chat tile
 // ---------------------------------------------------------------------------
 
 class _ChatTile extends StatelessWidget {
   final Chat chat;
-  final int index;
   final VoidCallback onTap;
-  final VoidCallback onDismissed;
 
   const _ChatTile({
     required this.chat,
-    required this.index,
     required this.onTap,
-    required this.onDismissed,
   });
 
   @override
@@ -312,116 +263,121 @@ class _ChatTile extends StatelessWidget {
     final user = chat.otherUser;
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
+    final lastMsgTime = chat.lastMessageAt;
+    final isOnline = user.id.hashCode % 3 != 0;
+    // "взаимный" badge shown when user id hash % 4 == 0
+    final isChipMatch = user.id.hashCode % 4 == 0;
 
-    return Dismissible(
-      key: ValueKey(chat.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDismissed(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        color: SeeUColors.error.withValues(alpha: 0.12),
-        child: Icon(
-          PhosphorIconsRegular.trash,
-          color: SeeUColors.error,
-          size: 24,
-        ),
-      ),
-      child: Tappable.scaled(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: Duration(milliseconds: 300 + index * 50),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            children: [
-              // Avatar with online dot
-              _OnlineAvatar(
-                avatarUrl: user.avatarUrl,
-                isOnline: user.id.hashCode % 3 != 0,
-                size: 52,
-              ),
-              const SizedBox(width: 14),
-              // Name + last message
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            user.fullName,
-                            style: SeeUTypography.subtitle.copyWith(
-                              fontWeight: hasUnread
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: Row(
+          children: [
+            // Avatar 52px with online green dot
+            _OnlineAvatar(
+              avatarUrl: user.avatarUrl,
+              isOnline: isOnline,
+              size: 52,
+            ),
+            const SizedBox(width: 12),
+            // Name + badge + last message
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.fullName,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: SeeUColors.textPrimary,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 8),
-                        if (lastMsg != null)
-                          Text(
-                            _formatTime(lastMsg.createdAt),
-                            style: SeeUTypography.micro.copyWith(
-                              color: hasUnread
-                                  ? SeeUColors.accent
-                                  : SeeUColors.textTertiary,
-                            ),
+                      ),
+                      if (isChipMatch) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            lastMsg?.text ?? 'Начните общение',
-                            style: SeeUTypography.caption.copyWith(
-                              color: hasUnread
-                                  ? SeeUColors.textPrimary
-                                  : SeeUColors.textSecondary,
-                              fontWeight: hasUnread
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accentSoft,
+                            borderRadius: BorderRadius.circular(99),
                           ),
-                        ),
-                        if (hasUnread) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
+                          child: const Text(
+                            'взаимный',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
                               color: SeeUColors.accent,
-                              borderRadius:
-                                  BorderRadius.circular(SeeURadii.pill),
-                            ),
-                            child: Text(
-                              chat.unreadCount > 99
-                                  ? '99+'
-                                  : '${chat.unreadCount}',
-                              style: SeeUTypography.micro.copyWith(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              letterSpacing: 0.5,
                             ),
                           ),
-                        ],
+                        ),
                       ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    lastMsg.isNotEmpty ? lastMsg : 'Начните общение',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: hasUnread
+                          ? SeeUColors.textPrimary
+                          : SeeUColors.textTertiary,
+                      fontWeight:
+                          hasUnread ? FontWeight.w500 : FontWeight.w400,
                     ),
-                  ],
-                ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            // Time + unread badge
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _formatTime(lastMsgTime),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: SeeUColors.textTertiary,
+                  ),
+                ),
+                if (hasUnread) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    height: 18,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: SeeUColors.accent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -450,7 +406,7 @@ class _OnlineAvatar extends StatelessWidget {
   const _OnlineAvatar({
     this.avatarUrl,
     this.isOnline = false,
-    this.size = 48,
+    this.size = 52,
   });
 
   @override
@@ -465,8 +421,7 @@ class _OnlineAvatar extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: SeeUColors.surfaceElevated,
-              boxShadow: SeeUShadows.sm,
+              color: SeeUColors.surface2,
             ),
             clipBehavior: Clip.antiAlias,
             child: avatarUrl != null && avatarUrl!.isNotEmpty
@@ -495,8 +450,8 @@ class _OnlineAvatar extends StatelessWidget {
           ),
           if (isOnline)
             Positioned(
-              right: 1,
-              bottom: 1,
+              right: 0,
+              bottom: 0,
               child: Container(
                 width: 14,
                 height: 14,
@@ -542,11 +497,10 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
 
   Future<void> _loadFollowing() async {
     setState(() => _isLoading = true);
-    final mock = MockService.instance;
-    final users = await mock.getFollowing(mock.currentUser.username);
+    // Chat backend not yet implemented; show empty list
     if (mounted) {
       setState(() {
-        _results = users;
+        _results = [];
         _isLoading = false;
       });
     }
@@ -558,12 +512,10 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
       return;
     }
     setState(() => _isLoading = true);
-    final results = await MockService.instance.searchUsers(query);
+    // Chat backend not yet implemented; show empty list
     if (mounted) {
       setState(() {
-        _results = results
-            .where((u) => u.id != MockService.instance.currentUser.id)
-            .toList();
+        _results = [];
         _isLoading = false;
       });
     }
@@ -607,37 +559,38 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
+              height: 40,
               decoration: BoxDecoration(
-                color: SeeUColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(SeeURadii.pill),
-                boxShadow: SeeUShadows.sm,
+                color: SeeUColors.surface2,
+                borderRadius: BorderRadius.circular(SeeURadii.small),
               ),
               child: TextField(
                 controller: _controller,
                 autofocus: true,
                 onChanged: _search,
-                style: SeeUTypography.body,
+                style: SeeUTypography.body.copyWith(fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Поиск пользователей...',
                   hintStyle: SeeUTypography.body.copyWith(
+                    fontSize: 14,
                     color: SeeUColors.textTertiary,
                   ),
                   prefixIcon: Padding(
-                    padding: const EdgeInsets.only(left: 16, right: 8),
+                    padding: const EdgeInsets.only(left: 12, right: 8),
                     child: Icon(
                       PhosphorIconsRegular.magnifyingGlass,
                       color: SeeUColors.textTertiary,
-                      size: 20,
+                      size: 16,
                     ),
                   ),
                   prefixIconConstraints: const BoxConstraints(
-                    minWidth: 40,
+                    minWidth: 36,
                     minHeight: 40,
                   ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                    horizontal: 12,
+                    vertical: 10,
                   ),
                 ),
               ),
@@ -678,8 +631,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                                 children: [
                                   _OnlineAvatar(
                                     avatarUrl: user.avatarUrl,
-                                    isOnline:
-                                        user.id.hashCode % 3 != 0,
+                                    isOnline: user.id.hashCode % 3 != 0,
                                     size: 44,
                                   ),
                                   const SizedBox(width: 12),

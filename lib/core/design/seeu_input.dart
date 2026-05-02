@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/services.dart';
 import 'tokens.dart';
 
 class SeeUInput extends StatelessWidget {
@@ -19,6 +19,7 @@ class SeeUInput extends StatelessWidget {
   final FocusNode? focusNode;
   final bool autocorrect;
   final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
 
   const SeeUInput({
     super.key,
@@ -38,6 +39,7 @@ class SeeUInput extends StatelessWidget {
     this.focusNode,
     this.autocorrect = true,
     this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
   });
 
   @override
@@ -56,14 +58,17 @@ class SeeUInput extends StatelessWidget {
       focusNode: focusNode,
       autocorrect: autocorrect,
       textCapitalization: textCapitalization,
-      style: GoogleFonts.inter(
+      inputFormatters: inputFormatters,
+      style: TextStyle(
+        fontFamily: 'Segoe UI',
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: SeeUColors.textPrimary,
       ),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: GoogleFonts.inter(
+        hintStyle: TextStyle(
+          fontFamily: 'Segoe UI',
           fontSize: 15,
           fontWeight: FontWeight.w400,
           color: SeeUColors.textTertiary,

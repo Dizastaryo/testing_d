@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../api/api_client.dart';
+import '../api/api_endpoints.dart';
 import '../models/notification.dart';
-import '../../data/mock_service.dart';
 
 class NotificationState {
   final List<AppNotification> notifications;
@@ -31,24 +32,29 @@ class NotificationState {
 }
 
 class NotificationNotifier extends StateNotifier<NotificationState> {
-  NotificationNotifier() : super(const NotificationState()) {
+  final ApiClient _api;
+
+  NotificationNotifier(this._api) : super(const NotificationState()) {
     loadNotifications();
   }
 
   Future<void> loadNotifications() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final notifications = await MockService.instance.getNotifications();
+      final resp = await _api.get(ApiEndpoints.notifications);
+      final data = resp.data;
+      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final notifications = (listData as List)
+          .map((j) => AppNotification.fromJson(j as Map<String, dynamic>))
+          .toList();
       final unread = notifications.where((n) => !n.isRead).length;
       state = NotificationState(
         notifications: notifications,
         unreadCount: unread,
       );
     } catch (e) {
-      final demos = AppNotification.demoNotifications;
       state = NotificationState(
-        notifications: demos,
-        unreadCount: demos.where((n) => !n.isRead).length,
+        notifications: [],
         error: e.toString(),
       );
     }
@@ -59,7 +65,9 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
         .map((n) => n.copyWith(isRead: true))
         .toList();
     state = state.copyWith(notifications: updated, unreadCount: 0);
-    await MockService.instance.markAllNotificationsRead();
+    try {
+      await _api.put(ApiEndpoints.markAllRead);
+    } catch (_) {}
   }
 
   Future<void> markRead(String id) async {
@@ -69,11 +77,14 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     }).toList();
     final unread = updated.where((n) => !n.isRead).length;
     state = state.copyWith(notifications: updated, unreadCount: unread);
-    await MockService.instance.markNotificationRead(id);
+    try {
+      await _api.put(ApiEndpoints.markRead(id));
+    } catch (_) {}
   }
 }
 
 final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
-  return NotificationNotifier();
+  final api = ref.watch(apiClientProvider);
+  return NotificationNotifier(api);
 });

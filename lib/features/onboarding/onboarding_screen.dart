@@ -2,8 +2,82 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import '../../core/design/design.dart';
+
+// Radar pulse animation painter
+class _RadarPulsePainter extends CustomPainter {
+  final double progress; // 0..1
+  final int waveIndex;
+
+  _RadarPulsePainter({required this.progress, required this.waveIndex});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width * 0.5 + 30;
+
+    // Each wave starts at a different phase offset
+    final phaseOffset = waveIndex * 0.33;
+    final t = ((progress + phaseOffset) % 1.0);
+    final radius = maxRadius * t;
+    final opacity = (1.0 - t) * 0.5;
+
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: opacity)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawCircle(center, radius, paint);
+  }
+
+  @override
+  bool shouldRepaint(_RadarPulsePainter old) =>
+      old.progress != progress || old.waveIndex != waveIndex;
+}
+
+class _RadarPulse extends StatefulWidget {
+  final int waveIndex;
+  final double size;
+
+  const _RadarPulse({required this.waveIndex, required this.size});
+
+  @override
+  State<_RadarPulse> createState() => _RadarPulseState();
+}
+
+class _RadarPulseState extends State<_RadarPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => CustomPaint(
+        size: Size(widget.size, widget.size),
+        painter: _RadarPulsePainter(
+          progress: _ctrl.value,
+          waveIndex: widget.waveIndex,
+        ),
+      ),
+    );
+  }
+}
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -16,30 +90,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageCtrl = PageController();
   int _currentPage = 0;
 
-  late final List<_OnboardingPage> _pages = [
-    _OnboardingPage(
-      icon: PhosphorIcons.heart(PhosphorIconsStyle.fill),
-      title: 'Делитесь\nмоментами',
-      subtitle: 'Публикуйте фото, истории и делитесь впечатлениями с друзьями',
-      gradient: const [Color(0xFFFF5A3C), Color(0xFFFF8F6B)],
+  static const _coralGradientColors = [Color(0xFFFF8060), Color(0xFFFF5A3C)];
+
+  final List<_OnboardingSlide> _slides = [
+    _OnboardingSlide(
+      tag: 'добро пожаловать',
+      title: 'Видеть людей,\nне раскрывая себя',
+      body:
+          'SeeU — социальная сеть, где ты сначала виден как псевдоним, а имя раскрываешь сам.',
+      accentIcon: _SlideIcon.eye,
     ),
-    _OnboardingPage(
-      icon: PhosphorIcons.heartbeat(PhosphorIconsStyle.fill),
-      title: 'Находите людей\nрядом',
-      subtitle: 'Уникальный BLE-сканер покажет друзей и знакомых поблизости',
-      gradient: const [Color(0xFFC04CFD), Color(0xFFDA8AFF)],
+    _OnboardingSlide(
+      tag: 'фишка',
+      title: 'Радар\nрядом с тобой',
+      body:
+          'Чип ESP32 показывает людей в радиусе 50 метров. Ставь лайки тем, кто понравился — без подписок.',
+      accentIcon: _SlideIcon.radar,
     ),
-    _OnboardingPage(
-      icon: PhosphorIcons.chatCircle(PhosphorIconsStyle.fill),
-      title: 'Общайтесь\nбез границ',
-      subtitle: 'Мгновенные сообщения, ответы на истории и комментарии',
-      gradient: const [Color(0xFFFFB547), Color(0xFFFFD080)],
+    _OnboardingSlide(
+      tag: 'безопасно',
+      title: 'Только в\nобщественных местах',
+      body:
+          'Чип сам выключается, когда ты один — никто не узнает где ты живёшь.',
+      accentIcon: _SlideIcon.shield,
     ),
   ];
 
   void _nextPage() {
     HapticFeedback.lightImpact();
-    if (_currentPage < _pages.length - 1) {
+    if (_currentPage < _slides.length - 1) {
       _pageCtrl.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
@@ -61,67 +140,90 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLast = _currentPage == _slides.length - 1;
+    final isFirst = _currentPage == 0;
+
     return Scaffold(
       backgroundColor: SeeUColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Skip button
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 16, 0),
-                child: GestureDetector(
-                  onTap: _skip,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      'Пропустить',
-                      style: SeeUTypography.caption.copyWith(
-                        color: SeeUColors.textTertiary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Pages
+            // Slides (flex 1 = all remaining space above bottom panel)
             Expanded(
               child: PageView.builder(
                 controller: _pageCtrl,
-                itemCount: _pages.length,
+                itemCount: _slides.length,
                 onPageChanged: (i) => setState(() => _currentPage = i),
                 itemBuilder: (context, index) {
-                  final page = _pages[index];
-                  return _buildPage(page);
+                  return _buildSlide(_slides[index]);
                 },
               ),
             ),
-            // Indicator + button
+            // Dots + button + skip
             Padding(
-              padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
+              padding: const EdgeInsets.fromLTRB(32, 0, 32, 50),
               child: Column(
                 children: [
-                  SmoothPageIndicator(
-                    controller: _pageCtrl,
-                    count: _pages.length,
-                    effect: ExpandingDotsEffect(
-                      dotHeight: 8,
-                      dotWidth: 8,
-                      expansionFactor: 3,
-                      spacing: 6,
-                      activeDotColor: SeeUColors.accent,
-                      dotColor: SeeUColors.borderSubtle,
+                  // Dot indicators
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (int i = 0; i < _slides.length; i++) ...[
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          width: i == _currentPage ? 22 : 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: i == _currentPage
+                                ? SeeUColors.accent
+                                : SeeUColors.textQuaternary,
+                            borderRadius:
+                                BorderRadius.circular(SeeURadii.pill),
+                          ),
+                        ),
+                        if (i < _slides.length - 1) const SizedBox(width: 6),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  // Main button: full width, h=56, borderRadius 16, ink bg, bg text
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: SeeUColors.textPrimary,
+                        foregroundColor: SeeUColors.background,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: _nextPage,
+                      child: Text(
+                        isLast ? 'Поехали' : 'Дальше',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  SeeUButton(
-                    label: _currentPage == _pages.length - 1
-                        ? 'Начать'
-                        : 'Далее',
-                    onTap: _nextPage,
-                  ),
+                  // "Пропустить" link — only on first slide
+                  if (isFirst) ...[
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: _skip,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          'Пропустить',
+                          style: SeeUTypography.caption.copyWith(
+                            color: SeeUColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -131,46 +233,78 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildPage(_OnboardingPage page) {
+  Widget _buildSlide(_OnboardingSlide slide) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.fromLTRB(32, 40, 32, 0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Icon circle
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: page.gradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: page.gradient.first.withValues(alpha: 0.3),
-                  blurRadius: 32,
-                  offset: const Offset(0, 12),
+          // Large icon box 160x160, coral gradient, borderRadius 36, radar pulses
+          SizedBox(
+            width: 200,
+            height: 200,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Radar pulse waves (behind the box)
+                for (int i = 0; i < 3; i++)
+                  _RadarPulse(waveIndex: i, size: 200),
+                // Icon box
+                Container(
+                  width: 160,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    gradient: const RadialGradient(
+                      center: Alignment(-0.4, -0.4),
+                      colors: _coralGradientColors,
+                    ),
+                    borderRadius: BorderRadius.circular(36),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF5A3C).withValues(alpha: 0.4),
+                        blurRadius: 40,
+                        offset: const Offset(0, 16),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _iconData(slide.accentIcon),
+                    size: 72,
+                    color: Colors.white,
+                  ),
                 ),
               ],
             ),
-            child: Icon(
-              page.icon,
-              size: 48,
-              color: Colors.white,
+          ),
+          const SizedBox(height: 36),
+          // Tag: mono, coral, uppercase
+          Text(
+            slide.tag.toUpperCase(),
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 11,
+              color: SeeUColors.accent,
+              letterSpacing: 1.5,
             ),
           ),
-          const SizedBox(height: 48),
+          const SizedBox(height: 16),
+          // Serif title, fontSize 36
           Text(
-            page.title,
-            style: SeeUTypography.displayXL.copyWith(fontSize: 36),
+            slide.title,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontSize: 36,
+              fontWeight: FontWeight.w400,
+              color: SeeUColors.textPrimary,
+              height: 1.05,
+              letterSpacing: -0.72,
+            ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
+          // Body text
           Text(
-            page.subtitle,
+            slide.body,
             style: SeeUTypography.body.copyWith(
               color: SeeUColors.textSecondary,
               height: 1.5,
@@ -181,18 +315,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
     );
   }
+
+  IconData _iconData(_SlideIcon icon) {
+    switch (icon) {
+      case _SlideIcon.eye:
+        return PhosphorIcons.eye(PhosphorIconsStyle.fill);
+      case _SlideIcon.radar:
+        return PhosphorIcons.waveform(PhosphorIconsStyle.fill);
+      case _SlideIcon.shield:
+        return PhosphorIcons.shield(PhosphorIconsStyle.fill);
+    }
+  }
 }
 
-class _OnboardingPage {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final List<Color> gradient;
+enum _SlideIcon { eye, radar, shield }
 
-  _OnboardingPage({
-    required this.icon,
+class _OnboardingSlide {
+  final String tag;
+  final String title;
+  final String body;
+  final _SlideIcon accentIcon;
+
+  const _OnboardingSlide({
+    required this.tag,
     required this.title,
-    required this.subtitle,
-    required this.gradient,
+    required this.body,
+    required this.accentIcon,
   });
 }

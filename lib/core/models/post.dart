@@ -55,6 +55,8 @@ class Post {
   final bool isSaved;
   final String? likedByUsername;
   final DateTime createdAt;
+  final bool isWave;
+  final int? waveColorValue;
 
   const Post({
     required this.id,
@@ -68,6 +70,8 @@ class Post {
     this.isSaved = false,
     this.likedByUsername,
     required this.createdAt,
+    this.isWave = false,
+    this.waveColorValue,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
@@ -90,6 +94,8 @@ class Post {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      isWave: (json['is_wave'] ?? json['isWave'] ?? false) as bool,
+      waveColorValue: (json['wave_color_value'] ?? json['waveColorValue']) as int?,
     );
   }
 
@@ -105,6 +111,8 @@ class Post {
     'is_saved': isSaved,
     'liked_by_username': likedByUsername,
     'created_at': createdAt.toIso8601String(),
+    'is_wave': isWave,
+    'wave_color_value': waveColorValue,
   };
 
   Post copyWith({
@@ -119,6 +127,8 @@ class Post {
     bool? isSaved,
     String? likedByUsername,
     DateTime? createdAt,
+    bool? isWave,
+    int? waveColorValue,
   }) {
     return Post(
       id: id ?? this.id,
@@ -132,102 +142,9 @@ class Post {
       isSaved: isSaved ?? this.isSaved,
       likedByUsername: likedByUsername ?? this.likedByUsername,
       createdAt: createdAt ?? this.createdAt,
+      isWave: isWave ?? this.isWave,
+      waveColorValue: waveColorValue ?? this.waveColorValue,
     );
   }
 
-  // Demo posts for offline/dev mode
-  static List<Post> get demoPosts {
-    final users = User.demoUsers;
-    return [
-      Post(
-        id: '1',
-        author: users[0],
-        media: [
-          const PostMedia(
-            url: 'https://picsum.photos/seed/p1/800/800',
-            type: MediaType.image,
-            aspectRatio: 1.0,
-          ),
-        ],
-        caption: 'Beautiful sunset at the beach 🌅 #photography #travel #sunset',
-        location: 'Malibu, California',
-        likesCount: 1243,
-        commentsCount: 47,
-        isLiked: false,
-        isSaved: false,
-        likedByUsername: 'maria_design',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      ),
-      Post(
-        id: '2',
-        author: users[1],
-        media: [
-          const PostMedia(
-            url: 'https://picsum.photos/seed/p2/800/1000',
-            type: MediaType.image,
-            aspectRatio: 0.8,
-          ),
-        ],
-        caption: 'New design system I\'ve been working on. What do you think? 💭',
-        likesCount: 892,
-        commentsCount: 63,
-        isLiked: true,
-        isSaved: true,
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      ),
-      Post(
-        id: '3',
-        author: users[2],
-        media: [
-          const PostMedia(
-            url: 'https://picsum.photos/seed/p3/800/600',
-            type: MediaType.image,
-            aspectRatio: 1.33,
-          ),
-        ],
-        caption: 'Just shipped a new Flutter app! 🚀 #flutter #mobile #dev',
-        likesCount: 456,
-        commentsCount: 28,
-        isLiked: false,
-        isSaved: false,
-        createdAt: DateTime.now().subtract(const Duration(hours: 8)),
-      ),
-      Post(
-        id: '4',
-        author: users[0],
-        media: [
-          const PostMedia(
-            url: 'https://picsum.photos/seed/p4/800/800',
-            type: MediaType.image,
-            aspectRatio: 1.0,
-          ),
-        ],
-        caption: 'Morning coffee and good vibes ☕',
-        location: 'New York City',
-        likesCount: 2100,
-        commentsCount: 91,
-        isLiked: true,
-        isSaved: false,
-        likedByUsername: 'john_dev',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      ),
-      Post(
-        id: '5',
-        author: users[1],
-        media: [
-          const PostMedia(
-            url: 'https://picsum.photos/seed/p5/800/800',
-            type: MediaType.image,
-            aspectRatio: 1.0,
-          ),
-        ],
-        caption: 'Colors that inspire ✨ #design #color #inspiration',
-        likesCount: 3400,
-        commentsCount: 112,
-        isLiked: false,
-        isSaved: true,
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-    ];
-  }
 }

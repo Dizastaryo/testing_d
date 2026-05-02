@@ -45,6 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SeeU использует камеру для создания фото и видео.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SeeU использует микрофон для записи видео со звуком.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SeeU использует Bluetooth, чтобы находить людей рядом и управлять твоим устройством.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

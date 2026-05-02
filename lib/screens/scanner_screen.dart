@@ -1,15 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../core/design/design.dart';
-import '../core/design/tappable.dart';
 import '../models/ble_device_model.dart';
 import '../services/account_session.dart';
 import '../services/user_resolver.dart';
-import '../widgets/account_switcher_button.dart';
-import '../widgets/device_card.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -25,8 +22,12 @@ class _ScannerScreenState extends State<ScannerScreen>
   StreamSubscription<bool>? _isScanSub;
   bool _isScanning = false;
   bool _bluetoothOn = true;
+  bool _chipOn = true;
+  String _viewMode = 'radar'; // radar | list
+
   late AnimationController _pulseController;
-  late AnimationController _radarController;
+  late AnimationController _sweepController;
+  late AnimationController _floatController;
 
   late UserResolver _resolver;
   final _session = AccountSession.instance;
@@ -38,22 +39,21 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _radarController = AnimationController(
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+
+    _sweepController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
-    );
+      duration: const Duration(milliseconds: 7200),
+    )..repeat();
+
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat(reverse: true);
 
     _isScanSub = FlutterBluePlus.isScanning.listen((scanning) {
       if (mounted) setState(() => _isScanning = scanning);
-      if (scanning) {
-        _pulseController.repeat(reverse: true);
-        _radarController.repeat();
-      } else {
-        _pulseController.stop();
-        _radarController.stop();
-      }
     });
 
     FlutterBluePlus.adapterState.listen((state) {
@@ -63,10 +63,10 @@ class _ScannerScreenState extends State<ScannerScreen>
     });
 
     _session.addListener(_onSessionChanged);
+    _startScan();
   }
 
   void _onSessionChanged() {
-    // Пересчитываем резолв при смене аккаунта (без ре-скана)
     if (mounted) setState(() {});
   }
 
@@ -76,43 +76,35 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scanSub?.cancel();
     _isScanSub?.cancel();
     _pulseController.dispose();
-    _radarController.dispose();
+    _sweepController.dispose();
+    _floatController.dispose();
     FlutterBluePlus.stopScan();
     super.dispose();
   }
 
-  /// Сортировка: me/myChipOff → friend → knownPublic → strangerPrivate → unknown.
-  /// Фильтр: скрываем чужие OFF-чипы (unknown с mode=0xFF и hasValidPacket).
   List<_ResolvedEntry> get _sortedDevices {
     final entries = <_ResolvedEntry>[];
-
     for (final d in _devicesMap.values) {
       final resolved = _resolver.resolve(d);
-
-      // Скрыть чужие выключенные чипы
       if (resolved.relationship == Relationship.unknown &&
           resolved.hasValidPacket &&
           resolved.mode == 0xFF) {
         continue;
       }
-
       entries.add(_ResolvedEntry(device: d, resolved: resolved));
     }
-
     entries.sort((a, b) {
       final orderCmp = _resolver.sortOrder(a.resolved.relationship)
           .compareTo(_resolver.sortOrder(b.resolved.relationship));
       if (orderCmp != 0) return orderCmp;
       return b.device.rssi.compareTo(a.device.rssi);
     });
-
     return entries;
   }
 
   Future<void> _startScan() async {
     _devicesMap.clear();
     setState(() {});
-
     _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       for (final r in results) {
@@ -122,7 +114,6 @@ class _ScannerScreenState extends State<ScannerScreen>
       }
       if (mounted) setState(() {});
     });
-
     await FlutterBluePlus.startScan(
       continuousUpdates: true,
       removeIfGone: const Duration(seconds: 5),
@@ -141,15 +132,24 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
   }
 
-  String _deviceWord(int count) {
-    if (count % 10 == 1 && count % 100 != 11) {
-      return 'устройство';
-    }
-    if (count % 10 >= 2 && count % 10 <= 4 &&
-        (count % 100 < 10 || count % 100 >= 20)) {
-      return 'устройства';
-    }
-    return 'устройств';
+  String _fmtDist(int rssi) {
+    // Approximate distance from RSSI
+    final dist = _rssiToMeters(rssi);
+    if (dist < 100) return '${dist.round()} м';
+    if (dist < 1000) return '${(dist / 10).round() * 10} м';
+    return '${(dist / 1000).toStringAsFixed(1)} км';
+  }
+
+  double _rssiToMeters(int rssi) {
+    // Simple RSSI to distance approximation
+    final ratio = rssi / -60.0;
+    if (ratio < 1.0) return math.pow(ratio, 10).toDouble();
+    return (0.89976 * math.pow(ratio, 7.7095) + 0.111).toDouble();
+  }
+
+  String _personWord(int count) {
+    if (count % 10 == 1 && count % 100 != 11) return 'человек';
+    return 'человек';
   }
 
   @override
@@ -157,303 +157,526 @@ class _ScannerScreenState extends State<ScannerScreen>
     final entries = _sortedDevices;
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          _buildHeader(entries.length),
-          if (!_bluetoothOn)
-            SliverToBoxAdapter(child: _buildBluetoothOffBanner()),
-          if (entries.isEmpty)
-            SliverFillRemaining(child: _buildEmptyState())
-          else ...[
-            SliverToBoxAdapter(child: _buildStatsBar(entries)),
-            SliverPadding(
-              padding: const EdgeInsets.only(top: 4, bottom: 100),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => DeviceCard(
-                    device: entries[index].device,
-                    resolved: entries[index].resolved,
-                  ),
-                  childCount: entries.length,
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.5),
+            radius: 1.2,
+            colors: [
+              SeeUColors.accentSoft,
+              SeeUColors.background,
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            // ─── Top bar ───
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+                child: Row(
+                  children: [
+                    // EyeMark + location
+                    _buildEyeMark(28),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'СЕЙЧАС ВОКРУГ',
+                          style: SeeUTypography.monoLabel.copyWith(
+                            color: SeeUColors.textTertiary,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        Text(
+                          'Поиск · ${entries.length} ${_personWord(entries.length)}',
+                          style: SeeUTypography.subtitle.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    // Chip status button
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        setState(() => _chipOn = !_chipOn);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _chipOn ? SeeUColors.accentSoft : SeeUColors.surface2,
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _chipOn ? SeeUColors.accent : SeeUColors.textTertiary,
+                                boxShadow: _chipOn
+                                    ? [BoxShadow(color: SeeUColors.accent, blurRadius: 8)]
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'чип ${_chipOn ? "вкл" : "выкл"}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _chipOn ? SeeUColors.accent : SeeUColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+
+            // ─── Radar / List toggle ───
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: SeeUColors.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                child: Row(
+                  children: [
+                    _buildToggleTab('Радар', 'radar'),
+                    _buildToggleTab('Список', 'list'),
+                  ],
+                ),
+              ),
+            ),
+
+            // ─── Content ───
+            Expanded(
+              child: _viewMode == 'radar'
+                  ? _buildRadarView(entries)
+                  : _buildListView(entries),
+            ),
           ],
-        ],
+        ),
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 100),
-        child: _buildFab(),
+      floatingActionButton: _viewMode == 'list'
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: _buildFab(),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildToggleTab(String label, String mode) {
+    final isActive = _viewMode == mode;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _viewMode = mode);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isActive ? SeeUColors.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(SeeURadii.pill),
+            boxShadow: isActive ? SeeUShadows.sm : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isActive ? SeeUColors.textPrimary : SeeUColors.textTertiary,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(int count) {
-    return SliverAppBar(
-      expandedHeight: 160,
-      floating: false,
-      pinned: true,
-      elevation: 0,
-      backgroundColor: SeeUColors.background,
-      surfaceTintColor: Colors.transparent,
-      actions: const [
-        Padding(
-          padding: EdgeInsets.only(right: 16, top: 8),
-          child: AccountSwitcherButton(),
-        ),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsets.only(left: 24, bottom: 16),
-        title: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'SeeU',
-                      style: GoogleFonts.fraunces(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -1,
-                        color: SeeUColors.textPrimary,
-                      ),
-                    ),
-                    if (_isScanning) ...[
-                      const SizedBox(width: 10),
-                      AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, _) => Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: SeeUColors.accent.withValues(
-                              alpha: 0.4 + _pulseController.value * 0.6,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: SeeUColors.accent
-                                    .withValues(alpha: _pulseController.value * 0.5),
-                                blurRadius: 6,
+  // ─── Radar view ────────────────────────────────────────────────────────
+
+  Widget _buildRadarView(List<_ResolvedEntry> entries) {
+    return Stack(
+      children: [
+        // Radar
+        Center(
+          child: SizedBox(
+            width: 320,
+            height: 320,
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_sweepController, _pulseController, _floatController]),
+              builder: (_, __) {
+                return CustomPaint(
+                  painter: _DesignRadarPainter(
+                    sweepProgress: _sweepController.value,
+                    pulseProgress: _pulseController.value,
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Center "You" avatar
+                      Positioned.fill(
+                        child: Center(
+                          child: Transform.translate(
+                            offset: Offset(0, -4 * math.sin(_floatController.value * math.pi)),
+                            child: Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: SeeUColors.surface,
+                                border: Border.all(color: SeeUColors.accent, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: SeeUColors.accent.withValues(alpha: 0.35),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
-                            ],
+                              child: const Center(
+                                child: Text('🦊', style: TextStyle(fontSize: 28)),
+                              ),
+                            ),
                           ),
                         ),
                       ),
+                      // Device dots
+                      ...entries.asMap().entries.map((e) {
+                        final idx = e.key;
+                        final entry = e.value;
+                        return _buildDeviceDot(entry, idx, entries.length);
+                      }),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _isScanning
-                      ? 'ПОИСК · $count ${_deviceWord(count)}'
-                      : 'НАЙДИ СВОИХ',
-                  style: SeeUTypography.micro.copyWith(
-                    color: SeeUColors.textTertiary,
                   ),
-                ),
-                const SizedBox(height: 1),
-                ListenableBuilder(
-                  listenable: _session,
-                  builder: (context, _) => Text(
-                    'Я: ${_session.currentUser.name}',
-                    style: SeeUTypography.micro.copyWith(
-                      color: SeeUColors.textTertiary.withValues(alpha: 0.6),
-                      fontSize: 9,
+                );
+              },
+            ),
+          ),
+        ),
+
+        // Distance labels
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.32,
+          left: 60,
+          child: Text(
+            '10м',
+            style: SeeUTypography.mono.copyWith(
+              fontSize: 9,
+              color: SeeUColors.textTertiary,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+        Positioned(
+          top: MediaQuery.of(context).size.height * 0.32,
+          left: 20,
+          child: Text(
+            '50м',
+            style: SeeUTypography.mono.copyWith(
+              fontSize: 9,
+              color: SeeUColors.textTertiary,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+
+        // Bottom hint
+        Positioned(
+          bottom: 90,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary),
+                children: [
+                  TextSpan(
+                    text: '${entries.length} ',
+                    style: const TextStyle(
+                      color: SeeUColors.accent,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-              ],
+                  TextSpan(text: '${_personWord(entries.length)} рядом · нажми, чтобы лайкнуть'),
+                ],
+              ),
             ),
-          ],
+          ),
+        ),
+
+        // Scan toggle button (bottom center)
+        Positioned(
+          bottom: 100,
+          left: 0,
+          right: 0,
+          child: Center(child: _buildFab()),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeviceDot(_ResolvedEntry entry, int index, int total) {
+    final angle = (index * 51 + 30) * math.pi / 180;
+    final dist = _rssiToMeters(entry.device.rssi);
+    final r = (dist / 50).clamp(0.0, 1.0) * 110 + 28;
+    final x = math.cos(angle) * r;
+    final y = math.sin(angle) * r;
+
+    final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
+    final emoji = emojis[index % emojis.length];
+    final isOnline = entry.device.rssi > -80;
+
+    return Positioned(
+      top: 160 + y - 22,
+      left: 160 + x - 22,
+      child: GestureDetector(
+        onTap: () => _showPersonSheet(entry, emoji),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: Duration(milliseconds: 500 + (dist * 20).round()),
+          curve: Curves.easeOutBack,
+          builder: (_, val, child) => Transform.scale(scale: val, child: child),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SeeUColors.surface,
+                  border: Border.all(color: SeeUColors.borderSubtle, width: 1.5),
+                  boxShadow: SeeUShadows.md,
+                ),
+                child: Stack(
+                  children: [
+                    Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                    if (isOnline)
+                      Positioned(
+                        bottom: -2,
+                        right: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: SeeUColors.success,
+                            border: Border.all(color: SeeUColors.surface, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _fmtDist(entry.device.rssi),
+                style: SeeUTypography.mono.copyWith(fontSize: 9, color: SeeUColors.textTertiary),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStatsBar(List<_ResolvedEntry> entries) {
-    final friends = entries.where(
-      (e) => e.resolved.relationship == Relationship.friend,
-    ).length;
-    final known = entries.where(
-      (e) => e.resolved.relationship == Relationship.knownPublic,
-    ).length;
-    final other = entries.where(
-      (e) =>
-          e.resolved.relationship == Relationship.strangerPrivate ||
-          e.resolved.relationship == Relationship.unknown,
-    ).length;
+  void _showPersonSheet(_ResolvedEntry entry, String emoji) {
+    HapticFeedback.mediumImpact();
+    final alias = (entry.resolved.user?.name ?? '').isNotEmpty ? (entry.resolved.user?.name ?? '') : 'unknown_${entry.device.macAddress.substring(0, 5)}';
+    final dist = _fmtDist(entry.device.rssi);
+    final isOnline = entry.device.rssi > -80;
 
-    // Найти свой чип для 4-й ячейки
-    final myChipEntry = entries.cast<_ResolvedEntry?>().firstWhere(
-      (e) => e!.resolved.isMyChip,
-      orElse: () => null,
-    );
-
-    String? myChipLabel;
-    if (myChipEntry != null) {
-      final mode = myChipEntry.resolved.mode;
-      if (mode == 0x00) {
-        myChipLabel = 'общий';
-      } else if (mode == 0x01) {
-        myChipLabel = 'приватный';
-      } else {
-        myChipLabel = 'молчит';
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _statCard('ДРУЗЬЯ', friends, const Color(0xFF5DCAA5), PhosphorIcons.users(PhosphorIconsStyle.fill)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _statCard('ЗНАКОМЫЕ', known, const Color(0xFF85B7EB), PhosphorIcons.eye(PhosphorIconsStyle.fill)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _statCard('ПРОЧИЕ', other, const Color(0xFFCECBF6), PhosphorIcons.question(PhosphorIconsStyle.fill)),
-              ),
-            ],
-          ),
-          if (myChipLabel != null) ...[
-            const SizedBox(height: 8),
-            _myChipCard(myChipLabel),
-          ],
-        ],
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: SeeUColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _PersonSheet(
+        emoji: emoji,
+        alias: alias,
+        distance: dist,
+        isOnline: isOnline,
+        rssi: entry.device.rssi,
       ),
     );
   }
 
-  Widget _statCard(String label, int count, Color color, IconData icon) {
+  // ─── List view ─────────────────────────────────────────────────────────
+
+  Widget _buildListView(List<_ResolvedEntry> entries) {
+    if (entries.isEmpty) return _buildEmptyState();
+
+    final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
+      itemCount: entries.length + (_chipOn ? 0 : 1),
+      itemBuilder: (context, index) {
+        if (!_chipOn && index == entries.length) {
+          return _buildChipOffBanner();
+        }
+
+        final entry = entries[index];
+        final emoji = emojis[index % emojis.length];
+        final alias = (entry.resolved.user?.name ?? '').isNotEmpty
+            ? (entry.resolved.user?.name ?? '')
+            : 'user_${entry.device.macAddress.substring(0, 5)}';
+        final isOnline = entry.device.rssi > -80;
+
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: Duration(milliseconds: 300 + index * 40),
+          curve: Curves.easeOutCubic,
+          builder: (_, val, child) => Opacity(
+            opacity: val,
+            child: Transform.translate(
+              offset: Offset(0, 8 * (1 - val)),
+              child: child,
+            ),
+          ),
+          child: GestureDetector(
+            onTap: () => _showPersonSheet(entry, emoji),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: SeeUColors.surface,
+                borderRadius: BorderRadius.circular(SeeURadii.medium),
+                border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  // Avatar
+                  Stack(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: SeeUColors.surface2,
+                        ),
+                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                      ),
+                      if (isOnline)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: SeeUColors.success,
+                              border: Border.all(color: SeeUColors.surface, width: 2),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          alias,
+                          style: SeeUTypography.mono.copyWith(
+                            fontSize: 14,
+                            color: SeeUColors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              _fmtDist(entry.device.rssi),
+                              style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary),
+                            ),
+                            Container(
+                              width: 2,
+                              height: 2,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: SeeUColors.textQuaternary,
+                              ),
+                            ),
+                            Text(
+                              '${entry.device.rssi} dBm',
+                              style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Like button
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: SeeUColors.borderSubtle),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.favorite_border_rounded, size: 18, color: SeeUColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChipOffBanner() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        color: SeeUColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(SeeURadii.card),
-        boxShadow: SeeUShadows.md,
+        color: SeeUColors.accentSoft,
+        borderRadius: BorderRadius.circular(SeeURadii.medium),
+        border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 6),
-              Text(
-                '$count',
-                style: SeeUTypography.displayL.copyWith(color: SeeUColors.textPrimary),
-              ),
-            ],
+          Icon(Icons.bluetooth_disabled_rounded, size: 20, color: SeeUColors.accent),
+          const SizedBox(height: 6),
+          Text(
+            'Чип выключен',
+            style: SeeUTypography.subtitle.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(
-            label,
-            style: SeeUTypography.micro.copyWith(color: SeeUColors.textTertiary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _myChipCard(String modeLabel) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: SeeUColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(SeeURadii.card),
-        boxShadow: SeeUShadows.sm,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            PhosphorIcons.cpu(PhosphorIconsStyle.fill),
-            size: 16,
-            color: SeeUColors.accent,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'МОЙ ЧИП',
-            style: SeeUTypography.micro.copyWith(color: SeeUColors.textTertiary),
-          ),
-          const Spacer(),
-          Text(
-            modeLabel.toUpperCase(),
-            style: SeeUTypography.micro.copyWith(
-              color: SeeUColors.accent,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBluetoothOffBanner() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: SeeUColors.accentSoft,
-        borderRadius: BorderRadius.circular(SeeURadii.card),
-        border: Border.all(color: SeeUColors.accent.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: SeeUColors.accent.withValues(alpha: 0.15),
-            ),
-            child: Icon(
-              PhosphorIcons.heartBreak(PhosphorIconsStyle.fill),
-              color: SeeUColors.accent,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bluetooth выключен',
-                  style: SeeUTypography.subtitle.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Включите Bluetooth для поиска людей рядом',
-                  style: SeeUTypography.caption.copyWith(
-                    color: SeeUColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+            'Включите чип, чтобы вас видели вокруг.\nСами вы видите всех в любом случае.',
+            style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary, height: 1.4),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -465,77 +688,42 @@ class _ScannerScreenState extends State<ScannerScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedBuilder(
-            animation: _radarController,
-            builder: (context, child) {
-              return SizedBox(
-                width: 200,
-                height: 200,
-                child: CustomPaint(
-                  painter: _RadarPainter(
-                    progress: _isScanning ? _radarController.value : 0,
-                    isActive: _isScanning,
-                    color: SeeUColors.accent,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isScanning
-                            ? SeeUColors.accent.withValues(alpha: 0.15)
-                            : SeeUColors.borderSubtle,
-                      ),
-                      child: Icon(
-                        PhosphorIcons.heartbeat(PhosphorIconsStyle.fill),
-                        size: 30,
-                        color: _isScanning
-                            ? SeeUColors.accent
-                            : SeeUColors.textTertiary,
-                      ),
+          SizedBox(
+            width: 200,
+            height: 200,
+            child: AnimatedBuilder(
+              animation: _sweepController,
+              builder: (_, __) => CustomPaint(
+                painter: _DesignRadarPainter(
+                  sweepProgress: _sweepController.value,
+                  pulseProgress: _pulseController.value,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: SeeUColors.surface,
+                      border: Border.all(color: SeeUColors.accent, width: 2),
+                    ),
+                    child: const Center(
+                      child: Text('🦊', style: TextStyle(fontSize: 28)),
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 32),
-          if (_isScanning)
-            AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, child) {
-                return Opacity(
-                  opacity: 0.5 + _pulseController.value * 0.5,
-                  child: child,
-                );
-              },
-              child: Text(
-                'Ищем людей рядом...',
-                style: GoogleFonts.fraunces(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  color: SeeUColors.textPrimary,
-                ),
-              ),
-            )
-          else
-            Text(
-              'Никого рядом',
-              style: GoogleFonts.fraunces(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: SeeUColors.textPrimary,
               ),
             ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            _isScanning ? 'Ищем людей рядом...' : 'Никого рядом',
+            style: SeeUTypography.displayS,
+          ),
           const SizedBox(height: 8),
           Text(
-            _isScanning
-                ? 'Пользователи SeeU появятся здесь'
-                : 'Нажмите кнопку поиска',
-            style: SeeUTypography.body.copyWith(
-              color: SeeUColors.textSecondary,
-            ),
+            _isScanning ? 'Люди с SeeU появятся здесь' : 'Нажмите кнопку поиска',
+            style: TextStyle(fontSize: 13, color: SeeUColors.textTertiary),
           ),
         ],
       ),
@@ -547,24 +735,28 @@ class _ScannerScreenState extends State<ScannerScreen>
       onTap: _bluetoothOn ? _toggleScan : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
         decoration: BoxDecoration(
-          color: _isScanning ? SeeUColors.like : SeeUColors.accent,
+          color: _isScanning ? SeeUColors.textPrimary : SeeUColors.accent,
           borderRadius: BorderRadius.circular(SeeURadii.pill),
-          boxShadow: SeeUShadows.lg,
+          boxShadow: [
+            BoxShadow(
+              color: (_isScanning ? SeeUColors.textPrimary : SeeUColors.accent)
+                  .withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              _isScanning
-                  ? PhosphorIcons.stop(PhosphorIconsStyle.fill)
-                  : PhosphorIcons.play(PhosphorIconsStyle.fill),
+              _isScanning ? Icons.stop_rounded : Icons.play_arrow_rounded,
               color: Colors.white,
               size: 20,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Text(
               _isScanning ? 'Стоп' : 'Поиск',
               style: SeeUTypography.subtitle.copyWith(
@@ -577,7 +769,34 @@ class _ScannerScreenState extends State<ScannerScreen>
       ),
     );
   }
+
+  Widget _buildEyeMark(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.22),
+        gradient: const RadialGradient(
+          center: Alignment(-0.2, -0.3),
+          colors: [Color(0xFFFF8060), Color(0xFFFF5A3C)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: SeeUColors.accent.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        size: Size(size, size),
+        painter: _EyeMarkPainter(),
+      ),
+    );
+  }
 }
+
+// ─── Resolved entry ──────────────────────────────────────────────────────
 
 class _ResolvedEntry {
   final BleDeviceModel device;
@@ -585,74 +804,304 @@ class _ResolvedEntry {
   const _ResolvedEntry({required this.device, required this.resolved});
 }
 
-class _RadarPainter extends CustomPainter {
-  final double progress;
-  final bool isActive;
-  final Color color;
+// ─── Person bottom sheet ─────────────────────────────────────────────────
 
-  _RadarPainter({required this.progress, required this.isActive, required this.color});
+class _PersonSheet extends StatelessWidget {
+  final String emoji;
+  final String alias;
+  final String distance;
+  final bool isOnline;
+  final int rssi;
+
+  const _PersonSheet({
+    required this.emoji,
+    required this.alias,
+    required this.distance,
+    required this.isOnline,
+    required this.rssi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: SeeUColors.textQuaternary,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+            child: Column(
+              children: [
+                // Avatar + alias
+                Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: SeeUColors.surface2,
+                    border: Border.all(color: SeeUColors.borderSubtle),
+                  ),
+                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 44))),
+                ),
+                const SizedBox(height: 14),
+                Text(alias, style: SeeUTypography.displayM),
+                const SizedBox(height: 4),
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(fontSize: 13, color: SeeUColors.textTertiary),
+                    children: [
+                      const TextSpan(text: 'виден только потому что '),
+                      TextSpan(
+                        text: 'рядом',
+                        style: TextStyle(
+                          color: SeeUColors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Stats
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                  ),
+                  child: Row(
+                    children: [
+                      _stat('Дистанция', distance),
+                      _stat('Сигнал', '$rssi dBm'),
+                      _stat('Статус', isOnline ? 'онлайн' : 'офлайн'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Privacy notice
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accentSoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.shield_outlined, size: 18, color: SeeUColors.accent),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Это псевдоним. Настоящий аккаунт скрыт. Вы можете только лайкнуть — и если вам ответят взаимно, появится возможность написать.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SeeUColors.textSecondary,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: SeeUColors.surface2,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Закрыть',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: SeeUColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: SeeUColors.like,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: SeeUColors.like.withValues(alpha: 0.3),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.favorite_rounded, size: 18, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text(
+                                'Поставить лайк',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value, style: SeeUTypography.displayS),
+          const SizedBox(height: 2),
+          Text(
+            label.toUpperCase(),
+            style: SeeUTypography.monoLabel.copyWith(fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Radar painter (design version) ──────────────────────────────────────
+
+class _DesignRadarPainter extends CustomPainter {
+  final double sweepProgress;
+  final double pulseProgress;
+
+  _DesignRadarPainter({required this.sweepProgress, required this.pulseProgress});
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = size.width / 2;
+    const color = SeeUColors.accent;
 
-    // Background rings (always visible)
-    for (var i = 1; i <= 4; i++) {
-      final ringProgress = i / 4.0;
-      final radius = maxRadius * ringProgress;
-      final paint = Paint()
-        ..color = color.withValues(alpha: isActive ? 0.08 : 0.05)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-      canvas.drawCircle(center, radius, paint);
-    }
-
-    if (isActive) {
-      // Animated expanding rings
-      for (var i = 0; i < 3; i++) {
-        final ringProgress = (progress + i * 0.33) % 1.0;
-        final radius = maxRadius * (0.2 + ringProgress * 0.8);
-        final alpha = (1.0 - ringProgress) * 0.3;
-        final strokeWidth = 2.5 * (1.0 - ringProgress) + 0.5;
-        final paint = Paint()
-          ..color = color.withValues(alpha: alpha)
+    // Static rings
+    for (var i = 1; i <= 3; i++) {
+      final radius = maxRadius * (i / 3.0) * 0.75 + maxRadius * 0.25;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = color.withValues(alpha: 0.18)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth;
-        canvas.drawCircle(center, radius, paint);
-      }
-
-      // Sweep line
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(progress * 2 * 3.14159);
-      final sweepPaint = Paint()
-        ..shader = SweepGradient(
-          startAngle: 0,
-          endAngle: 1.0,
-          colors: [
-            color.withValues(alpha: 0.0),
-            color.withValues(alpha: 0.15),
-            color.withValues(alpha: 0.0),
-          ],
-          stops: const [0.0, 0.15, 0.3],
-        ).createShader(Rect.fromCircle(center: Offset.zero, radius: maxRadius));
-      canvas.drawCircle(Offset.zero, maxRadius * 0.9, sweepPaint);
-      canvas.restore();
-
-      // Center glow
-      final glowPaint = Paint()
-        ..shader = RadialGradient(
-          colors: [
-            color.withValues(alpha: 0.15),
-            color.withValues(alpha: 0.0),
-          ],
-        ).createShader(Rect.fromCircle(center: center, radius: maxRadius * 0.4));
-      canvas.drawCircle(center, maxRadius * 0.4, glowPaint);
+          ..strokeWidth = 0.5,
+      );
     }
+
+    // Pulse rings
+    for (var i = 0; i < 3; i++) {
+      final t = (pulseProgress + i * 0.33) % 1.0;
+      final radius = 30 + t * (maxRadius - 30);
+      final opacity = (1.0 - t) * 0.5;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = color.withValues(alpha: opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5 * (1.0 - t) + 0.5,
+      );
+    }
+
+    // Sweep cone
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    final sweepAngle = sweepProgress * 2 * math.pi;
+    final sweepPaint = Paint()
+      ..shader = SweepGradient(
+        startAngle: sweepAngle - 1.4,
+        endAngle: sweepAngle,
+        colors: [
+          Colors.transparent,
+          color.withValues(alpha: 0.18),
+          color.withValues(alpha: 0.4),
+          color.withValues(alpha: 0.5),
+        ],
+        stops: const [0.0, 0.6, 0.95, 1.0],
+        tileMode: TileMode.clamp,
+      ).createShader(Rect.fromCircle(center: Offset.zero, radius: maxRadius * 0.8));
+    canvas.drawCircle(Offset.zero, maxRadius * 0.8, sweepPaint);
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _RadarPainter oldDelegate) =>
-      progress != oldDelegate.progress || isActive != oldDelegate.isActive;
+  bool shouldRepaint(covariant _DesignRadarPainter old) => true;
+}
+
+// ─── EyeMark painter ─────────────────────────────────────────────────────
+
+class _EyeMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    final center = Offset(s / 2, s / 2);
+
+    final eyePath = Path();
+    eyePath.moveTo(s * 0.12, s / 2);
+    eyePath.quadraticBezierTo(s * 0.35, s * 0.2, s / 2, s * 0.2);
+    eyePath.quadraticBezierTo(s * 0.65, s * 0.2, s * 0.88, s / 2);
+    eyePath.quadraticBezierTo(s * 0.65, s * 0.8, s / 2, s * 0.8);
+    eyePath.quadraticBezierTo(s * 0.35, s * 0.8, s * 0.12, s / 2);
+    eyePath.close();
+    canvas.drawPath(eyePath, Paint()..color = const Color(0xFFFFF6F0));
+
+    final irisPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.2, -0.2),
+        colors: [const Color(0xFFFF6E50), const Color(0xFFC12A1A)],
+      ).createShader(Rect.fromCircle(center: center, radius: s * 0.18));
+    canvas.drawCircle(center, s * 0.18, irisPaint);
+
+    canvas.drawCircle(
+      Offset(s * 0.44, s * 0.44),
+      s * 0.04,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../api/api_client.dart';
+import '../api/api_endpoints.dart';
 import '../models/post.dart';
-import '../../data/mock_service.dart';
 
 class FeedState {
   final List<Post> posts;
@@ -16,7 +17,7 @@ class FeedState {
     this.isLoadingMore = false,
     this.hasMore = true,
     this.error,
-    int page = 0,
+    int page = 1,
   }) : _page = page;
 
   int get page => _page;
@@ -41,7 +42,9 @@ class FeedState {
 }
 
 class FeedNotifier extends StateNotifier<FeedState> {
-  FeedNotifier() : super(const FeedState()) {
+  final ApiClient _api;
+
+  FeedNotifier(this._api) : super(const FeedState()) {
     loadFeed();
   }
 
@@ -49,16 +52,19 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final posts = await MockService.instance.getFeed();
+      final response = await _api.get(ApiEndpoints.feed, queryParameters: {'page': '1', 'limit': '20'});
+      final data = response.data;
+      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final posts = (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
       state = FeedState(
         posts: posts,
         isLoading: false,
-        hasMore: posts.length >= 10,
-        page: 1,
+        hasMore: posts.length >= 20,
+        page: 2,
       );
     } catch (e) {
       state = FeedState(
-        posts: Post.demoPosts,
+        posts: [],
         isLoading: false,
         error: e.toString(),
         hasMore: false,
@@ -70,11 +76,14 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (state.isLoadingMore || !state.hasMore) return;
     state = state.copyWith(isLoadingMore: true);
     try {
-      final newPosts = await MockService.instance.getFeed(page: state.page);
+      final response = await _api.get(ApiEndpoints.feed, queryParameters: {'page': '${state.page}', 'limit': '20'});
+      final data = response.data;
+      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final newPosts = (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
       state = state.copyWith(
         posts: [...state.posts, ...newPosts],
         isLoadingMore: false,
-        hasMore: newPosts.length >= 10,
+        hasMore: newPosts.length >= 20,
         page: state.page + 1,
       );
     } catch (_) {
@@ -84,7 +93,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
 
   Future<void> refresh() => loadFeed();
 
-  void toggleLike(String postId) {
+  Future<void> toggleLike(String postId) async {
     final posts = state.posts.map((p) {
       if (p.id != postId) return p;
       final newLiked = !p.isLiked;
@@ -94,16 +103,32 @@ class FeedNotifier extends StateNotifier<FeedState> {
       );
     }).toList();
     state = state.copyWith(posts: posts);
-    MockService.instance.toggleLike(postId);
+
+    final post = state.posts.firstWhere((p) => p.id == postId);
+    try {
+      if (post.isLiked) {
+        await _api.post(ApiEndpoints.likePost(postId));
+      } else {
+        await _api.delete(ApiEndpoints.likePost(postId));
+      }
+    } catch (_) {}
   }
 
-  void toggleSave(String postId) {
+  Future<void> toggleSave(String postId) async {
     final posts = state.posts.map((p) {
       if (p.id != postId) return p;
       return p.copyWith(isSaved: !p.isSaved);
     }).toList();
     state = state.copyWith(posts: posts);
-    MockService.instance.toggleSave(postId);
+
+    final post = state.posts.firstWhere((p) => p.id == postId);
+    try {
+      if (post.isSaved) {
+        await _api.post(ApiEndpoints.savePost(postId));
+      } else {
+        await _api.delete(ApiEndpoints.savePost(postId));
+      }
+    } catch (_) {}
   }
 
   void removePost(String postId) {
@@ -114,5 +139,6 @@ class FeedNotifier extends StateNotifier<FeedState> {
 }
 
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>((ref) {
-  return FeedNotifier();
+  final api = ref.watch(apiClientProvider);
+  return FeedNotifier(api);
 });

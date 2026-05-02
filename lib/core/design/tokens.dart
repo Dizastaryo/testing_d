@@ -1,24 +1,42 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 // ─── Colors ───────────────────────────────────────────────────────────────
 
 class SeeUColors {
   SeeUColors._();
 
-  // Light theme
-  static const Color background = Color(0xFFFAF8F5);
+  // ── Light theme ──
+  static const Color background = Color(0xFFFAF7F2);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceElevated = Color(0xFFFEFCF9);
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF6B6B6B);
-  static const Color textTertiary = Color(0xFF9A9A9A);
-  static const Color borderSubtle = Color(0xFFEFEBE5);
+  static const Color surface2 = Color(0xFFF4EFE8);
+  static const Color surfaceElevated = Color(0xFFF4EFE8); // alias for surface2
+
+  static const Color textPrimary = Color(0xFF161310);
+  static const Color textSecondary = Color(0xFF4A4540);
+  static const Color textTertiary = Color(0xFF8A847C);
+  static const Color textQuaternary = Color(0xFFC9C2B8);
+
+  static const Color borderSubtle = Color(0xFFECE5DA);
+
   static const Color accent = Color(0xFFFF5A3C);
-  static const Color accentSoft = Color(0xFFFFE8E0);
-  static const Color like = Color(0xFFFF3366);
+  static const Color accentSecondary = Color(0xFFFF8060);
+  static const Color accentSoft = Color(0xFFFFE4D9);
+  static const Color amber = Color(0xFFFFB547);
+  static const Color plum = Color(0xFFC04CFD);
+  static const Color like = Color(0xFFFF3B6B);
   static const Color success = Color(0xFF2FA84F);
-  static const Color error = Color(0xFFFF3366);
+  static const Color error = Color(0xFFFF3B6B);
+
+  // ── Dark theme ──
+  static const Color darkBg = Color(0xFF0E0C0A);
+  static const Color darkSurface = Color(0xFF1A1714);
+  static const Color darkSurface2 = Color(0xFF221E1A);
+  static const Color darkInk = Color(0xFFF5F2ED);
+  static const Color darkInk2 = Color(0xFFB6AFA5);
+  static const Color darkInk3 = Color(0xFF7A736A);
+  static const Color darkInk4 = Color(0xFF4A443E);
+  static const Color darkLine = Color(0xFF2A2520);
+  static const Color darkCoralSoft = Color(0xFF3A201A);
 
   // Story ring gradient
   static const List<Color> storyRingColors = [
@@ -33,10 +51,34 @@ class SeeUColors {
     end: Alignment.bottomRight,
   );
 
+  // Title gradient (3-color)
+  static const LinearGradient titleGradient = LinearGradient(
+    colors: [
+      Color(0xFFFF5A3C),
+      Color(0xFFFF8060),
+      Color(0xFFFFB547),
+    ],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
+
   // Signal colors (scanner)
   static const Color signalClose = Color(0xFF2FA84F);
   static const Color signalMedium = Color(0xFFFFB547);
   static const Color signalFar = Color(0xFFFF5A3C);
+
+  // Avatar palettes
+  static const List<List<Color>> avatarPalettes = [
+    [Color(0xFFFF8060), Color(0xFFC04CFD)],
+    [Color(0xFFFFB547), Color(0xFFFF5A3C)],
+    [Color(0xFF5DB1FF), Color(0xFFC04CFD)],
+    [Color(0xFF2FA84F), Color(0xFF5DB1FF)],
+    [Color(0xFFFF3B6B), Color(0xFFFFB547)],
+    [Color(0xFF7B61FF), Color(0xFFFF8060)],
+    [Color(0xFF1AC8B8), Color(0xFF5DB1FF)],
+    [Color(0xFFFFB547), Color(0xFFFF3B6B)],
+    [Color(0xFFA47148), Color(0xFFFFB547)],
+  ];
 }
 
 // ─── Typography ───────────────────────────────────────────────────────────
@@ -44,58 +86,94 @@ class SeeUColors {
 class SeeUTypography {
   SeeUTypography._();
 
-  static TextStyle displayXL = GoogleFonts.fraunces(
+  static const String _serifFamily = 'Georgia';
+  static const String _uiFamily = 'Segoe UI';
+  static const String _monoFamily = 'Consolas';
+
+  static TextStyle displayXL = const TextStyle(
+    fontFamily: _serifFamily,
     fontSize: 42,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w400,
     letterSpacing: -1.5,
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle displayL = GoogleFonts.fraunces(
+  static TextStyle displayL = const TextStyle(
+    fontFamily: _serifFamily,
     fontSize: 32,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -1,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.5,
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle title = GoogleFonts.inter(
+  static TextStyle displayM = const TextStyle(
+    fontFamily: _serifFamily,
+    fontSize: 28,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.3,
+    color: SeeUColors.textPrimary,
+  );
+
+  static TextStyle displayS = const TextStyle(
+    fontFamily: _serifFamily,
+    fontSize: 22,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.2,
+    color: SeeUColors.textPrimary,
+  );
+
+  static TextStyle title = const TextStyle(
+    fontFamily: _uiFamily,
     fontSize: 20,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.3,
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle subtitle = GoogleFonts.inter(
+  static TextStyle subtitle = const TextStyle(
+    fontFamily: _uiFamily,
     fontSize: 16,
     fontWeight: FontWeight.w500,
     letterSpacing: -0.2,
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle body = GoogleFonts.inter(
+  static TextStyle body = const TextStyle(
+    fontFamily: _uiFamily,
     fontSize: 15,
     fontWeight: FontWeight.w400,
     letterSpacing: -0.1,
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle caption = GoogleFonts.inter(
+  static TextStyle caption = const TextStyle(
+    fontFamily: _uiFamily,
     fontSize: 13,
     fontWeight: FontWeight.w500,
     letterSpacing: 0,
     color: SeeUColors.textSecondary,
   );
 
-  static TextStyle micro = GoogleFonts.inter(
+  static TextStyle micro = const TextStyle(
+    fontFamily: _uiFamily,
     fontSize: 11,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.3,
     color: SeeUColors.textTertiary,
   );
 
-  static TextStyle mono = GoogleFonts.jetBrainsMono(
+  static TextStyle mono = const TextStyle(
+    fontFamily: _monoFamily,
     fontSize: 12,
     fontWeight: FontWeight.w400,
+    color: SeeUColors.textTertiary,
+  );
+
+  static TextStyle monoLabel = const TextStyle(
+    fontFamily: _monoFamily,
+    fontSize: 10,
+    fontWeight: FontWeight.w400,
+    letterSpacing: 1.0,
     color: SeeUColors.textTertiary,
   );
 }
@@ -119,8 +197,9 @@ class SeeUSpacing {
 class SeeURadii {
   SeeURadii._();
   static const double small = 12;
-  static const double card = 20;
-  static const double sheet = 28;
+  static const double medium = 18;
+  static const double card = 24;
+  static const double sheet = 32;
   static const double pill = 999;
 }
 
@@ -131,7 +210,7 @@ class SeeUShadows {
 
   static List<BoxShadow> get sm => [
         BoxShadow(
-          color: const Color(0xFF1A1A1A).withValues(alpha: 0.04),
+          color: const Color(0xFF161310).withValues(alpha: 0.06),
           offset: const Offset(0, 1),
           blurRadius: 2,
         ),
@@ -139,12 +218,12 @@ class SeeUShadows {
 
   static List<BoxShadow> get md => [
         BoxShadow(
-          color: const Color(0xFF1A1A1A).withValues(alpha: 0.06),
+          color: const Color(0xFF161310).withValues(alpha: 0.06),
           offset: const Offset(0, 4),
           blurRadius: 16,
         ),
         BoxShadow(
-          color: const Color(0xFF1A1A1A).withValues(alpha: 0.04),
+          color: const Color(0xFF161310).withValues(alpha: 0.04),
           offset: const Offset(0, 1),
           blurRadius: 2,
         ),
@@ -152,14 +231,14 @@ class SeeUShadows {
 
   static List<BoxShadow> get lg => [
         BoxShadow(
-          color: const Color(0xFF1A1A1A).withValues(alpha: 0.08),
+          color: const Color(0xFF161310).withValues(alpha: 0.10),
           offset: const Offset(0, 12),
           blurRadius: 32,
         ),
         BoxShadow(
-          color: const Color(0xFF1A1A1A).withValues(alpha: 0.04),
+          color: const Color(0xFF161310).withValues(alpha: 0.06),
           offset: const Offset(0, 2),
-          blurRadius: 4,
+          blurRadius: 6,
         ),
       ];
 }

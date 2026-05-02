@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'tokens.dart';
 
 enum SeeUButtonVariant { primary, secondary, ghost }
@@ -126,7 +125,8 @@ class _SeeUButtonState extends State<SeeUButton>
                       ],
                       Text(
                         widget.label,
-                        style: GoogleFonts.inter(
+                        style: TextStyle(
+                          fontFamily: 'Segoe UI',
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: fgColor,
