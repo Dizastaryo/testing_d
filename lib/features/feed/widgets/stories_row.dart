@@ -184,6 +184,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
       duration: const Duration(seconds: 5),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
+          if (!mounted) return;
           _nextStory();
         }
       });
@@ -195,6 +196,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
       duration: const Duration(milliseconds: 800),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
+          if (!mounted) return;
           setState(() => _showCenterHeart = false);
         }
       });
@@ -214,6 +216,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
       duration: const Duration(milliseconds: 900),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
+          if (!mounted) return;
           setState(() => _activeEmoji = null);
         }
       });
@@ -412,10 +415,72 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     final group = _currentGroup;
     final isLiked = _likedStoryIds.contains(story.id);
 
+    // Derive a per-group accent color for gradient backgrounds
+    final List<List<Color>> gradientPalette = [
+      [const Color(0xFF6A3DE8), const Color(0xFFB06AB3)],
+      [const Color(0xFFFF5A3C), const Color(0xFFFF9A44)],
+      [const Color(0xFF0F2027), const Color(0xFF203A43)],
+      [const Color(0xFF1A1A2E), const Color(0xFF16213E)],
+      [const Color(0xFF134E5E), const Color(0xFF71B280)],
+    ];
+    final gradientColors =
+        gradientPalette[_groupIndex % gradientPalette.length];
+
+    final bool hasValidUrl =
+        story.mediaUrl.isNotEmpty;
+
+    Widget storyImageWidget;
+    if (!hasValidUrl) {
+      // No URL — show gradient background immediately
+      storyImageWidget = Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: gradientColors,
+          ),
+        ),
+      );
+    } else {
+      storyImageWidget = CachedNetworkImage(
+        imageUrl: story.mediaUrl,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradientColors,
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+                color: Colors.white54, strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (_, __, ___) => GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: gradientColors,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: true,
-      body: GestureDetector(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Main gesture + content layer
+          GestureDetector(
         onTapDown: (details) {
           if (_isReplyOpen) return;
           _progressController.stop();
@@ -464,28 +529,15 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
         onVerticalDragEnd: (details) {
           if (_isReplyOpen) return;
           if (details.primaryVelocity != null &&
-              details.primaryVelocity! > 200) {
+              details.primaryVelocity! > 300) {
             Navigator.of(context).pop();
           }
         },
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Story image
-            CachedNetworkImage(
-              imageUrl: story.mediaUrl,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.black,
-                child: const Center(
-                  child: Icon(Icons.broken_image,
-                      color: Colors.white54, size: 48),
-                ),
-              ),
-            ),
+            // Story image / gradient background
+            storyImageWidget,
 
             // Top gradient
             Positioned(
@@ -602,11 +654,11 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
               ),
             ),
 
-            // User info header
+            // User info header (avatar + username + time; X button is in outer Stack)
             Positioned(
               top: 0,
               left: 0,
-              right: 0,
+              right: 56, // leave space for the X button in the outer stack
               child: SafeArea(
                 bottom: false,
                 child: Padding(
@@ -652,11 +704,6 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                             ),
                           ],
                         ),
-                      ),
-                      IconButton(
-                        icon: PhosphorIcon(PhosphorIcons.x(),
-                            color: Colors.white, size: 24),
-                        onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
                   ),
@@ -976,7 +1023,26 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                 ),
               ),
           ],
-        ),
+          ),
+          ),
+          // Close button — always works, above everything.
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: IconButton(
+                  icon: PhosphorIcon(PhosphorIcons.x(),
+                      color: Colors.white, size: 26),
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Закрыть',
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

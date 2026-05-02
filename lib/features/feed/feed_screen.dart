@@ -149,16 +149,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       controller: _pageController,
       onPageChanged: _onPageChanged,
       children: [
-        // Page 0: Camera
-        CameraScreen(
-          onClose: () {
-            _pageController.animateToPage(
-              1,
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOutCubic,
-            );
-          },
-        ),
+        // Page 0: Camera (lazy — only build when swiped to)
+        _isCameraActive
+            ? CameraScreen(
+                onClose: () {
+                  _pageController.animateToPage(
+                    1,
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+              )
+            : const SizedBox.shrink(),
         // Page 1: Feed
         _buildFeedPage(feedState, notifState),
       ],

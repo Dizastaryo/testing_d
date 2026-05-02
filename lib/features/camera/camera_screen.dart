@@ -139,8 +139,20 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _setupCamera(CameraDescription camera) async {
+    // Dispose the old controller BEFORE creating a new one.
+    // Running two controllers simultaneously can cause the back camera to
+    // output a black frame on many devices.
     final prev = _controller;
     _controller = null;
+    if (mounted) setState(() => _isInitialized = false);
+
+    if (prev != null) {
+      try {
+        await prev.dispose();
+      } catch (e) {
+        debugPrint('_setupCamera: error disposing previous controller: $e');
+      }
+    }
 
     final controller = CameraController(
       camera,
@@ -151,13 +163,15 @@ class _CameraScreenState extends State<CameraScreen>
 
     try {
       await controller.initialize();
+      debugPrint(
+        '_setupCamera: initialized ${camera.lensDirection.name} camera '
+        'previewSize=${controller.value.previewSize} '
+        'aspectRatio=${controller.value.aspectRatio}',
+      );
+
       _maxZoom = await controller.getMaxZoomLevel();
       _minZoom = await controller.getMinZoomLevel();
       _currentZoom = _minZoom;
-
-      if (prev != null && prev.value.isInitialized) {
-        await prev.dispose();
-      }
 
       if (!mounted) {
         await controller.dispose();
@@ -171,14 +185,24 @@ class _CameraScreenState extends State<CameraScreen>
         _errorMessage = null;
       });
     } on CameraException catch (e) {
+      debugPrint('_setupCamera: CameraException: ${e.code} — ${e.description}');
       await controller.dispose();
-      if (mounted) setState(() => _errorMessage = 'Ошибка камеры: ${e.description}');
-    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Ошибка камеры: ${e.description}';
+          _isSwitching = false;
+        });
+      } else {
+        _isSwitching = false;
+      }
+    } catch (e) {
+      debugPrint('_setupCamera: unexpected error: $e');
       await controller.dispose();
-      if (mounted) setState(() => _errorMessage = 'Ошибка инициализации камеры');
-    } finally {
-      if (mounted && _isSwitching) {
-        setState(() => _isSwitching = false);
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Ошибка инициализации камеры';
+          _isSwitching = false;
+        });
       } else {
         _isSwitching = false;
       }
@@ -348,14 +372,30 @@ class _CameraScreenState extends State<CameraScreen>
     if (state == AppLifecycleState.inactive) {
       if (_isRecording) _stopRecording();
       final ctrl = _controller;
-      if (ctrl != null && ctrl.value.isInitialized) {
-        _controller = null;
+      _controller = null;
+      if (mounted) setState(() => _isInitialized = false);
+      if (ctrl != null) {
         ctrl.dispose();
       }
-      if (mounted) setState(() => _isInitialized = false);
     } else if (state == AppLifecycleState.resumed) {
-      _initCamera();
+      // Reinitialize the camera that was active before the app went background.
+      _reinitActiveCamera();
     }
+  }
+
+  /// Reinitializes the camera that was last active (front or back), without
+  /// resetting [_isFrontCamera] to its default value.
+  Future<void> _reinitActiveCamera() async {
+    if (kIsWeb) return;
+    if (_cameras.isEmpty) {
+      // Camera list might have been lost; do a full reinit.
+      await _initCamera();
+      return;
+    }
+    final camera = _isFrontCamera
+        ? (_getFrontCamera() ?? _cameras.first)
+        : (_getBackCamera() ?? _cameras.last);
+    await _setupCamera(camera);
   }
 
   @override
@@ -477,14 +517,26 @@ class _CameraScreenState extends State<CameraScreen>
 
   Widget _buildCameraPreview() {
     final controller = _controller!;
-    final size = MediaQuery.of(context).size;
-    final previewAspect = controller.value.aspectRatio;
-    final deviceAspect = size.width / size.height;
-    final scale = deviceAspect / previewAspect;
 
-    return Transform.scale(
-      scale: scale < 1.0 ? 1.0 / scale : scale,
-      child: Center(child: CameraPreview(controller)),
+    // `previewSize` is reported in landscape orientation (width > height).
+    // In portrait mode the sensor is rotated 90°, so we swap width/height
+    // when sizing the inner SizedBox.  FittedBox.cover then scales that box
+    // to fill the screen exactly — no over-zoom, no black bars.
+    final previewSize = controller.value.previewSize;
+    if (previewSize == null) {
+      return const SizedBox.expand(child: ColoredBox(color: Colors.black));
+    }
+
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          // Swap landscape width/height to get the portrait dimensions.
+          width: previewSize.height,
+          height: previewSize.width,
+          child: CameraPreview(controller),
+        ),
+      ),
     );
   }
 
