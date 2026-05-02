@@ -92,6 +92,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             transitionsBuilder: _fadeTransition,
           ),
         ),
+        GoRoute(
+          path: '/reels',
+          pageBuilder: (_, __) => CustomTransitionPage(
+            child: const ReelsScreen(),
+            transitionsBuilder: _fadeTransition,
+          ),
+        ),
         ShellRoute(
           builder: (context, state, child) => MainScaffold(child: child),
           routes: [
@@ -123,13 +130,6 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                   ),
                 ),
               ],
-            ),
-            GoRoute(
-              path: '/reels',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ReelsScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
             ),
             GoRoute(
               path: '/scanner',

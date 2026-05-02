@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 import '../core/design/tokens.dart';
 import '../core/design/tappable.dart';
 
+/// Global notifier for hiding bottom nav from within a screen (e.g., feed camera swipe).
+final bottomNavHiddenNotifier = ValueNotifier<bool>(false);
+
 class MainScaffold extends StatelessWidget {
   final Widget child;
 
@@ -23,7 +26,19 @@ class MainScaffold extends StatelessWidget {
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
     const routes = ['/feed', '/explore', '/reels', '/scanner', '/profile'];
-    context.go(routes[index]);
+    // Reels is outside ShellRoute — push instead of go so user can navigate back
+    if (index == 2) {
+      context.push(routes[index]);
+    } else {
+      context.go(routes[index]);
+    }
+  }
+
+  /// Routes where the bottom nav should be hidden (fullscreen experiences).
+  bool _shouldHideNav(String location) {
+    // Hide on individual chat screens (but NOT the chat list)
+    if (location.startsWith('/chat/') && location != '/chat') return true;
+    return false;
   }
 
   @override
@@ -32,12 +47,17 @@ class MainScaffold extends StatelessWidget {
     final currentIndex = _locationToIndex(location);
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
+    final hideNavByRoute = _shouldHideNav(location);
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: child,
-      extendBody: true,
-      bottomNavigationBar: Container(
+    return ValueListenableBuilder<bool>(
+      valueListenable: bottomNavHiddenNotifier,
+      builder: (context, hiddenByScreen, _) {
+        final hideNav = hideNavByRoute || hiddenByScreen;
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: child,
+          extendBody: true,
+          bottomNavigationBar: hideNav ? null : Container(
         decoration: BoxDecoration(
           color: isDark
               ? const Color(0x00000000)
@@ -97,6 +117,8 @@ class MainScaffold extends StatelessWidget {
           ),
         ),
       ),
+    );
+      },
     );
   }
 

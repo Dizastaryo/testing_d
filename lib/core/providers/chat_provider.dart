@@ -78,7 +78,7 @@ class ChatListState {
 }
 
 class ChatListNotifier extends StateNotifier<ChatListState> {
-  final ApiClient _api;
+  final ApiClient _api; // ignore: unused_field
   ChatListNotifier(this._api) : super(const ChatListState()) {
     load();
   }
@@ -105,7 +105,7 @@ class ChatMessagesState {
 
 class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final String chatId;
-  final ApiClient _api;
+  final ApiClient _api; // ignore: unused_field
   ChatMessagesNotifier(this.chatId, this._api) : super(const ChatMessagesState()) {
     load();
   }

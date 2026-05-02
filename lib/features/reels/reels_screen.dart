@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/tokens.dart';
@@ -478,6 +479,34 @@ class _ReelsScreenState extends State<ReelsScreen>
                   tabs: _tabs,
                   activeIdx: _tabIdx,
                   onTab: (i) => setState(() => _tabIdx = i),
+                ),
+              ),
+
+              // ── Close button (top-right) ──
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 38,
+                right: 12,
+                child: GestureDetector(
+                  onTap: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/feed');
+                    }
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      PhosphorIconsBold.x,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
                 ),
               ),
 

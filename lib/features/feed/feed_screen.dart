@@ -10,6 +10,7 @@ import '../../core/design/design.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/notification_provider.dart';
 import '../camera/camera_screen.dart';
+import '../../widgets/main_scaffold.dart' show bottomNavHiddenNotifier;
 import 'widgets/stories_row.dart';
 import 'widgets/post_card.dart';
 
@@ -28,6 +29,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   // PageView for camera swipe
   late PageController _pageController;
   bool _isCameraActive = false;
+  bool _cameraEverOpened = false;
 
   // Header icon entrance animations
   late AnimationController _headerIconsController;
@@ -88,6 +90,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 
   @override
   void dispose() {
+    bottomNavHiddenNotifier.value = false;
     _scrollController.dispose();
     _pageController.dispose();
     _headerIconsController.dispose();
@@ -97,7 +100,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   void _onPageChanged(int page) {
     final isCamera = page == 0;
     if (isCamera != _isCameraActive) {
-      setState(() => _isCameraActive = isCamera);
+      setState(() {
+        _isCameraActive = isCamera;
+        if (isCamera) _cameraEverOpened = true;
+      });
+      bottomNavHiddenNotifier.value = isCamera;
       if (isCamera) {
         HapticFeedback.mediumImpact();
         SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -149,8 +156,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       controller: _pageController,
       onPageChanged: _onPageChanged,
       children: [
-        // Page 0: Camera (lazy — only build when swiped to)
-        _isCameraActive
+        // Page 0: Camera (lazy — only build when first swiped to)
+        _cameraEverOpened
             ? CameraScreen(
                 onClose: () {
                   _pageController.animateToPage(
@@ -160,7 +167,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   );
                 },
               )
-            : const SizedBox.shrink(),
+            : const ColoredBox(color: Colors.black),
         // Page 1: Feed
         _buildFeedPage(feedState, notifState),
       ],
@@ -736,7 +743,7 @@ class _DailyPromptCard extends StatelessWidget {
                       _PromptButton(
                         label: 'Снять',
                         isPrimary: true,
-                        onTap: () => context.go('/reels'),
+                        onTap: () => context.push('/reels'),
                       ),
                       const SizedBox(width: 8),
                       const _PromptButton(

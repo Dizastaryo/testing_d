@@ -159,7 +159,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       value: '',
                       onTap: () async {
                         await ref.read(authProvider.notifier).logout();
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         context.go('/login');
                       },
                     ),
