@@ -60,8 +60,8 @@ class MainScaffold extends StatelessWidget {
               : Container(
                   decoration: BoxDecoration(
                     color: isDark
-                        ? SeeUColors.darkSurface
-                        : SeeUColors.surface,
+                        ? SeeUColors.darkBg
+                        : SeeUColors.background,
                     border: Border(
                       top: BorderSide(
                         color: isDark
@@ -256,7 +256,7 @@ class _NavItemState extends State<_NavItem>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = isDark ? Colors.white : SeeUColors.textPrimary;
+    final activeColor = SeeUColors.accent;
     final inactiveColor = isDark
         ? Colors.white.withValues(alpha: 0.55)
         : SeeUColors.textTertiary;
