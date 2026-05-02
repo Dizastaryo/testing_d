@@ -1,4 +1,5 @@
 export 'tokens.dart';
+export 'seeu_theme_colors.dart';
 export 'seeu_button.dart';
 export 'seeu_card.dart';
 export 'seeu_input.dart';

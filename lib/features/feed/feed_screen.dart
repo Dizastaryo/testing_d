@@ -175,8 +175,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   }
 
   Widget _buildFeedPage(dynamic feedState, dynamic notifState) {
+    final c = context.seeuColors;
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: Stack(
         children: [
           feedState.isLoading && feedState.posts.isEmpty
@@ -321,7 +322,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: SeeUColors.surface,
+                        color: c.surface,
                         shape: BoxShape.circle,
                         boxShadow: SeeUShadows.md,
                         border: Border.all(
