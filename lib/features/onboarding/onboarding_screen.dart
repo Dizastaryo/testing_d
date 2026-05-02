@@ -140,11 +140,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final isLast = _currentPage == _slides.length - 1;
     final isFirst = _currentPage == 0;
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           children: [
@@ -176,7 +177,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           decoration: BoxDecoration(
                             color: i == _currentPage
                                 ? SeeUColors.accent
-                                : SeeUColors.textQuaternary,
+                                : c.ink4,
                             borderRadius:
                                 BorderRadius.circular(SeeURadii.pill),
                           ),
@@ -192,8 +193,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     height: 56,
                     child: TextButton(
                       style: TextButton.styleFrom(
-                        backgroundColor: SeeUColors.textPrimary,
-                        foregroundColor: SeeUColors.background,
+                        backgroundColor: c.ink,
+                        foregroundColor: c.bg,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -218,7 +219,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         child: Text(
                           'Пропустить',
                           style: SeeUTypography.caption.copyWith(
-                            color: SeeUColors.textTertiary,
+                            color: c.ink3,
                           ),
                         ),
                       ),
@@ -234,6 +235,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildSlide(_OnboardingSlide slide) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 40, 32, 0),
       child: Column(
@@ -291,11 +293,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           // Serif title, fontSize 36
           Text(
             slide.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Georgia',
               fontSize: 36,
               fontWeight: FontWeight.w400,
-              color: SeeUColors.textPrimary,
+              color: c.ink,
               height: 1.05,
               letterSpacing: -0.72,
             ),
@@ -306,7 +308,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Text(
             slide.body,
             style: SeeUTypography.body.copyWith(
-              color: SeeUColors.textSecondary,
+              color: c.ink2,
               height: 1.5,
             ),
             textAlign: TextAlign.center,

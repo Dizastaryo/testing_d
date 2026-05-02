@@ -655,12 +655,13 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 38,
         decoration: BoxDecoration(
-          color: isPrimary ? SeeUColors.accent : SeeUColors.surface2,
+          color: isPrimary ? SeeUColors.accent : c.surface2,
           borderRadius: BorderRadius.circular(SeeURadii.medium),
         ),
         child: Center(
@@ -670,7 +671,7 @@ class _ActionButton extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: isPrimary
                   ? Colors.white
-                  : SeeUColors.textPrimary,
+                  : c.ink,
             ),
           ),
         ),
@@ -687,17 +688,18 @@ class _ActionIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: SeeUColors.surface2,
+          color: c.surface2,
           borderRadius: BorderRadius.circular(SeeURadii.medium),
         ),
         child: Center(
-          child: Icon(icon, size: 18, color: SeeUColors.textPrimary),
+          child: Icon(icon, size: 18, color: c.ink),
         ),
       ),
     );
@@ -720,6 +722,7 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -740,7 +743,7 @@ class _StatItem extends StatelessWidget {
           label,
           style: SeeUTypography.micro.copyWith(
             fontSize: 11,
-            color: SeeUColors.textTertiary,
+            color: c.ink3,
           ),
         ),
       ],
@@ -757,6 +760,7 @@ class _HighlightsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return SizedBox(
       height: 100,
       child: ListView.builder(
@@ -801,7 +805,7 @@ class _HighlightsRow extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: SeeUColors.borderSubtle, width: 1.5),
+                          color: c.line, width: 1.5),
                     ),
                     child: ClipOval(
                       child: h.coverUrl.isNotEmpty
@@ -810,11 +814,11 @@ class _HighlightsRow extends StatelessWidget {
                               fit: BoxFit.cover,
                             )
                           : Container(
-                              color: SeeUColors.surfaceElevated,
+                              color: c.surface2,
                               child: Center(
                                 child: Icon(PhosphorIcons.image(),
                                     size: 28,
-                                    color: SeeUColors.textTertiary),
+                                    color: c.ink3),
                               ),
                             ),
                     ),
@@ -845,6 +849,7 @@ class _PostsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     if (posts.isEmpty) {
       return Center(
         child: Column(
@@ -852,17 +857,17 @@ class _PostsGrid extends StatelessWidget {
           children: [
             Text(
               '\u2022',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Georgia',
                 fontSize: 56,
-                color: SeeUColors.textTertiary,
+                color: c.ink3,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               'Пока нет постов',
               style: SeeUTypography.body
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
             ),
           ],
         ),
@@ -903,11 +908,11 @@ class _PostsGrid extends StatelessWidget {
                       imageUrl: post.media.first.url,
                       fit: BoxFit.cover,
                       placeholder: (_, __) =>
-                          Container(color: SeeUColors.surfaceElevated),
+                          Container(color: c.surface2),
                       errorWidget: (_, __, ___) =>
-                          Container(color: SeeUColors.surfaceElevated),
+                          Container(color: c.surface2),
                     )
-                  : Container(color: SeeUColors.surfaceElevated),
+                  : Container(color: c.surface2),
         );
       },
     );
@@ -921,23 +926,24 @@ class _PrivateContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             '\u2013',
             style: TextStyle(
               fontFamily: 'Georgia',
               fontSize: 56,
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             'Подпишитесь, чтобы видеть посты',
             style: SeeUTypography.body
-                .copyWith(color: SeeUColors.textSecondary),
+                .copyWith(color: c.ink2),
           ),
         ],
       ),

@@ -794,7 +794,7 @@ class _SmallAvatar extends StatelessWidget {
                 : Icon(
                     PhosphorIconsRegular.user,
                     size: size * 0.45,
-                    color: SeeUColors.textTertiary,
+                    color: c.ink3,
                   ),
           ),
           if (isOnline)
@@ -808,7 +808,7 @@ class _SmallAvatar extends StatelessWidget {
                   color: SeeUColors.success,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: SeeUColors.background,
+                    color: c.bg,
                     width: 2,
                   ),
                 ),

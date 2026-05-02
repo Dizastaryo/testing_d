@@ -64,8 +64,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     final searchState = ref.watch(searchProvider);
     final hasQuery = _searchCtrl.text.trim().isNotEmpty;
 
+    final c = context.seeuColors;
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,6 +97,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   ];
 
   Widget _buildHeader(bool hasQuery) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 58, 18, 0),
       child: Column(
@@ -115,9 +117,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           Container(
             height: 44,
             decoration: BoxDecoration(
-              color: SeeUColors.surface2,
+              color: c.surface2,
               borderRadius: BorderRadius.circular(SeeURadii.pill),
-              border: Border.all(color: SeeUColors.borderSubtle, width: 1),
+              border: Border.all(color: c.line, width: 1),
             ),
             child: Row(
               children: [
@@ -125,7 +127,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 Icon(
                   PhosphorIcons.magnifyingGlass(),
                   size: 18,
-                  color: SeeUColors.textTertiary,
+                  color: c.ink3,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -142,7 +144,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       hintText: 'Искать людей, звуки, теги',
                       hintStyle: SeeUTypography.body.copyWith(
                         fontSize: 14,
-                        color: SeeUColors.textTertiary,
+                        color: c.ink3,
                       ),
                       contentPadding: EdgeInsets.zero,
                       isDense: true,
@@ -158,11 +160,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         width: 22,
                         height: 22,
                         decoration: BoxDecoration(
-                          color: SeeUColors.textTertiary.withValues(alpha: 0.2),
+                          color: c.ink3.withValues(alpha: 0.2),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(PhosphorIcons.x(),
-                            size: 12, color: SeeUColors.textSecondary),
+                            size: 12, color: c.ink2),
                       ),
                     ),
                   ),
@@ -204,8 +206,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                           horizontal: 14, vertical: 7),
                       decoration: BoxDecoration(
                         color: isActive
-                            ? SeeUColors.textPrimary
-                            : SeeUColors.surface2,
+                            ? c.ink
+                            : c.surface2,
                         borderRadius: BorderRadius.circular(SeeURadii.pill),
                       ),
                       child: Text(
@@ -214,7 +216,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color:
-                              isActive ? Colors.white : SeeUColors.textSecondary,
+                              isActive ? Colors.white : c.ink2,
                         ),
                       ),
                     ),
@@ -240,6 +242,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   ];
 
   Widget _buildTagsSection() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
       child: Column(
@@ -251,7 +254,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             style: SeeUTypography.monoLabel.copyWith(
               letterSpacing: 1.4,
               fontSize: 10,
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
           ),
           const SizedBox(height: 8),
@@ -296,7 +299,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             tag.replaceFirst('#', ''),
                             style: SeeUTypography.caption.copyWith(
                               fontSize: 13,
-                              color: SeeUColors.textPrimary,
+                              color: c.ink,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -314,6 +317,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 
   Widget _buildMixedGrid() {
+    final c = context.seeuColors;
     final postsAsync = ref.watch(explorePostsProvider);
 
     return postsAsync.when(
@@ -323,12 +327,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(PhosphorIcons.warning(),
-                size: 48, color: SeeUColors.textTertiary),
+                size: 48, color: c.ink3),
             const SizedBox(height: 12),
             Text(
               'Не удалось загрузить',
               style: SeeUTypography.body
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
             ),
             const SizedBox(height: 12),
             SeeUButton(
@@ -347,7 +351,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             child: Text(
               'Нет публикаций',
               style: SeeUTypography.body
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
             ),
           );
         }
@@ -393,6 +397,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // =========================================================================
 
   Widget _buildGridShimmer() {
+    final c = context.seeuColors;
     final itemSize = (MediaQuery.of(context).size.width - 14) / 3;
     return SeeUShimmer(
       child: Padding(
@@ -409,7 +414,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           itemCount: 9,
           itemBuilder: (_, __) => Container(
             decoration: BoxDecoration(
-              color: SeeUColors.surfaceElevated,
+              color: c.surface2,
               borderRadius: BorderRadius.circular(10),
             ),
           ),
@@ -423,6 +428,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // =========================================================================
 
   Widget _buildSearchResults(SearchState searchState) {
+    final c = context.seeuColors;
     if (searchState.isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: SeeUColors.accent),
@@ -447,14 +453,14 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(PhosphorIcons.magnifyingGlass(),
-                size: 56, color: SeeUColors.textTertiary),
+                size: 56, color: c.ink3),
             const SizedBox(height: 16),
             Text('\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E', style: SeeUTypography.title),
             const SizedBox(height: 6),
             Text(
               '\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u043E\u0439 \u0437\u0430\u043F\u0440\u043E\u0441',
               style: SeeUTypography.body
-                  .copyWith(color: SeeUColors.textSecondary),
+                  .copyWith(color: c.ink2),
             ),
           ],
         ),
@@ -514,11 +520,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             imageUrl: post.media.first.url,
                             fit: BoxFit.cover,
                             placeholder: (_, __) =>
-                                Container(color: SeeUColors.surfaceElevated),
+                                Container(color: c.surface2),
                             errorWidget: (_, __, ___) =>
-                                Container(color: SeeUColors.surfaceElevated),
+                                Container(color: c.surface2),
                           )
-                        : Container(color: SeeUColors.surfaceElevated),
+                        : Container(color: c.surface2),
                   ),
                 );
               },
@@ -546,6 +552,7 @@ class _MasonryGrid extends StatelessWidget {
   });
 
   Widget _buildCell(BuildContext context, int index, double cellSize) {
+    final c = context.seeuColors;
     final post = posts[index];
     final imageUrl = post.media.isNotEmpty
         ? post.media.first.url
@@ -572,11 +579,11 @@ class _MasonryGrid extends StatelessWidget {
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
                 placeholder: (_, __) =>
-                    Container(color: SeeUColors.surfaceElevated),
+                    Container(color: c.surface2),
                 errorWidget: (_, __, ___) => Container(
-                  color: SeeUColors.surfaceElevated,
+                  color: c.surface2,
                   child: Icon(PhosphorIcons.image(),
-                      color: SeeUColors.textTertiary),
+                      color: c.ink3),
                 ),
               ),
               // Reel: play icon top-right + view count bottom-left
@@ -855,15 +862,16 @@ class _ExplorePostsFeedState extends ConsumerState<_ExplorePostsFeed> {
       });
     }
 
+    final c = context.seeuColors;
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: SeeUColors.surface,
+        backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: Icon(PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
-              color: SeeUColors.textPrimary),
+              color: c.ink),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
@@ -898,20 +906,21 @@ class _UserSearchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: () => context.push('/profile/${user.username}'),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: SeeUColors.surface,
+          color: c.surface,
           borderRadius: BorderRadius.circular(SeeURadii.medium),
-          border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+          border: Border.all(color: c.line, width: 0.5),
         ),
         child: Row(
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundColor: SeeUColors.surface2,
+              backgroundColor: c.surface2,
               backgroundImage: user.avatarUrl != null
                   ? CachedNetworkImageProvider(user.avatarUrl!)
                   : null,
@@ -945,7 +954,7 @@ class _UserSearchCard extends StatelessWidget {
                   ),
                   Text(
                     user.fullName,
-                    style: SeeUTypography.caption.copyWith(color: SeeUColors.textTertiary),
+                    style: SeeUTypography.caption.copyWith(color: c.ink3),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],

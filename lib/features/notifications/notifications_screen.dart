@@ -135,13 +135,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final notifState = ref.watch(notificationProvider);
     final filtered = _filtered(notifState.notifications);
     final grouped = _groupByTime(filtered);
     final flatItems = _buildFlatList(grouped);
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -173,7 +174,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ),
             // "Все" | "Ответы" pill toggle
             _buildFilterRow(),
-            const Divider(height: 1, color: SeeUColors.borderSubtle),
+            Divider(height: 1, color: c.line),
             // Content
             Expanded(
               child: notifState.isLoading
@@ -186,7 +187,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           child: Container(
                             height: 72,
                             decoration: BoxDecoration(
-                              color: SeeUColors.surfaceElevated,
+                              color: c.surface2,
                               borderRadius: BorderRadius.circular(SeeURadii.small),
                             ),
                           ),
@@ -216,12 +217,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Widget _buildFilterRow() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
       child: Container(
         height: 36,
         decoration: BoxDecoration(
-          color: SeeUColors.surface2,
+          color: c.surface2,
           borderRadius: BorderRadius.circular(SeeURadii.pill),
         ),
         child: Row(
@@ -234,14 +236,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isActive ? SeeUColors.textPrimary : Colors.transparent,
+                  color: isActive ? c.ink : Colors.transparent,
                   borderRadius: BorderRadius.circular(SeeURadii.pill),
                 ),
                 child: Text(
                   _filterLabel(f),
                   style: SeeUTypography.caption.copyWith(
                     fontSize: 13,
-                    color: isActive ? Colors.white : SeeUColors.textSecondary,
+                    color: isActive ? Colors.white : c.ink2,
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
@@ -283,19 +285,21 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Widget _buildSectionHeader(String title) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
       child: Text(
         title,
         style: SeeUTypography.subtitle.copyWith(
           fontWeight: FontWeight.w700,
-          color: SeeUColors.textPrimary,
+          color: c.ink,
         ),
       ),
     );
   }
 
   Widget _buildNotificationTile(AppNotification n) {
+    final c = context.seeuColors;
     return GestureDetector(
       onTap: () => _onNotificationTap(n),
       child: Container(
@@ -304,7 +308,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         decoration: BoxDecoration(
           color: n.isRead
               ? Colors.transparent
-              : SeeUColors.accentSoft.withValues(alpha: 0.35),
+              : c.accentSoft.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(SeeURadii.small),
         ),
         child: Row(
@@ -314,7 +318,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: SeeUColors.surfaceElevated,
+                  backgroundColor: c.surface2,
                   backgroundImage: n.fromUser.avatarUrl != null
                       ? CachedNetworkImageProvider(n.fromUser.avatarUrl!)
                       : null,
@@ -322,7 +326,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       ? Text(
                           n.fromUser.username[0].toUpperCase(),
                           style: SeeUTypography.subtitle.copyWith(
-                            color: SeeUColors.textPrimary,
+                            color: c.ink,
                             fontWeight: FontWeight.w700,
                           ),
                         )
@@ -338,7 +342,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       color: _notifIconColor(n.type),
                       shape: BoxShape.circle,
                       border:
-                          Border.all(color: SeeUColors.background, width: 2),
+                          Border.all(color: c.bg, width: 2),
                     ),
                     child: Center(
                       child: Icon(_notifIcon(n.type),
@@ -363,13 +367,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           text: '${n.fromUser.username} ',
                           style: SeeUTypography.caption.copyWith(
                             fontWeight: FontWeight.w700,
-                            color: SeeUColors.textPrimary,
+                            color: c.ink,
                           ),
                         ),
                         TextSpan(
                           text: n.message,
                           style: SeeUTypography.caption.copyWith(
-                            color: SeeUColors.textPrimary,
+                            color: c.ink,
                           ),
                         ),
                       ],
@@ -379,7 +383,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   Text(
                     timeago.format(n.createdAt),
                     style: SeeUTypography.micro.copyWith(
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                     ),
                   ),
                 ],
@@ -398,16 +402,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   placeholder: (_, __) => Container(
                     width: 48,
                     height: 48,
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                   ),
                   errorWidget: (_, __, ___) => Container(
                     width: 48,
                     height: 48,
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                     child: Icon(
                       PhosphorIcons.image(),
                       size: 18,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                     ),
                   ),
                 ),
@@ -420,6 +424,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Widget _buildEmpty() {
+    final c = context.seeuColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -427,7 +432,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           PhosphorIcon(
             PhosphorIcons.bell(),
             size: 64,
-            color: SeeUColors.borderSubtle,
+            color: c.line,
           ),
           const SizedBox(height: 16),
           Text(
@@ -435,14 +440,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ? 'Нет уведомлений этого типа'
                 : 'Нет уведомлений',
             style: SeeUTypography.subtitle.copyWith(
-              color: SeeUColors.textSecondary,
+              color: c.ink2,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             'Здесь появятся ваши уведомления',
             style: SeeUTypography.caption.copyWith(
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
           ),
         ],

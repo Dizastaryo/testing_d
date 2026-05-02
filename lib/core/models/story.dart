@@ -30,7 +30,7 @@ class Story {
   factory Story.fromJson(Map<String, dynamic> json) {
     return Story(
       id: json['id']?.toString() ?? '',
-      author: User.fromJson(json['author'] as Map<String, dynamic>? ?? {}),
+      author: User.fromJson((json['author'] ?? json['user']) as Map<String, dynamic>? ?? {}),
       mediaUrl: json['media_url']?.toString() ?? '',
       mediaType: json['media_type'] == 'video'
           ? StoryMediaType.video
@@ -92,7 +92,7 @@ class StoryGroup {
             .toList() ??
         [];
     return StoryGroup(
-      author: User.fromJson(json['author'] as Map<String, dynamic>? ?? {}),
+      author: User.fromJson((json['author'] ?? json['user']) as Map<String, dynamic>? ?? {}),
       stories: storiesList,
       allSeen: storiesList.every((s) => s.isSeen),
     );

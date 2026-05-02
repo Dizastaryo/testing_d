@@ -16,6 +16,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final currentThemeMode = ref.watch(themeProvider);
     final isDark = currentThemeMode == ThemeMode.dark;
 
@@ -30,7 +31,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                     width: 0.5,
                   ),
                 ),
@@ -47,7 +48,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: Icon(
                         PhosphorIcons.caretLeft(),
                         size: 22,
-                        color: SeeUColors.textPrimary,
+                        color: c.ink,
                       ),
                     ),
                   ),
@@ -58,7 +59,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       fontFamily: 'Georgia',
                       fontSize: 24,
                       fontWeight: FontWeight.w400,
-                      color: SeeUColors.textPrimary,
+                      color: c.ink,
                     ),
                   ),
                 ],
@@ -177,6 +178,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required String title,
     required List<_SettingsRowData> items,
   }) {
+    final c = context.seeuColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -189,16 +191,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               fontSize: 10,
               fontWeight: FontWeight.w400,
               letterSpacing: 1.0,
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
           ),
         ),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: SeeUColors.surface,
+            color: c.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+            border: Border.all(color: c.line, width: 0.5),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -209,7 +211,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Divider(
                     height: 0.5,
                     thickness: 0.5,
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                     indent: 16,
                     endIndent: 16,
                   ),
@@ -228,6 +230,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required bool isDark,
     required VoidCallback onToggle,
   }) {
+    final c = context.seeuColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -235,21 +238,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Consolas',
               fontSize: 10,
               fontWeight: FontWeight.w400,
               letterSpacing: 1.0,
-              color: SeeUColors.textTertiary,
+              color: c.ink3,
             ),
           ),
         ),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: SeeUColors.surface,
+            color: c.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+            border: Border.all(color: c.line, width: 0.5),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -259,10 +262,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: SeeUColors.surface2,
+                    color: c.surface2,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, size: 16, color: SeeUColors.textSecondary),
+                  child: Icon(icon, size: 16, color: c.ink2),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -302,7 +305,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 8),
               Text(
                 'Социальная сеть с BLE-сканером',
-                style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary),
+                style: SeeUTypography.body.copyWith(color: context.seeuColors.ink2),
               ),
               const SizedBox(height: 4),
               Text(
@@ -312,7 +315,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 24),
               Text(
                 'Находите людей рядом, делитесь моментами, общайтесь.',
-                style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary),
+                style: SeeUTypography.body.copyWith(color: context.seeuColors.ink2),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -350,6 +353,7 @@ class _SettingsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Tappable.faded(
       onTap: data.onTap,
       child: Padding(
@@ -360,10 +364,10 @@ class _SettingsRow extends StatelessWidget {
               width: 30,
               height: 30,
               decoration: BoxDecoration(
-                color: SeeUColors.surface2,
+                color: c.surface2,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(data.icon, size: 16, color: SeeUColors.textSecondary),
+              child: Icon(data.icon, size: 16, color: c.ink2),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -376,7 +380,7 @@ class _SettingsRow extends StatelessWidget {
               Text(
                 data.value,
                 style: SeeUTypography.caption.copyWith(
-                  color: SeeUColors.textTertiary,
+                  color: c.ink3,
                 ),
               ),
               const SizedBox(width: 4),
@@ -384,7 +388,7 @@ class _SettingsRow extends StatelessWidget {
             Icon(
               PhosphorIcons.caretRight(),
               size: 14,
-              color: SeeUColors.textQuaternary,
+              color: c.ink4,
             ),
           ],
         ),

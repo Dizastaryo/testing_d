@@ -89,10 +89,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final authState = ref.watch(authProvider);
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -135,7 +136,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Text(
                   'Связь с миром',
                   style: SeeUTypography.body.copyWith(
-                    color: SeeUColors.textSecondary,
+                    color: c.ink2,
                   ),
                 ),
               ),
@@ -147,7 +148,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
-                    color: SeeUColors.accentSoft,
+                    color: c.accentSoft,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -171,6 +172,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   List<Widget> _buildPhoneStep(AuthState authState) {
+    final c = context.seeuColors;
     return [
       // Phone label
       Align(
@@ -185,7 +187,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         alignment: Alignment.centerLeft,
         child: Text(
           'Введите номер для входа или регистрации',
-          style: SeeUTypography.caption.copyWith(color: SeeUColors.textSecondary),
+          style: SeeUTypography.caption.copyWith(color: c.ink2),
         ),
       ),
       const SizedBox(height: 20),
@@ -198,9 +200,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: SeeUColors.surfaceElevated,
+              color: c.surface2,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: SeeUColors.borderSubtle),
+              border: Border.all(color: c.line),
             ),
             child: Center(
               child: Text(
@@ -248,6 +250,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   List<Widget> _buildOtpStep(AuthState authState) {
+    final c = context.seeuColors;
     return [
       // Back button
       Align(
@@ -276,7 +279,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       const SizedBox(height: 8),
       Text(
         'Код отправлен на $_phone',
-        style: SeeUTypography.caption.copyWith(color: SeeUColors.textSecondary),
+        style: SeeUTypography.caption.copyWith(color: c.ink2),
         textAlign: TextAlign.center,
       ),
       const SizedBox(height: 24),
