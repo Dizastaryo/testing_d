@@ -231,8 +231,8 @@ class _ScannerScreenState extends State<ScannerScreen>
             center: const Alignment(0, -0.5),
             radius: 1.2,
             colors: [
-              SeeUColors.accentSoft,
-              SeeUColors.background,
+              c.accentSoft,
+              c.bg,
             ],
           ),
         ),
@@ -254,7 +254,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                         Text(
                           'СЕЙЧАС ВОКРУГ',
                           style: SeeUTypography.monoLabel.copyWith(
-                            color: SeeUColors.textTertiary,
+                            color: c.ink3,
                             letterSpacing: 0.8,
                           ),
                         ),
@@ -276,7 +276,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: _chipOn ? SeeUColors.accentSoft : SeeUColors.surface2,
+                          color: _chipOn ? c.accentSoft : c.surface2,
                           borderRadius: BorderRadius.circular(SeeURadii.pill),
                         ),
                         child: Row(
@@ -287,7 +287,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                               height: 6,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: _chipOn ? SeeUColors.accent : SeeUColors.textTertiary,
+                                color: _chipOn ? SeeUColors.accent : c.ink3,
                                 boxShadow: _chipOn
                                     ? [BoxShadow(color: SeeUColors.accent, blurRadius: 8)]
                                     : null,
@@ -299,7 +299,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: _chipOn ? SeeUColors.accent : SeeUColors.textTertiary,
+                                color: _chipOn ? SeeUColors.accent : c.ink3,
                               ),
                             ),
                           ],

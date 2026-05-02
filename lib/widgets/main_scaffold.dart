@@ -92,7 +92,7 @@ class MainScaffold extends StatelessWidget {
                             isSelected: currentIndex == 1,
                             onTap: () => _onTap(context, 1),
                           ),
-                          _CreatePill(onTap: () => _onTap(context, 2)),
+                          _CreatePill(onTap: () => context.push('/story/create')),
                           _NavItem(
                             icon: _buildNavIcon('radar', false),
                             activeIcon: _buildNavIcon('radar', true),
