@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
+import '../api/api_endpoints.dart';
 import '../models/user.dart';
 
 // Chat models (kept inline since they were previously in mock_service)
@@ -78,15 +80,45 @@ class ChatListState {
 }
 
 class ChatListNotifier extends StateNotifier<ChatListState> {
-  final ApiClient _api; // ignore: unused_field
+  final ApiClient _api;
   ChatListNotifier(this._api) : super(const ChatListState()) {
     load();
   }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    // Chat API not implemented yet on backend — return empty
-    state = const ChatListState(chats: []);
+    try {
+      final response = await _api.get(ApiEndpoints.chats);
+      final data = response.data['data'];
+      if (data is List) {
+        final chats = data
+            .map((e) => Chat.fromJson(e as Map<String, dynamic>))
+            .toList();
+        state = ChatListState(chats: chats);
+      } else {
+        state = const ChatListState(chats: []);
+      }
+    } catch (e) {
+      debugPrint('[ChatListNotifier] load error: $e');
+      state = const ChatListState(chats: []);
+    }
+  }
+
+  /// Create or get a conversation with another user and return its ID.
+  Future<String?> getOrCreateChat(String otherUserId) async {
+    try {
+      final response = await _api.post(
+        ApiEndpoints.chats,
+        data: {'user_id': otherUserId},
+      );
+      final id = response.data['data']?['id']?.toString();
+      // Reload chat list after creating
+      await load();
+      return id;
+    } catch (e) {
+      debugPrint('[ChatListNotifier] getOrCreateChat error: $e');
+      return null;
+    }
   }
 }
 
@@ -105,15 +137,28 @@ class ChatMessagesState {
 
 class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final String chatId;
-  final ApiClient _api; // ignore: unused_field
+  final ApiClient _api;
   ChatMessagesNotifier(this.chatId, this._api) : super(const ChatMessagesState()) {
     load();
   }
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    // Chat API not implemented yet on backend
-    state = const ChatMessagesState(messages: []);
+    try {
+      final response = await _api.get(ApiEndpoints.chatMessages(chatId));
+      final data = response.data['data'];
+      if (data is List) {
+        final messages = data
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList();
+        state = ChatMessagesState(messages: messages);
+      } else {
+        state = const ChatMessagesState(messages: []);
+      }
+    } catch (e) {
+      debugPrint('[ChatMessagesNotifier] load error: $e');
+      state = const ChatMessagesState(messages: []);
+    }
   }
 
   Future<void> sendMessage(String text) async {
@@ -127,7 +172,25 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       isMe: true,
     );
     state = state.copyWith(messages: [...state.messages, optimistic]);
-    // Chat API not implemented yet on backend
+
+    try {
+      await _api.post(
+        ApiEndpoints.chatMessages(chatId),
+        data: {'text': text},
+      );
+      // Reload to get the real message with server ID
+      await load();
+    } catch (e) {
+      debugPrint('[ChatMessagesNotifier] sendMessage error: $e');
+    }
+  }
+
+  Future<void> markRead() async {
+    try {
+      await _api.put(ApiEndpoints.chatRead(chatId));
+    } catch (e) {
+      debugPrint('[ChatMessagesNotifier] markRead error: $e');
+    }
   }
 }
 

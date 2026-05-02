@@ -57,4 +57,9 @@ class ApiEndpoints {
 
   // Upload
   static const String mediaUpload = '/media/upload';
+
+  // Chats
+  static const String chats = '/chats';
+  static String chatMessages(String id) => '/chats/$id/messages';
+  static String chatRead(String id) => '/chats/$id/read';
 }

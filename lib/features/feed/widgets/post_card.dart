@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:video_player/video_player.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
 import '../../../core/providers/feed_provider.dart';
@@ -871,6 +872,9 @@ class _PostCardState extends ConsumerState<PostCard>
 
   Widget _buildMediaItem(PostMedia media) {
     final c = context.seeuColors;
+    if (media.type == MediaType.video) {
+      return _FeedVideoPlayer(url: media.url);
+    }
     return CachedNetworkImage(
       imageUrl: media.url,
       fit: BoxFit.cover,
@@ -1146,6 +1150,113 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Video player for feed posts ─────────────────────────────────────────
+
+class _FeedVideoPlayer extends StatefulWidget {
+  final String url;
+  const _FeedVideoPlayer({required this.url});
+
+  @override
+  State<_FeedVideoPlayer> createState() => _FeedVideoPlayerState();
+}
+
+class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+  bool _showPlayIcon = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..setLooping(true)
+      ..setVolume(0) // muted by default in feed
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _controller.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    if (_controller.value.isPlaying) {
+      _controller.pause();
+      setState(() => _showPlayIcon = true);
+    } else {
+      _controller.play();
+      setState(() => _showPlayIcon = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: _togglePlay,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller.value.size.width,
+              height: _controller.value.size.height,
+              child: VideoPlayer(_controller),
+            ),
+          ),
+          // Play icon overlay
+          if (_showPlayIcon)
+            Center(
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
+              ),
+            ),
+          // Video indicator
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.videocam_rounded, color: Colors.white, size: 14),
+                  SizedBox(width: 4),
+                  Text('Видео', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
