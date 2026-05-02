@@ -1075,7 +1075,7 @@ class _SegmentBarPainter extends CustomPainter {
 
 // ─── Record button ─────────────────────────────────────────────────────────
 
-class _RecordButton extends StatelessWidget {
+class _RecordButton extends StatefulWidget {
   final bool isRecording;
   final double totalPct; // 0.0 – 1.0
   final bool isPhotoMode;
@@ -1089,47 +1089,144 @@ class _RecordButton extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    const double btnSize = 90;
-    const double ringR = 38.0;
-    const double innerPhotoSize = 70;
-    const double innerRecordSize = 32;
+  State<_RecordButton> createState() => _RecordButtonState();
+}
 
-    final innerSize = (isRecording && !isPhotoMode) ? innerRecordSize : innerPhotoSize;
-    final innerRadius = (isRecording && !isPhotoMode) ? 8.0 : btnSize / 2;
+class _RecordButtonState extends State<_RecordButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _pulseAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    if (widget.isRecording) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_RecordButton old) {
+    super.didUpdateWidget(old);
+    if (widget.isRecording && !old.isRecording) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isRecording && old.isRecording) {
+      _pulseController.stop();
+      _pulseController.animateTo(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const double btnSize = 96;
+    const double whiteRingSize = 78;
+    const double innerPhotoSize = 64;
+    const double innerRecordSize = 30;
+
+    final isRecording = widget.isRecording && !widget.isPhotoMode;
+    final innerSize = isRecording ? innerRecordSize : innerPhotoSize;
+    final innerRadius = isRecording ? 8.0 : innerPhotoSize / 2;
 
     return GestureDetector(
-      onTap: onPress,
+      onTap: widget.onPress,
       child: SizedBox(
         width: btnSize,
         height: btnSize,
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // SVG-like ring via CustomPaint
+            // Outer pulsing glow ring when recording
+            if (isRecording)
+              AnimatedBuilder(
+                animation: _pulseAnim,
+                builder: (_, __) => Transform.scale(
+                  scale: _pulseAnim.value,
+                  child: Container(
+                    width: btnSize,
+                    height: btnSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          const Color(0xFFFF8060).withValues(alpha: 0.30),
+                          const Color(0xFFFF5A3C).withValues(alpha: 0.12),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.6, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Progress ring + tick marks via CustomPaint
             CustomPaint(
               size: const Size(btnSize, btnSize),
-              painter: _RingPainter(
-                totalPct: isPhotoMode ? 0.0 : totalPct,
-                ringRadius: ringR,
-                accentColor: _kAccent,
+              painter: _RingPainterV3(
+                totalPct: widget.isPhotoMode ? 0.0 : widget.totalPct,
+                ringRadius: 46.0,
+                isRecording: isRecording,
               ),
             ),
-            // Inner red shape
+
+            // White border ring (3px, 78x78)
+            Container(
+              width: whiteRingSize,
+              height: whiteRingSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+              ),
+            ),
+
+            // Inner gradient shape — morphs circle ↔ rounded-square
             AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: const Cubic(0.2, 0.8, 0.2, 1.0),
+              duration: const Duration(milliseconds: 320),
+              curve: const Cubic(0.34, 1.56, 0.64, 1.0), // spring-like
               width: innerSize,
               height: innerSize,
               decoration: BoxDecoration(
-                color: _kAccent,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFF8060),
+                    Color(0xFFFF5A3C),
+                    Color(0xFFFF3B6B),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(innerRadius),
                 boxShadow: [
                   BoxShadow(
-                    color: _kAccent.withValues(alpha: 0.5),
-                    blurRadius: 20,
+                    color: const Color(0xFFFF5A3C).withValues(alpha: 0.55),
+                    blurRadius: 22,
+                    spreadRadius: 0,
                   ),
                 ],
+              ),
+              child: Align(
+                alignment: const Alignment(-0.3, -0.55),
+                child: Container(
+                  width: innerSize * 0.38,
+                  height: innerSize * 0.14,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.28),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
             ),
           ],
@@ -1139,54 +1236,95 @@ class _RecordButton extends StatelessWidget {
   }
 }
 
-class _RingPainter extends CustomPainter {
+class _RingPainterV3 extends CustomPainter {
   final double totalPct;
   final double ringRadius;
-  final Color accentColor;
+  final bool isRecording;
 
-  const _RingPainter({
+  const _RingPainterV3({
     required this.totalPct,
     required this.ringRadius,
-    required this.accentColor,
+    required this.isRecording,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
 
-    // Track ring
+    // Track ring (faint white)
     final trackPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.30)
-      ..strokeWidth = 4
+      ..color = Colors.white.withValues(alpha: 0.22)
+      ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, ringRadius, trackPaint);
 
+    // 60 tick marks around the ring
+    const int tickCount = 60;
+    for (int i = 0; i < tickCount; i++) {
+      final angle = (i / tickCount) * 2 * math.pi - math.pi / 2;
+      final isMajor = i % 5 == 0;
+      final tickLen = isMajor ? 6.0 : 3.5;
+      final tickWidth = isMajor ? 1.8 : 1.0;
+      final tickOpacity = isMajor ? 0.55 : 0.28;
+
+      final outerR = ringRadius + 6;
+      final innerR = outerR - tickLen;
+      final cosA = math.cos(angle);
+      final sinA = math.sin(angle);
+
+      final tickPaint = Paint()
+        ..color = Colors.white.withValues(alpha: tickOpacity)
+        ..strokeWidth = tickWidth
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(
+        Offset(center.dx + innerR * cosA, center.dy + innerR * sinA),
+        Offset(center.dx + outerR * cosA, center.dy + outerR * sinA),
+        tickPaint,
+      );
+    }
+
     if (totalPct <= 0) return;
 
-    // Progress ring
-    final progressPaint = Paint()
-      ..color = accentColor
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    // Gradient progress arc
+    const startAngle = -math.pi / 2;
+    final sweepAngle = 2 * math.pi * totalPct;
+    final rect = Rect.fromCircle(center: center, radius: ringRadius);
 
-    final progressPaintSolid = Paint()
-      ..color = accentColor
-      ..strokeWidth = 4
+    final gradientColors = const [
+      Color(0xFFFFB547), // amber
+      Color(0xFFFF5A3C), // coral
+      Color(0xFFFF3B6B), // rose
+    ];
+    final sweepGradient = SweepGradient(
+      startAngle: startAngle,
+      endAngle: startAngle + sweepAngle,
+      colors: gradientColors,
+      tileMode: TileMode.clamp,
+    );
+
+    final progressPaint = Paint()
+      ..shader = sweepGradient.createShader(rect)
+      ..strokeWidth = 3.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    const startAngle = -math.pi / 2;
-    final sweepAngle = 2 * math.pi * totalPct;
+    // Glow pass
+    final glowPaint = Paint()
+      ..shader = sweepGradient.createShader(rect)
+      ..strokeWidth = 6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
 
-    final rect = Rect.fromCircle(center: center, radius: ringRadius);
+    canvas.drawArc(rect, startAngle, sweepAngle, false, glowPaint);
     canvas.drawArc(rect, startAngle, sweepAngle, false, progressPaint);
-    canvas.drawArc(rect, startAngle, sweepAngle, false, progressPaintSolid);
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.totalPct != totalPct;
+  bool shouldRepaint(_RingPainterV3 old) =>
+      old.totalPct != totalPct || old.isRecording != isRecording;
 }
 
 // ─── Countdown number ──────────────────────────────────────────────────────

@@ -247,10 +247,51 @@ class _PostCardState extends ConsumerState<PostCard>
     );
   }
 
+  /// Parse caption into headline words and tail text.
+  /// First 4 words (or fewer) become the big headline; the rest is tail.
+  ({String big, String conjunction, String big2, String tail}) _parseWaveCaption(
+      String? caption) {
+    final raw = (caption ?? '').trim();
+    if (raw.isEmpty) {
+      return (big: 'SEEU', conjunction: '·', big2: 'ВОПРОС', tail: '');
+    }
+    final words = raw.split(RegExp(r'\s+'));
+    if (words.length == 1) {
+      return (big: words[0], conjunction: '', big2: '', tail: '');
+    }
+    if (words.length == 2) {
+      return (big: words[0], conjunction: '·', big2: words[1], tail: '');
+    }
+    if (words.length == 3) {
+      return (
+        big: words[0],
+        conjunction: words[1],
+        big2: words[2],
+        tail: ''
+      );
+    }
+    // 4+ words: split into headline (first 3) and tail (rest)
+    final headline = words.take(3).toList();
+    final tail = words.skip(3).join(' ');
+    return (
+      big: headline[0],
+      conjunction: headline[1],
+      big2: headline[2],
+      tail: tail
+    );
+  }
+
   Widget _buildWaveCard(BuildContext context, Post post) {
+    const Color darkBg = Color(0xFF2B1610);
+    const Color warmCream = Color(0xFFE6D6BE);
+    const Color defaultAmber = Color(0xFFFFB547);
+
     final waveColor = post.waveColorValue != null
         ? Color(post.waveColorValue!)
-        : SeeUColors.accent;
+        : defaultAmber;
+
+    final parsed = _parseWaveCaption(post.caption);
+    final eyebrowLabel = 'SEEU · ВОПРОС';
 
     return GestureDetector(
       onTap: _showReactionPicker ? _hideReactionPicker : null,
@@ -262,133 +303,277 @@ class _PostCardState extends ConsumerState<PostCard>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Wave body with colored background
+            // Wave editorial card
             GestureDetector(
               onDoubleTap: _onDoubleTap,
-              child: Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(minHeight: 200),
-                decoration: BoxDecoration(
-                  color: waveColor,
-                  borderRadius: BorderRadius.circular(SeeURadii.card),
-                  boxShadow: SeeUShadows.md,
-                ),
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Header inside wave
-                          Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () => context
-                                    .push('/profile/${post.author.username}'),
-                                child: CircleAvatar(
-                                  radius: 16,
-                                  backgroundImage: post.author.avatarUrl != null
-                                      ? CachedNetworkImageProvider(
-                                          post.author.avatarUrl!)
-                                      : null,
-                                  backgroundColor:
-                                      Colors.white.withValues(alpha: 0.3),
-                                  child: post.author.avatarUrl == null
-                                      ? Icon(PhosphorIcons.user(),
-                                          color: Colors.white, size: 16)
-                                      : null,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () => context
-                                      .push('/profile/${post.author.username}'),
-                                  child: Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          post.author.username,
-                                          style: SeeUTypography.subtitle
-                                              .copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (post.author.isVerified) ...[
-                                        const SizedBox(width: 4),
-                                        Icon(
-                                          PhosphorIcons.sealCheck(
-                                              PhosphorIconsStyle.fill),
-                                          color: Colors.white,
-                                          size: 14,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                timeago
-                                    .format(post.createdAt,
-                                        locale: 'ru', allowFromNow: true)
-                                    .toUpperCase(),
-                                style: SeeUTypography.micro
-                                    .copyWith(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Wave text centered
-                          Center(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                              child: Text(
-                                post.caption ?? '',
-                                style: SeeUTypography.body.copyWith(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                  height: 1.4,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
+              child: AspectRatio(
+                aspectRatio: 4 / 5,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: darkBg,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: SeeUShadows.md,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    children: [
+                      // Corner radial gradient overlays
+                      Positioned(
+                        top: -60,
+                        right: -60,
+                        child: Container(
+                          width: 200,
+                          height: 200,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                waveColor.withValues(alpha: 0.28),
+                                waveColor.withValues(alpha: 0.0),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 8),
-                        ],
+                        ),
                       ),
-                    ),
-                    // Double-tap heart animation
-                    if (_showHeart)
-                      Positioned.fill(
-                        child: Center(
-                          child: AnimatedBuilder(
-                            animation: _heartAnimController,
-                            builder: (_, __) => Opacity(
-                              opacity: _heartOpacityAnim.value,
-                              child: Transform.scale(
-                                scale: _heartScaleAnim.value,
-                                child: const Icon(
-                                  Icons.favorite,
-                                  color: Colors.white,
-                                  size: 80,
+                      Positioned(
+                        bottom: -40,
+                        left: -40,
+                        child: Container(
+                          width: 160,
+                          height: 160,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                waveColor.withValues(alpha: 0.18),
+                                waveColor.withValues(alpha: 0.0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Big decorative "?" background character
+                      Positioned(
+                        top: -10,
+                        right: -12,
+                        child: Text(
+                          '?',
+                          style: TextStyle(
+                            fontFamily: 'Georgia',
+                            fontSize: 280,
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w700,
+                            color: waveColor.withValues(alpha: 0.18),
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
+
+                      // Main content
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Top eyebrow: line + mono label
+                            Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 1.5,
+                                  color: waveColor,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  eyebrowLabel,
+                                  style: TextStyle(
+                                    fontFamily: 'Consolas',
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.2,
+                                    color: waveColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const Spacer(),
+
+                            // Left quote bar + typographic stack
+                            IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Left accent bar
+                                  Container(
+                                    width: 3,
+                                    decoration: BoxDecoration(
+                                      color: waveColor,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  // Headline text stack
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Big word 1
+                                        if (parsed.big.isNotEmpty)
+                                          Text(
+                                            parsed.big,
+                                            style: const TextStyle(
+                                              fontFamily: 'Georgia',
+                                              fontSize: 60,
+                                              fontWeight: FontWeight.w400,
+                                              fontStyle: FontStyle.italic,
+                                              color: Colors.white,
+                                              height: 0.95,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        // Conjunction (smaller, accent color)
+                                        if (parsed.conjunction.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            parsed.conjunction,
+                                            style: TextStyle(
+                                              fontFamily: 'Consolas',
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w400,
+                                              letterSpacing: 0.8,
+                                              color: waveColor.withValues(
+                                                  alpha: 0.80),
+                                            ),
+                                          ),
+                                        ],
+                                        // Big word 2
+                                        if (parsed.big2.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            parsed.big2,
+                                            style: const TextStyle(
+                                              fontFamily: 'Georgia',
+                                              fontSize: 60,
+                                              fontWeight: FontWeight.w400,
+                                              fontStyle: FontStyle.italic,
+                                              color: Colors.white,
+                                              height: 0.95,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                        // Tail text
+                                        if (parsed.tail.isNotEmpty) ...[
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            parsed.tail,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w400,
+                                              color: warmCream,
+                                              height: 1.4,
+                                            ),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // Bottom row: "ответить" chip + emoji crumbs
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () => context
+                                      .push('/post/${post.id}/comments'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: waveColor.withValues(alpha: 0.18),
+                                      borderRadius:
+                                          BorderRadius.circular(SeeURadii.pill),
+                                      border: Border.all(
+                                        color:
+                                            waveColor.withValues(alpha: 0.35),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'ответить',
+                                      style: TextStyle(
+                                        fontFamily: 'Consolas',
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                        color: waveColor,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  '🍐🧀🍝',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Corner watermark
+                      Positioned(
+                        bottom: 12,
+                        right: 14,
+                        child: Text(
+                          eyebrowLabel,
+                          style: TextStyle(
+                            fontFamily: 'Consolas',
+                            fontSize: 9,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.6,
+                            color: Colors.white.withValues(alpha: 0.20),
+                          ),
+                        ),
+                      ),
+
+                      // Double-tap heart animation
+                      if (_showHeart)
+                        Positioned.fill(
+                          child: Center(
+                            child: AnimatedBuilder(
+                              animation: _heartAnimController,
+                              builder: (_, __) => Opacity(
+                                opacity: _heartOpacityAnim.value,
+                                child: Transform.scale(
+                                  scale: _heartScaleAnim.value,
+                                  child: const Icon(
+                                    Icons.favorite,
+                                    color: Colors.white,
+                                    size: 80,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 12),
-            // Actions row with white-on-wave style
+            // Actions row
             _buildWaveActions(context, post),
             _buildLikesRow(context, post),
             _buildCommentsPreview(context, post),

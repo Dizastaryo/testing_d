@@ -307,55 +307,134 @@ class _NavIconPainter extends CustomPainter {
     // Color applied externally via ColorFiltered; paint white here so tint works.
     final paint = Paint()
       ..color = Colors.white
-      ..strokeWidth = filled ? 2.0 : 1.6
+      ..strokeWidth = filled ? 2.0 : 1.7
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
     switch (name) {
+      // ── Eye icon (SeeU brand mark) ──────────────────────────────────────
       case 'home':
-        final path = Path();
-        path.moveTo(s * 0.125, s * 0.458);
-        path.lineTo(s * 0.5, s * 0.125);
-        path.lineTo(s * 0.875, s * 0.458);
-        path.lineTo(s * 0.875, s * 0.833);
-        path.quadraticBezierTo(s * 0.875, s * 0.917, s * 0.792, s * 0.917);
-        path.lineTo(s * 0.625, s * 0.917);
-        path.lineTo(s * 0.625, s * 0.625);
-        path.lineTo(s * 0.375, s * 0.625);
-        path.lineTo(s * 0.375, s * 0.917);
-        path.lineTo(s * 0.208, s * 0.917);
-        path.quadraticBezierTo(s * 0.125, s * 0.917, s * 0.125, s * 0.833);
-        path.close();
-        canvas.drawPath(
-            path,
+        final cx = s * 0.5;
+        final cy = s * 0.5;
+
+        // Almond / eye outline: two quadratic curves forming the eye shape.
+        final eyePath = Path();
+        eyePath.moveTo(s * 0.08, cy);
+        eyePath.quadraticBezierTo(cx, s * 0.2, s * 0.92, cy);
+        eyePath.quadraticBezierTo(cx, s * 0.8, s * 0.08, cy);
+        eyePath.close();
+
+        if (filled) {
+          // Filled eye: solid almond shape
+          canvas.drawPath(eyePath, paint..style = PaintingStyle.fill);
+          // Stroke the outline for definition
+          canvas.drawPath(
+            eyePath,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.4
+              ..strokeCap = StrokeCap.round
+              ..strokeJoin = StrokeJoin.round,
+          );
+          // Pupil ring (stroke circle) so the icon reads as an eye, not a blob
+          canvas.drawCircle(
+            Offset(cx, cy),
+            s * 0.14,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.6,
+          );
+          // Highlight dot
+          canvas.drawCircle(
+            Offset(cx + s * 0.065, cy - s * 0.065),
+            s * 0.045,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+        } else {
+          // Stroke eye outline
+          canvas.drawPath(
+            eyePath,
             paint
-              ..style =
-                  filled ? PaintingStyle.fill : PaintingStyle.stroke);
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.7,
+          );
+          // Filled pupil circle
+          canvas.drawCircle(
+            Offset(cx, cy),
+            s * 0.14,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+          // Small white highlight dot
+          canvas.drawCircle(
+            Offset(cx + s * 0.055, cy - s * 0.055),
+            s * 0.04,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+        }
         break;
 
+      // ── Search icon (circle + handle + sparkle) ─────────────────────────
       case 'search':
+        final searchCenter = Offset(s * 0.42, s * 0.42);
+        final searchR = s * 0.28;
+
         canvas.drawCircle(
-          Offset(s * 0.44, s * 0.44),
-          s * 0.3,
-          paint..style = PaintingStyle.stroke,
-        );
-        canvas.drawLine(
-          Offset(s * 0.67, s * 0.67),
-          Offset(s * 0.88, s * 0.88),
+          searchCenter,
+          searchR,
           paint
             ..style = PaintingStyle.stroke
-            ..strokeWidth = filled ? 2.5 : 1.6,
+            ..strokeWidth = filled ? 2.0 : 1.7,
         );
+        // Handle
+        canvas.drawLine(
+          Offset(s * 0.63, s * 0.63),
+          Offset(s * 0.86, s * 0.86),
+          paint
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = filled ? 2.4 : 1.7,
+        );
+
+        // 4-point sparkle star inside the search circle
+        {
+          final sc = searchCenter;
+          final starPaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.fill;
+          final armLong = s * 0.11;
+          final armShort = s * 0.045;
+          final starPath = Path();
+          // Top
+          starPath.moveTo(sc.dx, sc.dy - armLong);
+          starPath.quadraticBezierTo(sc.dx + armShort, sc.dy - armShort,
+              sc.dx + armLong, sc.dy);
+          starPath.quadraticBezierTo(sc.dx + armShort, sc.dy + armShort,
+              sc.dx, sc.dy + armLong);
+          starPath.quadraticBezierTo(sc.dx - armShort, sc.dy + armShort,
+              sc.dx - armLong, sc.dy);
+          starPath.quadraticBezierTo(sc.dx - armShort, sc.dy - armShort,
+              sc.dx, sc.dy - armLong);
+          starPath.close();
+          canvas.drawPath(starPath, starPaint);
+        }
         break;
 
+      // ── Radar icon (arcs + center dot + sweep line) ─────────────────────
       case 'radar':
-        // Concentric arcs suggesting radar / nearby
         final center = Offset(s * 0.5, s * 0.5);
         final arcPaint = Paint()
           ..color = Colors.white
           ..style = PaintingStyle.stroke
-          ..strokeWidth = filled ? 2.0 : 1.6
+          ..strokeWidth = filled ? 2.0 : 1.7
           ..strokeCap = StrokeCap.round;
+
         // Outer arc
         canvas.drawArc(
           Rect.fromCircle(center: center, radius: s * 0.38),
@@ -367,29 +446,77 @@ class _NavIconPainter extends CustomPainter {
           -2.4, 4.8, false, arcPaint,
         );
         // Center dot
-        canvas.drawCircle(center, s * 0.07,
-            Paint()..color = Colors.white);
+        canvas.drawCircle(
+          center,
+          s * 0.07,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.fill,
+        );
+
+        // Sweep line from center toward upper-right; cos(0.9)≈0.6216, sin(0.9)≈0.7833
+        {
+          final endX = center.dx + s * 0.38 * 0.6216;
+          final endY = center.dy - s * 0.38 * 0.7833;
+          canvas.drawLine(
+            center,
+            Offset(endX, endY),
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = filled ? 2.0 : 1.7
+              ..strokeCap = StrokeCap.round,
+          );
+          // Dot at the end of the sweep line
+          canvas.drawCircle(
+            Offset(endX, endY),
+            s * 0.055,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+        }
         break;
 
+      // ── User icon (softer/rounder proportions) ──────────────────────────
       case 'user':
+        // Head — slightly larger and rounder
         canvas.drawCircle(
-          Offset(s * 0.5, s * 0.33),
-          s * 0.17,
+          Offset(s * 0.5, s * 0.32),
+          s * 0.19,
           paint
             ..style =
-                filled ? PaintingStyle.fill : PaintingStyle.stroke,
+                filled ? PaintingStyle.fill : PaintingStyle.stroke
+            ..strokeWidth = filled ? 2.0 : 1.7,
         );
+        // Body arc — wider, rounder shoulder curve
         final bodyPath = Path();
-        bodyPath.moveTo(s * 0.17, s * 0.875);
+        bodyPath.moveTo(s * 0.14, s * 0.88);
         bodyPath.cubicTo(
-            s * 0.17, s * 0.55, s * 0.32, s * 0.54, s * 0.5, s * 0.54);
+          s * 0.14, s * 0.56,
+          s * 0.30, s * 0.54,
+          s * 0.50, s * 0.54,
+        );
         bodyPath.cubicTo(
-            s * 0.68, s * 0.54, s * 0.83, s * 0.55, s * 0.83, s * 0.875);
+          s * 0.70, s * 0.54,
+          s * 0.86, s * 0.56,
+          s * 0.86, s * 0.88,
+        );
         if (filled) {
           bodyPath.close();
-          canvas.drawPath(bodyPath, paint..style = PaintingStyle.fill);
+          canvas.drawPath(
+            bodyPath,
+            paint
+              ..style = PaintingStyle.fill
+              ..strokeWidth = 2.0,
+          );
         } else {
-          canvas.drawPath(bodyPath, paint..style = PaintingStyle.stroke);
+          canvas.drawPath(
+            bodyPath,
+            paint
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.7,
+          );
         }
         break;
     }
