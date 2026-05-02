@@ -168,18 +168,19 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final commentsState = ref.watch(_commentsProvider(widget.postId));
     final me = ref.watch(authProvider).user;
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: SeeUColors.background,
+        backgroundColor: c.bg,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text('Комментарии', style: SeeUTypography.subtitle),
         leading: IconButton(
-          icon: Icon(PhosphorIcons.arrowLeft(), size: 22, color: SeeUColors.textPrimary),
+          icon: Icon(PhosphorIcons.arrowLeft(), size: 22, color: c.ink),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -200,7 +201,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                               style: TextStyle(
                                 fontFamily: 'Georgia',
                                 fontSize: 56,
-                                color: SeeUColors.textTertiary,
+                                color: c.ink3,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -212,7 +213,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                             Text(
                               'Будьте первым!',
                               style: SeeUTypography.body
-                                  .copyWith(color: SeeUColors.textSecondary),
+                                  .copyWith(color: c.ink2),
                             ),
                           ],
                         ),
@@ -256,7 +257,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: SeeUColors.accentSoft,
+                color: c.accentSoft,
                 borderRadius: BorderRadius.circular(SeeURadii.pill),
               ),
               margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -286,10 +287,10 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: SeeUColors.surfaceElevated,
+                color: c.surface2,
                 border: Border(
                   top: BorderSide(
-                    color: SeeUColors.borderSubtle,
+                    color: c.line,
                     width: 0.5,
                   ),
                 ),
@@ -302,7 +303,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                         ? NetworkImage(me!.avatarUrl!)
                         : null,
                     backgroundColor:
-                        SeeUColors.textTertiary.withValues(alpha: 0.3),
+                        c.ink3.withValues(alpha: 0.3),
                     child: me?.avatarUrl == null
                         ? Text(
                             me?.username.substring(0, 1).toUpperCase() ??
@@ -325,7 +326,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                             ? 'Ответ @$_replyToUsername...'
                             : 'Добавить комментарий...',
                         hintStyle: SeeUTypography.body
-                            .copyWith(color: SeeUColors.textTertiary),
+                            .copyWith(color: c.ink3),
                         border: InputBorder.none,
                         filled: false,
                         contentPadding: const EdgeInsets.symmetric(
@@ -348,7 +349,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                             style: SeeUTypography.subtitle.copyWith(
                               color: value.text.trim().isNotEmpty
                                   ? SeeUColors.accent
-                                  : SeeUColors.textTertiary,
+                                  : c.ink3,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -410,6 +411,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final commentsState = ref.watch(_commentsProvider(widget.postId));
     final me = ref.watch(authProvider).user;
 
@@ -453,7 +455,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             margin: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: SeeUColors.accentSoft,
+              color: c.accentSoft,
               borderRadius: BorderRadius.circular(SeeURadii.pill),
             ),
             child: Row(
@@ -478,10 +480,10 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: SeeUColors.surfaceElevated,
+              color: c.surface2,
               border: Border(
                 top: BorderSide(
-                  color: SeeUColors.borderSubtle,
+                  color: c.line,
                   width: 0.5,
                 ),
               ),
@@ -494,7 +496,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
                       ? NetworkImage(me!.avatarUrl!)
                       : null,
                   backgroundColor:
-                      SeeUColors.textTertiary.withValues(alpha: 0.3),
+                      c.ink3.withValues(alpha: 0.3),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -509,7 +511,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
                           ? 'Ответ @$_replyToUsername...'
                           : 'Добавить комментарий...',
                       hintStyle: SeeUTypography.body
-                          .copyWith(color: SeeUColors.textTertiary),
+                          .copyWith(color: c.ink3),
                       border: InputBorder.none,
                       filled: false,
                       contentPadding:
@@ -529,7 +531,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
                         style: SeeUTypography.subtitle.copyWith(
                           color: value.text.trim().isNotEmpty
                               ? SeeUColors.accent
-                              : SeeUColors.textTertiary,
+                              : c.ink3,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -568,6 +570,7 @@ class _CommentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(
@@ -582,7 +585,7 @@ class _CommentTile extends StatelessWidget {
                     ? NetworkImage(comment.author.avatarUrl!)
                     : null,
                 backgroundColor:
-                    SeeUColors.textTertiary.withValues(alpha: 0.3),
+                    c.ink3.withValues(alpha: 0.3),
                 child: comment.author.avatarUrl == null
                     ? Text(
                         comment.author.username[0].toUpperCase(),
@@ -602,7 +605,7 @@ class _CommentTile extends StatelessWidget {
                             text: '${comment.author.username} ',
                             style: SeeUTypography.caption.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: SeeUColors.textPrimary,
+                              color: c.ink,
                             ),
                           ),
                           TextSpan(
@@ -682,7 +685,7 @@ class _CommentTile extends StatelessWidget {
                                   width: 2,
                                   margin: const EdgeInsets.only(left: 17),
                                   decoration: BoxDecoration(
-                                    color: SeeUColors.borderSubtle,
+                                    color: c.line,
                                     borderRadius: BorderRadius.circular(1),
                                   ),
                                 ),
@@ -694,7 +697,7 @@ class _CommentTile extends StatelessWidget {
                                           ? NetworkImage(
                                               reply.author.avatarUrl!)
                                           : null,
-                                  backgroundColor: SeeUColors.textTertiary
+                                  backgroundColor: c.ink3
                                       .withValues(alpha: 0.3),
                                   child: reply.author.avatarUrl == null
                                       ? Text(
@@ -717,7 +720,7 @@ class _CommentTile extends StatelessWidget {
                                           style:
                                               SeeUTypography.caption.copyWith(
                                             fontWeight: FontWeight.w700,
-                                            color: SeeUColors.textPrimary,
+                                            color: c.ink,
                                           ),
                                         ),
                                         TextSpan(

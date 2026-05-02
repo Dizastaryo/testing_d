@@ -220,6 +220,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final entries = _sortedDevices;
 
     return Scaffold(
@@ -347,6 +348,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildToggleTab(String label, String mode) {
+    final c = context.seeuColors;
     final isActive = _viewMode == mode;
     return Expanded(
       child: GestureDetector(
@@ -385,6 +387,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   // ─── Radar view ────────────────────────────────────────────────────────
 
   Widget _buildRadarView(List<_ResolvedEntry> entries) {
+    final c = context.seeuColors;
     return Stack(
       children: [
         // Radar
@@ -459,7 +462,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                     '10м',
                     style: SeeUTypography.mono.copyWith(
                       fontSize: 9,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                       letterSpacing: 1,
                     ),
                   ),
@@ -472,7 +475,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                     '50м',
                     style: SeeUTypography.mono.copyWith(
                       fontSize: 9,
-                      color: SeeUColors.textTertiary,
+                      color: c.ink3,
                       letterSpacing: 1,
                     ),
                   ),
@@ -491,9 +494,9 @@ class _ScannerScreenState extends State<ScannerScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: SeeUColors.surface,
+                color: c.surface,
                 borderRadius: BorderRadius.circular(SeeURadii.medium),
-                border: Border.all(color: SeeUColors.borderSubtle),
+                border: Border.all(color: c.line),
                 boxShadow: SeeUShadows.sm,
               ),
               child: Row(
@@ -505,7 +508,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: SeeUColors.textPrimary,
+                      color: c.ink,
                     ),
                   ),
                 ],
@@ -521,7 +524,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           child: Center(
             child: RichText(
               text: TextSpan(
-                style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary),
+                style: TextStyle(fontSize: 12, color: c.ink3),
                 children: [
                   TextSpan(
                     text: '${entries.length} ',
@@ -549,6 +552,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildDeviceDot(_ResolvedEntry entry, int index, int total) {
+    final c = context.seeuColors;
     final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
     final dist = _rssiToMeters(entry.device.rssi);
     final r = (dist / 50).clamp(0.0, 1.0) * 110 + 28;
@@ -644,6 +648,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   // ─── List view ─────────────────────────────────────────────────────────
 
   Widget _buildListView(List<_ResolvedEntry> entries) {
+    final c = context.seeuColors;
     if (entries.isEmpty) return _buildEmptyState();
 
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
@@ -801,6 +806,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildChipOffBanner() {
+    final c = context.seeuColors;
     return Container(
       padding: const EdgeInsets.all(20),
       margin: const EdgeInsets.only(top: 8),
@@ -820,7 +826,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           const SizedBox(height: 4),
           Text(
             'Включите чип, чтобы вас видели вокруг.\nСами вы видите всех в любом случае.',
-            style: TextStyle(fontSize: 12, color: SeeUColors.textTertiary, height: 1.4),
+            style: TextStyle(fontSize: 12, color: context.seeuColors.ink3, height: 1.4),
             textAlign: TextAlign.center,
           ),
         ],
@@ -829,6 +835,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildEmptyState() {
+    final c = context.seeuColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -876,6 +883,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildFab() {
+    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: _bluetoothOn ? _toggleScan : null,
       child: AnimatedContainer(
@@ -991,6 +999,7 @@ class _PersonSheetState extends State<_PersonSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Column(

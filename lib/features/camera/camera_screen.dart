@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/design/tokens.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -60,6 +62,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Fake music track label ──
   final String _audioTitle = 'Любимая музыка';
+
+  // ── Gallery preview ──
+  File? _galleryFile;
+  bool _showGalleryPreview = false;
 
   // ── Animation controllers ──
   late AnimationController _switchController;
@@ -346,6 +352,18 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // ── Gallery picker ─────────────────────────────────────────────────────
+
+  Future<void> _pickFromGallery() async {
+    final picker = ImagePicker();
+    final file = await picker.pickMedia();
+    if (file == null || !mounted) return;
+    setState(() {
+      _galleryFile = File(file.path);
+      _showGalleryPreview = true;
+    });
+  }
+
   // ── Zoom ──────────────────────────────────────────────────────────────
 
   void _onScaleStart(ScaleStartDetails d) => _baseZoom = _currentZoom;
@@ -468,7 +486,91 @@ class _CameraScreenState extends State<CameraScreen>
 
           // ── Countdown overlay ──
           if (_countdown > 0) _buildCountdownOverlay(),
+
+          // ── Gallery preview overlay ──
+          if (_showGalleryPreview && _galleryFile != null)
+            _buildGalleryPreview(),
         ],
+      ),
+    );
+  }
+
+  // ── Gallery preview ────────────────────────────────────────────────────
+
+  Widget _buildGalleryPreview() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Pinch-to-zoom image preview
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.file(_galleryFile!, fit: BoxFit.contain),
+            ),
+
+            // Debug path
+            Positioned(
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: Text(
+                _galleryFile!.path,
+                style: const TextStyle(color: Colors.white54, fontSize: 10),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+            // Close (X) button
+            Positioned(
+              top: 56,
+              left: 16,
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  _showGalleryPreview = false;
+                  _galleryFile = null;
+                }),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.close, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+
+            // "Далее" button
+            Positioned(
+              bottom: 48,
+              right: 24,
+              child: GestureDetector(
+                onTap: widget.onNext,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _kAccent,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Text(
+                    'Далее',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -825,14 +927,7 @@ class _CameraScreenState extends State<CameraScreen>
         children: [
           // Gallery button
           GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Галерея — скоро'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
+            onTap: _pickFromGallery,
             child: Container(
               width: 52,
               height: 52,

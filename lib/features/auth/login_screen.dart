@@ -302,14 +302,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               decoration: InputDecoration(
                 counterText: '',
                 filled: true,
-                fillColor: SeeUColors.surfaceElevated,
+                fillColor: c.surface2,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: SeeUColors.borderSubtle),
+                  borderSide: BorderSide(color: c.line),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: SeeUColors.borderSubtle),
+                  borderSide: BorderSide(color: c.line),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),

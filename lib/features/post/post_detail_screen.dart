@@ -29,10 +29,11 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   void _onShare(Post post) {
+    final c = context.seeuColors;
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: SeeUColors.surfaceElevated,
+      backgroundColor: c.surface2,
       shape: const RoundedRectangleBorder(
         borderRadius:
             BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
@@ -48,7 +49,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: SeeUColors.borderSubtle,
+                  color: c.line,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -127,10 +128,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   void _onMore(Post post) {
+    final c = context.seeuColors;
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: SeeUColors.surfaceElevated,
+      backgroundColor: c.surface2,
       shape: const RoundedRectangleBorder(
         borderRadius:
             BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
@@ -146,7 +148,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: SeeUColors.borderSubtle,
+                  color: c.line,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -174,7 +176,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               ),
               ListTile(
                 leading: Icon(PhosphorIcons.eyeSlash(PhosphorIconsStyle.fill),
-                    color: SeeUColors.textSecondary),
+                    color: c.ink2),
                 title: Text('Не показывать', style: SeeUTypography.body),
                 onTap: () {
                   Navigator.of(ctx).pop();
@@ -200,26 +202,27 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context, ) {
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final postAsync = ref.watch(_postDetailProvider(widget.postId));
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: SeeUColors.background,
+        backgroundColor: c.bg,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text('Пост', style: SeeUTypography.subtitle),
         leading: IconButton(
           icon: Icon(PhosphorIcons.arrowLeft(),
-              size: 22, color: SeeUColors.textPrimary),
+              size: 22, color: c.ink),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           postAsync.whenOrNull(
                 data: (post) => IconButton(
                   icon: Icon(PhosphorIcons.dotsThree(PhosphorIconsStyle.bold),
-                      size: 22, color: SeeUColors.textPrimary),
+                      size: 22, color: c.ink),
                   onPressed: () => _onMore(post),
                 ),
               ) ??
@@ -235,11 +238,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(PhosphorIcons.warning(),
-                  size: 48, color: SeeUColors.textTertiary),
+                  size: 48, color: c.ink3),
               const SizedBox(height: 16),
               Text('Не удалось загрузить пост',
                   style: SeeUTypography.body
-                      .copyWith(color: SeeUColors.textSecondary)),
+                      .copyWith(color: c.ink2)),
               const SizedBox(height: 16),
               SeeUButton(
                 label: 'Повторить',
@@ -266,17 +269,17 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: SeeUColors.surfaceElevated,
+                        color: c.surface2,
                         borderRadius:
                             BorderRadius.circular(SeeURadii.pill),
                         border:
-                            Border.all(color: SeeUColors.borderSubtle),
+                            Border.all(color: c.line),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(PhosphorIcons.shareFat(),
-                              size: 16, color: SeeUColors.textSecondary),
+                              size: 16, color: c.ink2),
                           const SizedBox(width: 6),
                           Text('Поделиться',
                               style: SeeUTypography.caption.copyWith(
@@ -294,17 +297,17 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: SeeUColors.surfaceElevated,
+                        color: c.surface2,
                         borderRadius:
                             BorderRadius.circular(SeeURadii.pill),
                         border:
-                            Border.all(color: SeeUColors.borderSubtle),
+                            Border.all(color: c.line),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(PhosphorIcons.chatCircle(),
-                              size: 16, color: SeeUColors.textSecondary),
+                              size: 16, color: c.ink2),
                           const SizedBox(width: 6),
                           Text('Комментарии',
                               style: SeeUTypography.caption.copyWith(

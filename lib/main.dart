@@ -16,7 +16,7 @@ import 'features/explore/explore_screen.dart';
 import 'features/post/post_detail_screen.dart';
 import 'features/post/create_post_screen.dart';
 import 'features/post/comments_screen.dart';
-import 'features/stories/story_creator.dart';
+import 'features/camera/camera_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/followers_screen.dart';
@@ -41,6 +41,16 @@ void main() async {
     statusBarColor: Colors.transparent,
   ));
   runApp(const ProviderScope(child: SeeUApp()));
+}
+
+class _StoryCreateCameraWrapper extends StatelessWidget {
+  const _StoryCreateCameraWrapper();
+  @override
+  Widget build(BuildContext context) {
+    return CameraScreen(
+      onClose: () => context.pop(),
+    );
+  }
 }
 
 class SeeUApp extends ConsumerStatefulWidget {
@@ -208,7 +218,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             GoRoute(
               path: '/story/create',
               pageBuilder: (_, __) => const CupertinoPage(
-                child: StoryCreatorScreen(),
+                child: _StoryCreateCameraWrapper(),
               ),
             ),
             GoRoute(

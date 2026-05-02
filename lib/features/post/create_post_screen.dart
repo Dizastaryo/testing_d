@@ -140,12 +140,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     final bool canPublish = _selectedImageIndex != null && !_isPosting;
 
     return Scaffold(
-      backgroundColor: SeeUColors.background,
+      backgroundColor: c.bg,
       appBar: AppBar(
-        backgroundColor: SeeUColors.background,
+        backgroundColor: c.bg,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         title: Text(
@@ -156,7 +157,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         leading: IconButton(
           icon: Icon(
             PhosphorIcons.x(PhosphorIconsStyle.bold),
-            color: SeeUColors.textPrimary,
+            color: c.ink,
           ),
           onPressed: () => context.pop(),
         ),
@@ -179,7 +180,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       style: SeeUTypography.caption.copyWith(
                         color: canPublish
                             ? SeeUColors.accent
-                            : SeeUColors.textTertiary,
+                            : c.ink3,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -252,6 +253,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   // ─── Preview ───────────────────────────────────────────────────────────────
 
   Widget _buildPreview() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: ClipRRect(
@@ -268,7 +270,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 return Container(
                   width: double.infinity,
                   height: 280,
-                  color: SeeUColors.surfaceElevated,
+                  color: c.surface2,
                   child: const Center(
                     child: CircularProgressIndicator(
                       color: SeeUColors.accent,
@@ -280,11 +282,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               errorBuilder: (_, __, ___) => Container(
                 width: double.infinity,
                 height: 280,
-                color: SeeUColors.surfaceElevated,
+                color: c.surface2,
                 child: Icon(
                   PhosphorIcons.imageSquare(PhosphorIconsStyle.bold),
                   size: 48,
-                  color: SeeUColors.textTertiary,
+                  color: c.ink3,
                 ),
               ),
             ),
@@ -333,17 +335,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     required IconData icon,
     required String title,
   }) {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: SeeUColors.textSecondary),
+          Icon(icon, size: 16, color: c.ink2),
           const SizedBox(width: 6),
           Text(
             title,
             style: SeeUTypography.caption.copyWith(
               fontWeight: FontWeight.w600,
-              color: SeeUColors.textSecondary,
+              color: c.ink2,
             ),
           ),
         ],
@@ -354,6 +357,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   // ─── Image grid ────────────────────────────────────────────────────────────
 
   Widget _buildImageGrid() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: GridView.builder(
@@ -395,7 +399,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       loadingBuilder: (_, child, progress) {
                         if (progress == null) return child;
                         return Container(
-                          color: SeeUColors.surfaceElevated,
+                          color: c.surface2,
                           child: const Center(
                             child: SizedBox(
                               width: 16,
@@ -409,10 +413,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         );
                       },
                       errorBuilder: (_, __, ___) => Container(
-                        color: SeeUColors.surfaceElevated,
+                        color: c.surface2,
                         child: Icon(
                           PhosphorIcons.imageSquare(PhosphorIconsStyle.regular),
-                          color: SeeUColors.textTertiary,
+                          color: c.ink3,
                           size: 24,
                         ),
                       ),
@@ -449,6 +453,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   // ─── Caption input ─────────────────────────────────────────────────────────
 
   Widget _buildCaptionInput() {
+    final c = context.seeuColors;
     final charCount = _captionCtrl.text.length;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -457,7 +462,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         children: [
           Container(
             decoration: BoxDecoration(
-              color: SeeUColors.surfaceElevated,
+              color: c.surface2,
               borderRadius: BorderRadius.circular(16),
             ),
             child: TextField(
@@ -470,7 +475,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               decoration: InputDecoration(
                 hintText: '\u0420\u0430\u0441\u0441\u043A\u0430\u0436\u0438\u0442\u0435 \u043E \u0444\u043E\u0442\u043E...',
                 hintStyle: SeeUTypography.body.copyWith(
-                  color: SeeUColors.textTertiary,
+                  color: c.ink3,
                 ),
                 border: InputBorder.none,
                 filled: false,
@@ -486,7 +491,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               style: SeeUTypography.micro.copyWith(
                 color: charCount > _maxCaption * 0.9
                     ? SeeUColors.error
-                    : SeeUColors.textTertiary,
+                    : c.ink3,
               ),
             ),
           ),
@@ -498,12 +503,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   // ─── Emoji row ─────────────────────────────────────────────────────────────
 
   Widget _buildEmojiRow() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: SeeUColors.surfaceElevated,
+          color: c.surface2,
           borderRadius: BorderRadius.circular(SeeURadii.pill),
         ),
         child: Row(
@@ -552,6 +558,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Widget _buildLocationSuggestions() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Wrap(
@@ -566,9 +573,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: SeeUColors.surfaceElevated,
+                color: c.surface2,
                 borderRadius: BorderRadius.circular(SeeURadii.pill),
-                border: Border.all(color: SeeUColors.borderSubtle),
+                border: Border.all(color: c.line),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -582,7 +589,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   Text(
                     loc,
                     style: SeeUTypography.caption.copyWith(
-                      color: SeeUColors.textPrimary,
+                      color: c.ink,
                     ),
                   ),
                 ],
@@ -622,6 +629,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Widget _buildTagChips() {
+    final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Wrap(
@@ -633,7 +641,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: SeeUColors.accentSoft,
+                color: c.accentSoft,
                 borderRadius: BorderRadius.circular(SeeURadii.pill),
               ),
               child: Row(
