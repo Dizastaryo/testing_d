@@ -182,7 +182,22 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
-                    onTap: () => setState(() => _selectedTab = i),
+                    onTap: () {
+                      setState(() => _selectedTab = i);
+                      // Map tab index to search type for backend filtering
+                      String searchType;
+                      switch (i) {
+                        case 1: // Reels
+                          searchType = 'posts';
+                          break;
+                        case 2: // Люди
+                          searchType = 'users';
+                          break;
+                        default:
+                          searchType = 'all';
+                      }
+                      ref.read(searchProvider.notifier).setSearchType(searchType);
+                    },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       padding: const EdgeInsets.symmetric(
@@ -414,7 +429,19 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
-    if (searchState.users.isEmpty && searchState.posts.isEmpty) {
+    // Apply client-side tab filtering
+    final filteredUsers = _selectedTab == 1 // Reels tab: no users
+        ? <User>[]
+        : searchState.users;
+    final filteredPosts = _selectedTab == 1 // Reels tab: only video posts
+        ? searchState.posts
+            .where((p) => p.media.any((m) => m.type == MediaType.video))
+            .toList()
+        : _selectedTab == 2 // Люди tab: no posts
+            ? <Post>[]
+            : searchState.posts;
+
+    if (filteredUsers.isEmpty && filteredPosts.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -438,13 +465,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 100),
         children: [
-          if (searchState.users.isNotEmpty) ...[
+          if (filteredUsers.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Text('\u041B\u044E\u0434\u0438', style: SeeUTypography.title),
             ),
-            ...List.generate(searchState.users.length, (index) {
-              final user = searchState.users[index];
+            ...List.generate(filteredUsers.length, (index) {
+              final user = filteredUsers[index];
               return AnimationConfiguration.staggeredList(
                 position: index,
                 duration: const Duration(milliseconds: 300),
@@ -461,7 +488,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               );
             }),
           ],
-          if (searchState.posts.isNotEmpty) ...[
+          if (filteredPosts.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: Text('\u041F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438', style: SeeUTypography.title),
@@ -475,9 +502,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 crossAxisSpacing: 4,
                 mainAxisSpacing: 4,
               ),
-              itemCount: searchState.posts.length,
+              itemCount: filteredPosts.length,
               itemBuilder: (context, index) {
-                final post = searchState.posts[index];
+                final post = filteredPosts[index];
                 return GestureDetector(
                   onTap: () => context.push('/post/${post.id}'),
                   child: ClipRRect(

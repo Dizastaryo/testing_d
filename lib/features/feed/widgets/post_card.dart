@@ -753,7 +753,23 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   Widget _buildMedia(BuildContext context, Post post) {
-    if (post.media.isEmpty) return const SizedBox.shrink();
+    if (post.media.isEmpty) {
+      return Container(
+        height: 200,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(SeeURadii.card),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFE4D9), Color(0xFFFFF5D4)],
+          ),
+        ),
+        child: Center(
+          child: Icon(PhosphorIcons.imageSquare(),
+              color: SeeUColors.textTertiary, size: 48),
+        ),
+      );
+    }
     final aspectRatio = post.media.first.aspectRatio ?? 1.0;
     final hasMultiple = post.media.length > 1;
 

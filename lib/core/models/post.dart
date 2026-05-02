@@ -75,14 +75,33 @@ class Post {
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
-    final mediaList = (json['media'] as List?)
-            ?.map((m) => PostMedia.fromJson(m as Map<String, dynamic>))
-            .toList() ??
-        [];
+    // Support both structured 'media' array and flat 'media_urls' + 'media_types'
+    List<PostMedia> mediaList;
+    if (json['media'] is List && (json['media'] as List).isNotEmpty) {
+      mediaList = (json['media'] as List)
+          .map((m) => PostMedia.fromJson(m as Map<String, dynamic>))
+          .toList();
+    } else if (json['media_urls'] is List) {
+      final urls = (json['media_urls'] as List).cast<String>();
+      final types = json['media_types'] is List
+          ? (json['media_types'] as List).cast<String>()
+          : <String>[];
+      mediaList = List.generate(urls.length, (i) {
+        return PostMedia(
+          url: urls[i],
+          type: PostMedia._parseMediaType(i < types.length ? types[i] : null),
+        );
+      });
+    } else {
+      mediaList = [];
+    }
+
+    // Support both 'author' and 'user' keys for the post author
+    final authorJson = (json['author'] ?? json['user']) as Map<String, dynamic>? ?? {};
 
     return Post(
       id: json['id']?.toString() ?? '',
-      author: User.fromJson(json['author'] as Map<String, dynamic>? ?? {}),
+      author: User.fromJson(authorJson),
       media: mediaList,
       caption: json['caption']?.toString(),
       location: json['location']?.toString(),

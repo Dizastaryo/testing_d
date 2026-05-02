@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -125,8 +126,10 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               routes: [
                 GoRoute(
                   path: ':chatId',
-                  builder: (context, state) => ChatScreen(
-                    chatId: state.pathParameters['chatId']!,
+                  pageBuilder: (context, state) => CupertinoPage(
+                    child: ChatScreen(
+                      chatId: state.pathParameters['chatId']!,
+                    ),
                   ),
                 ),
               ],
@@ -147,55 +150,73 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               routes: [
                 GoRoute(
                   path: 'edit',
-                  builder: (_, __) => const EditProfileScreen(),
+                  pageBuilder: (_, __) => const CupertinoPage(
+                    child: EditProfileScreen(),
+                  ),
                 ),
               ],
             ),
             GoRoute(
               path: '/profile/:username',
-              builder: (context, state) => ProfileScreen(
-                username: state.pathParameters['username'],
+              pageBuilder: (context, state) => CupertinoPage(
+                child: ProfileScreen(
+                  username: state.pathParameters['username'],
+                ),
               ),
               routes: [
                 GoRoute(
                   path: 'followers',
-                  builder: (context, state) => FollowersScreen(
-                    username: state.pathParameters['username']!,
+                  pageBuilder: (context, state) => CupertinoPage(
+                    child: FollowersScreen(
+                      username: state.pathParameters['username']!,
+                    ),
                   ),
                 ),
                 GoRoute(
                   path: 'following',
-                  builder: (context, state) => FollowingScreen(
-                    username: state.pathParameters['username']!,
+                  pageBuilder: (context, state) => CupertinoPage(
+                    child: FollowingScreen(
+                      username: state.pathParameters['username']!,
+                    ),
                   ),
                 ),
               ],
             ),
             GoRoute(
               path: '/post/create',
-              builder: (_, __) => const CreatePostScreen(),
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: CreatePostScreen(),
+              ),
             ),
             GoRoute(
               path: '/post/:id',
-              builder: (context, state) => PostDetailScreen(
-                postId: state.pathParameters['id']!,
+              pageBuilder: (context, state) => CupertinoPage(
+                child: PostDetailScreen(
+                  postId: state.pathParameters['id']!,
+                ),
               ),
               routes: [
                 GoRoute(
                   path: 'comments',
-                  builder: (context, state) => CommentsScreen(
-                    postId: state.pathParameters['id']!,
+                  pageBuilder: (context, state) => CupertinoPage(
+                    child: CommentsScreen(
+                      postId: state.pathParameters['id']!,
+                    ),
                   ),
                 ),
               ],
             ),
             GoRoute(
               path: '/story/create',
-              builder: (_, __) => const StoryCreatorScreen(),
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: StoryCreatorScreen(),
+              ),
             ),
             GoRoute(
               path: '/settings',
-              builder: (_, __) => const SettingsScreen(),
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: SettingsScreen(),
+              ),
             ),
             GoRoute(
               path: '/notifications',

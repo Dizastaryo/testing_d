@@ -181,6 +181,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
     super.dispose();
   }
 
+  String _searchType = 'all';
+
+  void setSearchType(String type) {
+    _searchType = type;
+    if (state.query.isNotEmpty) {
+      _doSearch(state.query);
+    }
+  }
+
   Future<void> search(String query) async {
     _debounceTimer?.cancel();
     if (query.trim().isEmpty) {
@@ -201,7 +210,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
     state = SearchState(query: query, isLoading: true);
     try {
-      final resp = await _api.get(ApiEndpoints.search, queryParameters: {'q': query});
+      final params = <String, dynamic>{'q': query};
+      if (_searchType != 'all') {
+        params['type'] = _searchType;
+      }
+      final resp = await _api.get(ApiEndpoints.search, queryParameters: params);
       final data = resp.data;
       final resultData = data is Map && data.containsKey('data') ? data['data'] : data;
 

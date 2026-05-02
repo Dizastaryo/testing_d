@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -57,72 +55,68 @@ class MainScaffold extends StatelessWidget {
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: child,
           extendBody: true,
-          bottomNavigationBar: hideNav ? null : Container(
-        decoration: BoxDecoration(
-          color: isDark
-              ? const Color(0x00000000)
-              : SeeUColors.surface.withValues(alpha: 0.92),
-          border: Border(
-            top: BorderSide(
-              color: isDark
-                  ? const Color(0x0FFFFFFF)
-                  : SeeUColors.borderSubtle,
-              width: 1,
-            ),
-          ),
-        ),
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: _blurFilter,
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: 56,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _NavItem(
-                      icon: _buildNavIcon('home', false),
-                      activeIcon: _buildNavIcon('home', true),
-                      label: 'Лента',
-                      isSelected: currentIndex == 0,
-                      onTap: () => _onTap(context, 0),
+          bottomNavigationBar: hideNav
+              ? null
+              : Container(
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? SeeUColors.darkSurface
+                        : SeeUColors.surface,
+                    border: Border(
+                      top: BorderSide(
+                        color: isDark
+                            ? SeeUColors.darkLine
+                            : SeeUColors.borderSubtle,
+                        width: 1,
+                      ),
                     ),
-                    _NavItem(
-                      icon: _buildNavIcon('search', false),
-                      activeIcon: _buildNavIcon('search', true),
-                      label: 'Поиск',
-                      isSelected: currentIndex == 1,
-                      onTap: () => _onTap(context, 1),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      height: 56,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _NavItem(
+                            icon: _buildNavIcon('home', false),
+                            activeIcon: _buildNavIcon('home', true),
+                            label: 'Лента',
+                            isSelected: currentIndex == 0,
+                            onTap: () => _onTap(context, 0),
+                          ),
+                          _NavItem(
+                            icon: _buildNavIcon('search', false),
+                            activeIcon: _buildNavIcon('search', true),
+                            label: 'Поиск',
+                            isSelected: currentIndex == 1,
+                            onTap: () => _onTap(context, 1),
+                          ),
+                          _CreatePill(onTap: () => _onTap(context, 2)),
+                          _NavItem(
+                            icon: _buildNavIcon('radar', false),
+                            activeIcon: _buildNavIcon('radar', true),
+                            label: 'Рядом',
+                            isSelected: currentIndex == 3,
+                            onTap: () => _onTap(context, 3),
+                          ),
+                          _NavItem(
+                            icon: _buildNavIcon('user', false),
+                            activeIcon: _buildNavIcon('user', true),
+                            label: 'Я',
+                            isSelected: currentIndex == 4,
+                            onTap: () => _onTap(context, 4),
+                          ),
+                        ],
+                      ),
                     ),
-                    _CreatePill(onTap: () => _onTap(context, 2)),
-                    _NavItem(
-                      icon: _buildNavIcon('radar', false),
-                      activeIcon: _buildNavIcon('radar', true),
-                      label: 'Рядом',
-                      isSelected: currentIndex == 3,
-                      onTap: () => _onTap(context, 3),
-                    ),
-                    _NavItem(
-                      icon: _buildNavIcon('user', false),
-                      activeIcon: _buildNavIcon('user', true),
-                      label: 'Я',
-                      isSelected: currentIndex == 4,
-                      onTap: () => _onTap(context, 4),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+        );
       },
     );
   }
 
-  static final _blurFilter = ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20);
 
   Widget _buildNavIcon(String name, bool filled) {
     return CustomPaint(
@@ -306,6 +300,16 @@ class _NavItemState extends State<_NavItem>
                 fontWeight:
                     widget.isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: widget.isSelected ? activeColor : inactiveColor,
+              ),
+            ),
+            const SizedBox(height: 3),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: widget.isSelected ? 4 : 0,
+              height: widget.isSelected ? 4 : 0,
+              decoration: const BoxDecoration(
+                color: SeeUColors.accent,
+                shape: BoxShape.circle,
               ),
             ),
           ],
