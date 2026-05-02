@@ -53,8 +53,8 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
         unreadCount: unread,
       );
     } catch (e) {
-      state = NotificationState(
-        notifications: [],
+      state = state.copyWith(
+        isLoading: false,
         error: e.toString(),
       );
     }

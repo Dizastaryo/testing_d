@@ -10,7 +10,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 
 final _followersProvider = FutureProvider.family<List<User>, String>((ref, username) async {
-  final api = ref.watch(apiClientProvider);
+  final api = ref.read(apiClientProvider);
   final resp = await api.get(ApiEndpoints.userFollowers(username));
   final data = resp.data;
   final listData = data is Map && data.containsKey('data') ? data['data'] : data;
@@ -134,9 +134,14 @@ class _UserRowState extends ConsumerState<_UserRow> {
     _isFollowing = widget.user.isFollowing;
   }
 
-  void _toggleFollow() {
+  Future<void> _toggleFollow() async {
+    final previous = _isFollowing;
     setState(() => _isFollowing = !_isFollowing);
-    ref.read(apiClientProvider).post(ApiEndpoints.followUser(widget.user.username));
+    try {
+      await ref.read(apiClientProvider).post(ApiEndpoints.followUser(widget.user.username));
+    } catch (_) {
+      if (mounted) setState(() => _isFollowing = previous);
+    }
   }
 
   @override

@@ -264,7 +264,7 @@ class _ChatTile extends StatelessWidget {
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
-    final isOnline = user.id.hashCode % 3 != 0;
+    final isOnline = false;
     // "взаимный" badge shown when user id hash % 4 == 0
     final isChipMatch = user.id.hashCode % 4 == 0;
 
@@ -609,7 +609,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                 : _results.isEmpty
                     ? Center(
                         child: Text(
-                          'Пользователи не найдены',
+                          'Скоро',
                           style: SeeUTypography.body.copyWith(
                             color: SeeUColors.textSecondary,
                           ),
@@ -631,7 +631,7 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                                 children: [
                                   _OnlineAvatar(
                                     avatarUrl: user.avatarUrl,
-                                    isOnline: user.id.hashCode % 3 != 0,
+                                    isOnline: false,
                                     size: 44,
                                   ),
                                   const SizedBox(width: 12),

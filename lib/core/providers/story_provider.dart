@@ -45,10 +45,8 @@ class StoryNotifier extends StateNotifier<StoryState> {
           .toList();
       state = StoryState(storyGroups: groups);
     } catch (e) {
-      state = StoryState(
-        storyGroups: [],
-        error: e.toString(),
-      );
+      // M54: Preserve existing storyGroups on error
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 

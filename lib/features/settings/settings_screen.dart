@@ -6,11 +6,16 @@ import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/theme_provider.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
     final currentThemeMode = ref.watch(themeProvider);
     final isDark = currentThemeMode == ThemeMode.dark;
 
@@ -34,7 +39,7 @@ class SettingsScreen extends ConsumerWidget {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: () => context.pop(),
                     child: Container(
                       width: 36,
                       height: 36,
@@ -71,7 +76,7 @@ class SettingsScreen extends ConsumerWidget {
                     _SettingsRowData(
                       icon: PhosphorIcons.pencilSimple(),
                       label: 'Псевдоним',
-                      value: 'aidana_x',
+                      value: ref.watch(authProvider).user?.username ?? '',
                       onTap: () => _showComingSoon(context),
                     ),
                     _SettingsRowData(
@@ -152,8 +157,9 @@ class SettingsScreen extends ConsumerWidget {
                       icon: PhosphorIcons.signOut(),
                       label: 'Выйти',
                       value: '',
-                      onTap: () {
-                        ref.read(authProvider.notifier).logout();
+                      onTap: () async {
+                        await ref.read(authProvider.notifier).logout();
+                        if (!mounted) return;
                         context.go('/login');
                       },
                     ),

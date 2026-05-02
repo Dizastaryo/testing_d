@@ -29,6 +29,8 @@ class _PostCardState extends ConsumerState<PostCard>
   final PageController _pageController = PageController();
 
   // Reaction picker state
+  // L09: Track current page for counter badge
+  int _currentPage = 0;
   bool _showReactionPicker = false;
   late AnimationController _reactionPickerController;
   late Animation<double> _reactionPickerScaleAnim;
@@ -47,6 +49,13 @@ class _PostCardState extends ConsumerState<PostCard>
   @override
   void initState() {
     super.initState();
+    // L09: Listen to page changes for counter badge
+    _pageController.addListener(() {
+      final page = _pageController.page?.round() ?? 0;
+      if (page != _currentPage) {
+        setState(() => _currentPage = page);
+      }
+    });
     _heartAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -171,6 +180,8 @@ class _PostCardState extends ConsumerState<PostCard>
                 Clipboard.setData(
                     ClipboardData(text: 'https://seeu.app/post/${widget.post.id}'));
                 Navigator.pop(ctx);
+                // M19: mounted check before ScaffoldMessenger after Navigator.pop
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Ссылка скопирована')),
                 );
@@ -182,6 +193,8 @@ class _PostCardState extends ConsumerState<PostCard>
               title: Text('Поделиться в историю', style: SeeUTypography.body),
               onTap: () {
                 Navigator.pop(ctx);
+                // M19: mounted check before ScaffoldMessenger after Navigator.pop
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Скоро будет доступно')),
                 );
@@ -386,7 +399,8 @@ class _PostCardState extends ConsumerState<PostCard>
     );
   }
 
-  Widget _buildWaveActions(BuildContext context, Post post) {
+  // U14: Shared action row builder used by both wave and normal posts (DRY)
+  Widget _buildActionsRow(BuildContext context, Post post) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -481,6 +495,10 @@ class _PostCardState extends ConsumerState<PostCard>
           ),
       ],
     );
+  }
+
+  Widget _buildWaveActions(BuildContext context, Post post) {
+    return _buildActionsRow(context, post);
   }
 
   Widget _buildHeader(BuildContext context, Post post) {
@@ -617,7 +635,7 @@ class _PostCardState extends ConsumerState<PostCard>
                   ),
                 ),
 
-              // Page counter badge (top-right)
+              // L09: Page counter badge with text (e.g. "1/3")
               if (hasMultiple)
                 Positioned(
                   top: 12,
@@ -629,10 +647,13 @@ class _PostCardState extends ConsumerState<PostCard>
                       color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(SeeURadii.pill),
                     ),
-                    child: Icon(
-                      PhosphorIcons.squaresFour(),
-                      color: Colors.white,
-                      size: 16,
+                    child: Text(
+                      '${_currentPage + 1}/${post.media.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -658,112 +679,28 @@ class _PostCardState extends ConsumerState<PostCard>
     );
   }
 
+  // U14: Delegates to shared _buildActionsRow
   Widget _buildActions(BuildContext context, Post post) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Row(
-          children: [
-            // Like button with long-press for reaction picker
-            GestureDetector(
-              onTap: () {
-                if (_showReactionPicker) {
-                  _hideReactionPicker();
-                } else {
-                  _likePost();
-                }
-              },
-              onLongPress: _showReactionPickerUI,
-              child: _ActionButtonRaw(
-                icon: PhosphorIcon(
-                  post.isLiked
-                      ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.heart(),
-                  color: post.isLiked ? SeeUColors.like : SeeUColors.textPrimary,
-                  size: 22,
-                ),
-              ),
-            ),
-            // Brief selected emoji indicator
-            if (_showSelectedEmoji && _selectedEmoji != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Text(
-                  _selectedEmoji!,
-                  style: const TextStyle(fontSize: 18),
-                ),
-              ),
-            const SizedBox(width: 8),
-            _ActionButton(
-              icon: PhosphorIcon(PhosphorIcons.chatCircle()),
-              onTap: () => context.push('/post/${post.id}/comments'),
-            ),
-            const SizedBox(width: 8),
-            _ActionButton(
-              icon: PhosphorIcon(PhosphorIcons.shareFat()),
-              onTap: _onShareTap,
-            ),
-            const Spacer(),
-            _ActionButton(
-              icon: PhosphorIcon(post.isSaved
-                  ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
-                  : PhosphorIcons.bookmarkSimple()),
-              onTap: _savePost,
-            ),
-          ],
-        ),
-        // Reaction picker overlay
-        if (_showReactionPicker)
-          Positioned(
-            bottom: 50,
-            left: 0,
-            child: FadeTransition(
-              opacity: _reactionPickerOpacityAnim,
-              child: ScaleTransition(
-                scale: _reactionPickerScaleAnim,
-                alignment: Alignment.bottomLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: SeeUColors.surface,
-                    borderRadius: BorderRadius.circular(SeeURadii.pill),
-                    boxShadow: SeeUShadows.lg,
-                    border: Border.all(
-                      color: SeeUColors.borderSubtle,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: _reactionEmojis.map((emoji) {
-                      return GestureDetector(
-                        onTap: () => _selectReaction(emoji),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 26),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
+    return _buildActionsRow(context, post);
   }
 
   Widget _buildLikesRow(BuildContext context, Post post) {
     if (post.likesCount == 0) return const SizedBox.shrink();
+    // M18: Guard likesCount == 1 with likedByUsername — avoid "и ещё 0"
+    String likesText;
+    if (post.likedByUsername != null) {
+      if (post.likesCount == 1) {
+        likesText = 'Нравится ${post.likedByUsername}';
+      } else {
+        likesText = 'Нравится ${post.likedByUsername} и ещё ${_formatCount(post.likesCount - 1)}';
+      }
+    } else {
+      likesText = '${_formatCount(post.likesCount)} отметок «Нравится»';
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 2),
       child: Text(
-        post.likedByUsername != null
-            ? 'Нравится ${post.likedByUsername} и ещё ${_formatCount(post.likesCount - 1)}'
-            : '${_formatCount(post.likesCount)} отметок «Нравится»',
+        likesText,
         style:
             SeeUTypography.caption.copyWith(fontWeight: FontWeight.w700, color: SeeUColors.textPrimary),
         overflow: TextOverflow.ellipsis,
@@ -840,6 +777,8 @@ class _PostCardState extends ConsumerState<PostCard>
                 Clipboard.setData(
                     ClipboardData(text: 'https://seeu.app/post/${post.id}'));
                 Navigator.pop(context);
+                // M19: mounted check before ScaffoldMessenger after Navigator.pop
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Ссылка скопирована')),
                 );
@@ -862,6 +801,8 @@ class _PostCardState extends ConsumerState<PostCard>
                       .copyWith(color: SeeUColors.like)),
               onTap: () {
                 Navigator.pop(context);
+                // M19: mounted check before ScaffoldMessenger after Navigator.pop
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Жалоба отправлена. Спасибо!')),
                 );

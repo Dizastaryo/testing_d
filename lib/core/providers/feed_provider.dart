@@ -63,12 +63,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
         page: 2,
       );
     } catch (e) {
-      state = FeedState(
-        posts: [],
-        isLoading: false,
-        error: e.toString(),
-        hasMore: false,
-      );
+      // H12: Preserve existing posts on error
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -94,9 +90,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Future<void> refresh() => loadFeed();
 
   Future<void> toggleLike(String postId) async {
+    // H13: Capture newLiked before optimistic update
+    final original = state.posts.firstWhere((p) => p.id == postId);
+    final newLiked = !original.isLiked;
+
     final posts = state.posts.map((p) {
       if (p.id != postId) return p;
-      final newLiked = !p.isLiked;
       return p.copyWith(
         isLiked: newLiked,
         likesCount: newLiked ? p.likesCount + 1 : p.likesCount - 1,
@@ -104,9 +103,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
     }).toList();
     state = state.copyWith(posts: posts);
 
-    final post = state.posts.firstWhere((p) => p.id == postId);
     try {
-      if (post.isLiked) {
+      if (newLiked) {
         await _api.post(ApiEndpoints.likePost(postId));
       } else {
         await _api.delete(ApiEndpoints.likePost(postId));

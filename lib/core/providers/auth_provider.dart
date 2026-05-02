@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
@@ -27,12 +28,13 @@ class AuthState {
     String? error,
     bool? otpSent,
     bool? isNewUser,
+    bool clearError = false,
   }) {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
       otpSent: otpSent ?? this.otpSent,
       isNewUser: isNewUser ?? this.isNewUser,
     );
@@ -42,7 +44,7 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final ApiClient _api;
 
-  AuthNotifier(this._api) : super(const AuthState()) {
+  AuthNotifier(this._api) : super(const AuthState(isLoading: true)) {
     _loadInitial();
   }
 
@@ -55,28 +57,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final userData = data is Map && data.containsKey('data') ? data['data'] : data;
         final user = User.fromJson(userData as Map<String, dynamic>);
         state = AuthState(isAuthenticated: true, user: user);
+        return;
       } catch (_) {
         await _api.clearTokens();
-        state = const AuthState();
       }
     }
+    state = const AuthState();
   }
 
   Future<bool> sendOtp(String phone) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       await _api.post(ApiEndpoints.sendOtp, data: {'phone': phone});
       state = state.copyWith(isLoading: false, otpSent: true);
       return true;
-    } catch (_) {
-      // Fallback: разрешаем вход без бэкенда
-      state = state.copyWith(isLoading: false, otpSent: true);
-      return true;
+    } on DioException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: apiErrorMessage(e),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
     }
   }
 
   Future<bool> verifyOtp(String phone, String code) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final response = await _api.post(
         ApiEndpoints.verifyOtp,
@@ -103,25 +111,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isNewUser: isNewUser,
       );
       return true;
-    } catch (_) {
-      // Fallback: вход с моковым пользователем
-      final mockUser = User(
-        id: 'mock-user',
-        username: 'aidana',
-        phone: phone,
-        fullName: 'Айдана',
-        bio: 'дизайнер интерфейсов · Алматы',
-        isVerified: false,
-        followersCount: 2400,
-        followingCount: 312,
-        postsCount: 148,
-        createdAt: DateTime.now(),
+    } on DioException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: apiErrorMessage(e),
       );
-      state = AuthState(
-        isAuthenticated: true,
-        user: mockUser,
-      );
-      return true;
+      return false;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
     }
   }
 
@@ -138,7 +136,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void clearError() {
-    state = state.copyWith(error: null);
+    state = state.copyWith(clearError: true);
   }
 
   void resetOtpState() {

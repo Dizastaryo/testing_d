@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
@@ -74,10 +75,15 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   Future<void> loadProfile() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final userResp = await _api.get(ApiEndpoints.userProfile(username));
-      final user = User.fromJson(_extractMap(userResp.data));
+      final userFuture = _api.get(ApiEndpoints.userProfile(username));
+      final postsFuture = _api.get(ApiEndpoints.userPosts(username));
 
-      final postsResp = await _api.get(ApiEndpoints.userPosts(username));
+      final results = await Future.wait([userFuture, postsFuture]);
+
+      final userResp = results[0];
+      final postsResp = results[1];
+
+      final user = User.fromJson(_extractMap(userResp.data));
       final posts = _extractList(postsResp.data)
           .map((j) => Post.fromJson(j as Map<String, dynamic>))
           .toList();
@@ -165,10 +171,30 @@ class SearchState {
 
 class SearchNotifier extends StateNotifier<SearchState> {
   final ApiClient _api;
+  Timer? _debounceTimer;
 
   SearchNotifier(this._api) : super(const SearchState());
 
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> search(String query) async {
+    _debounceTimer?.cancel();
+    if (query.trim().isEmpty) {
+      state = const SearchState();
+      return;
+    }
+    final completer = Completer<void>();
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      _doSearch(query).then((_) => completer.complete());
+    });
+    return completer.future;
+  }
+
+  Future<void> _doSearch(String query) async {
     if (query.trim().isEmpty) {
       state = const SearchState();
       return;

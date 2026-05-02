@@ -60,8 +60,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final username = _resolveUsername();
     final profileState = ref.watch(userProfileProvider(username));
     final authState = ref.watch(authProvider);
-    final isOwnProfile = widget.username == null ||
-        widget.username == authState.user?.username;
+    final isOwnProfile = authState.user != null &&
+        (widget.username == null ||
+            widget.username == authState.user?.username);
 
     if (profileState.isLoading && profileState.user == null) {
       return Scaffold(
@@ -113,19 +114,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                     ),
                   ),
-                  Row(
-                    children: [
-                      _HeaderIconButton(
-                        icon: PhosphorIcons.bluetoothConnected(),
-                        onTap: () => context.push('/settings/chip'),
-                      ),
-                      const SizedBox(width: 8),
-                      _HeaderIconButton(
-                        icon: PhosphorIcons.gearSix(),
-                        onTap: () => context.push('/settings'),
-                      ),
-                    ],
-                  ),
+                  if (isOwnProfile)
+                    Row(
+                      children: [
+                        _HeaderIconButton(
+                          icon: PhosphorIcons.bluetoothConnected(),
+                          onTap: () => context.push('/settings/chip'),
+                        ),
+                        const SizedBox(width: 8),
+                        _HeaderIconButton(
+                          icon: PhosphorIcons.gearSix(),
+                          onTap: () => context.push('/settings'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -545,7 +547,11 @@ class _OwnProfileButtons extends StatelessWidget {
         const SizedBox(width: 8),
         _ActionIconButton(
           icon: PhosphorIcons.userPlus(),
-          onTap: () {},
+          onTap: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Скоро')),
+            );
+          },
         ),
       ],
     );
@@ -583,7 +589,7 @@ class _OtherProfileButtons extends ConsumerWidget {
         Expanded(
           child: _ActionButton(
             label: 'Сообщение',
-            onTap: () => context.push('/chat'),
+            onTap: () => context.push('/chat/${user.id}'),
           ),
         ),
       ],
@@ -675,6 +681,7 @@ class _StatItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         TweenAnimationBuilder<double>(
+          key: ValueKey(count),
           tween: Tween(begin: 0, end: count.toDouble()),
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeOut,

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../feed/widgets/post_card.dart';
-import 'comments_screen.dart';
 
 final _postDetailProvider =
     FutureProvider.family<Post, String>((ref, id) async {
-  final api = ref.watch(apiClientProvider);
+  final api = ref.read(apiClientProvider);
   final resp = await api.get(ApiEndpoints.postById(id));
   final data = resp.data;
   final postData = data is Map && data.containsKey('data') ? data['data'] : data;
@@ -288,12 +288,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   const SizedBox(width: 8),
                   Tappable.scaled(
                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              CommentsScreen(postId: widget.postId),
-                        ),
-                      );
+                      context.push('/post/${widget.postId}/comments');
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -321,37 +316,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 ],
               ),
             ),
-            const Divider(height: 1, color: SeeUColors.borderSubtle),
-            // Comments section title
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  Text('Комментарии',
-                      style: SeeUTypography.subtitle
-                          .copyWith(fontWeight: FontWeight.w700)),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              CommentsScreen(postId: widget.postId),
-                        ),
-                      );
-                    },
-                    child: Text(
-                      'Все',
-                      style: SeeUTypography.caption.copyWith(
-                        color: SeeUColors.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            CommentsSection(postId: widget.postId),
+            const SizedBox(height: 16),
           ],
         ),
       ),

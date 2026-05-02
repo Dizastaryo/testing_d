@@ -23,11 +23,63 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
   Offset _textOffset = const Offset(100, 200);
 
   @override
+  void initState() {
+    super.initState();
+    // M22: Listen to text controller for live preview of overlay
+    _textCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
     _textCtrl.dispose();
     super.dispose();
   }
 
+  // U12: Show camera and gallery options bottom sheet
+  void _showChangeImageOptions() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(
+                PhosphorIcons.camera(PhosphorIconsStyle.bold),
+                color: Colors.white,
+              ),
+              title: const Text('Камера',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                PhosphorIcons.images(PhosphorIconsStyle.bold),
+                color: Colors.white,
+              ),
+              title: const Text('Галерея',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // U11: TODO: Integrate camera → story flow (capture photo directly and pass
+  // it to this screen instead of opening ImagePicker with camera source)
   Future<void> _pickImage(ImageSource source) async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -49,7 +101,10 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
         'media_url': 'https://picsum.photos/seed/story${DateTime.now().millisecondsSinceEpoch}/600/1000',
         'text_overlay': _textCtrl.text.trim(),
       });
+      // H25: TODO: Replace mock media_url with real image upload implementation
       if (mounted) {
+        // M20: Set _isUploading = false before pop to avoid state leak
+        setState(() => _isUploading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('История опубликована!')),
         );
@@ -85,10 +140,12 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
               top: _textOffset.dy,
               child: GestureDetector(
                 onPanUpdate: (details) {
+                  // M21: Clamp _textOffset within screen bounds
+                  final size = MediaQuery.of(context).size;
                   setState(() {
                     _textOffset = Offset(
-                      _textOffset.dx + details.delta.dx,
-                      _textOffset.dy + details.delta.dy,
+                      (_textOffset.dx + details.delta.dx).clamp(0.0, size.width - 80),
+                      (_textOffset.dy + details.delta.dy).clamp(0.0, size.height - 60),
                     );
                   });
                 },
@@ -111,33 +168,37 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
               ),
             ),
 
-          // Text input overlay
+          // H26: Text input overlay — background tap dismisses, TextField is separate
           if (_showTextInput)
             Positioned.fill(
-              child: GestureDetector(
-                onTap: () => setState(() => _showTextInput = false),
-                child: Container(
-                  color: Colors.black54,
-                  alignment: Alignment.center,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: TextField(
-                      controller: _textCtrl,
-                      autofocus: true,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 20),
-                      textAlign: TextAlign.center,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Добавить текст...',
-                        hintStyle: TextStyle(color: Colors.white54),
-                        filled: false,
+              child: Stack(
+                children: [
+                  // Background tap target — does not wrap TextField
+                  GestureDetector(
+                    onTap: () => setState(() => _showTextInput = false),
+                    child: Container(color: Colors.black54),
+                  ),
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: TextField(
+                        controller: _textCtrl,
+                        autofocus: true,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 20),
+                        textAlign: TextAlign.center,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Добавить текст...',
+                          hintStyle: TextStyle(color: Colors.white54),
+                          filled: false,
+                        ),
+                        onSubmitted: (_) =>
+                            setState(() => _showTextInput = false),
                       ),
-                      onSubmitted: (_) =>
-                          setState(() => _showTextInput = false),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
 
@@ -165,6 +226,25 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
                   ),
                   const Spacer(),
                   if (_selectedImage != null) ...[
+                    // U13: Clear button for text overlay
+                    if (_textCtrl.text.isNotEmpty)
+                      GestureDetector(
+                        onTap: () => setState(() => _textCtrl.clear()),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: const BoxDecoration(
+                            color: Colors.black45,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            PhosphorIcons.textStrikethrough(PhosphorIconsStyle.bold),
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
                     GestureDetector(
                       onTap: () => setState(() => _showTextInput = true),
                       child: Container(
@@ -198,10 +278,12 @@ class _StoryCreatorScreenState extends ConsumerState<StoryCreatorScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
+                      // U12: Show camera and gallery options for "Изменить"
                       Expanded(
                         child: OutlinedButton(
-                          onPressed:
-                              _isUploading ? null : () => _pickImage(ImageSource.gallery),
+                          onPressed: _isUploading
+                              ? null
+                              : () => _showChangeImageOptions(),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
                             side:

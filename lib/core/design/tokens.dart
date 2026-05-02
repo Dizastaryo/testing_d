@@ -25,7 +25,7 @@ class SeeUColors {
   static const Color plum = Color(0xFFC04CFD);
   static const Color like = Color(0xFFFF3B6B);
   static const Color success = Color(0xFF2FA84F);
-  static const Color error = Color(0xFFFF3B6B);
+  static const Color error = Color(0xFFE53935);
 
   // ── Dark theme ──
   static const Color darkBg = Color(0xFF0E0C0A);
@@ -90,7 +90,7 @@ class SeeUTypography {
   static const String _uiFamily = 'Segoe UI';
   static const String _monoFamily = 'Consolas';
 
-  static TextStyle displayXL = const TextStyle(
+  static const TextStyle displayXL = TextStyle(
     fontFamily: _serifFamily,
     fontSize: 42,
     fontWeight: FontWeight.w400,
@@ -98,7 +98,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle displayL = const TextStyle(
+  static const TextStyle displayL = TextStyle(
     fontFamily: _serifFamily,
     fontSize: 32,
     fontWeight: FontWeight.w400,
@@ -106,7 +106,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle displayM = const TextStyle(
+  static const TextStyle displayM = TextStyle(
     fontFamily: _serifFamily,
     fontSize: 28,
     fontWeight: FontWeight.w400,
@@ -114,7 +114,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle displayS = const TextStyle(
+  static const TextStyle displayS = TextStyle(
     fontFamily: _serifFamily,
     fontSize: 22,
     fontWeight: FontWeight.w400,
@@ -122,7 +122,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle title = const TextStyle(
+  static const TextStyle title = TextStyle(
     fontFamily: _uiFamily,
     fontSize: 20,
     fontWeight: FontWeight.w600,
@@ -130,7 +130,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle subtitle = const TextStyle(
+  static const TextStyle subtitle = TextStyle(
     fontFamily: _uiFamily,
     fontSize: 16,
     fontWeight: FontWeight.w500,
@@ -138,7 +138,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle body = const TextStyle(
+  static const TextStyle body = TextStyle(
     fontFamily: _uiFamily,
     fontSize: 15,
     fontWeight: FontWeight.w400,
@@ -146,7 +146,7 @@ class SeeUTypography {
     color: SeeUColors.textPrimary,
   );
 
-  static TextStyle caption = const TextStyle(
+  static const TextStyle caption = TextStyle(
     fontFamily: _uiFamily,
     fontSize: 13,
     fontWeight: FontWeight.w500,
@@ -154,7 +154,7 @@ class SeeUTypography {
     color: SeeUColors.textSecondary,
   );
 
-  static TextStyle micro = const TextStyle(
+  static const TextStyle micro = TextStyle(
     fontFamily: _uiFamily,
     fontSize: 11,
     fontWeight: FontWeight.w600,
@@ -162,14 +162,14 @@ class SeeUTypography {
     color: SeeUColors.textTertiary,
   );
 
-  static TextStyle mono = const TextStyle(
+  static const TextStyle mono = TextStyle(
     fontFamily: _monoFamily,
     fontSize: 12,
     fontWeight: FontWeight.w400,
     color: SeeUColors.textTertiary,
   );
 
-  static TextStyle monoLabel = const TextStyle(
+  static const TextStyle monoLabel = TextStyle(
     fontFamily: _monoFamily,
     fontSize: 10,
     fontWeight: FontWeight.w400,

@@ -16,12 +16,18 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final Map<String, BleDeviceModel> _devicesMap = {};
+  final Map<String, bool> _likedMap = {};
+  List<_ResolvedEntry> _cachedSortedDevices = [];
+  int _devicesMapVersion = 0;
+  int _cachedVersion = -1;
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<bool>? _isScanSub;
+  StreamSubscription<BluetoothAdapterState>? _adapterStateSub;
   bool _isScanning = false;
   bool _bluetoothOn = true;
+  // _chipOn is visual-only placeholder for now; does not actually toggle BLE advertising
   bool _chipOn = true;
   String _viewMode = 'radar'; // radar | list
 
@@ -56,14 +62,38 @@ class _ScannerScreenState extends State<ScannerScreen>
       if (mounted) setState(() => _isScanning = scanning);
     });
 
-    FlutterBluePlus.adapterState.listen((state) {
+    _adapterStateSub = FlutterBluePlus.adapterState.listen((state) {
       if (mounted) {
         setState(() => _bluetoothOn = state == BluetoothAdapterState.on);
       }
     });
 
+    WidgetsBinding.instance.addObserver(this);
     _session.addListener(_onSessionChanged);
     _startScan();
+  }
+
+  void _pauseAnimations() {
+    _pulseController.stop();
+    _sweepController.stop();
+    _floatController.stop();
+  }
+
+  void _resumeAnimations() {
+    if (_viewMode == 'radar') {
+      _pulseController.repeat();
+      _sweepController.repeat();
+      _floatController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _pauseAnimations();
+    } else if (state == AppLifecycleState.resumed) {
+      _resumeAnimations();
+    }
   }
 
   void _onSessionChanged() {
@@ -72,9 +102,11 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _session.removeListener(_onSessionChanged);
     _scanSub?.cancel();
     _isScanSub?.cancel();
+    _adapterStateSub?.cancel();
     _pulseController.dispose();
     _sweepController.dispose();
     _floatController.dispose();
@@ -83,6 +115,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   List<_ResolvedEntry> get _sortedDevices {
+    if (_cachedVersion == _devicesMapVersion) return _cachedSortedDevices;
     final entries = <_ResolvedEntry>[];
     for (final d in _devicesMap.values) {
       final resolved = _resolver.resolve(d);
@@ -99,11 +132,31 @@ class _ScannerScreenState extends State<ScannerScreen>
       if (orderCmp != 0) return orderCmp;
       return b.device.rssi.compareTo(a.device.rssi);
     });
+    _cachedSortedDevices = entries;
+    _cachedVersion = _devicesMapVersion;
     return entries;
   }
 
+  Future<bool> _requestBlePermissions() async {
+    // Check adapter state; unauthorized means BLE permissions were denied by the OS.
+    final state = await FlutterBluePlus.adapterState.first;
+    if (state == BluetoothAdapterState.unauthorized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Нет разрешений Bluetooth/геолокации — поиск недоступен'),
+          ),
+        );
+      }
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _startScan() async {
+    if (!await _requestBlePermissions()) return;
     _devicesMap.clear();
+    _devicesMapVersion++;
     setState(() {});
     _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
@@ -112,12 +165,21 @@ class _ScannerScreenState extends State<ScannerScreen>
         final device = BleDeviceModel.fromScanResult(r);
         _devicesMap[device.macAddress] = device;
       }
+      _devicesMapVersion++;
       if (mounted) setState(() {});
     });
-    await FlutterBluePlus.startScan(
-      continuousUpdates: true,
-      removeIfGone: const Duration(seconds: 5),
-    );
+    try {
+      await FlutterBluePlus.startScan(
+        continuousUpdates: true,
+        removeIfGone: const Duration(seconds: 5),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сканирования: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _stopScan() async {
@@ -135,7 +197,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   String _fmtDist(int rssi) {
     // Approximate distance from RSSI
     final dist = _rssiToMeters(rssi);
-    if (dist < 100) return '${dist.round()} м';
+    final meters = math.max(1, dist.round());
+    if (dist < 100) return '$meters м';
     if (dist < 1000) return '${(dist / 10).round() * 10} м';
     return '${(dist / 1000).toStringAsFixed(1)} км';
   }
@@ -148,7 +211,10 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   String _personWord(int count) {
-    if (count % 10 == 1 && count % 100 != 11) return 'человек';
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) return 'человек';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'человека';
     return 'человек';
   }
 
@@ -287,6 +353,11 @@ class _ScannerScreenState extends State<ScannerScreen>
         onTap: () {
           HapticFeedback.selectionClick();
           setState(() => _viewMode = mode);
+          if (mode == 'radar') {
+            _resumeAnimations();
+          } else {
+            _pauseAnimations();
+          }
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -373,35 +444,78 @@ class _ScannerScreenState extends State<ScannerScreen>
           ),
         ),
 
-        // Distance labels
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.32,
-          left: 60,
-          child: Text(
-            '10м',
-            style: SeeUTypography.mono.copyWith(
-              fontSize: 9,
-              color: SeeUColors.textTertiary,
-              letterSpacing: 1,
-            ),
-          ),
-        ),
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.32,
-          left: 20,
-          child: Text(
-            '50м',
-            style: SeeUTypography.mono.copyWith(
-              fontSize: 9,
-              color: SeeUColors.textTertiary,
-              letterSpacing: 1,
+        // Distance labels (positioned relative to radar center at 160,160 inside the 320×320 box)
+        Center(
+          child: SizedBox(
+            width: 320,
+            height: 320,
+            child: Stack(
+              children: [
+                // "10м" label near inner ring (r≈80), at left side of center
+                Positioned(
+                  top: 160 - 6,
+                  left: 160 - 80 + 4,
+                  child: Text(
+                    '10м',
+                    style: SeeUTypography.mono.copyWith(
+                      fontSize: 9,
+                      color: SeeUColors.textTertiary,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+                // "50м" label near outer ring (r≈160), at left side of center
+                Positioned(
+                  top: 160 - 6,
+                  left: 4,
+                  child: Text(
+                    '50м',
+                    style: SeeUTypography.mono.copyWith(
+                      fontSize: 9,
+                      color: SeeUColors.textTertiary,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
 
-        // Bottom hint
+        // Bluetooth off banner
+        if (!_bluetoothOn)
+          Positioned(
+            top: 12,
+            left: 24,
+            right: 24,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: SeeUColors.surface,
+                borderRadius: BorderRadius.circular(SeeURadii.medium),
+                border: Border.all(color: SeeUColors.borderSubtle),
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.bluetooth_disabled_rounded, size: 16, color: SeeUColors.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Bluetooth выключен',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: SeeUColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // Bottom hint (placed above the FAB at bottom:100 to avoid overlap)
         Positioned(
-          bottom: 90,
+          bottom: 160,
           left: 0,
           right: 0,
           child: Center(
@@ -435,14 +549,14 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildDeviceDot(_ResolvedEntry entry, int index, int total) {
-    final angle = (index * 51 + 30) * math.pi / 180;
+    final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
     final dist = _rssiToMeters(entry.device.rssi);
     final r = (dist / 50).clamp(0.0, 1.0) * 110 + 28;
     final x = math.cos(angle) * r;
     final y = math.sin(angle) * r;
 
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
-    final emoji = emojis[index % emojis.length];
+    final emoji = emojis[entry.device.macAddress.hashCode.abs() % emojis.length];
     final isOnline = entry.device.rssi > -80;
 
     return Positioned(
@@ -451,6 +565,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       child: GestureDetector(
         onTap: () => _showPersonSheet(entry, emoji),
         child: TweenAnimationBuilder<double>(
+          key: ValueKey(entry.device.macAddress),
           tween: Tween(begin: 0.0, end: 1.0),
           duration: Duration(milliseconds: 500 + (dist * 20).round()),
           curve: Curves.easeOutBack,
@@ -518,6 +633,10 @@ class _ScannerScreenState extends State<ScannerScreen>
         distance: dist,
         isOnline: isOnline,
         rssi: entry.device.rssi,
+        initialLiked: _likedMap[entry.device.macAddress] ?? false,
+        onLikeChanged: (liked) {
+          setState(() => _likedMap[entry.device.macAddress] = liked);
+        },
       ),
     );
   }
@@ -538,13 +657,14 @@ class _ScannerScreenState extends State<ScannerScreen>
         }
 
         final entry = entries[index];
-        final emoji = emojis[index % emojis.length];
+        final emoji = emojis[entry.device.macAddress.hashCode.abs() % emojis.length];
         final alias = (entry.resolved.user?.name ?? '').isNotEmpty
             ? (entry.resolved.user?.name ?? '')
             : 'user_${entry.device.macAddress.substring(0, 5)}';
         final isOnline = entry.device.rssi > -80;
 
         return TweenAnimationBuilder<double>(
+          key: ValueKey(entry.device.macAddress),
           tween: Tween(begin: 0.0, end: 1.0),
           duration: Duration(milliseconds: 300 + index * 40),
           curve: Curves.easeOutCubic,
@@ -635,15 +755,40 @@ class _ScannerScreenState extends State<ScannerScreen>
                     ),
                   ),
                   // Like button
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: SeeUColors.borderSubtle),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.favorite_border_rounded, size: 18, color: SeeUColors.textSecondary),
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      setState(() {
+                        final mac = entry.device.macAddress;
+                        _likedMap[mac] = !(_likedMap[mac] ?? false);
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: (_likedMap[entry.device.macAddress] ?? false)
+                            ? SeeUColors.like
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: (_likedMap[entry.device.macAddress] ?? false)
+                              ? SeeUColors.like
+                              : SeeUColors.borderSubtle,
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          (_likedMap[entry.device.macAddress] ?? false)
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          size: 18,
+                          color: (_likedMap[entry.device.macAddress] ?? false)
+                              ? Colors.white
+                              : SeeUColors.textSecondary,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -692,7 +837,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             width: 200,
             height: 200,
             child: AnimatedBuilder(
-              animation: _sweepController,
+              animation: Listenable.merge([_sweepController, _pulseController]),
               builder: (_, __) => CustomPaint(
                 painter: _DesignRadarPainter(
                   sweepProgress: _sweepController.value,
@@ -806,12 +951,14 @@ class _ResolvedEntry {
 
 // ─── Person bottom sheet ─────────────────────────────────────────────────
 
-class _PersonSheet extends StatelessWidget {
+class _PersonSheet extends StatefulWidget {
   final String emoji;
   final String alias;
   final String distance;
   final bool isOnline;
   final int rssi;
+  final bool initialLiked;
+  final void Function(bool liked)? onLikeChanged;
 
   const _PersonSheet({
     required this.emoji,
@@ -819,7 +966,28 @@ class _PersonSheet extends StatelessWidget {
     required this.distance,
     required this.isOnline,
     required this.rssi,
+    this.initialLiked = false,
+    this.onLikeChanged,
   });
+
+  @override
+  State<_PersonSheet> createState() => _PersonSheetState();
+}
+
+class _PersonSheetState extends State<_PersonSheet> {
+  late bool _liked;
+
+  @override
+  void initState() {
+    super.initState();
+    _liked = widget.initialLiked;
+  }
+
+  void _toggleLike() {
+    HapticFeedback.mediumImpact();
+    setState(() => _liked = !_liked);
+    widget.onLikeChanged?.call(_liked);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -851,10 +1019,10 @@ class _PersonSheet extends StatelessWidget {
                     color: SeeUColors.surface2,
                     border: Border.all(color: SeeUColors.borderSubtle),
                   ),
-                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 44))),
+                  child: Center(child: Text(widget.emoji, style: const TextStyle(fontSize: 44))),
                 ),
                 const SizedBox(height: 14),
-                Text(alias, style: SeeUTypography.displayM),
+                Text(widget.alias, style: SeeUTypography.displayM),
                 const SizedBox(height: 4),
                 RichText(
                   text: TextSpan(
@@ -881,9 +1049,9 @@ class _PersonSheet extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      _stat('Дистанция', distance),
-                      _stat('Сигнал', '$rssi dBm'),
-                      _stat('Статус', isOnline ? 'онлайн' : 'офлайн'),
+                      _stat('Дистанция', widget.distance),
+                      _stat('Сигнал', '${widget.rssi} dBm'),
+                      _stat('Статус', widget.isOnline ? 'онлайн' : 'офлайн'),
                     ],
                   ),
                 ),
@@ -943,34 +1111,38 @@ class _PersonSheet extends StatelessWidget {
                     Expanded(
                       flex: 2,
                       child: GestureDetector(
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          Navigator.pop(context);
-                        },
-                        child: Container(
+                        onTap: _toggleLike,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
                           height: 52,
                           decoration: BoxDecoration(
-                            color: SeeUColors.like,
+                            color: _liked ? SeeUColors.like : SeeUColors.surface2,
                             borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: SeeUColors.like.withValues(alpha: 0.3),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
+                            boxShadow: _liked
+                                ? [
+                                    BoxShadow(
+                                      color: SeeUColors.like.withValues(alpha: 0.3),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ]
+                                : null,
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.favorite_rounded, size: 18, color: Colors.white),
-                              SizedBox(width: 8),
+                              Icon(
+                                _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                size: 18,
+                                color: _liked ? Colors.white : SeeUColors.textSecondary,
+                              ),
+                              const SizedBox(width: 8),
                               Text(
-                                'Поставить лайк',
+                                _liked ? 'Лайк поставлен' : 'Поставить лайк',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.white,
+                                  color: _liked ? Colors.white : SeeUColors.textSecondary,
                                 ),
                               ),
                             ],
@@ -1062,8 +1234,8 @@ class _DesignRadarPainter extends CustomPainter {
         ],
         stops: const [0.0, 0.6, 0.95, 1.0],
         tileMode: TileMode.clamp,
-      ).createShader(Rect.fromCircle(center: Offset.zero, radius: maxRadius * 0.8));
-    canvas.drawCircle(Offset.zero, maxRadius * 0.8, sweepPaint);
+      ).createShader(Rect.fromCircle(center: Offset.zero, radius: maxRadius));
+    canvas.drawCircle(Offset.zero, maxRadius, sweepPaint);
     canvas.restore();
   }
 

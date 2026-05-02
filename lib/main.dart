@@ -37,7 +37,6 @@ void main() async {
   ]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
   ));
   runApp(const ProviderScope(child: SeeUApp()));
 }
@@ -58,9 +57,14 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
     _router = GoRouter(
       initialLocation: '/login',
       redirect: (context, state) {
-        final isAuth = ref.read(authProvider).isAuthenticated;
+        final authState = ref.read(authProvider);
+        // While initial token check is in progress, don't redirect
+        if (authState.isLoading) return null;
+        final isAuth = authState.isAuthenticated;
         final loc = state.matchedLocation;
-        final isAuthRoute = loc == '/login' || loc == '/register';
+        // /register redirects to /login (phone auth handles registration)
+        if (loc == '/register') return '/login';
+        final isAuthRoute = loc == '/login';
         if (!isAuth && !isAuthRoute) return '/login';
         if (isAuth && isAuthRoute) return '/feed';
         return null;

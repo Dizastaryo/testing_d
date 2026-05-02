@@ -30,10 +30,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
 
+  int _prevMessageCount = 0;
+
   @override
   void initState() {
     super.initState();
     _textController.addListener(_onTextChanged);
+    _scrollToBottom(animate: false);
   }
 
   @override
@@ -116,12 +119,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final currentUser = ref.watch(authProvider).user;
     final myId = currentUser?.id ?? 'me';
     final otherUser = chat?.otherUser;
-    final isOnline = otherUser != null && otherUser.id.hashCode % 3 != 0;
-
-    // Scroll to bottom when messages load
-    if (msgState.messages.isNotEmpty) {
-      _scrollToBottom(animate: false);
+    // Scroll to bottom only when a new message arrives
+    if (msgState.messages.length > _prevMessageCount && _prevMessageCount > 0) {
+      _scrollToBottom();
     }
+    _prevMessageCount = msgState.messages.length;
 
     return GestureDetector(
       onTap: () {
@@ -155,7 +157,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          context.go('/chat');
+                          context.pop();
                         },
                         child: Container(
                           width: 36,
@@ -176,7 +178,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       if (otherUser != null) ...[
                         _SmallAvatar(
                           avatarUrl: otherUser.avatarUrl,
-                          isOnline: isOnline,
+                          isOnline: false,
                           size: 36,
                         ),
                         const SizedBox(width: 10),
@@ -197,17 +199,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (_hasText)
-                              _TypingIndicator()
-                            else if (isOnline)
-                              const Text(
-                                'онлайн · 12 м рядом',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: SeeUColors.success,
-                                ),
-                              )
-                            else if (otherUser != null)
+                            if (otherUser != null)
                               const Text(
                                 'был недавно',
                                 style: TextStyle(
@@ -341,11 +333,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     }
 
-    return ListView(
+    return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       physics: const BouncingScrollPhysics(),
-      children: widgets,
+      itemCount: widgets.length,
+      itemBuilder: (context, index) => widgets[index],
     );
   }
 
@@ -369,7 +362,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             children: [
               // Plus button: 38px, surface2
               GestureDetector(
-                onTap: () => HapticFeedback.selectionClick(),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Скоро')),
+                  );
+                },
                 child: Container(
                   width: 38,
                   height: 38,
@@ -496,86 +494,6 @@ class _IcebreakerChip extends StatelessWidget {
           style: SeeUTypography.caption.copyWith(
             color: SeeUColors.accent,
             fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Typing indicator (3 animated dots)
-// ---------------------------------------------------------------------------
-
-class _TypingIndicator extends StatefulWidget {
-  @override
-  State<_TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<_TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'печатает',
-              style: SeeUTypography.micro.copyWith(
-                color: SeeUColors.accent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 2),
-            for (int i = 0; i < 3; i++) ...[
-              _buildDot(i),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildDot(int index) {
-    // Stagger the dots: each starts at a different phase
-    final phase = (_controller.value + index * 0.2) % 1.0;
-    // Use a sine wave for smooth bounce
-    final t = (phase < 0.5) ? phase * 2 : (1.0 - phase) * 2;
-    final opacity = 0.3 + 0.7 * t;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 0),
-      child: Transform.translate(
-        offset: Offset(0, -2.0 * t),
-        child: Opacity(
-          opacity: opacity,
-          child: Text(
-            '.',
-            style: SeeUTypography.micro.copyWith(
-              color: SeeUColors.accent,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-            ),
           ),
         ),
       ),

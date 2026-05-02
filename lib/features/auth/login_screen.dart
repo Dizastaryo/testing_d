@@ -49,11 +49,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  bool _isVerifying = false;
+
   Future<void> _verifyOtp() async {
     final code = _otpControllers.map((c) => c.text).join();
-    if (code.length != 4) return;
+    if (code.length != 4 || _isVerifying) return;
+    _isVerifying = true;
 
     final success = await ref.read(authProvider.notifier).verifyOtp(_phone, code);
+    _isVerifying = false;
     if (success && mounted) {
       context.go('/feed');
     }
@@ -273,12 +277,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       Text(
         'Код отправлен на $_phone',
         style: SeeUTypography.caption.copyWith(color: SeeUColors.textSecondary),
-        textAlign: TextAlign.center,
-      ),
-      const SizedBox(height: 8),
-      Text(
-        'Для тестирования введите 0000',
-        style: SeeUTypography.micro.copyWith(color: SeeUColors.accent),
         textAlign: TextAlign.center,
       ),
       const SizedBox(height: 24),

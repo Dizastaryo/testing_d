@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/api/api_client.dart';
@@ -71,38 +72,44 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 leading: Icon(PhosphorIcons.camera(PhosphorIconsStyle.fill),
                     color: SeeUColors.accent),
                 title: Text('Сделать фото', style: SeeUTypography.body),
-                onTap: () {
+                onTap: () async {
                   Navigator.of(ctx).pop();
-                  setState(() => _avatarChanged = true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Фото обновлено',
-                          style: SeeUTypography.body.copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
+                  final picked = await ImagePicker().pickImage(source: ImageSource.camera);
+                  if (picked != null && mounted) {
+                    setState(() => _avatarChanged = true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Фото обновлено',
+                            style: SeeUTypography.body.copyWith(color: Colors.white)),
+                        backgroundColor: SeeUColors.success,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(SeeURadii.small)),
+                      ),
+                    );
+                  }
                 },
               ),
               ListTile(
                 leading: Icon(PhosphorIcons.image(PhosphorIconsStyle.fill),
                     color: SeeUColors.accent),
                 title: Text('Выбрать из галереи', style: SeeUTypography.body),
-                onTap: () {
+                onTap: () async {
                   Navigator.of(ctx).pop();
-                  setState(() => _avatarChanged = true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Фото обновлено',
-                          style: SeeUTypography.body.copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
+                  final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+                  if (picked != null && mounted) {
+                    setState(() => _avatarChanged = true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Фото обновлено',
+                            style: SeeUTypography.body.copyWith(color: Colors.white)),
+                        backgroundColor: SeeUColors.success,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(SeeURadii.small)),
+                      ),
+                    );
+                  }
                 },
               ),
               ListTile(
@@ -309,6 +316,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Обязательное поле';
                 if (v.length < 3) return 'Минимум 3 символа';
+                if (!RegExp(r'^[a-z0-9_.]+$').hasMatch(v)) {
+                  return 'Только строчные буквы, цифры, _ и .';
+                }
                 return null;
               },
             ),

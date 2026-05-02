@@ -19,9 +19,13 @@ class Chat {
   });
 
   factory Chat.fromJson(Map<String, dynamic> json) {
+    final otherUserData = json['other_user'];
+    if (otherUserData == null || otherUserData is! Map<String, dynamic>) {
+      throw FormatException('Chat.fromJson: missing or invalid "other_user" field');
+    }
     return Chat(
       id: json['id']?.toString() ?? '',
-      otherUser: User.fromJson(json['other_user'] as Map<String, dynamic>? ?? {}),
+      otherUser: User.fromJson(otherUserData),
       lastMessage: json['last_message']?.toString() ?? '',
       lastMessageAt: json['last_message_at'] != null
           ? DateTime.tryParse(json['last_message_at'].toString()) ?? DateTime.now()
@@ -113,6 +117,16 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   }
 
   Future<void> sendMessage(String text) async {
+    // Optimistic UI: add message locally
+    final optimistic = ChatMessage(
+      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+      chatId: chatId,
+      senderId: 'me',
+      text: text,
+      createdAt: DateTime.now(),
+      isMe: true,
+    );
+    state = state.copyWith(messages: [...state.messages, optimistic]);
     // Chat API not implemented yet on backend
   }
 }

@@ -170,7 +170,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
         children: [
           feedState.isLoading && feedState.posts.isEmpty
               ? _buildShimmer()
-              : RefreshIndicator(
+              : feedState.error != null && feedState.posts.isEmpty
+                  ? _buildError(feedState.error!)
+                  : RefreshIndicator(
                   onRefresh: _onRefresh,
                   color: SeeUColors.accent,
                   child: feedState.posts.isEmpty
@@ -287,6 +289,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                         ),
                 ),
           // Scroll-to-top FAB
+
           Positioned(
             bottom: 88,
             right: 20,
@@ -435,34 +438,81 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     );
   }
 
+  // U08: Error state with retry button
+  Widget _buildError(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.wifiSlash(),
+              size: 56,
+              color: SeeUColors.textTertiary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Не удалось загрузить ленту',
+              style: SeeUTypography.subtitle
+                  .copyWith(color: SeeUColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: SeeUTypography.caption
+                  .copyWith(color: SeeUColors.textTertiary),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 20),
+            SeeUButton(
+              label: 'Повторить',
+              onTap: _onRefresh,
+              icon: PhosphorIcons.arrowCounterClockwise(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // U09: Meaningful empty state with icon + CTA
   Widget _buildEmpty() {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '0',
-            style: TextStyle(
-              fontFamily: 'Georgia',
-              fontSize: 120,
-              fontWeight: FontWeight.w300,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.usersThree(),
+              size: 64,
               color: SeeUColors.borderSubtle,
-              height: 1,
             ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Пока нет постов',
-            style: SeeUTypography.subtitle
-                .copyWith(color: SeeUColors.textSecondary),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Подпишитесь на людей, чтобы видеть их посты',
-            style: SeeUTypography.caption
-                .copyWith(color: SeeUColors.textTertiary),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              'Пока нет постов',
+              style: SeeUTypography.subtitle
+                  .copyWith(color: SeeUColors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Подпишитесь на людей, чтобы видеть их посты',
+              style: SeeUTypography.caption
+                  .copyWith(color: SeeUColors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            SeeUButton(
+              label: 'Найти людей',
+              onTap: () => context.go('/explore'),
+              icon: PhosphorIcons.magnifyingGlass(),
+            ),
+          ],
+        ),
       ),
     );
   }

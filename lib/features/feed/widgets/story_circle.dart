@@ -35,9 +35,10 @@ class StoryCircle extends StatelessWidget {
           Stack(
             children: [
               // Outer ring container
+              // L07: For own story, no ring so use size, not size + 4
               Container(
-                width: size + 4,
-                height: size + 4,
+                width: isOwn ? size : size + 4,
+                height: isOwn ? size : size + 4,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: showGradientRing
@@ -98,10 +99,11 @@ class StoryCircle extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 5),
+          // L08: Use TextOverflow.ellipsis instead of manual _truncateUsername
           SizedBox(
             width: size + 4,
             child: Text(
-              isOwn ? 'Ваша история' : _truncateUsername(username),
+              isOwn ? 'Ваша история' : username,
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -141,8 +143,4 @@ class StoryCircle extends StatelessWidget {
     );
   }
 
-  String _truncateUsername(String name) {
-    if (name.length <= 8) return name;
-    return '${name.substring(0, 7)}...';
-  }
 }

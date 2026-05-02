@@ -46,13 +46,17 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
-    final resp = await _api.get(ApiEndpoints.postComments(postId));
-    final data = resp.data;
-    final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-    final comments = (listData as List)
-        .map((e) => Comment.fromJson(e as Map<String, dynamic>))
-        .toList();
-    state = CommentsState(comments: comments);
+    try {
+      final resp = await _api.get(ApiEndpoints.postComments(postId));
+      final data = resp.data;
+      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final comments = (listData as List)
+          .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+          .toList();
+      state = CommentsState(comments: comments);
+    } catch (e) {
+      state = state.copyWith(isLoading: false);
+    }
   }
 
   Future<void> addComment(String text) async {
@@ -98,6 +102,20 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
           likesCount: c.isLiked ? c.likesCount - 1 : c.likesCount + 1,
         );
       }
+      // Search in replies too
+      if (c.replies.any((r) => r.id == commentId)) {
+        return c.copyWith(
+          replies: c.replies.map((r) {
+            if (r.id == commentId) {
+              return r.copyWith(
+                isLiked: !r.isLiked,
+                likesCount: r.isLiked ? r.likesCount - 1 : r.likesCount + 1,
+              );
+            }
+            return r;
+          }).toList(),
+        );
+      }
       return c;
     }).toList();
     state = state.copyWith(comments: updated);
@@ -123,8 +141,6 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _focusNode.requestFocus());
   }
 
   @override
@@ -362,20 +378,34 @@ class CommentsSection extends ConsumerStatefulWidget {
 
 class _CommentsSectionState extends ConsumerState<CommentsSection> {
   final _commentCtrl = TextEditingController();
+  final _focusNode = FocusNode();
+  String? _replyToId;
+  String? _replyToUsername;
 
   @override
   void dispose() {
     _commentCtrl.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
   void _submitComment() {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
-    ref
-        .read(_commentsProvider(widget.postId).notifier)
-        .addComment(text);
+    if (_replyToId != null) {
+      ref
+          .read(_commentsProvider(widget.postId).notifier)
+          .addReply(_replyToId!, text);
+    } else {
+      ref
+          .read(_commentsProvider(widget.postId).notifier)
+          .addComment(text);
+    }
     _commentCtrl.clear();
+    setState(() {
+      _replyToId = null;
+      _replyToUsername = null;
+    });
   }
 
   @override
@@ -402,10 +432,45 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
               onLike: () => ref
                   .read(_commentsProvider(widget.postId).notifier)
                   .likeComment(c.id),
-              onReply: () {},
+              onReply: () {
+                setState(() {
+                  _replyToId = c.id;
+                  _replyToUsername = c.author.username;
+                });
+                _commentCtrl.text = '@${c.author.username} ';
+                _commentCtrl.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _commentCtrl.text.length),
+                );
+                _focusNode.requestFocus();
+              },
               onToggleReplies: () => ref
                   .read(_commentsProvider(widget.postId).notifier)
                   .toggleReplies(c.id),
+            ),
+          ),
+        if (_replyToUsername != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: SeeUColors.accentSoft,
+              borderRadius: BorderRadius.circular(SeeURadii.pill),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  'Ответ @$_replyToUsername',
+                  style: SeeUTypography.caption.copyWith(color: SeeUColors.accent),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _replyToId = null;
+                    _replyToUsername = null;
+                  }),
+                  child: Icon(PhosphorIcons.x(), size: 16, color: SeeUColors.accent),
+                ),
+              ],
             ),
           ),
         const SizedBox(height: 8),
@@ -435,11 +500,14 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
                 Expanded(
                   child: TextField(
                     controller: _commentCtrl,
+                    focusNode: _focusNode,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _submitComment(),
                     style: SeeUTypography.body,
                     decoration: InputDecoration(
-                      hintText: 'Добавить комментарий...',
+                      hintText: _replyToUsername != null
+                          ? 'Ответ @$_replyToUsername...'
+                          : 'Добавить комментарий...',
                       hintStyle: SeeUTypography.body
                           .copyWith(color: SeeUColors.textTertiary),
                       border: InputBorder.none,

@@ -9,7 +9,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/design/design.dart';
 import '../../core/models/notification.dart';
 import '../../core/providers/notification_provider.dart';
-import '../../core/providers/auth_provider.dart';
 
 enum _NotifFilter { all, follows, likes, comments }
 
@@ -138,10 +137,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final notifState = ref.watch(notificationProvider);
-    // Keep auth_provider imported (used for context)
-    ref.watch(authProvider);
     final filtered = _filtered(notifState.notifications);
     final grouped = _groupByTime(filtered);
+    final flatItems = _buildFlatList(grouped);
 
     return Scaffold(
       backgroundColor: SeeUColors.background,
@@ -177,7 +175,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
               child: Text(
-                '${notifState.notifications.length} уведомлений',
+                '${filtered.length} уведомлений',
                 style: SeeUTypography.caption.copyWith(
                   color: SeeUColors.textTertiary,
                 ),
@@ -188,7 +186,24 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             const Divider(height: 1, color: SeeUColors.borderSubtle),
             // Content
             Expanded(
-              child: filtered.isEmpty
+              child: notifState.isLoading
+                  ? SeeUShimmer(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: 8,
+                        itemBuilder: (_, __) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: SeeUColors.surfaceElevated,
+                              borderRadius: BorderRadius.circular(SeeURadii.small),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : filtered.isEmpty
                   ? _buildEmpty()
                   : RefreshIndicator(
                       onRefresh: _onRefresh,
@@ -197,9 +212,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.only(bottom: 100),
-                          itemCount: _totalItemCount(grouped),
+                          itemCount: flatItems.length,
                           itemBuilder: (context, index) =>
-                              _buildItem(grouped, index),
+                              flatItems[index],
                         ),
                       ),
                     ),
@@ -249,44 +264,33 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  // Calculate total item count including section headers
-  int _totalItemCount(Map<String, List<AppNotification>> grouped) {
-    int count = 0;
+  // Pre-build flat list from grouped structure (P06: avoid O(n^2) in itemBuilder)
+  List<Widget> _buildFlatList(Map<String, List<AppNotification>> grouped) {
+    final items = <Widget>[];
+    int position = 0;
     for (final entry in grouped.entries) {
-      count += 1; // section header
-      count += entry.value.length;
-    }
-    return count;
-  }
-
-  Widget _buildItem(
-      Map<String, List<AppNotification>> grouped, int index) {
-    int current = 0;
-    for (final entry in grouped.entries) {
-      if (index == current) {
-        // Section header
-        return _buildSectionHeader(entry.key);
-      }
-      current++;
-      if (index < current + entry.value.length) {
-        final notif = entry.value[index - current];
-        return AnimationConfiguration.staggeredList(
-          position: index,
-          duration: const Duration(milliseconds: 350),
-          delay: const Duration(milliseconds: 40),
-          child: SlideAnimation(
-            verticalOffset: 20,
-            curve: Curves.easeOutCubic,
-            child: FadeInAnimation(
+      items.add(_buildSectionHeader(entry.key));
+      position++;
+      for (final notif in entry.value) {
+        items.add(
+          AnimationConfiguration.staggeredList(
+            position: position,
+            duration: const Duration(milliseconds: 350),
+            delay: const Duration(milliseconds: 40),
+            child: SlideAnimation(
+              verticalOffset: 20,
               curve: Curves.easeOutCubic,
-              child: _buildNotificationTile(notif),
+              child: FadeInAnimation(
+                curve: Curves.easeOutCubic,
+                child: _buildNotificationTile(notif),
+              ),
             ),
           ),
         );
+        position++;
       }
-      current += entry.value.length;
     }
-    return const SizedBox.shrink();
+    return items;
   }
 
   Widget _buildSectionHeader(String title) {
@@ -438,7 +442,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Нет уведомлений',
+            _activeFilter != _NotifFilter.all
+                ? 'Нет уведомлений этого типа'
+                : 'Нет уведомлений',
             style: SeeUTypography.subtitle.copyWith(
               color: SeeUColors.textSecondary,
             ),

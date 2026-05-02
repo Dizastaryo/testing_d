@@ -136,7 +136,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
   late int _groupIndex;
   late int _storyIndex;
   late AnimationController _progressController;
-  late PageController _pageController;
+  // H24: _pageController removed — not attached to any PageView; _groupIndex is changed directly via setState
 
   // Reply state
   bool _isReplyOpen = false;
@@ -162,6 +162,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   // Swipe tracking
   bool _isSwiping = false;
+  // M17: Track long-press state to prevent onTapUp from firing after long-press
+  bool _isLongPressing = false;
 
   static const List<String> _quickEmojis = [
     '\u{1F525}',
@@ -176,7 +178,6 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     super.initState();
     _groupIndex = widget.initialGroupIndex;
     _storyIndex = 0;
-    _pageController = PageController(initialPage: _groupIndex);
 
     _progressController = AnimationController(
       vsync: this,
@@ -239,10 +240,12 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
       curve: Curves.easeInOut,
     ));
 
-    _replyController.addListener(() {
-      setState(() {});
-    });
+    // M14: Named listener so it can be removed in dispose
+    _replyController.addListener(_onReplyChanged);
   }
+
+  // M14: Named reply listener for proper cleanup
+  void _onReplyChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -250,9 +253,9 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     _likeAnimController?.dispose();
     _emojiAnimController?.dispose();
     _heartBtnAnimController?.dispose();
+    _replyController.removeListener(_onReplyChanged);
     _replyController.dispose();
     _replyFocusNode.dispose();
-    _pageController.dispose();
     super.dispose();
   }
 
@@ -264,17 +267,16 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     _progressController.reset();
     if (_storyIndex < _currentGroup.stories.length - 1) {
       setState(() => _storyIndex++);
+      // M15: mounted check before forward after potential navigation
+      if (!mounted) return;
       _progressController.forward();
     } else if (_groupIndex < widget.groups.length - 1) {
+      // H24: setState directly, no PageController needed
       setState(() {
         _groupIndex++;
         _storyIndex = 0;
       });
-      _pageController.animateToPage(
-        _groupIndex,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      if (!mounted) return;
       _progressController.forward();
     } else {
       Navigator.of(context).pop();
@@ -287,31 +289,25 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     if (_storyIndex > 0) {
       setState(() => _storyIndex--);
     } else if (_groupIndex > 0) {
+      // H24: setState directly, no PageController needed
       setState(() {
         _groupIndex--;
         _storyIndex = widget.groups[_groupIndex].stories.length - 1;
       });
-      _pageController.animateToPage(
-        _groupIndex,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
     }
+    if (!mounted) return;
     _progressController.forward();
   }
 
   void _nextGroup() {
     if (_groupIndex < widget.groups.length - 1) {
       _progressController.reset();
+      // H24: setState directly, no PageController needed
       setState(() {
         _groupIndex++;
         _storyIndex = 0;
       });
-      _pageController.animateToPage(
-        _groupIndex,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      if (!mounted) return;
       _progressController.forward();
     } else {
       Navigator.of(context).pop();
@@ -321,15 +317,12 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
   void _prevGroup() {
     if (_groupIndex > 0) {
       _progressController.reset();
+      // H24: setState directly, no PageController needed
       setState(() {
         _groupIndex--;
         _storyIndex = 0;
       });
-      _pageController.animateToPage(
-        _groupIndex,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      if (!mounted) return;
       _progressController.forward();
     }
   }
@@ -354,6 +347,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     _replyFocusNode.unfocus();
     setState(() => _isReplyOpen = false);
     _progressController.forward();
+    // M16: mounted check before ScaffoldMessenger
+    if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -395,6 +390,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
         _progressController.forward();
       }
     });
+    // M16: mounted check before ScaffoldMessenger
+    if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -424,6 +421,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
           _progressController.stop();
         },
         onTapUp: (details) {
+          // M17: Ignore tap-up if a long-press was in progress
+          if (_isLongPressing) return;
           if (_isReplyOpen) {
             _closeReply();
             return;
@@ -437,10 +436,12 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
         },
         onLongPressStart: (_) {
           if (_isReplyOpen) return;
+          _isLongPressing = true;
           _progressController.stop();
         },
         onLongPressEnd: (_) {
           if (_isReplyOpen) return;
+          _isLongPressing = false;
           _progressController.forward();
         },
         onHorizontalDragStart: (details) {
@@ -982,6 +983,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
+    // U10: Return 'только что' for stories less than 1 minute old
+    if (diff.inSeconds < 60) return 'только что';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
