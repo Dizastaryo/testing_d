@@ -26,6 +26,7 @@ import 'features/chat/chat_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
+import 'features/reels/reels_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,6 +123,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                   ),
                 ),
               ],
+            ),
+            GoRoute(
+              path: '/reels',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ReelsScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
             ),
             GoRoute(
               path: '/scanner',

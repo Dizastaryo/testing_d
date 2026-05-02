@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -256,6 +258,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                               ),
                             ),
                             const SliverToBoxAdapter(child: StoriesRow()),
+                            const SliverToBoxAdapter(child: _DailyPromptCard()),
                             SliverList(
                               delegate: SliverChildBuilderDelegate(
                                 (context, index) {
@@ -655,6 +658,165 @@ class _EyeMarkPainter extends CustomPainter {
       s * 0.04,
       Paint()..color = Colors.white,
     );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ─── Daily Prompt card ────────────────────────────────────────────────────
+
+class _DailyPromptCard extends StatelessWidget {
+  const _DailyPromptCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            stops: [0.0, 1.0],
+            colors: [Color(0xFFFFE4D9), Color(0xFFFFF5D4)],
+            transform: GradientRotation(120 * 3.14159 / 180),
+          ),
+          border: Border.all(color: Color(0xFFFFD7BC), width: 1),
+        ),
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            // Decorative sparkle in top-right corner
+            Positioned(
+              right: -10,
+              top: -10,
+              child: Opacity(
+                opacity: 0.3,
+                child: CustomPaint(
+                  size: const Size(80, 80),
+                  painter: _SparklePainter(),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // "SEEU DAILY" mono label
+                  const Text(
+                    'SEEU DAILY',
+                    style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 10,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFA52512),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Serif question
+                  const Text(
+                    'что вас удивило\nсегодня?',
+                    style: TextStyle(
+                      fontSize: 22,
+                      height: 1.15,
+                      letterSpacing: -0.02 * 22,
+                      color: SeeUColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Action buttons
+                  Row(
+                    children: [
+                      _PromptButton(
+                        label: 'Снять',
+                        isPrimary: true,
+                        onTap: () => context.go('/reels'),
+                      ),
+                      const SizedBox(width: 8),
+                      const _PromptButton(
+                        label: 'Пропустить',
+                        isPrimary: false,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PromptButton extends StatelessWidget {
+  final String label;
+  final bool isPrimary;
+  final VoidCallback? onTap;
+
+  const _PromptButton({
+    required this.label,
+    required this.isPrimary,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: isPrimary ? SeeUColors.accent : Colors.transparent,
+          border: isPrimary
+              ? null
+              : Border.all(
+                  color: SeeUColors.accent.withValues(alpha: 0.5),
+                  width: 1,
+                ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isPrimary ? Colors.white : SeeUColors.accent,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SparklePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    final center = Offset(s / 2, s / 2);
+    final paint = Paint()
+      ..color = const Color(0xFFFF5A3C)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    // 4-point star sparkle
+    const arms = 4;
+    for (int i = 0; i < arms; i++) {
+      final angle = (i * math.pi * 2 / arms) - math.pi / 2;
+      final outerX = center.dx + s * 0.42 * math.cos(angle);
+      final outerY = center.dy + s * 0.42 * math.sin(angle);
+      final innerAngle = angle + math.pi / arms;
+      final innerX = center.dx + s * 0.18 * math.cos(innerAngle);
+      final innerY = center.dy + s * 0.18 * math.sin(innerAngle);
+      canvas.drawLine(center, Offset(outerX, outerY), paint);
+      canvas.drawLine(center, Offset(innerX, innerY), paint);
+    }
+    canvas.drawCircle(
+        center, s * 0.06, Paint()..color = const Color(0xFFFF5A3C));
   }
 
   @override

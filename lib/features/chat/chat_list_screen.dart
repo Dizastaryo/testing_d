@@ -67,14 +67,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: serif "Сообщения" + edit button
+            // Header: serif "Чаты" + compose button
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 58, 18, 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Сообщения',
+                    'Чаты',
                     style: SeeUTypography.displayL,
                   ),
                   GestureDetector(
@@ -264,7 +264,9 @@ class _ChatTile extends StatelessWidget {
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
-    final isOnline = false;
+    // Simulated online/typing states from id hash until real-time data available
+    final isOnline = user.id.hashCode % 3 == 0;
+    final isTyping = user.id.hashCode % 5 == 1;
     // "взаимный" badge shown when user id hash % 4 == 0
     final isChipMatch = user.id.hashCode % 4 == 0;
 
@@ -327,14 +329,24 @@ class _ChatTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    lastMsg.isNotEmpty ? lastMsg : 'Начните общение',
+                    isTyping
+                        ? 'печатает...'
+                        : lastMsg.isNotEmpty
+                            ? lastMsg
+                            : 'Начните общение',
                     style: TextStyle(
                       fontSize: 13,
-                      color: hasUnread
-                          ? SeeUColors.textPrimary
-                          : SeeUColors.textTertiary,
-                      fontWeight:
-                          hasUnread ? FontWeight.w500 : FontWeight.w400,
+                      color: isTyping
+                          ? SeeUColors.accent
+                          : hasUnread
+                              ? SeeUColors.textPrimary
+                              : SeeUColors.textTertiary,
+                      fontWeight: (hasUnread || isTyping)
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                      fontStyle: isTyping
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -10,7 +10,8 @@ import '../../core/design/design.dart';
 import '../../core/models/notification.dart';
 import '../../core/providers/notification_provider.dart';
 
-enum _NotifFilter { all, follows, likes, comments }
+// "Все" vs "Ответы" (replies/comments/mentions) pill toggle
+enum _NotifFilter { all, replies }
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -27,11 +28,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     switch (_activeFilter) {
       case _NotifFilter.all:
         return all;
-      case _NotifFilter.follows:
-        return all.where((n) => n.type == NotificationType.follow).toList();
-      case _NotifFilter.likes:
-        return all.where((n) => n.type == NotificationType.like).toList();
-      case _NotifFilter.comments:
+      case _NotifFilter.replies:
         return all
             .where((n) =>
                 n.type == NotificationType.comment ||
@@ -45,28 +42,30 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     switch (f) {
       case _NotifFilter.all:
         return 'Все';
-      case _NotifFilter.follows:
-        return 'Подписки';
-      case _NotifFilter.likes:
-        return 'Лайки';
-      case _NotifFilter.comments:
-        return 'Комментарии';
+      case _NotifFilter.replies:
+        return 'Ответы';
     }
   }
 
   IconData _notifIcon(NotificationType type) {
     switch (type) {
       case NotificationType.like:
+        // heart for like
         return PhosphorIcons.heart(PhosphorIconsStyle.fill);
-      case NotificationType.comment:
-        return PhosphorIcons.chatCircle(PhosphorIconsStyle.fill);
       case NotificationType.follow:
+        // user for follow
         return PhosphorIcons.userPlus(PhosphorIconsStyle.fill);
-      case NotificationType.mention:
-        return PhosphorIcons.at(PhosphorIconsStyle.fill);
+      case NotificationType.comment:
+        // chat for comment
+        return PhosphorIcons.chatCircle(PhosphorIconsStyle.fill);
       case NotificationType.reply:
-        return PhosphorIcons.arrowBendUpLeft(PhosphorIconsStyle.fill);
+        // chat (reply) — maps to remix concept in design
+        return PhosphorIcons.arrowsClockwise(PhosphorIconsStyle.fill);
+      case NotificationType.mention:
+        // at for mention
+        return PhosphorIcons.at(PhosphorIconsStyle.fill);
       case NotificationType.postTag:
+        // radar-style for post tag (nearby mapping)
         return PhosphorIcons.tag(PhosphorIconsStyle.fill);
     }
   }
@@ -75,16 +74,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     switch (type) {
       case NotificationType.like:
         return SeeUColors.like;
-      case NotificationType.comment:
-        return SeeUColors.accent;
       case NotificationType.follow:
-        return SeeUColors.success;
-      case NotificationType.mention:
-        return const Color(0xFFC04CFD);
-      case NotificationType.reply:
+        return SeeUColors.accent;
+      case NotificationType.comment:
         return const Color(0xFFFFB547);
-      case NotificationType.postTag:
+      case NotificationType.reply:
+        return const Color(0xFFC04CFD);
+      case NotificationType.mention:
         return const Color(0xFF85B7EB);
+      case NotificationType.postTag:
+        return SeeUColors.success;
     }
   }
 
@@ -148,13 +147,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header: serif "Активность"
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
               child: Row(
                 children: [
                   Text(
-                    'Тебя видят',
+                    'Активность',
                     style: SeeUTypography.displayL,
                   ),
                   const Spacer(),
@@ -172,16 +171,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-              child: Text(
-                '${filtered.length} уведомлений',
-                style: SeeUTypography.caption.copyWith(
-                  color: SeeUColors.textTertiary,
-                ),
-              ),
-            ),
-            // Filter chips
+            // "Все" | "Ответы" pill toggle
             _buildFilterRow(),
             const Divider(height: 1, color: SeeUColors.borderSubtle),
             // Content
@@ -226,40 +216,39 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Widget _buildFilterRow() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: _NotifFilter.values.map((f) {
-          final isActive = f == _activeFilter;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: SeeUColors.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: _NotifFilter.values.map((f) {
+            final isActive = f == _activeFilter;
+            return GestureDetector(
               onTap: () => setState(() => _activeFilter = f),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isActive ? SeeUColors.accent : SeeUColors.surface,
+                  color: isActive ? SeeUColors.textPrimary : Colors.transparent,
                   borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  border: Border.all(
-                    color:
-                        isActive ? SeeUColors.accent : SeeUColors.borderSubtle,
-                  ),
-                  boxShadow: isActive ? SeeUShadows.sm : null,
                 ),
                 child: Text(
                   _filterLabel(f),
                   style: SeeUTypography.caption.copyWith(
+                    fontSize: 13,
                     color: isActive ? Colors.white : SeeUColors.textSecondary,
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

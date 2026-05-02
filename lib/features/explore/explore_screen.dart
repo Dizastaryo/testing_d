@@ -89,9 +89,15 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Header: title + search bar + privacy hint
   // =========================================================================
 
+  // Tab index for explore tabs
+  int _selectedTab = 0;
+  static const List<String> _exploreTabs = [
+    'Всё', 'Reels', 'Люди', 'Аудио', 'Теги',
+  ];
+
   Widget _buildHeader(bool hasQuery) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 58, 18, 12),
+      padding: const EdgeInsets.fromLTRB(18, 58, 18, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -103,14 +109,15 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               letterSpacing: -0.64,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Search bar: height 44, surface2 bg, borderRadius 14
+          // Search bar: height 44, surface2 bg, borderRadius pill
           Container(
             height: 44,
             decoration: BoxDecoration(
               color: SeeUColors.surface2,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(SeeURadii.pill),
+              border: Border.all(color: SeeUColors.borderSubtle, width: 1),
             ),
             child: Row(
               children: [
@@ -132,7 +139,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       filled: false,
-                      hintText: 'Поиск только по @никнейму',
+                      hintText: 'Искать людей, звуки, теги',
                       hintStyle: SeeUTypography.body.copyWith(
                         fontSize: 14,
                         color: SeeUColors.textTertiary,
@@ -163,30 +170,46 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
 
-          // Lock icon + privacy hint
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
+          // Tab row: Всё | Reels | Люди | Аудио | Теги
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             child: Row(
-              children: [
-                Icon(
-                  PhosphorIcons.lock(),
-                  size: 11,
-                  color: SeeUColors.textTertiary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Реальные имена не индексируются',
-                  style: SeeUTypography.micro.copyWith(
-                    fontSize: 11,
-                    color: SeeUColors.textTertiary,
-                    fontWeight: FontWeight.w400,
+              children: List.generate(_exploreTabs.length, (i) {
+                final isActive = _selectedTab == i;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedTab = i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? SeeUColors.textPrimary
+                            : SeeUColors.surface2,
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                      ),
+                      child: Text(
+                        _exploreTabs[i],
+                        style: SeeUTypography.caption.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color:
+                              isActive ? Colors.white : SeeUColors.textSecondary,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                );
+              }),
             ),
           ),
+
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -203,20 +226,21 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   Widget _buildTagsSection() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // "ПОПУЛЯРНОЕ СЕЙЧАС" mono label
+          // "В ТРЕНДЕ СЕГОДНЯ" mono label
           Text(
-            'ПОПУЛЯРНОЕ СЕЙЧАС',
+            'В ТРЕНДЕ СЕГОДНЯ',
             style: SeeUTypography.monoLabel.copyWith(
-              letterSpacing: 1.0,
+              letterSpacing: 1.4,
+              fontSize: 10,
               color: SeeUColors.textTertiary,
             ),
           ),
-          const SizedBox(height: 10),
-          // Horizontal scrollable tag pills
+          const SizedBox(height: 8),
+          // Horizontal scrollable trending tag pills (warm gradient)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -233,21 +257,35 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: SeeUColors.surface,
-                        borderRadius:
-                            BorderRadius.circular(SeeURadii.pill),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFE4D9), Color(0xFFFFF5D4)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: SeeUColors.borderSubtle,
-                          width: 0.5,
+                          color: const Color(0xFFFFD7BC),
+                          width: 1,
                         ),
                       ),
-                      child: Text(
-                        tag,
-                        style: SeeUTypography.caption.copyWith(
-                          fontSize: 13,
-                          color: SeeUColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            PhosphorIcons.hash(),
+                            size: 14,
+                            color: SeeUColors.accent,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            tag.replaceFirst('#', ''),
+                            style: SeeUTypography.caption.copyWith(
+                              fontSize: 13,
+                              color: SeeUColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -485,8 +523,9 @@ class _MasonryGrid extends StatelessWidget {
     final imageUrl = post.media.isNotEmpty
         ? post.media.first.url
         : 'https://picsum.photos/seed/explore_$index/400/400';
-    final likeCount = rng.nextInt(500) + 10;
+    final viewCount = rng.nextInt(9000) + 500;
     final isTall = (index + 3) % 7 == 0;
+    final isReel = post.isWave || (index % 3 == 1);
     final height = isTall ? cellSize * 2 + 2 : cellSize;
 
     return GestureDetector(
@@ -513,44 +552,67 @@ class _MasonryGrid extends StatelessWidget {
                       color: SeeUColors.textTertiary),
                 ),
               ),
-              // Bottom gradient with like count
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(8, 20, 8, 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.55),
-                      ],
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        PhosphorIcons.heart(PhosphorIconsStyle.fill),
-                        size: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '$likeCount',
-                        style: SeeUTypography.micro.copyWith(
-                          color: Colors.white,
-                          fontSize: 11,
-                        ),
+              // Reel: play icon top-right + view count bottom-left
+              if (isReel) ...[
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Icon(
+                    PhosphorIcons.play(PhosphorIconsStyle.fill),
+                    color: Colors.white,
+                    size: 16,
+                    shadows: const [
+                      Shadow(
+                        color: Color(0x80000000),
+                        blurRadius: 4,
                       ),
                     ],
                   ),
                 ),
-              ),
-              if (post.media.length > 1)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(6, 16, 6, 5),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.55),
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.play(PhosphorIconsStyle.fill),
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          viewCount >= 1000
+                              ? '${(viewCount / 1000).toStringAsFixed(1)}k'
+                              : '$viewCount',
+                          style: SeeUTypography.micro.copyWith(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            shadows: const [
+                              Shadow(
+                                  color: Color(0x80000000), blurRadius: 3),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else if (post.media.length > 1)
                 Positioned(
                   top: 6,
                   right: 6,
@@ -558,9 +620,9 @@ class _MasonryGrid extends StatelessWidget {
                     PhosphorIcons.squaresFour(PhosphorIconsStyle.fill),
                     color: Colors.white,
                     size: 14,
-                    shadows: [
+                    shadows: const [
                       Shadow(
-                        color: Colors.black.withValues(alpha: 0.5),
+                        color: Color(0x80000000),
                         blurRadius: 4,
                       ),
                     ],

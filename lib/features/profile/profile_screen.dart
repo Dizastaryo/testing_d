@@ -27,6 +27,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedTab = 0;
+  // Simulated nearby count (BLE badge); replace with real provider when available
+  static const int _nearbyCount = 3;
 
   @override
   void initState() {
@@ -117,9 +119,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   if (isOwnProfile)
                     Row(
                       children: [
-                        _HeaderIconButton(
-                          icon: PhosphorIcons.bluetoothConnected(),
-                          onTap: () => context.push('/settings/chip'),
+                        // BLE button with "Рядом · N" badge when nearby > 0
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _HeaderIconButton(
+                              icon: PhosphorIcons.bluetoothConnected(),
+                              onTap: () => context.push('/settings/chip'),
+                            ),
+                            if (_nearbyCount > 0)
+                              Positioned(
+                                top: -4,
+                                right: -6,
+                                child: IgnorePointer(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: SeeUColors.success,
+                                      borderRadius:
+                                          BorderRadius.circular(SeeURadii.pill),
+                                      border: Border.all(
+                                          color: SeeUColors.background,
+                                          width: 1.5),
+                                    ),
+                                    child: Text(
+                                      'Рядом · $_nearbyCount',
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                         const SizedBox(width: 8),
                         _HeaderIconButton(
@@ -161,7 +197,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             onTap: () => _tabController.animateTo(0),
                           ),
                           _TabButton(
-                            icon: PhosphorIcons.bookmarkSimple(),
+                            icon: PhosphorIcons.filmStrip(),
                             isActive: _selectedTab == 1,
                             onTap: () => _tabController.animateTo(1),
                           ),
