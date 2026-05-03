@@ -25,6 +25,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     with TickerProviderStateMixin {
   final _scrollController = ScrollController();
   bool _showScrollToTop = false;
+  bool _dailyPromptDismissed = false;
 
   // PageView for camera swipe
   late PageController _pageController;
@@ -268,7 +269,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                               ),
                             ),
                             const SliverToBoxAdapter(child: StoriesRow()),
-                            const SliverToBoxAdapter(child: _DailyPromptCard()),
+                            if (!_dailyPromptDismissed)
+                              SliverToBoxAdapter(child: _DailyPromptCard(
+                                onDismiss: () => setState(() => _dailyPromptDismissed = true),
+                              )),
                             SliverList(
                               delegate: SliverChildBuilderDelegate(
                                 (context, index) {
@@ -680,7 +684,8 @@ class _EyeMarkPainter extends CustomPainter {
 // ─── Daily Prompt card ────────────────────────────────────────────────────
 
 class _DailyPromptCard extends StatelessWidget {
-  const _DailyPromptCard();
+  final VoidCallback? onDismiss;
+  const _DailyPromptCard({this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
@@ -748,12 +753,13 @@ class _DailyPromptCard extends StatelessWidget {
                       _PromptButton(
                         label: 'Снять',
                         isPrimary: true,
-                        onTap: () => context.push('/reels'),
+                        onTap: () => context.push('/story/create'),
                       ),
                       const SizedBox(width: 8),
-                      const _PromptButton(
+                      _PromptButton(
                         label: 'Пропустить',
                         isPrimary: false,
+                        onTap: onDismiss,
                       ),
                     ],
                   ),

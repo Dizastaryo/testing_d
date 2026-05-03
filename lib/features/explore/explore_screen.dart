@@ -237,84 +237,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Mixed grid: tags + masonry posts grid
   // =========================================================================
 
-  static const List<String> _popularTags = [
-    '#алматы', '#утро', '#горы', '#тыньшань', '#кафе', '#свет', '#портреты',
-  ];
-
-  Widget _buildTagsSection() {
-    final c = context.seeuColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // "В ТРЕНДЕ СЕГОДНЯ" mono label
-          Text(
-            'В ТРЕНДЕ СЕГОДНЯ',
-            style: SeeUTypography.monoLabel.copyWith(
-              letterSpacing: 1.4,
-              fontSize: 10,
-              color: c.ink3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Horizontal scrollable trending tag pills (warm gradient)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: _popularTags.map((tag) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      _searchCtrl.text = tag;
-                      _onSearchChanged(tag);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFE4D9), Color(0xFFFFF5D4)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFFFD7BC),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            PhosphorIcons.hash(),
-                            size: 14,
-                            color: SeeUColors.accent,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            tag.replaceFirst('#', ''),
-                            style: SeeUTypography.caption.copyWith(
-                              fontSize: 13,
-                              color: c.ink,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Tags section removed - all content comes from backend search
 
   Widget _buildMixedGrid() {
     final c = context.seeuColors;
@@ -365,7 +288,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           ),
           slivers: [
             // Tags section as a sliver header
-            SliverToBoxAdapter(child: _buildTagsSection()),
+            // Tags section removed - search handles filtering
 
             // 3-column masonry grid (every 7th item is 1:2, spans 2 rows)
             SliverToBoxAdapter(
