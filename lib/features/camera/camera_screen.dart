@@ -6,7 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -62,6 +65,12 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Fake music track label ──
   final String _audioTitle = 'Любимая музыка';
+
+  // ── AI Filter ──
+  String? _aiFilterUrl;
+  bool _aiFilterLoading = false;
+  String? _aiFilterError;
+  final double _aiFilterOpacity = 0.6;
 
   // ── Gallery preview ──
   File? _galleryFile;
@@ -449,6 +458,37 @@ class _CameraScreenState extends State<CameraScreen>
               child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
             ),
 
+          // ── AI filter overlay ──
+          if (_aiFilterUrl != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: _aiFilterOpacity,
+                  child: CachedNetworkImage(
+                    imageUrl: _aiFilterUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => const SizedBox.shrink(),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ),
+
+          // ── AI filter loading indicator ──
+          if (_aiFilterLoading)
+            const Positioned.fill(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: _kAccent, strokeWidth: 2),
+                    SizedBox(height: 12),
+                    Text('Генерация AI эффекта...', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+
           // ── Gradient overlay ──
           _buildGradientOverlay(),
 
@@ -829,20 +869,27 @@ class _CameraScreenState extends State<CameraScreen>
               },
             ),
             const SizedBox(height: 12),
-            // Effects
+            // AI Effects
             _ToolButton(
-              icon: const Icon(Icons.auto_fix_high_rounded,
-                  color: Colors.white, size: 20),
-              label: 'эффекты',
-              onTap: () {},
+              icon: Icon(Icons.auto_fix_high_rounded,
+                  color: _aiFilterUrl != null ? _kAccent : Colors.white, size: 20),
+              label: 'AI эффект',
+              active: _aiFilterUrl != null,
+              onTap: _showAIFilterSheet,
             ),
             const SizedBox(height: 12),
-            // Filter
-            _ToolButton(
-              icon: const Icon(Icons.filter_rounded, color: Colors.white, size: 20),
-              label: 'фильтр',
-              onTap: () {},
-            ),
+            // Remove AI filter
+            if (_aiFilterUrl != null)
+              _ToolButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                label: 'убрать',
+                onTap: () => setState(() {
+                  _aiFilterUrl = null;
+                  _aiFilterError = null;
+                }),
+              ),
+            if (_aiFilterUrl != null)
+              const SizedBox(height: 12),
             const SizedBox(height: 12),
             // Grid
             _ToolButton(
@@ -854,6 +901,196 @@ class _CameraScreenState extends State<CameraScreen>
         ),
       ),
     );
+  }
+
+  // ── AI Filter ──────────────────────────────────────────────────────────
+
+  void _showAIFilterSheet() {
+    HapticFeedback.mediumImpact();
+    final promptController = TextEditingController();
+    String selectedStyle = 'filter';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            top: 20, left: 20, right: 20,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'AI эффект',
+                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Опишите эффект который хотите',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              // Style chips
+              Wrap(
+                spacing: 8,
+                children: [
+                  _aiStyleChip('Фильтр', 'filter', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
+                  _aiStyleChip('Маска', 'mask', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
+                  _aiStyleChip('Стикер', 'sticker', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
+                  _aiStyleChip('Фон', 'background', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Prompt input
+              TextField(
+                controller: promptController,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Например: ретро плёнка 90-х, тёплые тона',
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.1),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Generate button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _aiFilterLoading ? null : () {
+                    final prompt = promptController.text.trim();
+                    if (prompt.isEmpty) return;
+                    Navigator.of(ctx).pop();
+                    _generateAIFilter(prompt, selectedStyle);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kAccent,
+                    disabledBackgroundColor: _kAccent.withValues(alpha: 0.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _aiFilterLoading
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Text('Сгенерировать', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _aiStyleChip(String label, String value, String selected, ValueChanged<String> onTap) {
+    final isSelected = value == selected;
+    return GestureDetector(
+      onTap: () => onTap(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _kAccent : Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white70,
+            fontSize: 13,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateAIFilter(String prompt, String style) async {
+    setState(() {
+      _aiFilterLoading = true;
+      _aiFilterError = null;
+    });
+
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiEndpoints.baseUrl,
+        connectTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+      ));
+
+      final response = await dio.post(
+        '/ai/generate-filter',
+        data: {'prompt': prompt, 'style': style},
+      );
+
+      final data = response.data;
+      final resultData = data is Map && data.containsKey('data') ? data['data'] : data;
+      final url = resultData['result_url']?.toString();
+
+      if (mounted) {
+        setState(() {
+          _aiFilterUrl = (url != null && url.isNotEmpty) ? url : null;
+          _aiFilterLoading = false;
+          if (url == null || url.isEmpty) {
+            _aiFilterError = resultData['description']?.toString() ?? 'Не удалось создать эффект';
+          }
+        });
+
+        if (_aiFilterUrl != null) {
+          HapticFeedback.heavyImpact();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('AI эффект применён!'),
+              backgroundColor: _kAccent,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else if (_aiFilterError != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_aiFilterError!), backgroundColor: Colors.orange),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _aiFilterLoading = false;
+          _aiFilterError = 'Ошибка генерации';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось сгенерировать эффект'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // ── Speed pills ────────────────────────────────────────────────────────
