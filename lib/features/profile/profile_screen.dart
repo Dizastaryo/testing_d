@@ -54,7 +54,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   String _resolveUsername() {
     return widget.username ??
         ref.read(authProvider).user?.username ??
-        'me_user';
+        'unknown';
   }
 
   @override

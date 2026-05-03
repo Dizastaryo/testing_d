@@ -6,12 +6,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/user_provider.dart';
-import '../feed/widgets/post_card.dart';
 
 // ===========================================================================
 // ExploreScreen widget
@@ -434,9 +432,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               itemCount: filteredPosts.length,
               itemBuilder: (context, index) {
                 final post = filteredPosts[index];
-                final sBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
-                var imgUrl = post.media.isNotEmpty ? post.media.first.url : '';
-                if (imgUrl.startsWith('/')) imgUrl = sBase + imgUrl;
+                final imgUrl = post.media.isNotEmpty ? post.media.first.url : '';
                 return GestureDetector(
                   onTap: () {
                     final isVideo = post.media.any((m) => m.type == MediaType.video);
@@ -487,10 +483,8 @@ class _MasonryGrid extends StatelessWidget {
   Widget _buildCell(BuildContext context, int index, double cellSize) {
     final c = context.seeuColors;
     final post = posts[index];
-    final serverBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
-    var imageUrl = post.media.isNotEmpty ? post.media.first.url : '';
-    if (imageUrl.startsWith('/')) imageUrl = serverBase + imageUrl;
-    final viewCount = post.likesCount;
+    final imageUrl = post.media.isNotEmpty ? post.media.first.url : '';
+    final likeCount = post.likesCount;
     final isTall = (index + 3) % 7 == 0;
     final isReel = post.media.any((m) => m.type == MediaType.video);
     final height = isTall ? cellSize * 2 + 2 : cellSize;
@@ -562,9 +556,9 @@ class _MasonryGrid extends StatelessWidget {
                         ),
                         const SizedBox(width: 3),
                         Text(
-                          viewCount >= 1000
-                              ? '${(viewCount / 1000).toStringAsFixed(1)}k'
-                              : '$viewCount',
+                          likeCount >= 1000
+                              ? '${(likeCount / 1000).toStringAsFixed(1)}k'
+                              : '$likeCount',
                           style: SeeUTypography.micro.copyWith(
                             color: Colors.white,
                             fontSize: 11,
@@ -746,89 +740,6 @@ class _MasonryGrid extends StatelessWidget {
 }
 
 // ===========================================================================
-// Explore Posts Feed (opened when tapping a post in grid)
-// ===========================================================================
-
-class _ExplorePostsFeed extends ConsumerStatefulWidget {
-  final List<Post> posts;
-  final int initialIndex;
-
-  const _ExplorePostsFeed({
-    required this.posts,
-    required this.initialIndex,
-  });
-
-  @override
-  ConsumerState<_ExplorePostsFeed> createState() => _ExplorePostsFeedState();
-}
-
-class _ExplorePostsFeedState extends ConsumerState<_ExplorePostsFeed> {
-  late final ScrollController _scrollController;
-  final GlobalKey _targetKey = GlobalKey();
-  bool _didScroll = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController();
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Use post-frame callback to scroll to the initial item
-    if (!_didScroll) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_targetKey.currentContext != null && mounted) {
-          Scrollable.ensureVisible(
-            _targetKey.currentContext!,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-          _didScroll = true;
-        }
-      });
-    }
-
-    final c = context.seeuColors;
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.surface,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
-              color: c.ink),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          '\u041F\u0443\u0431\u043B\u0438\u043A\u0430\u0446\u0438\u0438',
-          style: SeeUTypography.title,
-        ),
-        centerTitle: true,
-      ),
-      body: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.only(bottom: 80),
-        itemCount: widget.posts.length,
-        itemBuilder: (context, index) {
-          final post = widget.posts[index];
-          return Container(
-            key: index == widget.initialIndex ? _targetKey : null,
-            child: PostCard(post: post),
-          );
-        },
-      ),
-    );
-  }
-}
-
 // ===========================================================================
 // User search result card
 // ===========================================================================
