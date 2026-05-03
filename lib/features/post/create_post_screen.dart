@@ -24,7 +24,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _captionFocus = FocusNode();
   final _locationFocus = FocusNode();
 
-  List<File> _selectedFiles = [];
+  final List<File> _selectedFiles = [];
   bool _isPosting = false;
   bool _locationFocused = false;
   final List<String> _tags = [];
@@ -49,7 +49,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final pickedFiles = await _picker.pickMultiImage();
     if (pickedFiles.isNotEmpty) {
       setState(() {
-        _selectedFiles = pickedFiles.map((xf) => File(xf.path)).toList();
+        _selectedFiles.addAll(pickedFiles.map((xf) => File(xf.path)));
       });
     }
   }
@@ -118,7 +118,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       await api.post(ApiEndpoints.posts, data: {
         'caption': captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
         'media_urls': mediaUrls,
-        'media_types': List.filled(mediaUrls.length, 'image'),
+        'media_types': _selectedFiles.map((f) {
+          final ext = f.path.split('.').last.toLowerCase();
+          return ['mp4', 'mov', 'webm', 'avi'].contains(ext) ? 'video' : 'image';
+        }).toList(),
         'location': _locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : '',
       });
       if (mounted) {
