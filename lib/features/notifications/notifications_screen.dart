@@ -194,6 +194,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                         ),
                       ),
                     )
+                  : notifState.error != null && filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(PhosphorIcons.wifiSlash(), size: 48, color: c.ink3),
+                          const SizedBox(height: 12),
+                          Text('Не удалось загрузить', style: SeeUTypography.subtitle.copyWith(color: c.ink3)),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: _onRefresh,
+                            child: const Text('Повторить'),
+                          ),
+                        ],
+                      ),
+                    )
                   : filtered.isEmpty
                   ? _buildEmpty()
                   : RefreshIndicator(
