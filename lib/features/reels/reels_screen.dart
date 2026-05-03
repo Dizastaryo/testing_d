@@ -1,161 +1,77 @@
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:video_player/video_player.dart';
 
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
+import '../../core/models/post.dart';
 
 // ---------------------------------------------------------------------------
-// Data models (inline mock)
+// Data model (converted from Post)
 // ---------------------------------------------------------------------------
-
-class _ReelAudio {
-  final String title;
-  final String author;
-  const _ReelAudio({required this.title, required this.author});
-}
-
-class _ReelUser {
-  final String id;
-  final String username;
-  final String fullName;
-  final bool isVerified;
-  final List<Color> palette;
-  const _ReelUser({
-    required this.id,
-    required this.username,
-    required this.fullName,
-    this.isVerified = false,
-    required this.palette,
-  });
-}
 
 class _Reel {
   final String id;
-  final _ReelUser user;
-  final List<Color> gradientColors;
+  final String userId;
+  final String username;
+  final String fullName;
+  final String? avatarUrl;
+  final bool isVerified;
+  final String videoUrl; // full URL to video
   final String caption;
   final List<String> tags;
   final int likes;
   final int comments;
   final int shares;
-  final int duration; // seconds
-  final _ReelAudio audio;
-  const _Reel({
+  final int duration;
+
+  _Reel({
     required this.id,
-    required this.user,
-    required this.gradientColors,
+    required this.userId,
+    required this.username,
+    required this.fullName,
+    this.avatarUrl,
+    this.isVerified = false,
+    required this.videoUrl,
     required this.caption,
     required this.tags,
     required this.likes,
     required this.comments,
-    required this.shares,
-    required this.duration,
-    required this.audio,
+    this.shares = 0,
+    this.duration = 30,
   });
+
+  factory _Reel.fromPost(Post post) {
+    final serverBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
+    final videoMedia =
+        post.media.where((m) => m.type == MediaType.video).toList();
+    var url = videoMedia.isNotEmpty ? videoMedia.first.url : '';
+    if (url.startsWith('/')) url = serverBase + url;
+    final tagRegex = RegExp(r'#(\w+)');
+    final tags = tagRegex
+        .allMatches(post.caption ?? '')
+        .map((m) => m.group(1)!)
+        .toList();
+    return _Reel(
+      id: post.id,
+      userId: post.author.id,
+      username: post.author.username,
+      fullName: post.author.fullName,
+      avatarUrl: post.author.avatarUrl,
+      isVerified: post.author.isVerified,
+      videoUrl: url,
+      caption: post.caption ?? '',
+      tags: tags,
+      likes: post.likesCount,
+      comments: post.commentsCount,
+    );
+  }
 }
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-final _mockReels = <_Reel>[
-  _Reel(
-    id: 'r1',
-    user: const _ReelUser(
-      id: 'u1',
-      username: 'marina_skye',
-      fullName: 'Марина Скай',
-      isVerified: true,
-      palette: [Color(0xFFFF8060), Color(0xFFC04CFD)],
-    ),
-    gradientColors: [Color(0xFF1A0533), Color(0xFF6B1FA8), Color(0xFFFF5A3C)],
-    caption:
-        'Закат над городом — момент, который хочется остановить навсегда ✨ #вечер #городскиевиды #закат',
-    tags: ['вечер', 'городскиевиды', 'закат'],
-    likes: 14200,
-    comments: 342,
-    shares: 891,
-    duration: 15,
-    audio: _ReelAudio(title: 'Golden Hour', author: 'JVKE'),
-  ),
-  _Reel(
-    id: 'r2',
-    user: const _ReelUser(
-      id: 'u2',
-      username: 'alex_beats',
-      fullName: 'Алекс Битс',
-      palette: [Color(0xFFFFB547), Color(0xFFFF5A3C)],
-    ),
-    gradientColors: [Color(0xFF0A1628), Color(0xFF1E3A5F), Color(0xFF00D4FF)],
-    caption:
-        'Новый трек в работе 🎵 Послушайте и скажите, что думаете! #музыка #продакшн #биты',
-    tags: ['музыка', 'продакшн', 'биты'],
-    likes: 8750,
-    comments: 219,
-    shares: 445,
-    duration: 12,
-    audio: _ReelAudio(title: 'Night Drive', author: 'Alex Beats'),
-  ),
-  _Reel(
-    id: 'r3',
-    user: const _ReelUser(
-      id: 'u3',
-      username: 'food_diary_ru',
-      fullName: 'Дневник Еды',
-      isVerified: true,
-      palette: [Color(0xFF2FA84F), Color(0xFF5DB1FF)],
-    ),
-    gradientColors: [Color(0xFF1A2A0A), Color(0xFF3D6B1A), Color(0xFFFFB547)],
-    caption:
-        'Паста карбонара за 15 минут — проще простого! Рецепт в шапке профиля 🍝 #рецепт #паста #итальянскаяеда',
-    tags: ['рецепт', 'паста', 'итальянскаяеда'],
-    likes: 31600,
-    comments: 887,
-    shares: 2340,
-    duration: 20,
-    audio: _ReelAudio(title: 'Cooking Vibes', author: 'Lo-Fi Kitchen'),
-  ),
-  _Reel(
-    id: 'r4',
-    user: const _ReelUser(
-      id: 'u4',
-      username: 'kirill_photo',
-      fullName: 'Кирилл Фото',
-      palette: [Color(0xFF7B61FF), Color(0xFFFF8060)],
-    ),
-    gradientColors: [Color(0xFF0D0D1A), Color(0xFF2D1B69), Color(0xFFC04CFD)],
-    caption:
-        'Портретная съёмка в золотой час. Терпение — ключ к идеальному кадру 📸 #фотография #портрет #золотойчас',
-    tags: ['фотография', 'портрет', 'золотойчас'],
-    likes: 22100,
-    comments: 504,
-    shares: 1120,
-    duration: 18,
-    audio: _ReelAudio(title: 'Dreamscape', author: 'Ambient World'),
-  ),
-  _Reel(
-    id: 'r5',
-    user: const _ReelUser(
-      id: 'u5',
-      username: 'dance_with_kate',
-      fullName: 'Катя Танцует',
-      isVerified: false,
-      palette: [Color(0xFFFF3B6B), Color(0xFFFFB547)],
-    ),
-    gradientColors: [Color(0xFF1A0A12), Color(0xFF4A1230), Color(0xFFFF3B6B)],
-    caption:
-        'Новая хореография под хит этого лета 💃 Учимся вместе! #танцы #хореография #тренд',
-    tags: ['танцы', 'хореография', 'тренд'],
-    likes: 47800,
-    comments: 1230,
-    shares: 5600,
-    duration: 17,
-    audio: _ReelAudio(title: 'Summer Bop', author: 'Dua Lipa'),
-  ),
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,6 +120,10 @@ class ReelsScreen extends StatefulWidget {
 
 class _ReelsScreenState extends State<ReelsScreen>
     with TickerProviderStateMixin {
+  // API loading state
+  bool _loading = true;
+  List<_Reel> _reels = [];
+
   // Current reel index & tab
   int _idx = 0;
   int _tabIdx = 1; // "Для тебя" active by default
@@ -251,7 +171,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 
     _progressController = AnimationController(
       vsync: this,
-      duration: Duration(seconds: _mockReels[_idx].duration),
+      duration: const Duration(seconds: 30),
     )..addListener(_onProgressTick)
       ..addStatusListener(_onProgressStatus);
 
@@ -265,7 +185,36 @@ class _ReelsScreenState extends State<ReelsScreen>
       duration: const Duration(seconds: 4),
     )..repeat();
 
-    _startProgress();
+    _loadReels();
+  }
+
+  Future<void> _loadReels() async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiEndpoints.baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ));
+      final response = await dio.get('/explore');
+      final data = response.data;
+      final listData =
+          data is Map && data.containsKey('data') ? data['data'] : data;
+      final posts = (listData as List)
+          .map((j) => Post.fromJson(j as Map<String, dynamic>))
+          .toList();
+      final videoPosts = posts
+          .where((p) => p.media.any((m) => m.type == MediaType.video))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _reels = videoPosts.map((p) => _Reel.fromPost(p)).toList();
+          _loading = false;
+        });
+        if (_reels.isNotEmpty) _startProgress();
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -290,14 +239,16 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   void _startProgress() {
+    if (_reels.isEmpty) return;
     _progressController.duration =
-        Duration(seconds: _mockReels[_idx].duration);
+        Duration(seconds: _reels[_idx].duration);
     _progressController.reset();
     if (_playing) _progressController.forward();
   }
 
   void _goTo(int newIdx) {
-    if (newIdx < 0 || newIdx >= _mockReels.length) return;
+    if (_reels.isEmpty) return;
+    if (newIdx < 0 || newIdx >= _reels.length) return;
     setState(() {
       _idx = newIdx;
       _progress = 0.0;
@@ -351,7 +302,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   void _doubleTapAt(Offset position) {
-    final reel = _mockReels[_idx];
+    if (_reels.isEmpty) return;
+    final reel = _reels[_idx];
     final particle = _HeartParticle(
       id: UniqueKey().toString(),
       x: position.dx,
@@ -405,7 +357,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   }
 
   void _pickReaction(String emoji) {
-    final reel = _mockReels[_idx];
+    if (_reels.isEmpty) return;
+    final reel = _reels[_idx];
     if (!(_likedMap[reel.id] ?? false)) _toggleLike(reel.id);
     _burstEmoji(emoji);
     setState(() => _reactionPickerVisible = false);
@@ -417,10 +370,74 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final reel = _mockReels[_idx];
+    // Loading state
+    if (_loading) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: SeeUColors.darkBg,
+          body: const Center(
+            child: CircularProgressIndicator(color: SeeUColors.accent),
+          ),
+        ),
+      );
+    }
+
+    // Empty state
+    if (_reels.isEmpty) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: SeeUColors.darkBg,
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(PhosphorIconsRegular.videoCamera,
+                    color: Colors.white54, size: 48),
+                const SizedBox(height: 16),
+                const Text(
+                  'Нет рилсов',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                GestureDetector(
+                  onTap: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/feed');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Назад',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final reel = _reels[_idx];
     final isLiked = _likedMap[reel.id] ?? false;
     final isSaved = _savedMap[reel.id] ?? false;
-    final isFollowing = _followingMap[reel.user.id] ?? false;
+    final isFollowing = _followingMap[reel.userId] ?? false;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -433,7 +450,7 @@ class _ReelsScreenState extends State<ReelsScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── Video placeholder (gradient container) ──
+              // ── Video background ──
               AnimatedSlide(
                 offset: Offset(0, _dragging ? _dragOffset / 800 : 0),
                 duration: _dragging
@@ -464,7 +481,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                 left: 16,
                 right: 16,
                 child: _ProgressBar(
-                  reels: _mockReels,
+                  reels: _reels,
                   currentIdx: _idx,
                   progress: _progress,
                 ),
@@ -562,7 +579,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                   reel: reel,
                   isFollowing: isFollowing,
                   captionExpanded: _expandedCaptions.contains(reel.id),
-                  onFollow: () => _toggleFollow(reel.user.id),
+                  onFollow: () => _toggleFollow(reel.userId),
                   onToggleCaption: () {
                     setState(() {
                       if (_expandedCaptions.contains(reel.id)) {
@@ -585,21 +602,67 @@ class _ReelsScreenState extends State<ReelsScreen>
 }
 
 // ---------------------------------------------------------------------------
-// Reel background — gradient placeholder
+// Reel background — video player
 // ---------------------------------------------------------------------------
 
-class _ReelBackground extends StatelessWidget {
+class _ReelBackground extends StatefulWidget {
   final _Reel reel;
   const _ReelBackground({required this.reel});
 
   @override
+  State<_ReelBackground> createState() => _ReelBackgroundState();
+}
+
+class _ReelBackgroundState extends State<_ReelBackground> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideo();
+  }
+
+  void _initVideo() {
+    _controller =
+        VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl))
+          ..setLooping(true)
+          ..initialize().then((_) {
+            if (mounted) {
+              setState(() => _initialized = true);
+              _controller.play();
+            }
+          });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReelBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reel.id != widget.reel.id) {
+      _controller.dispose();
+      _initialized = false;
+      _initVideo();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: reel.gradientColors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    if (!_initialized) {
+      return Container(color: Colors.black);
+    }
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: _controller.value.size.width,
+          height: _controller.value.size.height,
+          child: VideoPlayer(_controller),
         ),
       ),
     );
@@ -966,12 +1029,12 @@ class _ActionRail extends StatelessWidget {
             child: Container(
               width: 44,
               height: 44,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: reel.user.palette,
+                  colors: [SeeUColors.accent, Color(0xFFFFB547)],
                 ),
               ),
               padding: const EdgeInsets.all(3),
@@ -1293,17 +1356,19 @@ class _BottomCard extends StatelessWidget {
                   Container(
                     width: 36,
                     height: 36,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
-                        colors: reel.user.palette,
+                        colors: [SeeUColors.accent, Color(0xFFFFB547)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                     ),
                     child: Center(
                       child: Text(
-                        reel.user.username[0].toUpperCase(),
+                        reel.username.isNotEmpty
+                            ? reel.username[0].toUpperCase()
+                            : '?',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -1314,7 +1379,7 @@ class _BottomCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    '@${reel.user.username}',
+                    '@${reel.username}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -1324,7 +1389,7 @@ class _BottomCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (reel.user.isVerified) ...[
+                  if (reel.isVerified) ...[
                     const SizedBox(width: 4),
                     const Icon(PhosphorIconsBold.seal,
                         color: SeeUColors.amber, size: 16),
@@ -1451,7 +1516,7 @@ class _BottomCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    '${reel.audio.title} • ${reel.audio.author}',
+                    reel.username,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 12,

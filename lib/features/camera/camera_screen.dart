@@ -60,6 +60,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Settings ──
   bool _flashOn = false;
+  bool _showGrid = false;
   double _speed = 1.0;
   String _tab = 'reel'; // photo | reel | live | duet
 
@@ -348,7 +349,12 @@ class _CameraScreenState extends State<CameraScreen>
     HapticFeedback.mediumImpact();
     try {
       final file = await _controller!.takePicture();
-      debugPrint('Photo saved: ${file.path}');
+      if (mounted) {
+        setState(() {
+          _galleryFile = File(file.path);
+          _showGalleryPreview = true;
+        });
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -486,6 +492,14 @@ class _CameraScreenState extends State<CameraScreen>
                     Text('Генерация AI эффекта...', style: TextStyle(color: Colors.white70, fontSize: 13)),
                   ],
                 ),
+              ),
+            ),
+
+          // ── Grid overlay ──
+          if (_showGrid)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(painter: _GridPainter()),
               ),
             ),
 
@@ -895,7 +909,8 @@ class _CameraScreenState extends State<CameraScreen>
             _ToolButton(
               icon: const Icon(Icons.grid_on_rounded, color: Colors.white, size: 20),
               label: 'сетка',
-              onTap: () {},
+              active: _showGrid,
+              onTap: () => setState(() => _showGrid = !_showGrid),
             ),
           ],
         ),
@@ -1042,13 +1057,12 @@ class _CameraScreenState extends State<CameraScreen>
 
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: ApiEndpoints.baseUrl,
         connectTimeout: const Duration(seconds: 60),
         receiveTimeout: const Duration(seconds: 60),
       ));
 
       final response = await dio.post(
-        '/ai/generate-filter',
+        '${ApiEndpoints.baseUrl}/ai/generate-filter',
         data: {'prompt': prompt, 'style': style},
       );
 
@@ -1381,6 +1395,26 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
+}
+
+// ─── Grid painter ──────────────────────────────────────────────────────────
+
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..strokeWidth = 0.5;
+    // Vertical lines (rule of thirds)
+    canvas.drawLine(Offset(size.width / 3, 0), Offset(size.width / 3, size.height), paint);
+    canvas.drawLine(Offset(2 * size.width / 3, 0), Offset(2 * size.width / 3, size.height), paint);
+    // Horizontal lines
+    canvas.drawLine(Offset(0, size.height / 3), Offset(size.width, size.height / 3), paint);
+    canvas.drawLine(Offset(0, 2 * size.height / 3), Offset(size.width, 2 * size.height / 3), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─── Segment bar painter ───────────────────────────────────────────────────
