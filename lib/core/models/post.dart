@@ -1,4 +1,12 @@
+import '../api/api_endpoints.dart';
 import 'user.dart';
+
+String _toAbsoluteUrl(String url) {
+  if (url.startsWith('/')) {
+    return ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
 
 enum MediaType { image, video, carousel }
 
@@ -88,7 +96,7 @@ class Post {
           : <String>[];
       mediaList = List.generate(urls.length, (i) {
         return PostMedia(
-          url: urls[i],
+          url: _toAbsoluteUrl(urls[i]),
           type: PostMedia._parseMediaType(i < types.length ? types[i] : null),
         );
       });

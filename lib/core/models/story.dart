@@ -1,4 +1,12 @@
+import '../api/api_endpoints.dart';
 import 'user.dart';
+
+String _toAbsUrl(String url) {
+  if (url.startsWith('/')) {
+    return ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
 
 enum StoryMediaType { image, video }
 
@@ -31,7 +39,7 @@ class Story {
     return Story(
       id: json['id']?.toString() ?? '',
       author: User.fromJson((json['author'] ?? json['user']) as Map<String, dynamic>? ?? {}),
-      mediaUrl: json['media_url']?.toString() ?? '',
+      mediaUrl: _toAbsUrl(json['media_url']?.toString() ?? ''),
       mediaType: json['media_type'] == 'video'
           ? StoryMediaType.video
           : StoryMediaType.image,

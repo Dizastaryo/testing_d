@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/models/user.dart';
@@ -296,14 +297,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 posts: displayPosts,
                 rng: rng,
                 onTapPost: (index) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _ExplorePostsFeed(
-                        posts: displayPosts,
-                        initialIndex: index,
-                      ),
-                    ),
-                  );
+                  final post = displayPosts[index];
+                  final isVideo = post.media.any((m) => m.type == MediaType.video);
+                  if (isVideo) {
+                    context.push('/reels');
+                  } else {
+                    context.push('/post/${post.id}');
+                  }
                 },
               ),
             ),
@@ -434,13 +434,23 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               itemCount: filteredPosts.length,
               itemBuilder: (context, index) {
                 final post = filteredPosts[index];
+                final sBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
+                var imgUrl = post.media.isNotEmpty ? post.media.first.url : '';
+                if (imgUrl.startsWith('/')) imgUrl = sBase + imgUrl;
                 return GestureDetector(
-                  onTap: () => context.push('/post/${post.id}'),
+                  onTap: () {
+                    final isVideo = post.media.any((m) => m.type == MediaType.video);
+                    if (isVideo) {
+                      context.push('/reels');
+                    } else {
+                      context.push('/post/${post.id}');
+                    }
+                  },
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: post.media.isNotEmpty
+                    child: imgUrl.isNotEmpty
                         ? CachedNetworkImage(
-                            imageUrl: post.media.first.url,
+                            imageUrl: imgUrl,
                             fit: BoxFit.cover,
                             placeholder: (_, __) =>
                                 Container(color: c.surface2),
@@ -477,12 +487,12 @@ class _MasonryGrid extends StatelessWidget {
   Widget _buildCell(BuildContext context, int index, double cellSize) {
     final c = context.seeuColors;
     final post = posts[index];
-    final imageUrl = post.media.isNotEmpty
-        ? post.media.first.url
-        : 'https://picsum.photos/seed/explore_$index/400/400';
-    final viewCount = rng.nextInt(9000) + 500;
+    final serverBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
+    var imageUrl = post.media.isNotEmpty ? post.media.first.url : '';
+    if (imageUrl.startsWith('/')) imageUrl = serverBase + imageUrl;
+    final viewCount = post.likesCount;
     final isTall = (index + 3) % 7 == 0;
-    final isReel = post.isWave || (index % 3 == 1);
+    final isReel = post.media.any((m) => m.type == MediaType.video);
     final height = isTall ? cellSize * 2 + 2 : cellSize;
 
     return GestureDetector(
