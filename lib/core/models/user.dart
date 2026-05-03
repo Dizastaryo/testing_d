@@ -1,3 +1,13 @@
+import '../api/api_endpoints.dart';
+
+String _absUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  if (url.startsWith('/')) {
+    return ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
+
 class User {
   final String id;
   final String username;
@@ -49,7 +59,7 @@ class User {
       fullName: json['full_name']?.toString() ?? json['fullName']?.toString() ?? '',
       bio: json['bio']?.toString(),
       website: json['website']?.toString(),
-      avatarUrl: json['avatar_url']?.toString() ?? json['avatarUrl']?.toString(),
+      avatarUrl: _absUrl(json['avatar_url']?.toString() ?? json['avatarUrl']?.toString()),
       gender: json['gender']?.toString(),
       dateOfBirth: json['date_of_birth']?.toString(),
       devicePublicId: json['device_public_id']?.toString(),

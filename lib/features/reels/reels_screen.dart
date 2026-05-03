@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
@@ -190,21 +191,47 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _loadReels() async {
     try {
+      // Read auth token
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      );
+      final token = await storage.read(key: 'access_token');
+
       final dio = Dio(BaseOptions(
-        baseUrl: ApiEndpoints.baseUrl,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),
+        headers: {
+          if (token != null && token.isNotEmpty)
+            'Authorization': 'Bearer $token',
+        },
       ));
-      final response = await dio.get('/explore');
-      final data = response.data;
-      final listData =
-          data is Map && data.containsKey('data') ? data['data'] : data;
-      final posts = (listData as List)
-          .map((j) => Post.fromJson(j as Map<String, dynamic>))
-          .toList();
-      final videoPosts = posts
+
+      // Load from both feed and explore to get all video posts
+      final results = await Future.wait([
+        dio.get('${ApiEndpoints.baseUrl}/feed').catchError((_) => Response(requestOptions: RequestOptions(), data: {'data': []})),
+        dio.get('${ApiEndpoints.baseUrl}/explore').catchError((_) => Response(requestOptions: RequestOptions(), data: {'data': []})),
+      ]);
+
+      final allPosts = <Post>[];
+      final seenIds = <String>{};
+      for (final response in results) {
+        final data = response.data;
+        final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+        if (listData is List) {
+          for (final j in listData) {
+            final post = Post.fromJson(j as Map<String, dynamic>);
+            if (!seenIds.contains(post.id)) {
+              seenIds.add(post.id);
+              allPosts.add(post);
+            }
+          }
+        }
+      }
+
+      final videoPosts = allPosts
           .where((p) => p.media.any((m) => m.type == MediaType.video))
           .toList();
+
       if (mounted) {
         setState(() {
           _reels = videoPosts.map((p) => _Reel.fromPost(p)).toList();
@@ -213,6 +240,7 @@ class _ReelsScreenState extends State<ReelsScreen>
         if (_reels.isNotEmpty) _startProgress();
       }
     } catch (e) {
+      debugPrint('Reels load error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
