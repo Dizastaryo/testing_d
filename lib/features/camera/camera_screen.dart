@@ -313,7 +313,7 @@ class _CameraScreenState extends State<CameraScreen>
     unawaited(_controller!.startVideoRecording());
   }
 
-  void _stopRecording() {
+  Future<void> _stopRecording() async {
     if (!_isRecording) return;
     HapticFeedback.mediumImpact();
     _ticker?.stop();
@@ -327,7 +327,13 @@ class _CameraScreenState extends State<CameraScreen>
       _currentSegDur = 0.0;
     });
 
-    unawaited(_controller?.stopVideoRecording());
+    final videoFile = await _controller?.stopVideoRecording();
+    if (videoFile != null && mounted) {
+      setState(() {
+        _galleryFile = File(videoFile.path);
+        _showGalleryPreview = true;
+      });
+    }
   }
 
   void _toggleRecord() {

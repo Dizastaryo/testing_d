@@ -305,14 +305,54 @@ class _ReelsScreenState extends State<ReelsScreen>
     final wasLiked = _likedMap[reelId] ?? false;
     setState(() => _likedMap[reelId] = !wasLiked);
     if (!wasLiked) _burstEmoji('❤️');
+    _callApi(() async {
+      final dio = await _authedDio();
+      if (!wasLiked) {
+        await dio.post('${ApiEndpoints.baseUrl}/posts/$reelId/like');
+      } else {
+        await dio.delete('${ApiEndpoints.baseUrl}/posts/$reelId/like');
+      }
+    });
   }
 
   void _toggleSave(String reelId) {
-    setState(() => _savedMap[reelId] = !(_savedMap[reelId] ?? false));
+    final wasSaved = _savedMap[reelId] ?? false;
+    setState(() => _savedMap[reelId] = !wasSaved);
+    _callApi(() async {
+      final dio = await _authedDio();
+      if (!wasSaved) {
+        await dio.post('${ApiEndpoints.baseUrl}/posts/$reelId/save');
+      } else {
+        await dio.delete('${ApiEndpoints.baseUrl}/posts/$reelId/save');
+      }
+    });
   }
 
-  void _toggleFollow(String userId) {
-    setState(() => _followingMap[userId] = !(_followingMap[userId] ?? false));
+  void _toggleFollow(String username) {
+    final wasFollowing = _followingMap[username] ?? false;
+    setState(() => _followingMap[username] = !wasFollowing);
+    _callApi(() async {
+      final dio = await _authedDio();
+      if (!wasFollowing) {
+        await dio.post('${ApiEndpoints.baseUrl}/users/$username/follow');
+      } else {
+        await dio.delete('${ApiEndpoints.baseUrl}/users/$username/follow');
+      }
+    });
+  }
+
+  Future<Dio> _authedDio() async {
+    final dio = Dio();
+    const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+    final token = await storage.read(key: 'access_token');
+    if (token != null) {
+      dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+    return dio;
+  }
+
+  void _callApi(Future<void> Function() fn) {
+    fn().catchError((_) {});
   }
 
   void _burstEmoji(String emoji) {
@@ -465,7 +505,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     final reel = _reels[_idx];
     final isLiked = _likedMap[reel.id] ?? false;
     final isSaved = _savedMap[reel.id] ?? false;
-    final isFollowing = _followingMap[reel.userId] ?? false;
+    final isFollowing = _followingMap[reel.username] ?? false;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -607,7 +647,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                   reel: reel,
                   isFollowing: isFollowing,
                   captionExpanded: _expandedCaptions.contains(reel.id),
-                  onFollow: () => _toggleFollow(reel.userId),
+                  onFollow: () => _toggleFollow(reel.username),
                   onToggleCaption: () {
                     setState(() {
                       if (_expandedCaptions.contains(reel.id)) {

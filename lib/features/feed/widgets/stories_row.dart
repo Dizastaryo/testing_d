@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../core/api/api_endpoints.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/story_provider.dart';
 import '../../../core/providers/auth_provider.dart';
@@ -374,8 +377,9 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
   void _toggleLike() {
     HapticFeedback.mediumImpact();
     final storyId = _currentStory.id;
+    final bool wasLiked = _likedStoryIds.contains(storyId);
     setState(() {
-      if (_likedStoryIds.contains(storyId)) {
+      if (wasLiked) {
         _likedStoryIds.remove(storyId);
       } else {
         _likedStoryIds.add(storyId);
@@ -386,6 +390,24 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     });
     _heartBtnAnimController!.reset();
     _heartBtnAnimController!.forward();
+    // Call API in background
+    _likeStoryApi(storyId, !wasLiked);
+  }
+
+  Future<void> _likeStoryApi(String storyId, bool isNowLiked) async {
+    try {
+      final dio = Dio();
+      const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+      final token = await storage.read(key: 'access_token');
+      if (token != null) {
+        dio.options.headers['Authorization'] = 'Bearer $token';
+      }
+      if (isNowLiked) {
+        await dio.post('${ApiEndpoints.baseUrl}${ApiEndpoints.likeStory(storyId)}');
+      } else {
+        await dio.delete('${ApiEndpoints.baseUrl}${ApiEndpoints.likeStory(storyId)}');
+      }
+    } catch (_) {}
   }
 
   Widget _buildOwnStoryBottom(Story story) {
