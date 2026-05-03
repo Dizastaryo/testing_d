@@ -317,7 +317,7 @@ class _ScannerScreenState extends State<ScannerScreen>
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: SeeUColors.surface2,
+                  color: c.surface2,
                   borderRadius: BorderRadius.circular(SeeURadii.pill),
                 ),
                 child: Row(
@@ -365,7 +365,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: isActive ? SeeUColors.surface : Colors.transparent,
+            color: isActive ? c.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(SeeURadii.pill),
             boxShadow: isActive ? SeeUShadows.sm : null,
           ),
@@ -375,7 +375,7 @@ class _ScannerScreenState extends State<ScannerScreen>
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: isActive ? SeeUColors.textPrimary : SeeUColors.textTertiary,
+                color: isActive ? c.ink : c.ink3,
               ),
             ),
           ),
