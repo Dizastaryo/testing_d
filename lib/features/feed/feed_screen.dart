@@ -189,7 +189,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   onRefresh: _onRefresh,
                   color: SeeUColors.accent,
                   child: feedState.posts.isEmpty
-                      ? _buildEmpty()
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [SizedBox(height: MediaQuery.of(context).size.height * 0.3), _buildEmpty()],
+                        )
                       : CustomScrollView(
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
