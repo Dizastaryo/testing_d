@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/feed_provider.dart';
@@ -21,10 +24,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _captionFocus = FocusNode();
   final _locationFocus = FocusNode();
 
-  int? _selectedImageIndex;
+  List<File> _selectedFiles = [];
   bool _isPosting = false;
   bool _locationFocused = false;
   final List<String> _tags = [];
+  final ImagePicker _picker = ImagePicker();
 
   static const int _maxCaption = 2000;
 
@@ -41,13 +45,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     '\u041C\u043E\u0441\u043A\u0432\u0430',
   ];
 
-  List<String> get _mockImages => List.generate(
-        9,
-        (i) => 'https://picsum.photos/seed/seeu_pick_$i/400/400',
-      );
-
-  String? get _selectedImageUrl =>
-      _selectedImageIndex != null ? _mockImages[_selectedImageIndex!] : null;
+  Future<void> _pickImages() async {
+    final pickedFiles = await _picker.pickMultiImage();
+    if (pickedFiles.isNotEmpty) {
+      setState(() {
+        _selectedFiles = pickedFiles.map((xf) => File(xf.path)).toList();
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -83,7 +88,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Future<void> _publish() async {
-    if (_selectedImageUrl == null) return;
+    if (_selectedFiles.isEmpty) return;
     setState(() => _isPosting = true);
     try {
       final captionParts = <String>[];
@@ -95,10 +100,25 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
 
       final api = ref.read(apiClientProvider);
+
+      // Upload each file and collect URLs
+      final List<String> mediaUrls = [];
+      for (final file in _selectedFiles) {
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path),
+        });
+        final uploadResp = await api.post(
+          ApiEndpoints.mediaUpload,
+          data: formData,
+        );
+        final url = uploadResp.data['data']['url'] as String;
+        mediaUrls.add(url);
+      }
+
       await api.post(ApiEndpoints.posts, data: {
         'caption': captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
-        'media_urls': [_selectedImageUrl!],
-        'media_types': ['image'],
+        'media_urls': mediaUrls,
+        'media_types': List.filled(mediaUrls.length, 'image'),
         'location': _locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : '',
       });
       if (mounted) {
@@ -141,7 +161,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final bool canPublish = _selectedImageIndex != null && !_isPosting;
+    final bool canPublish = _selectedFiles.isNotEmpty && !_isPosting;
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -196,7 +216,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Preview ──
-              if (_selectedImageUrl != null) _buildPreview(),
+              if (_selectedFiles.isNotEmpty) _buildPreview(),
 
               // ── Image grid ──
               _buildSectionHeader(
@@ -260,25 +280,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         borderRadius: BorderRadius.circular(SeeURadii.card),
         child: Stack(
           children: [
-            Image.network(
-              _selectedImageUrl!,
+            Image.file(
+              _selectedFiles.first,
               width: double.infinity,
               height: 280,
               fit: BoxFit.cover,
-              loadingBuilder: (_, child, progress) {
-                if (progress == null) return child;
-                return Container(
-                  width: double.infinity,
-                  height: 280,
-                  color: c.surface2,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: SeeUColors.accent,
-                      strokeWidth: 2,
-                    ),
-                  ),
-                );
-              },
               errorBuilder: (_, __, ___) => Container(
                 width: double.infinity,
                 height: 280,
@@ -358,24 +364,55 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   Widget _buildImageGrid() {
     final c = context.seeuColors;
+    final itemCount = _selectedFiles.length + 1; // +1 for the "add" button
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        itemCount: 9,
+        itemCount: itemCount,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           mainAxisSpacing: 8,
           crossAxisSpacing: 8,
         ),
         itemBuilder: (context, index) {
-          final isSelected = _selectedImageIndex == index;
+          // Last item is the "add" button
+          if (index == _selectedFiles.length) {
+            return GestureDetector(
+              onTap: _pickImages,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                  border: Border.all(color: c.line, width: 1.5),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                      color: SeeUColors.accent,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C',
+                      style: SeeUTypography.micro.copyWith(
+                        color: SeeUColors.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           return GestureDetector(
-            onTap: () {
+            onLongPress: () {
               setState(() {
-                _selectedImageIndex =
-                    _selectedImageIndex == index ? null : index;
+                _selectedFiles.removeAt(index);
               });
             },
             child: AnimatedContainer(
@@ -383,35 +420,19 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(SeeURadii.small),
                 border: Border.all(
-                  color: isSelected ? SeeUColors.accent : Colors.transparent,
+                  color: index == 0 ? SeeUColors.accent : Colors.transparent,
                   width: 3,
                 ),
-                boxShadow: isSelected ? SeeUShadows.md : null,
+                boxShadow: index == 0 ? SeeUShadows.md : null,
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(SeeURadii.small - 2),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      _mockImages[index],
+                    Image.file(
+                      _selectedFiles[index],
                       fit: BoxFit.cover,
-                      loadingBuilder: (_, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color: c.surface2,
-                          child: const Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                color: SeeUColors.accent,
-                                strokeWidth: 1.5,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
                       errorBuilder: (_, __, ___) => Container(
                         color: c.surface2,
                         child: Icon(
@@ -421,25 +442,31 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         ),
                       ),
                     ),
-                    if (isSelected)
-                      Container(
-                        color: SeeUColors.accent.withValues(alpha: 0.15),
-                        child: Center(
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              color: SeeUColors.accent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 18,
-                            ),
+                    // Remove button
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedFiles.removeAt(index);
+                          });
+                        },
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 14,
                           ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),

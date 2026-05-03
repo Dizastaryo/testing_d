@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
@@ -76,6 +77,9 @@ class _CameraScreenState extends State<CameraScreen>
   // ── Gallery preview ──
   File? _galleryFile;
   bool _showGalleryPreview = false;
+
+  // ── Upload state ──
+  bool _isUploading = false;
 
   // ── Animation controllers ──
   late AnimationController _switchController;
@@ -549,6 +553,64 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // ── Upload story ─────────────────────────────────────────────────────
+
+  Future<void> _uploadStory(File file) async {
+    if (_isUploading) return;
+    setState(() => _isUploading = true);
+    try {
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      );
+      final token = await storage.read(key: 'access_token');
+      final dio = Dio();
+      if (token != null && token.isNotEmpty) {
+        dio.options.headers['Authorization'] = 'Bearer $token';
+      }
+
+      // Upload file
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path),
+      });
+      final uploadResp = await dio.post(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.mediaUpload}',
+        data: formData,
+      );
+      final mediaUrl = uploadResp.data['data']['url'] as String;
+
+      // Create story
+      await dio.post(
+        '${ApiEndpoints.baseUrl}${ApiEndpoints.stories}',
+        data: {
+          'media_url': mediaUrl,
+          'media_type': 'image',
+        },
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('\u0421\u0442\u043E\u0440\u0438 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D\u0430!'),
+            backgroundColor: Color(0xFF4CAF50),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C: $e'),
+            backgroundColor: const Color(0xFFE53935),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   // ── Gallery preview ────────────────────────────────────────────────────
 
   Widget _buildGalleryPreview() {
@@ -605,21 +667,30 @@ class _CameraScreenState extends State<CameraScreen>
               bottom: 48,
               right: 24,
               child: GestureDetector(
-                onTap: widget.onNext,
+                onTap: _isUploading ? null : () => _uploadStory(_galleryFile!),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
                   decoration: BoxDecoration(
-                    color: _kAccent,
+                    color: _isUploading ? _kAccent.withValues(alpha: 0.6) : _kAccent,
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  child: const Text(
-                    'Далее',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _isUploading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Далее',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
               ),
             ),
