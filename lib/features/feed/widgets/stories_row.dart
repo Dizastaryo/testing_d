@@ -49,7 +49,7 @@ class StoriesRow extends ConsumerWidget {
               username: group.author.username,
               isSeen: group.allSeen,
               onTap: () => _openStoryViewer(
-                  context, storyState.storyGroups, index - 1),
+                  context, storyState.storyGroups, index - 1, me?.id),
             ),
           );
         },
@@ -58,11 +58,11 @@ class StoriesRow extends ConsumerWidget {
   }
 
   void _openStoryViewer(
-      BuildContext context, List<StoryGroup> groups, int groupIndex) {
+      BuildContext context, List<StoryGroup> groups, int groupIndex, String? currentUserId) {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            StoryViewerRoute(groups: groups, initialGroupIndex: groupIndex),
+            StoryViewerRoute(groups: groups, initialGroupIndex: groupIndex, currentUserId: currentUserId),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -102,11 +102,13 @@ class StoriesRow extends ConsumerWidget {
 class StoryViewerRoute extends StatelessWidget {
   final List<StoryGroup> groups;
   final int initialGroupIndex;
+  final String? currentUserId;
 
   const StoryViewerRoute({
     super.key,
     required this.groups,
     required this.initialGroupIndex,
+    this.currentUserId,
   });
 
   @override
@@ -114,6 +116,7 @@ class StoryViewerRoute extends StatelessWidget {
     return _InlineStoryViewer(
       groups: groups,
       initialGroupIndex: initialGroupIndex,
+      currentUserId: currentUserId,
     );
   }
 }
@@ -121,10 +124,12 @@ class StoryViewerRoute extends StatelessWidget {
 class _InlineStoryViewer extends StatefulWidget {
   final List<StoryGroup> groups;
   final int initialGroupIndex;
+  final String? currentUserId;
 
   const _InlineStoryViewer({
     required this.groups,
     required this.initialGroupIndex,
+    this.currentUserId,
   });
 
   @override
@@ -383,6 +388,46 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     _heartBtnAnimController!.forward();
   }
 
+  Widget _buildOwnStoryBottom(Story story) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+      },
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.eye(),
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${story.viewsCount} просмотров',
+              style: SeeUTypography.body.copyWith(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            PhosphorIcon(
+              PhosphorIcons.caretUp(),
+              color: Colors.white70,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _reactWithEmoji(String emoji) {
     HapticFeedback.lightImpact();
     _progressController.stop();
@@ -414,6 +459,8 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     final story = _currentStory;
     final group = _currentGroup;
     final isLiked = _likedStoryIds.contains(story.id);
+    final isOwnStory = widget.currentUserId != null &&
+        group.author.id == widget.currentUserId;
 
     // Derive a per-group accent color for gradient backgrounds
     final List<List<Color>> gradientPalette = [
@@ -798,7 +845,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
               ),
             ),
 
-            // Bottom section: emoji reactions + reply bar
+            // Bottom section: viewers (own) or emoji reactions + reply bar (others)
             if (!_isReplyOpen)
               Positioned(
                 bottom: 0,
@@ -807,7 +854,9 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                 child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                    child: Column(
+                    child: isOwnStory
+                        ? _buildOwnStoryBottom(story)
+                        : Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // Emoji quick-react row

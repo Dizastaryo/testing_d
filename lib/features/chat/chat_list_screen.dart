@@ -74,9 +74,25 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Чаты',
-                    style: SeeUTypography.displayL,
+                  Row(
+                    children: [
+                      if (Navigator.of(context).canPop())
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Icon(
+                              Icons.arrow_back_ios_rounded,
+                              size: 22,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                      Text(
+                        'Чаты',
+                        style: SeeUTypography.displayL,
+                      ),
+                    ],
                   ),
                   GestureDetector(
                     onTap: _showNewChatPicker,

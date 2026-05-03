@@ -263,6 +263,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 StoryViewerRoute(
                               groups: storyState.storyGroups,
                               initialGroupIndex: groupIndex,
+                              currentUserId: ref.read(authProvider).user?.id,
                             ),
                             transitionsBuilder:
                                 (ctx, anim, secAnim, child) =>
@@ -352,7 +353,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
         // ── Highlights ─────────────────────────────────────────────
         if (profileState.highlights.isNotEmpty) ...[
-          _HighlightsRow(highlights: profileState.highlights),
+          _HighlightsRow(highlights: profileState.highlights, currentUserId: ref.read(authProvider).user?.id),
           const SizedBox(height: 4),
         ],
       ],
@@ -755,8 +756,9 @@ class _StatItem extends StatelessWidget {
 
 class _HighlightsRow extends StatelessWidget {
   final List<Highlight> highlights;
+  final String? currentUserId;
 
-  const _HighlightsRow({required this.highlights});
+  const _HighlightsRow({required this.highlights, this.currentUserId});
 
   @override
   Widget build(BuildContext context) {
@@ -786,6 +788,7 @@ class _HighlightsRow extends StatelessWidget {
                           StoryViewerRoute(
                         groups: [group],
                         initialGroupIndex: 0,
+                        currentUserId: currentUserId,
                       ),
                       transitionsBuilder:
                           (ctx, anim, secAnim, child) =>
