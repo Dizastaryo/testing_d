@@ -552,7 +552,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildDeviceDot(_ResolvedEntry entry, int index, int total) {
-    final c = context.seeuColors;
     final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
     final dist = _rssiToMeters(entry.device.rssi);
     final r = (dist / 50).clamp(0.0, 1.0) * 110 + 28;
@@ -648,7 +647,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   // ─── List view ─────────────────────────────────────────────────────────
 
   Widget _buildListView(List<_ResolvedEntry> entries) {
-    final c = context.seeuColors;
     if (entries.isEmpty) return _buildEmptyState();
 
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
@@ -806,7 +804,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildChipOffBanner() {
-    final c = context.seeuColors;
     return Container(
       padding: const EdgeInsets.all(20),
       margin: const EdgeInsets.only(top: 8),
@@ -835,7 +832,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildEmptyState() {
-    final c = context.seeuColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -883,7 +879,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildFab() {
-    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: _bluetoothOn ? _toggleScan : null,
       child: AnimatedContainer(
@@ -999,7 +994,6 @@ class _PersonSheetState extends State<_PersonSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Column(
