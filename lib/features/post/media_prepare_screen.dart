@@ -98,12 +98,17 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
       );
       final token = await storage.read(key: 'access_token');
-      final dio = Dio();
-      if (token != null && token.isNotEmpty) {
-        dio.options.headers['Authorization'] = 'Bearer $token';
-      }
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 120),
+        headers: {
+          if (token != null && token.isNotEmpty)
+            'Authorization': 'Bearer $token',
+        },
+      ));
 
-      // Upload file
+      // 1. Upload media file
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(widget.file.path),
       });
@@ -115,7 +120,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       final mediaType = widget.isVideo ? 'video' : 'image';
 
       if (_publishMode == 0) {
-        // ── Story ──
+        // 2a. Create Story
         await dio.post(
           '${ApiEndpoints.baseUrl}${ApiEndpoints.stories}',
           data: {
@@ -134,7 +139,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           context.go('/feed');
         }
       } else {
-        // ── Post ──
+        // 2b. Create Post
         final captionParts = <String>[];
         if (_captionCtrl.text.trim().isNotEmpty) {
           captionParts.add(_captionCtrl.text.trim());
@@ -143,14 +148,17 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           captionParts.add(_tags.map((t) => '#$t').join(' '));
         }
 
+        final postData = <String, dynamic>{
+          'caption': captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
+          'media_urls': [mediaUrl],
+          'media_types': [mediaType],
+        };
+        final loc = _locationCtrl.text.trim();
+        if (loc.isNotEmpty) postData['location'] = loc;
+
         await dio.post(
           '${ApiEndpoints.baseUrl}${ApiEndpoints.posts}',
-          data: {
-            'caption': captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
-            'media_urls': [mediaUrl],
-            'media_types': [mediaType],
-            'location': _locationCtrl.text.trim(),
-          },
+          data: postData,
         );
         if (mounted) {
           ref.read(feedProvider.notifier).refresh();
@@ -166,11 +174,19 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         }
       }
     } catch (e) {
+      debugPrint('Publish error: $e');
       if (mounted) {
         setState(() => _isPublishing = false);
+        String msg = 'Не удалось опубликовать';
+        if (e is DioException && e.response != null) {
+          final data = e.response?.data;
+          if (data is Map && data['error'] != null) {
+            msg = data['error'].toString();
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка: $e'),
+            content: Text(msg),
             backgroundColor: SeeUColors.error,
             behavior: SnackBarBehavior.floating,
           ),
