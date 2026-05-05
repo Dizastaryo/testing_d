@@ -850,6 +850,14 @@ class _PostsGrid extends StatelessWidget {
 
   const _PostsGrid({required this.posts});
 
+  String _postCoverUrl(Post post) {
+    final isVideo = post.media.any((m) => m.type == MediaType.video);
+    if (isVideo && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty) {
+      return post.thumbnailUrl!;
+    }
+    return post.media.first.url;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -907,13 +915,29 @@ class _PostsGrid extends StatelessWidget {
                   ),
                 )
               : post.media.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: post.media.first.url,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(color: c.surface2),
-                      errorWidget: (_, __, ___) =>
-                          Container(color: c.surface2),
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedNetworkImage(
+                          imageUrl: _postCoverUrl(post),
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              Container(color: c.surface2),
+                          errorWidget: (_, __, ___) =>
+                              Container(color: c.surface2),
+                        ),
+                        if (post.media.any((m) => m.type == MediaType.video))
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Icon(
+                              PhosphorIcons.play(PhosphorIconsStyle.fill),
+                              color: Colors.white,
+                              size: 14,
+                              shadows: const [Shadow(color: Color(0x80000000), blurRadius: 4)],
+                            ),
+                          ),
+                      ],
                     )
                   : Container(color: c.surface2),
         );

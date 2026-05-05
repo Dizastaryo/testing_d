@@ -576,10 +576,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               itemCount: filteredPosts.length,
               itemBuilder: (context, index) {
                 final post = filteredPosts[index];
-                final imgUrl = post.media.isNotEmpty ? post.media.first.url : '';
+                final isVideo = post.media.any((m) => m.type == MediaType.video);
+                final imgUrl = isVideo && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty
+                    ? post.thumbnailUrl!
+                    : (post.media.isNotEmpty ? post.media.first.url : '');
                 return GestureDetector(
                   onTap: () {
-                    final isVideo = post.media.any((m) => m.type == MediaType.video);
                     if (isVideo) {
                       context.push('/reels');
                     } else {
@@ -627,10 +629,13 @@ class _MasonryGrid extends StatelessWidget {
   Widget _buildCell(BuildContext context, int index, double cellSize) {
     final c = context.seeuColors;
     final post = posts[index];
-    final imageUrl = post.media.isNotEmpty ? post.media.first.url : '';
+    final isReel = post.media.any((m) => m.type == MediaType.video);
+    // For video posts: use thumbnail, for images: use first media URL
+    final imageUrl = isReel && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty
+        ? post.thumbnailUrl!
+        : (post.media.isNotEmpty ? post.media.first.url : '');
     final likeCount = post.likesCount;
     final isTall = (index + 3) % 7 == 0;
-    final isReel = post.media.any((m) => m.type == MediaType.video);
     final height = isTall ? cellSize * 2 + 2 : cellSize;
 
     return GestureDetector(

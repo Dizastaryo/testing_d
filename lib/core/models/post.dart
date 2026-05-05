@@ -57,6 +57,7 @@ class Post {
   final List<PostMedia> media;
   final String? caption;
   final String? location;
+  final String? thumbnailUrl;
   final int likesCount;
   final int commentsCount;
   final bool isLiked;
@@ -72,6 +73,7 @@ class Post {
     required this.media,
     this.caption,
     this.location,
+    this.thumbnailUrl,
     this.likesCount = 0,
     this.commentsCount = 0,
     this.isLiked = false,
@@ -107,12 +109,19 @@ class Post {
     // Support both 'author' and 'user' keys for the post author
     final authorJson = (json['author'] ?? json['user']) as Map<String, dynamic>? ?? {};
 
+    // Parse thumbnail_url
+    final rawThumb = json['thumbnail_url']?.toString();
+    final thumbnailUrl = (rawThumb != null && rawThumb.isNotEmpty)
+        ? _toAbsoluteUrl(rawThumb)
+        : null;
+
     return Post(
       id: json['id']?.toString() ?? '',
       author: User.fromJson(authorJson),
       media: mediaList,
       caption: json['caption']?.toString(),
       location: json['location']?.toString(),
+      thumbnailUrl: thumbnailUrl,
       likesCount: (json['likes_count'] ?? json['likesCount'] ?? 0) as int,
       commentsCount: (json['comments_count'] ?? json['commentsCount'] ?? 0) as int,
       isLiked: (json['is_liked'] ?? json['isLiked'] ?? false) as bool,
@@ -132,6 +141,7 @@ class Post {
     'media': media.map((m) => m.toJson()).toList(),
     'caption': caption,
     'location': location,
+    'thumbnail_url': thumbnailUrl,
     'likes_count': likesCount,
     'comments_count': commentsCount,
     'is_liked': isLiked,
@@ -148,6 +158,7 @@ class Post {
     List<PostMedia>? media,
     String? caption,
     String? location,
+    String? thumbnailUrl,
     int? likesCount,
     int? commentsCount,
     bool? isLiked,
@@ -163,6 +174,7 @@ class Post {
       media: media ?? this.media,
       caption: caption ?? this.caption,
       location: location ?? this.location,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       likesCount: likesCount ?? this.likesCount,
       commentsCount: commentsCount ?? this.commentsCount,
       isLiked: isLiked ?? this.isLiked,
