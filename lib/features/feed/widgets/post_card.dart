@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:video_player/video_player.dart';
+import '../../video/fullscreen_video_player.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
 import '../../../core/providers/feed_provider.dart';
@@ -1171,7 +1172,6 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
   VideoPlayerController? _controller;
   bool _initialized = false;
   bool _hasError = false;
-  bool _showPlayIcon = false;
   bool _isMuted = true;
 
   @override
@@ -1206,17 +1206,6 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
   void dispose() {
     _controller?.dispose();
     super.dispose();
-  }
-
-  void _togglePlay() {
-    if (_controller == null || !_initialized) return;
-    if (_controller!.value.isPlaying) {
-      _controller!.pause();
-      setState(() => _showPlayIcon = true);
-    } else {
-      _controller!.play();
-      setState(() => _showPlayIcon = false);
-    }
   }
 
   void _toggleMute() {
@@ -1265,7 +1254,21 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
       );
     }
     return GestureDetector(
-      onTap: _togglePlay,
+      onTap: () {
+        // Pause feed player and open fullscreen
+        _controller?.pause();
+        Navigator.of(context).push(
+          PageRouteBuilder(
+            opaque: false,
+            pageBuilder: (_, __, ___) => FullscreenVideoPlayer(url: widget.url),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+          ),
+        ).then((_) {
+          // Resume on return
+          if (mounted) _controller?.play();
+        });
+      },
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1277,19 +1280,6 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
               child: VideoPlayer(_controller!),
             ),
           ),
-          // Play icon overlay
-          if (_showPlayIcon)
-            Center(
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
-              ),
-            ),
           // Mute toggle
           Positioned(
             bottom: 8,
@@ -1308,26 +1298,6 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
                   color: Colors.white,
                   size: 16,
                 ),
-              ),
-            ),
-          ),
-          // Video indicator
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.videocam_rounded, color: Colors.white, size: 14),
-                  SizedBox(width: 4),
-                  Text('Видео', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                ],
               ),
             ),
           ),
