@@ -12,6 +12,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
+import '../post/media_prepare_screen.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -668,35 +669,38 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-            // "Далее" button
+            // "Далее" button → open MediaPrepareScreen
             Positioned(
               bottom: 48,
               right: 24,
               child: GestureDetector(
-                onTap: _isUploading ? null : () => _uploadStory(_galleryFile!),
+                onTap: () {
+                  final file = _galleryFile!;
+                  final ext = file.path.split('.').last.toLowerCase();
+                  final isVideo = ['mp4', 'mov', 'webm', 'avi'].contains(ext);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => MediaPrepareScreen(
+                        file: file,
+                        isVideo: isVideo,
+                      ),
+                    ),
+                  );
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
                   decoration: BoxDecoration(
-                    color: _isUploading ? _kAccent.withValues(alpha: 0.6) : _kAccent,
+                    color: _kAccent,
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  child: _isUploading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Далее',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                  child: const Text(
+                    'Далее',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ),
