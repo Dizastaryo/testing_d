@@ -525,7 +525,11 @@ class _ReelsScreenState extends State<ReelsScreen>
                     ? Duration.zero
                     : const Duration(milliseconds: 350),
                 curve: Curves.easeOutCubic,
-                child: _ReelBackground(reel: reel),
+                child: _ReelBackground(
+                  reel: reel,
+                  playing: _playing,
+                  nextReel: _idx + 1 < _reels.length ? _reels[_idx + 1] : null,
+                ),
               ),
 
               // ── Top vignette + bottom vignette overlay ──
@@ -675,62 +679,162 @@ class _ReelsScreenState extends State<ReelsScreen>
 
 class _ReelBackground extends StatefulWidget {
   final _Reel reel;
-  const _ReelBackground({required this.reel});
+  final bool playing;
+  final _Reel? nextReel; // preload next
+  const _ReelBackground({
+    required this.reel,
+    this.playing = true,
+    this.nextReel,
+  });
 
   @override
   State<_ReelBackground> createState() => _ReelBackgroundState();
 }
 
 class _ReelBackgroundState extends State<_ReelBackground> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
+  VideoPlayerController? _nextController; // preloaded
   bool _initialized = false;
+  bool _hasError = false;
+  String? _preloadedUrl;
 
   @override
   void initState() {
     super.initState();
     _initVideo();
+    _preloadNext();
   }
 
   void _initVideo() {
-    _controller =
-        VideoPlayerController.networkUrl(Uri.parse(widget.reel.videoUrl))
-          ..setLooping(true)
-          ..initialize().then((_) {
-            if (mounted) {
-              setState(() => _initialized = true);
-              _controller.play();
-            }
-          });
+    _hasError = false;
+    _initialized = false;
+
+    // Check if we already preloaded this video
+    if (_nextController != null &&
+        _preloadedUrl == widget.reel.videoUrl) {
+      _controller = _nextController;
+      _nextController = null;
+      _preloadedUrl = null;
+      if (_controller!.value.isInitialized) {
+        _initialized = true;
+        _controller!.setLooping(true);
+        if (widget.playing) _controller!.play();
+        if (mounted) setState(() {});
+        return;
+      }
+    }
+
+    _controller?.dispose();
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.reel.videoUrl),
+      httpHeaders: const {'Connection': 'keep-alive'},
+    );
+    _controller!
+      ..setLooping(true)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          if (widget.playing) {
+            _controller!.play();
+          }
+        }
+      }).catchError((e) {
+        debugPrint('Video init error: $e');
+        if (mounted) setState(() => _hasError = true);
+      });
+  }
+
+  void _preloadNext() {
+    final nextUrl = widget.nextReel?.videoUrl;
+    if (nextUrl == null || nextUrl.isEmpty || nextUrl == _preloadedUrl) return;
+
+    _nextController?.dispose();
+    _preloadedUrl = nextUrl;
+    _nextController = VideoPlayerController.networkUrl(
+      Uri.parse(nextUrl),
+      httpHeaders: const {'Connection': 'keep-alive'},
+    );
+    _nextController!.initialize().catchError((e) {
+      debugPrint('Preload error: $e');
+      _nextController?.dispose();
+      _nextController = null;
+      _preloadedUrl = null;
+    });
   }
 
   @override
   void didUpdateWidget(covariant _ReelBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // Reel changed → switch video
     if (oldWidget.reel.id != widget.reel.id) {
-      _controller.dispose();
-      _initialized = false;
+      _controller?.dispose();
+      _controller = null;
       _initVideo();
+      _preloadNext();
+      return;
+    }
+
+    // Play/pause sync
+    if (oldWidget.playing != widget.playing && _initialized && _controller != null) {
+      if (widget.playing) {
+        _controller!.play();
+      } else {
+        _controller!.pause();
+      }
+    }
+
+    // Preload next changed
+    if (oldWidget.nextReel?.id != widget.nextReel?.id) {
+      _preloadNext();
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
+    _nextController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return Container(color: Colors.black);
+    if (_hasError) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline_rounded, color: Colors.white38, size: 48),
+              SizedBox(height: 12),
+              Text(
+                'Не удалось загрузить видео',
+                style: TextStyle(color: Colors.white38, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (!_initialized || _controller == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Colors.white24,
+            strokeWidth: 2.5,
+          ),
+        ),
+      );
     }
     return SizedBox.expand(
       child: FittedBox(
         fit: BoxFit.cover,
         child: SizedBox(
-          width: _controller.value.size.width,
-          height: _controller.value.size.height,
-          child: VideoPlayer(_controller),
+          width: _controller!.value.size.width,
+          height: _controller!.value.size.height,
+          child: VideoPlayer(_controller!),
         ),
       ),
     );

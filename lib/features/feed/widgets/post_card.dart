@@ -1166,44 +1166,97 @@ class _FeedVideoPlayer extends StatefulWidget {
   State<_FeedVideoPlayer> createState() => _FeedVideoPlayerState();
 }
 
-class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
-  late VideoPlayerController _controller;
+class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
+    with AutomaticKeepAliveClientMixin {
+  VideoPlayerController? _controller;
   bool _initialized = false;
+  bool _hasError = false;
   bool _showPlayIcon = false;
+  bool _isMuted = true;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+    _initController();
+  }
+
+  void _initController() {
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.url),
+      httpHeaders: const {'Connection': 'keep-alive'},
+    );
+    _controller!
       ..setLooping(true)
-      ..setVolume(0) // muted by default in feed
+      ..setVolume(0)
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);
-          _controller.play();
+          _controller!.play();
         }
+      }).catchError((e) {
+        debugPrint('Feed video error: $e');
+        if (mounted) setState(() => _hasError = true);
       });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   void _togglePlay() {
-    if (_controller.value.isPlaying) {
-      _controller.pause();
+    if (_controller == null || !_initialized) return;
+    if (_controller!.value.isPlaying) {
+      _controller!.pause();
       setState(() => _showPlayIcon = true);
     } else {
-      _controller.play();
+      _controller!.play();
       setState(() => _showPlayIcon = false);
     }
   }
 
+  void _toggleMute() {
+    if (_controller == null) return;
+    setState(() => _isMuted = !_isMuted);
+    _controller!.setVolume(_isMuted ? 0 : 1);
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
+    super.build(context);
+    if (_hasError) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _hasError = false;
+                _initialized = false;
+              });
+              _controller?.dispose();
+              _initController();
+            },
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.refresh_rounded, color: Colors.white38, size: 40),
+                SizedBox(height: 8),
+                Text(
+                  'Нажмите для повтора',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (!_initialized || _controller == null) {
       return Container(
         color: Colors.black,
         child: const Center(
@@ -1219,9 +1272,9 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
           FittedBox(
             fit: BoxFit.cover,
             child: SizedBox(
-              width: _controller.value.size.width,
-              height: _controller.value.size.height,
-              child: VideoPlayer(_controller),
+              width: _controller!.value.size.width,
+              height: _controller!.value.size.height,
+              child: VideoPlayer(_controller!),
             ),
           ),
           // Play icon overlay
@@ -1237,6 +1290,27 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
                 child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
               ),
             ),
+          // Mute toggle
+          Positioned(
+            bottom: 8,
+            right: 8,
+            child: GestureDetector(
+              onTap: _toggleMute,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+          ),
           // Video indicator
           Positioned(
             top: 8,
