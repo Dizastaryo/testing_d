@@ -11,7 +11,7 @@ import '../../core/providers/story_provider.dart';
 import '../feed/widgets/stories_row.dart';
 import '../../core/models/user.dart';
 import '../../core/models/post.dart';
-import '../video/fullscreen_video_player.dart';
+import '../post/profile_posts_feed.dart';
 import '../../core/models/highlight.dart';
 import '../../core/models/story.dart';
 
@@ -895,22 +895,16 @@ class _PostsGrid extends StatelessWidget {
       itemCount: posts.length,
       itemBuilder: (context, index) {
         final post = posts[index];
-        final isVideo = post.media.any((m) => m.type == MediaType.video);
         return GestureDetector(
           onTap: () {
-            if (isVideo) {
-              final videoMedia = post.media.firstWhere((m) => m.type == MediaType.video);
-              Navigator.of(context).push(
-                PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => FullscreenVideoPlayer(url: videoMedia.url),
-                  transitionsBuilder: (_, anim, __, child) =>
-                      FadeTransition(opacity: anim, child: child),
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ProfilePostsFeed(
+                  posts: posts,
+                  initialIndex: index,
                 ),
-              );
-            } else {
-              context.push('/post/${post.id}');
-            }
+              ),
+            );
           },
           child: post.isWave
               ? Container(
