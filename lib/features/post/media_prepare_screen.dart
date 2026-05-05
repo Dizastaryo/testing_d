@@ -49,6 +49,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   final List<String> _tags = [];
   bool _isPublishing = false;
   AudioTrack? _selectedTrack;
+  double _audioStartSec = 0; // start of selected audio segment
 
   // Video preview
   VideoPlayerController? _videoCtrl;
@@ -358,70 +359,202 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     );
   }
 
-  // ── Music button ────────────────────────────────────────────────────────
+  // ── Music button + trim slider ──────────────────────────────────────────
+
+  /// Duration of the clip the user is publishing (video length or 15s for photo)
+  double get _clipDuration {
+    if (widget.isVideo && _videoCtrl != null && _videoReady) {
+      final d = _videoCtrl!.value.duration.inMilliseconds / 1000.0;
+      return d > 0 ? d : 15;
+    }
+    return 15; // photo story/post shows 15s
+  }
+
+  String _fmtSec(double s) {
+    final m = s ~/ 60;
+    final sec = (s % 60).toInt();
+    return '$m:${sec.toString().padLeft(2, '0')}';
+  }
 
   Widget _buildMusicButton(SeeUThemeColors c) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: GestureDetector(
-        onTap: _openMusicPicker,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
-            border: Border.all(
-              color: _selectedTrack != null
-                  ? SeeUColors.accent.withValues(alpha: 0.4)
-                  : c.line,
+      child: Column(
+        children: [
+          // Track selector row
+          GestureDetector(
+            onTap: _openMusicPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: c.surface2,
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
+                border: Border.all(
+                  color: _selectedTrack != null
+                      ? SeeUColors.accent.withValues(alpha: 0.4)
+                      : c.line,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    PhosphorIcons.musicNotes(),
+                    size: 18,
+                    color: _selectedTrack != null ? SeeUColors.accent : c.ink3,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _selectedTrack != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedTrack!.title,
+                                style: SeeUTypography.caption.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                _selectedTrack!.artist,
+                                style: SeeUTypography.micro.copyWith(color: c.ink3),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            'Добавить музыку',
+                            style: SeeUTypography.body.copyWith(
+                              fontSize: 14,
+                              color: c.ink3,
+                            ),
+                          ),
+                  ),
+                  if (_selectedTrack != null)
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedTrack = null;
+                        _audioStartSec = 0;
+                      }),
+                      child: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
+                    )
+                  else
+                    Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink3),
+                ],
+              ),
             ),
           ),
-          child: Row(
-            children: [
-              Icon(
-                PhosphorIcons.musicNotes(),
-                size: 18,
-                color: _selectedTrack != null ? SeeUColors.accent : c.ink3,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _selectedTrack != null
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _selectedTrack!.title,
-                            style: SeeUTypography.caption.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+
+          // Audio trim slider (shown when track selected)
+          if (_selectedTrack != null) _buildAudioTrimSlider(c),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAudioTrimSlider(SeeUThemeColors c) {
+    final track = _selectedTrack!;
+    final totalDur = track.durationSeconds.toDouble();
+    if (totalDur <= 0) return const SizedBox.shrink();
+
+    final clipDur = _clipDuration.clamp(1.0, totalDur);
+    final maxStart = (totalDur - clipDur).clamp(0.0, totalDur);
+    final endSec = (_audioStartSec + clipDur).clamp(0.0, totalDur);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        children: [
+          // Visual trim bar
+          SizedBox(
+            height: 40,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final leftFrac = maxStart > 0 ? _audioStartSec / totalDur : 0.0;
+                final widthFrac = clipDur / totalDur;
+
+                return GestureDetector(
+                  onHorizontalDragUpdate: (d) {
+                    if (maxStart <= 0) return;
+                    final delta = d.delta.dx / w * totalDur;
+                    setState(() {
+                      _audioStartSec = (_audioStartSec + delta).clamp(0.0, maxStart);
+                    });
+                  },
+                  child: Stack(
+                    children: [
+                      // Background bar (full track)
+                      Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: c.surface2,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        // Fake waveform bars
+                        child: CustomPaint(
+                          painter: _WaveformPainter(
+                            color: c.ink3.withValues(alpha: 0.3),
+                            barCount: 60,
                           ),
-                          Text(
-                            _selectedTrack!.artist,
-                            style: SeeUTypography.micro.copyWith(color: c.ink3),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        'Добавить музыку',
-                        style: SeeUTypography.body.copyWith(
-                          fontSize: 14,
-                          color: c.ink3,
+                          size: Size(w, 40),
                         ),
                       ),
+                      // Selected range highlight
+                      Positioned(
+                        left: leftFrac * w,
+                        width: widthFrac * w,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accent.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: SeeUColors.accent,
+                              width: 2,
+                            ),
+                          ),
+                          // Active waveform
+                          child: CustomPaint(
+                            painter: _WaveformPainter(
+                              color: SeeUColors.accent.withValues(alpha: 0.6),
+                              barCount: (60 * widthFrac).round().clamp(5, 60),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Time labels
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _fmtSec(_audioStartSec),
+                style: SeeUTypography.micro.copyWith(
+                  color: SeeUColors.accent, fontWeight: FontWeight.w600,
+                ),
               ),
-              if (_selectedTrack != null)
-                GestureDetector(
-                  onTap: () => setState(() => _selectedTrack = null),
-                  child: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
-                )
-              else
-                Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink3),
+              Text(
+                'Выбрано ${clipDur.toInt()} сек',
+                style: SeeUTypography.micro.copyWith(color: c.ink3),
+              ),
+              Text(
+                _fmtSec(endSec),
+                style: SeeUTypography.micro.copyWith(
+                  color: SeeUColors.accent, fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -433,7 +566,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => _MusicPickerSheet(
         onSelect: (track) {
-          setState(() => _selectedTrack = track);
+          setState(() {
+            _selectedTrack = track;
+            _audioStartSec = 0;
+          });
           Navigator.of(context).pop();
         },
       ),
@@ -805,4 +941,35 @@ class _MusicPickerSheetState extends ConsumerState<_MusicPickerSheet> {
       ),
     );
   }
+}
+
+// ── Waveform painter (decorative bars) ─────────────────────────────────────
+
+class _WaveformPainter extends CustomPainter {
+  final Color color;
+  final int barCount;
+
+  _WaveformPainter({required this.color, this.barCount = 60});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round;
+    final barW = 2.0;
+    final gap = (size.width - barCount * barW) / (barCount + 1);
+    // Deterministic pseudo-random heights
+    for (int i = 0; i < barCount; i++) {
+      final seed = (i * 7 + 3) % 13;
+      final h = size.height * (0.2 + 0.6 * (seed / 13.0));
+      final x = gap + i * (barW + gap) + barW / 2;
+      final top = (size.height - h) / 2;
+      paint.strokeWidth = barW;
+      canvas.drawLine(Offset(x, top), Offset(x, top + h), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter old) =>
+      old.color != color || old.barCount != barCount;
 }
