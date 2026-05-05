@@ -248,6 +248,84 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
   return SearchNotifier(api);
 });
 
+// Audio track model
+class AudioTrack {
+  final String id;
+  final String title;
+  final String artist;
+  final String coverUrl;
+  final String audioUrl;
+  final int durationSeconds;
+  final int usesCount;
+  final String genre;
+
+  const AudioTrack({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.coverUrl,
+    required this.audioUrl,
+    this.durationSeconds = 0,
+    this.usesCount = 0,
+    this.genre = '',
+  });
+
+  factory AudioTrack.fromJson(Map<String, dynamic> json) {
+    final baseUrl = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
+    String toAbs(String url) =>
+        url.startsWith('/') ? baseUrl + url : url;
+    return AudioTrack(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      artist: json['artist']?.toString() ?? '',
+      coverUrl: toAbs(json['cover_url']?.toString() ?? ''),
+      audioUrl: toAbs(json['audio_url']?.toString() ?? ''),
+      durationSeconds: (json['duration_seconds'] ?? 0) as int,
+      usesCount: (json['uses_count'] ?? 0) as int,
+      genre: json['genre']?.toString() ?? '',
+    );
+  }
+}
+
+// Trending tag model
+class TrendingTag {
+  final String tag;
+  final int postsCount;
+
+  const TrendingTag({required this.tag, required this.postsCount});
+
+  factory TrendingTag.fromJson(Map<String, dynamic> json) {
+    return TrendingTag(
+      tag: json['tag']?.toString() ?? '',
+      postsCount: (json['posts_count'] ?? 0) as int,
+    );
+  }
+}
+
+// Audio tracks provider
+final audioTracksProvider = FutureProvider<List<AudioTrack>>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  final resp = await api.get(ApiEndpoints.audioTracks);
+  final data = resp.data;
+  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+  if (listData is List) {
+    return listData.map((j) => AudioTrack.fromJson(j as Map<String, dynamic>)).toList();
+  }
+  return [];
+});
+
+// Trending tags provider
+final trendingTagsProvider = FutureProvider<List<TrendingTag>>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  final resp = await api.get(ApiEndpoints.trendingTags);
+  final data = resp.data;
+  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+  if (listData is List) {
+    return listData.map((j) => TrendingTag.fromJson(j as Map<String, dynamic>)).toList();
+  }
+  return [];
+});
+
 // Explore grid posts provider
 final explorePostsProvider = FutureProvider<List<Post>>((ref) async {
   final api = ref.watch(apiClientProvider);

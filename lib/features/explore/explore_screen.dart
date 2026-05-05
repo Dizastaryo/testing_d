@@ -77,7 +77,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             Expanded(
               child: hasQuery
                   ? _buildSearchResults(searchState)
-                  : _buildMixedGrid(),
+                  : _selectedTab == 3
+                      ? _buildAudioTab()
+                      : _selectedTab == 4
+                          ? _buildTagsTab()
+                          : _buildMixedGrid(),
             ),
           ],
         ),
@@ -231,7 +235,147 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     );
   }
 
-  // Keep the old name so the build method can call either; delegate to header.
+  // =========================================================================
+  // Audio tab
+  // =========================================================================
+
+  Widget _buildAudioTab() {
+    final c = context.seeuColors;
+    final audioAsync = ref.watch(audioTracksProvider);
+
+    return audioAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: SeeUColors.accent),
+      ),
+      error: (_, __) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIcons.warning(), size: 48, color: c.ink3),
+            const SizedBox(height: 12),
+            Text('Не удалось загрузить', style: SeeUTypography.body.copyWith(color: c.ink2)),
+            const SizedBox(height: 12),
+            SeeUButton(
+              label: 'Повторить',
+              variant: SeeUButtonVariant.primary,
+              width: 120,
+              height: 44,
+              onTap: () => ref.refresh(audioTracksProvider),
+            ),
+          ],
+        ),
+      ),
+      data: (tracks) {
+        if (tracks.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(PhosphorIcons.musicNotes(), size: 48, color: c.ink3),
+                const SizedBox(height: 12),
+                Text('Нет аудио', style: SeeUTypography.body.copyWith(color: c.ink2)),
+              ],
+            ),
+          );
+        }
+
+        return AnimationLimiter(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            itemCount: tracks.length,
+            itemBuilder: (context, index) {
+              final track = tracks[index];
+              return AnimationConfiguration.staggeredList(
+                position: index,
+                duration: const Duration(milliseconds: 300),
+                child: SlideAnimation(
+                  verticalOffset: 20,
+                  child: FadeInAnimation(
+                    child: _AudioTrackCard(track: track),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  // =========================================================================
+  // Tags tab
+  // =========================================================================
+
+  Widget _buildTagsTab() {
+    final c = context.seeuColors;
+    final tagsAsync = ref.watch(trendingTagsProvider);
+
+    return tagsAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: SeeUColors.accent),
+      ),
+      error: (_, __) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIcons.warning(), size: 48, color: c.ink3),
+            const SizedBox(height: 12),
+            Text('Не удалось загрузить', style: SeeUTypography.body.copyWith(color: c.ink2)),
+            const SizedBox(height: 12),
+            SeeUButton(
+              label: 'Повторить',
+              variant: SeeUButtonVariant.primary,
+              width: 120,
+              height: 44,
+              onTap: () => ref.refresh(trendingTagsProvider),
+            ),
+          ],
+        ),
+      ),
+      data: (tags) {
+        if (tags.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(PhosphorIcons.hash(), size: 48, color: c.ink3),
+                const SizedBox(height: 12),
+                Text('Нет тегов', style: SeeUTypography.body.copyWith(color: c.ink2)),
+              ],
+            ),
+          );
+        }
+
+        return AnimationLimiter(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            itemCount: tags.length,
+            itemBuilder: (context, index) {
+              final tag = tags[index];
+              return AnimationConfiguration.staggeredList(
+                position: index,
+                duration: const Duration(milliseconds: 250),
+                child: SlideAnimation(
+                  verticalOffset: 16,
+                  child: FadeInAnimation(
+                    child: _TagCard(
+                      tag: tag,
+                      onTap: () {
+                        _searchCtrl.text = '#${tag.tag}';
+                        _onSearchChanged('#${tag.tag}');
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   // =========================================================================
   // Mixed grid: tags + masonry posts grid
   // =========================================================================
@@ -805,6 +949,237 @@ class _UserSearchCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Audio track card
+// ===========================================================================
+
+class _AudioTrackCard extends StatelessWidget {
+  final AudioTrack track;
+  const _AudioTrackCard({required this.track});
+
+  String _formatDuration(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  String _formatUses(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}М';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}К';
+    return '$n';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          border: Border.all(color: c.line, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            // Cover art
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: track.coverUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: track.coverUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          color: c.surface2,
+                          child: Icon(PhosphorIcons.musicNotes(),
+                              color: c.ink3, size: 24),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: c.surface2,
+                          child: Icon(PhosphorIcons.musicNotes(),
+                              color: c.ink3, size: 24),
+                        ),
+                      )
+                    : Container(
+                        color: c.surface2,
+                        child: Icon(PhosphorIcons.musicNotes(),
+                            color: c.ink3, size: 24),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // Title + artist + meta
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    track.title,
+                    style: SeeUTypography.subtitle.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    track.artist,
+                    style: SeeUTypography.caption.copyWith(color: c.ink3),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(PhosphorIcons.play(PhosphorIconsStyle.fill),
+                          size: 11, color: c.ink3),
+                      const SizedBox(width: 3),
+                      Text(
+                        _formatUses(track.usesCount),
+                        style: SeeUTypography.micro.copyWith(
+                          color: c.ink3,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(PhosphorIcons.clock(), size: 11, color: c.ink3),
+                      const SizedBox(width: 3),
+                      Text(
+                        _formatDuration(track.durationSeconds),
+                        style: SeeUTypography.micro.copyWith(color: c.ink3),
+                      ),
+                      if (track.genre.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            track.genre,
+                            style: SeeUTypography.micro.copyWith(
+                              color: SeeUColors.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Play button
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: SeeUColors.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                PhosphorIcons.play(PhosphorIconsStyle.fill),
+                size: 16,
+                color: SeeUColors.accent,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Tag card
+// ===========================================================================
+
+class _TagCard extends StatelessWidget {
+  final TrendingTag tag;
+  final VoidCallback onTap;
+  const _TagCard({required this.tag, required this.onTap});
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}М публ.';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}К публ.';
+    return '$n публ.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
+            border: Border.all(color: c.line, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: Text(
+                    '#',
+                    style: SeeUTypography.title.copyWith(
+                      color: SeeUColors.accent,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '#${tag.tag}',
+                      style: SeeUTypography.subtitle.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _formatCount(tag.postsCount),
+                      style: SeeUTypography.caption.copyWith(color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                PhosphorIcons.caretRight(),
+                size: 18,
+                color: c.ink3,
+              ),
+            ],
+          ),
         ),
       ),
     );

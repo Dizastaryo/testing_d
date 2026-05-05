@@ -50,6 +50,12 @@ class ApiEndpoints {
   static const String explore = '/explore';
   static const String search = '/search';
 
+  // Audio tracks
+  static const String audioTracks = '/audio-tracks';
+
+  // Tags
+  static const String trendingTags = '/tags/trending';
+
   // Notifications
   static const String notifications = '/notifications';
   static const String markAllRead = '/notifications/read';
