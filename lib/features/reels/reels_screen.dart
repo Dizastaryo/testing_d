@@ -125,14 +125,14 @@ class _ReelsScreenState extends State<ReelsScreen>
   bool _loading = true;
   List<_Reel> _reels = [];
 
-  // Current reel index & tab
+  // Current reel index
   int _idx = 0;
-  int _tabIdx = 1; // "Для тебя" active by default
 
   // Playback state
   bool _playing = true;
 
-  // Progress 0.0 → 1.0 for current reel
+  // Progress 0.0 → 1.0 for current reel (used by timer auto-advance)
+  // ignore: unused_field
   double _progress = 0.0;
 
   // Per-reel state maps
@@ -155,15 +155,13 @@ class _ReelsScreenState extends State<ReelsScreen>
   // Double-tap hearts
   final List<_HeartParticle> _doubleTapHearts = [];
 
-  // Swipe drag
-  double _dragOffset = 0.0;
-  bool _dragging = false;
+  // PageView controller
+  late PageController _pageController;
 
   // Tap detection
   int _tapCount = 0;
   DateTime? _lastTap;
 
-  final List<String> _tabs = ['Подписки', 'Для тебя', 'Рядом'];
   final List<String> _reactions = ['🔥', '❤️', '😂', '🤯', '👏', '✨'];
 
   @override
@@ -186,6 +184,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       duration: const Duration(seconds: 4),
     )..repeat();
 
+    _pageController = PageController();
     _loadReels();
   }
 
@@ -253,6 +252,7 @@ class _ReelsScreenState extends State<ReelsScreen>
       ..dispose();
     _pauseIndicatorController.dispose();
     _discController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -262,7 +262,13 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   void _onProgressStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed) {
-      _nextReel();
+      // Auto-advance to next reel
+      if (_idx + 1 < _reels.length) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+        );
+      }
     }
   }
 
@@ -280,13 +286,9 @@ class _ReelsScreenState extends State<ReelsScreen>
     setState(() {
       _idx = newIdx;
       _progress = 0.0;
-      _dragOffset = 0.0;
     });
     _startProgress();
   }
-
-  void _nextReel() => _goTo(_idx + 1);
-  void _prevReel() => _goTo(_idx - 1);
 
   void _togglePlay() {
     setState(() => _playing = !_playing);
@@ -402,24 +404,6 @@ class _ReelsScreenState extends State<ReelsScreen>
     }
   }
 
-  void _onVerticalDragUpdate(DragUpdateDetails d) {
-    setState(() {
-      _dragOffset += d.delta.dy;
-      _dragging = true;
-    });
-  }
-
-  void _onVerticalDragEnd(DragEndDetails d) {
-    setState(() => _dragging = false);
-    if (_dragOffset < -60) {
-      _nextReel();
-    } else if (_dragOffset > 60) {
-      _prevReel();
-    } else {
-      setState(() => _dragOffset = 0);
-    }
-  }
-
   void _onLongPressLike() {
     setState(() => _reactionPickerVisible = true);
   }
@@ -430,6 +414,34 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (!(_likedMap[reel.id] ?? false)) _toggleLike(reel.id);
     _burstEmoji(emoji);
     setState(() => _reactionPickerVisible = false);
+  }
+
+  void _openComments(String postId) {
+    // Pause video while comments are open
+    final wasPlaying = _playing;
+    if (_playing) _togglePlay();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CommentsSheet(postId: postId),
+    ).then((_) {
+      if (wasPlaying && !_playing) _togglePlay();
+    });
+  }
+
+  void _shareReel(_Reel reel) {
+    final text = '${reel.caption}\n\nПосмотри рилс от @${reel.username} в SeeU!';
+    // Use clipboard as a simple share fallback
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Ссылка скопирована'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -502,171 +514,172 @@ class _ReelsScreenState extends State<ReelsScreen>
       );
     }
 
-    final reel = _reels[_idx];
-    final isLiked = _likedMap[reel.id] ?? false;
-    final isSaved = _savedMap[reel.id] ?? false;
-    final isFollowing = _followingMap[reel.username] ?? false;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: SeeUColors.darkBg,
-        body: GestureDetector(
-          onTapUp: _onTap,
-          onVerticalDragUpdate: _onVerticalDragUpdate,
-          onVerticalDragEnd: _onVerticalDragEnd,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // ── Video background ──
-              AnimatedSlide(
-                offset: Offset(0, _dragging ? _dragOffset / 800 : 0),
-                duration: _dragging
-                    ? Duration.zero
-                    : const Duration(milliseconds: 350),
-                curve: Curves.easeOutCubic,
-                child: _ReelBackground(
-                  reel: reel,
-                  playing: _playing,
-                  nextReel: _idx + 1 < _reels.length ? _reels[_idx + 1] : null,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // ── Vertical PageView ──
+            PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              itemCount: _reels.length,
+              onPageChanged: (i) => _goTo(i),
+              itemBuilder: (context, index) {
+                final reel = _reels[index];
+                return GestureDetector(
+                  onTapUp: _onTap,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _ReelBackground(
+                        reel: reel,
+                        playing: _playing && _idx == index,
+                        nextReel: index + 1 < _reels.length ? _reels[index + 1] : null,
+                      ),
+                      _Vignette(),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // ── Pause indicator ──
+            if (!_playing) _PauseIndicator(),
+
+            // ── Double-tap heart bursts ──
+            ..._doubleTapHearts.map(
+              (h) => Positioned(
+                left: h.x - 60,
+                top: h.y - 60,
+                child: _DoubleTapHeart(key: ValueKey(h.id)),
+              ),
+            ),
+
+            // ── Title "Рилсы" at top ──
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 12,
+              left: 16,
+              child: const Text(
+                'Рилсы',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  shadows: [Shadow(color: Color(0x66000000), blurRadius: 8)],
                 ),
               ),
+            ),
 
-              // ── Top vignette + bottom vignette overlay ──
-              _Vignette(),
-
-              // ── Pause indicator ──
-              if (!_playing) _PauseIndicator(),
-
-              // ── Double-tap heart bursts ──
-              ..._doubleTapHearts.map(
-                (h) => Positioned(
-                  left: h.x - 60,
-                  top: h.y - 60,
-                  child: _DoubleTapHeart(key: ValueKey(h.id)),
-                ),
-              ),
-
-              // ── Progress bar at top ──
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 10,
-                left: 16,
-                right: 16,
-                child: _ProgressBar(
-                  reels: _reels,
-                  currentIdx: _idx,
-                  progress: _progress,
-                ),
-              ),
-
-              // ── Top tabs ──
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 36,
-                left: 0,
-                right: 0,
-                child: _TopTabs(
-                  tabs: _tabs,
-                  activeIdx: _tabIdx,
-                  onTab: (i) => setState(() => _tabIdx = i),
-                ),
-              ),
-
-              // ── Close button (top-right) ──
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 38,
-                right: 12,
-                child: GestureDetector(
-                  onTap: () {
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/feed');
-                    }
-                  },
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      PhosphorIconsBold.x,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+            // ── Close button (top-right) ──
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              right: 12,
+              child: GestureDetector(
+                onTap: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/feed');
+                  }
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    PhosphorIconsBold.x,
+                    color: Colors.white,
+                    size: 18,
                   ),
                 ),
               ),
+            ),
 
-              // ── Action rail (right) ──
-              Positioned(
-                right: 12,
-                bottom: 110,
-                child: _ActionRail(
-                  reel: reel,
-                  isLiked: isLiked,
-                  isSaved: isSaved,
-                  discController: _discController,
-                  playing: _playing,
-                  onLike: () => _toggleLike(reel.id),
-                  onLongPressLike: _onLongPressLike,
-                  onSave: () => _toggleSave(reel.id),
-                  onComment: () {},
-                  onRemix: () {},
-                  onShare: () {},
-                  onAudio: () {},
-                ),
-              ),
+            // ── Action rail (right) ──
+            if (_reels.isNotEmpty) ...[
+              Builder(builder: (context) {
+                final reel = _reels[_idx];
+                final isLiked = _likedMap[reel.id] ?? false;
+                final isSaved = _savedMap[reel.id] ?? false;
+                final isFollowing = _followingMap[reel.username] ?? false;
 
-              // ── Reaction picker ──
-              if (_reactionPickerVisible)
-                Positioned(
-                  right: 70,
-                  bottom: 470,
-                  child: _ReactionPicker(
-                    reactions: _reactions,
-                    onPick: _pickReaction,
-                    onDismiss: () =>
-                        setState(() => _reactionPickerVisible = false),
-                  ),
-                ),
+                return Stack(
+                  children: [
+                    Positioned(
+                      right: 12,
+                      bottom: 110,
+                      child: _ActionRail(
+                        reel: reel,
+                        isLiked: isLiked,
+                        isSaved: isSaved,
+                        discController: _discController,
+                        playing: _playing,
+                        onLike: () => _toggleLike(reel.id),
+                        onLongPressLike: _onLongPressLike,
+                        onSave: () => _toggleSave(reel.id),
+                        onComment: () => _openComments(reel.id),
+                        onShare: () => _shareReel(reel),
+                        onAudio: () {},
+                      ),
+                    ),
 
-              // ── Floating emoji burst ──
-              if (_emojiBurst.isNotEmpty)
-                Positioned(
-                  right: 28,
-                  bottom: 540,
-                  width: 80,
-                  height: 200,
-                  child: _EmojiBurstLayer(particles: _emojiBurst),
-                ),
+                    // ── Reaction picker ──
+                    if (_reactionPickerVisible)
+                      Positioned(
+                        right: 70,
+                        bottom: 470,
+                        child: _ReactionPicker(
+                          reactions: _reactions,
+                          onPick: _pickReaction,
+                          onDismiss: () =>
+                              setState(() => _reactionPickerVisible = false),
+                        ),
+                      ),
 
-              // ── Bottom info card ──
-              Positioned(
-                left: 14,
-                right: 80,
-                bottom: 90,
-                child: _BottomCard(
-                  reel: reel,
-                  isFollowing: isFollowing,
-                  captionExpanded: _expandedCaptions.contains(reel.id),
-                  onFollow: () => _toggleFollow(reel.username),
-                  onToggleCaption: () {
-                    setState(() {
-                      if (_expandedCaptions.contains(reel.id)) {
-                        _expandedCaptions.remove(reel.id);
-                      } else {
-                        _expandedCaptions.add(reel.id);
-                      }
-                    });
-                  },
-                  onAudio: () {},
-                  onProfile: () {},
-                ),
-              ),
+                    // ── Floating emoji burst ──
+                    if (_emojiBurst.isNotEmpty)
+                      Positioned(
+                        right: 28,
+                        bottom: 540,
+                        width: 80,
+                        height: 200,
+                        child: _EmojiBurstLayer(particles: _emojiBurst),
+                      ),
+
+                    // ── Bottom info card ──
+                    Positioned(
+                      left: 14,
+                      right: 80,
+                      bottom: 90,
+                      child: _BottomCard(
+                        reel: reel,
+                        isFollowing: isFollowing,
+                        captionExpanded: _expandedCaptions.contains(reel.id),
+                        onFollow: () => _toggleFollow(reel.username),
+                        onToggleCaption: () {
+                          setState(() {
+                            if (_expandedCaptions.contains(reel.id)) {
+                              _expandedCaptions.remove(reel.id);
+                            } else {
+                              _expandedCaptions.add(reel.id);
+                            }
+                          });
+                        },
+                        onAudio: () {},
+                        onProfile: () => context.push('/profile/${reel.username}'),
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -976,121 +989,6 @@ class _DoubleTapHeartState extends State<_DoubleTapHeart>
 }
 
 // ---------------------------------------------------------------------------
-// Progress bar at top
-// ---------------------------------------------------------------------------
-
-class _ProgressBar extends StatelessWidget {
-  final List<_Reel> reels;
-  final int currentIdx;
-  final double progress;
-
-  const _ProgressBar({
-    required this.reels,
-    required this.currentIdx,
-    required this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(reels.length, (i) {
-        double fillFraction;
-        if (i < currentIdx) {
-          fillFraction = 1.0;
-        } else if (i == currentIdx) {
-          fillFraction = progress;
-        } else {
-          fillFraction = 0.0;
-        }
-        return Expanded(
-          child: Container(
-            height: 2.5,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: fillFraction.clamp(0.0, 1.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Top tabs
-// ---------------------------------------------------------------------------
-
-class _TopTabs extends StatelessWidget {
-  final List<String> tabs;
-  final int activeIdx;
-  final ValueChanged<int> onTab;
-
-  const _TopTabs({
-    required this.tabs,
-    required this.activeIdx,
-    required this.onTab,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: tabs.asMap().entries.map((e) {
-        final isActive = e.key == activeIdx;
-        return GestureDetector(
-          onTap: () => onTab(e.key),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  e.value,
-                  style: TextStyle(
-                    fontFamily: 'Segoe UI',
-                    fontSize: 15,
-                    fontWeight:
-                        isActive ? FontWeight.w700 : FontWeight.w500,
-                    color: isActive
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.6),
-                    shadows: const [
-                      Shadow(color: Color(0x4D000000), blurRadius: 8),
-                    ],
-                    letterSpacing: -0.01 * 15,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: isActive ? 4 : 0,
-                  height: isActive ? 4 : 0,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Action rail (right side)
 // ---------------------------------------------------------------------------
 
@@ -1104,7 +1002,6 @@ class _ActionRail extends StatelessWidget {
   final VoidCallback onLongPressLike;
   final VoidCallback onSave;
   final VoidCallback onComment;
-  final VoidCallback onRemix;
   final VoidCallback onShare;
   final VoidCallback onAudio;
 
@@ -1118,7 +1015,6 @@ class _ActionRail extends StatelessWidget {
     required this.onLongPressLike,
     required this.onSave,
     required this.onComment,
-    required this.onRemix,
     required this.onShare,
     required this.onAudio,
   });
@@ -1156,20 +1052,11 @@ class _ActionRail extends StatelessWidget {
         ),
         const SizedBox(height: 22),
 
-        // Remix
-        _RailButton(
-          icon: const Icon(PhosphorIconsRegular.arrowsClockwise,
-              color: Colors.white, size: 26),
-          label: 'ремикс',
-          onTap: onRemix,
-        ),
-        const SizedBox(height: 22),
-
         // Share
         _RailButton(
           icon: const Icon(PhosphorIconsRegular.paperPlaneTilt,
               color: Colors.white, size: 26),
-          label: _fmt(reel.shares),
+          label: 'отпр.',
           onTap: onShare,
         ),
         const SizedBox(height: 22),
@@ -1688,7 +1575,7 @@ class _BottomCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    reel.username,
+                    'Оригинальный звук — @${reel.username}',
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 12,
@@ -1697,9 +1584,6 @@ class _BottomCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(PhosphorIconsRegular.caretRight,
-                    color: Colors.white, size: 14),
               ],
             ),
           ),
@@ -1725,5 +1609,234 @@ class _BottomCard extends StatelessWidget {
       ));
     }
     return spans;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Comments bottom sheet
+// ---------------------------------------------------------------------------
+
+class _CommentsSheet extends StatefulWidget {
+  final String postId;
+  const _CommentsSheet({required this.postId});
+
+  @override
+  State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  final _ctrl = TextEditingController();
+  List<dynamic> _comments = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadComments() async {
+    try {
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      );
+      final token = await storage.read(key: 'access_token');
+      final dio = Dio(BaseOptions(
+        headers: {
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ));
+      final resp = await dio.get(
+        '${ApiEndpoints.baseUrl}/posts/${widget.postId}/comments',
+      );
+      final data = resp.data;
+      final list = data is Map && data.containsKey('data') ? data['data'] : data;
+      if (mounted) {
+        setState(() {
+          _comments = list is List ? list : [];
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendComment() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    _ctrl.clear();
+    try {
+      const storage = FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+      );
+      final token = await storage.read(key: 'access_token');
+      final dio = Dio(BaseOptions(
+        headers: {
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ));
+      await dio.post(
+        '${ApiEndpoints.baseUrl}/posts/${widget.postId}/comments',
+        data: {'text': text},
+      );
+      _loadComments();
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.6,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1410),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Title
+          const Text(
+            'Комментарии',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Divider(color: Colors.white12, height: 20),
+
+          // Comments list
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: SeeUColors.accent, strokeWidth: 2,
+                    ),
+                  )
+                : _comments.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Пока нет комментариев',
+                          style: TextStyle(color: Colors.white38, fontSize: 14),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _comments.length,
+                        itemBuilder: (_, i) {
+                          final c = _comments[i] as Map<String, dynamic>;
+                          final user = c['user'] as Map<String, dynamic>? ?? {};
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: const Color(0xFF2A1F18),
+                                  child: Text(
+                                    (user['username']?.toString() ?? '?')[0].toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '@${user['username'] ?? ''}',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        c['text']?.toString() ?? '',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+
+          // Input
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 12 + bottom),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Комментировать...',
+                        hintStyle: TextStyle(color: Colors.white38, fontSize: 14),
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sendComment,
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: const BoxDecoration(
+                      color: SeeUColors.accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      PhosphorIconsBold.paperPlaneTilt,
+                      color: Colors.white, size: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
