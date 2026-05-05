@@ -251,12 +251,11 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
 // Explore grid posts provider
 final explorePostsProvider = FutureProvider<List<Post>>((ref) async {
   final api = ref.watch(apiClientProvider);
-  try {
-    final resp = await api.get(ApiEndpoints.explore);
-    final data = resp.data;
-    final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-    return (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
-  } catch (_) {
-    return [];
+  final resp = await api.get(ApiEndpoints.explore);
+  final data = resp.data;
+  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
+  if (listData is List) {
+    return listData.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
   }
+  return [];
 });
