@@ -2,7 +2,7 @@ class ApiEndpoints {
   ApiEndpoints._();
 
   // Base
-  static const String baseUrl = 'http://172.22.103.186:8000/api/v1';
+  static const String baseUrl = 'http://192.168.10.9:8001/api/v1';
 
   // Auth (phone + OTP)
   static const String sendOtp = '/auth/send-otp';
