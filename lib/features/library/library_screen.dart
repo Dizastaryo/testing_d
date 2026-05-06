@@ -68,7 +68,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               Text(
                 'Файлы',
                 style: TextStyle(
-                  fontFamily: 'Georgia',
+                  fontFamily: 'Fraunces',
                   fontSize: 36,
                   fontWeight: FontWeight.w400,
                   letterSpacing: -1,

@@ -86,9 +86,9 @@ class SeeUColors {
 class SeeUTypography {
   SeeUTypography._();
 
-  static const String _serifFamily = 'Georgia';
-  static const String _uiFamily = 'Segoe UI';
-  static const String _monoFamily = 'Consolas';
+  static const String _serifFamily = 'Fraunces';
+  static const String _uiFamily = 'Inter';
+  static const String _monoFamily = 'JetBrains Mono';
 
   static const TextStyle displayXL = TextStyle(
     fontFamily: _serifFamily,

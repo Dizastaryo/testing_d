@@ -1,4 +1,13 @@
+import '../api/api_endpoints.dart';
 import 'user.dart';
+
+String _absUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  if (url.startsWith('/')) {
+    return ApiEndpoints.videoBaseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
 
 class VideoCategory {
   final String id;
@@ -56,8 +65,8 @@ class Video {
         userId: json['user_id'] ?? '',
         title: json['title'] ?? '',
         description: json['description'] ?? '',
-        videoUrl: json['video_url'] ?? '',
-        thumbnailUrl: json['thumbnail_url'] ?? '',
+        videoUrl: _absUrl(json['video_url']),
+        thumbnailUrl: _absUrl(json['thumbnail_url']),
         durationSeconds: json['duration_seconds'] ?? 0,
         categoryId: json['category_id'] ?? '',
         resolution: json['resolution'] ?? '',

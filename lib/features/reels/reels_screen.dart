@@ -10,7 +10,6 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
-import '../../core/models/post.dart';
 
 // ---------------------------------------------------------------------------
 // Data model (converted from Post)
@@ -47,31 +46,6 @@ class _Reel {
     this.duration = 30,
   });
 
-  factory _Reel.fromPost(Post post) {
-    final serverBase = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
-    final videoMedia =
-        post.media.where((m) => m.type == MediaType.video).toList();
-    var url = videoMedia.isNotEmpty ? videoMedia.first.url : '';
-    if (url.startsWith('/')) url = serverBase + url;
-    final tagRegex = RegExp(r'#(\w+)');
-    final tags = tagRegex
-        .allMatches(post.caption ?? '')
-        .map((m) => m.group(1)!)
-        .toList();
-    return _Reel(
-      id: post.id,
-      userId: post.author.id,
-      username: post.author.username,
-      fullName: post.author.fullName,
-      avatarUrl: post.author.avatarUrl,
-      isVerified: post.author.isVerified,
-      videoUrl: url,
-      caption: post.caption ?? '',
-      tags: tags,
-      likes: post.likesCount,
-      comments: post.commentsCount,
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -190,13 +164,13 @@ class _ReelsScreenState extends State<ReelsScreen>
 
   Future<void> _loadReels() async {
     try {
-      // Read auth token
       const storage = FlutterSecureStorage(
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
       );
       final token = await storage.read(key: 'access_token');
 
       final dio = Dio(BaseOptions(
+        baseUrl: ApiEndpoints.videoBaseUrl,
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),
         headers: {
@@ -205,35 +179,42 @@ class _ReelsScreenState extends State<ReelsScreen>
         },
       ));
 
-      // Load from both feed and explore to get all video posts
-      final results = await Future.wait([
-        dio.get('${ApiEndpoints.baseUrl}/feed').catchError((_) => Response(requestOptions: RequestOptions(), data: {'data': []})),
-        dio.get('${ApiEndpoints.baseUrl}/explore').catchError((_) => Response(requestOptions: RequestOptions(), data: {'data': []})),
-      ]);
+      final response = await dio.get('/reels/feed', queryParameters: {'tab': 'foryou', 'limit': '20'});
+      final data = response.data;
+      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
 
-      final allPosts = <Post>[];
-      final seenIds = <String>{};
-      for (final response in results) {
-        final data = response.data;
-        final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-        if (listData is List) {
-          for (final j in listData) {
-            final post = Post.fromJson(j as Map<String, dynamic>);
-            if (!seenIds.contains(post.id)) {
-              seenIds.add(post.id);
-              allPosts.add(post);
-            }
-          }
-        }
-      }
+      final serverBase = ApiEndpoints.videoBaseUrl.replaceAll('/api/v1', '');
 
-      final videoPosts = allPosts
-          .where((p) => p.media.any((m) => m.type == MediaType.video))
-          .toList();
-
-      if (mounted) {
+      if (mounted && listData is List) {
         setState(() {
-          _reels = videoPosts.map((p) => _Reel.fromPost(p)).toList();
+          _reels = listData.map((j) {
+            final r = j as Map<String, dynamic>;
+            final user = r['user'] as Map<String, dynamic>? ?? {};
+            final mediaUrls = (r['media_urls'] as List<dynamic>?)?.cast<String>() ?? [];
+            // Use first media URL as video/photo
+            var url = mediaUrls.isNotEmpty ? mediaUrls.first : '';
+            if (url.startsWith('/')) url = serverBase + url;
+            final tagRegex = RegExp(r'#(\w+)');
+            final caption = r['caption']?.toString() ?? '';
+            final tags = (r['hashtags'] as List<dynamic>?)?.cast<String>() ?? tagRegex.allMatches(caption).map((m) => m.group(1)!).toList();
+            var avatarUrl = user['avatar_url']?.toString() ?? '';
+            if (avatarUrl.startsWith('/')) avatarUrl = '${ApiEndpoints.baseUrl.replaceAll('/api/v1', '')}$avatarUrl';
+            return _Reel(
+              id: r['id']?.toString() ?? '',
+              userId: r['user_id']?.toString() ?? '',
+              username: user['username']?.toString() ?? '',
+              fullName: user['full_name']?.toString() ?? '',
+              avatarUrl: avatarUrl,
+              isVerified: (user['is_verified'] ?? false) as bool,
+              videoUrl: url,
+              caption: caption,
+              tags: tags,
+              likes: r['likes_count'] ?? 0,
+              comments: r['comments_count'] ?? 0,
+              shares: r['shares_count'] ?? 0,
+              duration: r['duration_seconds'] ?? 15,
+            );
+          }).toList();
           _loading = false;
         });
         if (_reels.isNotEmpty) _startProgress();

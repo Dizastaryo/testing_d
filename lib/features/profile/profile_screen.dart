@@ -34,7 +34,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (_tabController.index == 1) {
         final username = _resolveUsername();
@@ -204,6 +204,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             isActive: _selectedTab == 1,
                             onTap: () => _tabController.animateTo(1),
                           ),
+                          _TabButton(
+                            icon: PhosphorIcons.folderSimple(),
+                            isActive: _selectedTab == 2,
+                            onTap: () => _tabController.animateTo(2),
+                          ),
+                          _TabButton(
+                            icon: PhosphorIcons.heart(),
+                            isActive: _selectedTab == 3,
+                            onTap: () => _tabController.animateTo(3),
+                          ),
                         ],
                       ),
                     ),
@@ -213,6 +223,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         controller: _tabController,
                         children: [
                           _PostsGrid(posts: profileState.posts),
+                          const Center(child: Text('Видео', style: TextStyle(color: Colors.grey))),
+                          const Center(child: Text('Файлы', style: TextStyle(color: Colors.grey))),
                           isOwnProfile
                               ? _PostsGrid(posts: profileState.savedPosts)
                               : const _PrivateContent(),
@@ -436,7 +448,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         child: Text(
           user.username[0].toUpperCase(),
           style: const TextStyle(
-            fontFamily: 'Georgia',
+            fontFamily: 'Fraunces',
             fontSize: 32,
             fontWeight: FontWeight.w600,
             color: Colors.white,
@@ -870,7 +882,7 @@ class _PostsGrid extends StatelessWidget {
             Text(
               '\u2022',
               style: TextStyle(
-                fontFamily: 'Georgia',
+                fontFamily: 'Fraunces',
                 fontSize: 56,
                 color: c.ink3,
               ),
@@ -971,7 +983,7 @@ class _PrivateContent extends StatelessWidget {
           Text(
             '\u2013',
             style: TextStyle(
-              fontFamily: 'Georgia',
+              fontFamily: 'Fraunces',
               fontSize: 56,
               color: c.ink3,
             ),

@@ -126,7 +126,7 @@ class _SeeUButtonState extends State<SeeUButton>
                       Text(
                         widget.label,
                         style: TextStyle(
-                          fontFamily: 'Segoe UI',
+                          fontFamily: 'Inter',
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: fgColor,

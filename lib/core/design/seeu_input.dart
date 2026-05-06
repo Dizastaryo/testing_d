@@ -60,7 +60,7 @@ class SeeUInput extends StatelessWidget {
       textCapitalization: textCapitalization,
       inputFormatters: inputFormatters,
       style: TextStyle(
-        fontFamily: 'Segoe UI',
+        fontFamily: 'Inter',
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: SeeUColors.textPrimary,
@@ -68,7 +68,7 @@ class SeeUInput extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           fontSize: 15,
           fontWeight: FontWeight.w400,
           color: SeeUColors.textTertiary,

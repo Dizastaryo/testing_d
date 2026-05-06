@@ -1,4 +1,13 @@
+import '../api/api_endpoints.dart';
 import 'user.dart';
+
+String _absUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  if (url.startsWith('/')) {
+    return ApiEndpoints.libraryBaseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
 
 class FileCategory {
   final String id;
@@ -49,7 +58,7 @@ class FileItem {
         id: json['id'] ?? '',
         userId: json['user_id'] ?? '',
         filename: json['filename'] ?? '',
-        fileUrl: json['file_url'] ?? '',
+        fileUrl: _absUrl(json['file_url']),
         mimeType: json['mime_type'] ?? '',
         fileSize: json['file_size'] ?? 0,
         categoryId: json['category_id'] ?? '',

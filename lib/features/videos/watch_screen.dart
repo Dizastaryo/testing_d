@@ -75,7 +75,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               Text(
                 'Видео',
                 style: TextStyle(
-                  fontFamily: 'Georgia',
+                  fontFamily: 'Fraunces',
                   fontSize: 36,
                   fontWeight: FontWeight.w400,
                   letterSpacing: -1,
@@ -208,7 +208,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(video.title, style: const TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.w400, color: Colors.white, letterSpacing: -0.5)),
+                  Text(video.title, style: const TextStyle(fontFamily: 'Fraunces', fontSize: 22, fontWeight: FontWeight.w400, color: Colors.white, letterSpacing: -0.5)),
                   const SizedBox(height: 6),
                   Text('@${video.user?.username ?? ''} · ${video.durationFormatted} · ${video.viewsFormatted} views', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, color: Colors.white70)),
                 ],

@@ -199,7 +199,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                             Text(
                               '\u2026',
                               style: TextStyle(
-                                fontFamily: 'Georgia',
+                                fontFamily: 'Fraunces',
                                 fontSize: 56,
                                 color: c.ink3,
                               ),

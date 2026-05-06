@@ -36,7 +36,7 @@ class SeeUChip extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontFamily: 'Segoe UI',
+              fontFamily: 'Inter',
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: fg,

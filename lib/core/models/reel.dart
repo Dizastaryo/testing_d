@@ -1,4 +1,13 @@
+import '../api/api_endpoints.dart';
 import 'user.dart';
+
+String _absUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  if (url.startsWith('/')) {
+    return ApiEndpoints.videoBaseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
 
 class Reel {
   final String id;
@@ -39,7 +48,7 @@ class Reel {
         id: json['id'] ?? '',
         userId: json['user_id'] ?? '',
         caption: json['caption'] ?? '',
-        mediaUrls: (json['media_urls'] as List<dynamic>?)?.cast<String>() ?? [],
+        mediaUrls: (json['media_urls'] as List<dynamic>?)?.map((e) => _absUrl(e.toString())).toList() ?? [],
         mediaType: json['media_type'] ?? 'photo',
         audioTrackId: json['audio_track_id'] ?? '',
         durationSeconds: json['duration_seconds'] ?? 15,

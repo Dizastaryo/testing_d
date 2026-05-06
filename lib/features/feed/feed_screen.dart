@@ -266,6 +266,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                               context.push('/notifications'),
                                         ),
                                       ),
+                                      const SizedBox(width: 10),
+                                      _HeaderIconButton(
+                                        icon: PhosphorIcon(
+                                            PhosphorIcons.userCircle()),
+                                        onTap: () =>
+                                            context.push('/profile'),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -597,7 +604,7 @@ class _HeaderIconButton extends StatelessWidget {
                   child: Text(
                     badge > 9 ? '9+' : badge.toString(),
                     style: TextStyle(
-                      fontFamily: 'Segoe UI',
+                      fontFamily: 'Inter',
                       color: Colors.white,
                       fontSize: 9,
                       fontWeight: FontWeight.w800,

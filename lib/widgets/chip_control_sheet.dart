@@ -120,7 +120,7 @@ class _ChipControlSheetState extends State<ChipControlSheet> {
                     Text(
                       'Твой SeeU',
                       style: TextStyle(
-                        fontFamily: 'Georgia',
+                        fontFamily: 'Fraunces',
                         fontSize: 22,
                         fontWeight: FontWeight.w600,
                         color: SeeUColors.textPrimary,

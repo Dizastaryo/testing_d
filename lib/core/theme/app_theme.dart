@@ -49,7 +49,7 @@ class AppTheme {
           statusBarIconBrightness: Brightness.dark,
         ),
         titleTextStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           color: SeeUColors.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -85,12 +85,12 @@ class AppTheme {
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
         hintStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
         labelStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
@@ -142,7 +142,7 @@ class AppTheme {
           statusBarIconBrightness: Brightness.light,
         ),
         titleTextStyle: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           color: SeeUColors.darkInk,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -176,8 +176,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
-        hintStyle: TextStyle(fontFamily: 'Segoe UI', color: SeeUColors.darkInk3, fontSize: 15),
-        labelStyle: TextStyle(fontFamily: 'Segoe UI', color: SeeUColors.darkInk3, fontSize: 15),
+        hintStyle: TextStyle(fontFamily: 'Inter', color: SeeUColors.darkInk3, fontSize: 15),
+        labelStyle: TextStyle(fontFamily: 'Inter', color: SeeUColors.darkInk3, fontSize: 15),
       ),
       textTheme: baseTextTheme.copyWith(
         headlineLarge: SeeUTypography.displayXL.copyWith(color: SeeUColors.darkInk),

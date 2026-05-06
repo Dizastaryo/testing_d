@@ -1876,7 +1876,7 @@ class _CountdownNumberState extends State<_CountdownNumber>
           child: Text(
             '${widget.value}',
             style: const TextStyle(
-              fontFamily: 'Georgia',
+              fontFamily: 'Fraunces',
               fontSize: 140,
               color: Colors.white,
               fontWeight: FontWeight.w400,

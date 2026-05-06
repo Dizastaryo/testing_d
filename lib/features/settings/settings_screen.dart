@@ -56,7 +56,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Text(
                     'Настройки',
                     style: TextStyle(
-                      fontFamily: 'Georgia',
+                      fontFamily: 'Fraunces',
                       fontSize: 24,
                       fontWeight: FontWeight.w400,
                       color: c.ink,
@@ -187,7 +187,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: Text(
             title,
             style: TextStyle(
-              fontFamily: 'Consolas',
+              fontFamily: 'JetBrains Mono',
               fontSize: 10,
               fontWeight: FontWeight.w400,
               letterSpacing: 1.0,
@@ -239,7 +239,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: Text(
             title,
             style: TextStyle(
-              fontFamily: 'Consolas',
+              fontFamily: 'JetBrains Mono',
               fontSize: 10,
               fontWeight: FontWeight.w400,
               letterSpacing: 1.0,

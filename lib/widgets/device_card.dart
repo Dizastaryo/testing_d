@@ -244,7 +244,7 @@ class _DeviceCardState extends State<DeviceCard> {
       child: Text(
         _badgeLabel,
         style: TextStyle(
-          fontFamily: 'Segoe UI',
+          fontFamily: 'Inter',
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: fg,
@@ -263,7 +263,7 @@ class _DeviceCardState extends State<DeviceCard> {
             Text(
               '${device.rssi}',
               style: TextStyle(
-                fontFamily: 'Georgia',
+                fontFamily: 'Fraunces',
                 fontSize: 32,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -1,
@@ -311,7 +311,7 @@ class _DeviceCardState extends State<DeviceCard> {
               Text(
                 'Управлять',
                 style: TextStyle(
-                  fontFamily: 'Segoe UI',
+                  fontFamily: 'Inter',
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,

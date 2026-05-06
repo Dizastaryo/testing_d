@@ -363,7 +363,7 @@ class _PostCardState extends ConsumerState<PostCard>
                         child: Text(
                           '?',
                           style: TextStyle(
-                            fontFamily: 'Georgia',
+                            fontFamily: 'Fraunces',
                             fontSize: 280,
                             fontStyle: FontStyle.italic,
                             fontWeight: FontWeight.w700,
@@ -391,7 +391,7 @@ class _PostCardState extends ConsumerState<PostCard>
                                 Text(
                                   eyebrowLabel,
                                   style: TextStyle(
-                                    fontFamily: 'Consolas',
+                                    fontFamily: 'JetBrains Mono',
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
                                     letterSpacing: 1.2,
@@ -428,7 +428,7 @@ class _PostCardState extends ConsumerState<PostCard>
                                           Text(
                                             parsed.big,
                                             style: const TextStyle(
-                                              fontFamily: 'Georgia',
+                                              fontFamily: 'Fraunces',
                                               fontSize: 60,
                                               fontWeight: FontWeight.w400,
                                               fontStyle: FontStyle.italic,
@@ -443,7 +443,7 @@ class _PostCardState extends ConsumerState<PostCard>
                                           Text(
                                             parsed.conjunction,
                                             style: TextStyle(
-                                              fontFamily: 'Consolas',
+                                              fontFamily: 'JetBrains Mono',
                                               fontSize: 13,
                                               fontWeight: FontWeight.w400,
                                               letterSpacing: 0.8,
@@ -458,7 +458,7 @@ class _PostCardState extends ConsumerState<PostCard>
                                           Text(
                                             parsed.big2,
                                             style: const TextStyle(
-                                              fontFamily: 'Georgia',
+                                              fontFamily: 'Fraunces',
                                               fontSize: 60,
                                               fontWeight: FontWeight.w400,
                                               fontStyle: FontStyle.italic,
@@ -514,7 +514,7 @@ class _PostCardState extends ConsumerState<PostCard>
                                     child: Text(
                                       'ответить',
                                       style: TextStyle(
-                                        fontFamily: 'Consolas',
+                                        fontFamily: 'JetBrains Mono',
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                         letterSpacing: 0.5,
@@ -541,7 +541,7 @@ class _PostCardState extends ConsumerState<PostCard>
                         child: Text(
                           eyebrowLabel,
                           style: TextStyle(
-                            fontFamily: 'Consolas',
+                            fontFamily: 'JetBrains Mono',
                             fontSize: 9,
                             fontWeight: FontWeight.w400,
                             letterSpacing: 0.6,

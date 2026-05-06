@@ -51,7 +51,7 @@ class FollowingScreen extends ConsumerWidget {
               Text(
                 '!',
                 style: TextStyle(
-                  fontFamily: 'Georgia',
+                  fontFamily: 'Fraunces',
                   fontSize: 48,
                   color: SeeUColors.textTertiary,
                 ),
@@ -78,7 +78,7 @@ class FollowingScreen extends ConsumerWidget {
                     Text(
                       '\u2022',
                       style: TextStyle(
-                        fontFamily: 'Georgia',
+                        fontFamily: 'Fraunces',
                         fontSize: 48,
                         color: SeeUColors.textTertiary,
                       ),

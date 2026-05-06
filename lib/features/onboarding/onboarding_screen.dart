@@ -283,7 +283,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Text(
             slide.tag.toUpperCase(),
             style: const TextStyle(
-              fontFamily: 'Consolas',
+              fontFamily: 'JetBrains Mono',
               fontSize: 11,
               color: SeeUColors.accent,
               letterSpacing: 1.5,
@@ -294,7 +294,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Text(
             slide.title,
             style: TextStyle(
-              fontFamily: 'Georgia',
+              fontFamily: 'Fraunces',
               fontSize: 36,
               fontWeight: FontWeight.w400,
               color: c.ink,
