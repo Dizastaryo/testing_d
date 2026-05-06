@@ -1,8 +1,10 @@
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // Base
+  // Base URLs for microservices
   static const String baseUrl = 'http://192.168.10.9:8001/api/v1';
+  static const String videoBaseUrl = 'http://192.168.10.9:8002/api/v1';
+  static const String libraryBaseUrl = 'http://192.168.10.9:8003/api/v1';
 
   // Auth (phone + OTP)
   static const String sendOtp = '/auth/send-otp';
@@ -68,4 +70,30 @@ class ApiEndpoints {
   static const String chats = '/chats';
   static String chatMessages(String id) => '/chats/$id/messages';
   static String chatRead(String id) => '/chats/$id/read';
+
+  // === Video Service endpoints ===
+  static const String videos = '/videos';
+  static const String videosFeatured = '/videos/featured';
+  static const String videosCategories = '/videos/categories';
+  static String videoById(String id) => '/videos/$id';
+  static String videoView(String id) => '/videos/$id/view';
+  static String videoLike(String id) => '/videos/$id/like';
+  static String userVideos(String userId) => '/users/$userId/videos';
+
+  // Reels
+  static const String reelsFeed = '/reels/feed';
+  static String reelById(String id) => '/reels/$id';
+  static String reelView(String id) => '/reels/$id/view';
+  static String reelLike(String id) => '/reels/$id/like';
+  static String reelShare(String id) => '/reels/$id/share';
+  static String userReels(String userId) => '/users/$userId/reels';
+  static const String reels = '/reels';
+
+  // === Library Service endpoints ===
+  static const String files = '/files';
+  static const String filesCategories = '/files/categories';
+  static String fileById(String id) => '/files/$id';
+  static String fileDownload(String id) => '/files/$id/download';
+  static String filePreview(String id) => '/files/$id/preview';
+  static String userFiles(String userId) => '/users/$userId/files';
 }

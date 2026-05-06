@@ -14,22 +14,55 @@ class MainScaffold extends StatelessWidget {
 
   int _locationToIndex(String location) {
     if (location.startsWith('/feed')) return 0;
-    if (location.startsWith('/explore')) return 1;
-    if (location.startsWith('/reels')) return 2;
-    if (location.startsWith('/scanner')) return 3;
-    if (location.startsWith('/profile')) return 4;
+    if (location.startsWith('/scanner')) return 1;
+    // index 2 is upload button (no route)
+    if (location.startsWith('/watch')) return 3;
+    if (location.startsWith('/files')) return 4;
     return 0;
   }
 
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
-    const routes = ['/feed', '/explore', '/reels', '/scanner', '/profile'];
-    // Reels is outside ShellRoute — push instead of go so user can navigate back
+    const routes = ['/feed', '/scanner', '', '/watch', '/files'];
     if (index == 2) {
-      context.push(routes[index]);
-    } else {
-      context.go(routes[index]);
+      // Upload button — show action sheet
+      _showUploadSheet(context);
+      return;
     }
+    context.go(routes[index]);
+  }
+
+  void _showUploadSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.photo_camera, color: SeeUColors.accent),
+                title: const Text('Создать пост'),
+                onTap: () { Navigator.pop(context); context.push('/post/create'); },
+              ),
+              ListTile(
+                leading: Icon(Icons.movie, color: SeeUColors.accent),
+                title: const Text('Создать рилс'),
+                onTap: () { Navigator.pop(context); context.push('/reels'); },
+              ),
+              ListTile(
+                leading: Icon(Icons.upload_file, color: SeeUColors.accent),
+                title: const Text('Загрузить файл'),
+                onTap: () { Navigator.pop(context); },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Routes where the bottom nav should be hidden (fullscreen experiences).
@@ -86,24 +119,24 @@ class MainScaffold extends StatelessWidget {
                             onTap: () => _onTap(context, 0),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('search', false),
-                            activeIcon: _buildNavIcon('search', true),
-                            label: 'Поиск',
-                            isSelected: currentIndex == 1,
-                            onTap: () => _onTap(context, 1),
-                          ),
-                          _CreatePill(onTap: () => context.push('/story/create')),
-                          _NavItem(
                             icon: _buildNavIcon('radar', false),
                             activeIcon: _buildNavIcon('radar', true),
                             label: 'Рядом',
+                            isSelected: currentIndex == 1,
+                            onTap: () => _onTap(context, 1),
+                          ),
+                          _CreatePill(onTap: () => _showUploadSheet(context)),
+                          _NavItem(
+                            icon: _buildNavIcon('video', false),
+                            activeIcon: _buildNavIcon('video', true),
+                            label: 'Видео',
                             isSelected: currentIndex == 3,
                             onTap: () => _onTap(context, 3),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('user', false),
-                            activeIcon: _buildNavIcon('user', true),
-                            label: 'Я',
+                            icon: _buildNavIcon('folder', false),
+                            activeIcon: _buildNavIcon('folder', true),
+                            label: 'Файлы',
                             isSelected: currentIndex == 4,
                             onTap: () => _onTap(context, 4),
                           ),
@@ -544,6 +577,44 @@ class _NavIconPainter extends CustomPainter {
               ..strokeWidth = 1.7,
           );
         }
+        break;
+
+      // ── Video icon (play in rectangle) ─────────────────────────────────
+      case 'video':
+        final rect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(s * 0.08, s * 0.2, s * 0.84, s * 0.6),
+          const Radius.circular(3),
+        );
+        paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
+        canvas.drawRRect(rect, paint);
+        // Play triangle
+        if (!filled) {
+          final triPath = Path()
+            ..moveTo(s * 0.4, s * 0.35)
+            ..lineTo(s * 0.65, s * 0.5)
+            ..lineTo(s * 0.4, s * 0.65)
+            ..close();
+          canvas.drawPath(triPath, paint..style = PaintingStyle.fill);
+        }
+        break;
+
+      // ── Folder icon ────────────────────────────────────────────────────
+      case 'folder':
+        final folderPath = Path()
+          ..moveTo(s * 0.08, s * 0.3)
+          ..lineTo(s * 0.08, s * 0.8)
+          ..quadraticBezierTo(s * 0.08, s * 0.88, s * 0.16, s * 0.88)
+          ..lineTo(s * 0.84, s * 0.88)
+          ..quadraticBezierTo(s * 0.92, s * 0.88, s * 0.92, s * 0.8)
+          ..lineTo(s * 0.92, s * 0.35)
+          ..quadraticBezierTo(s * 0.92, s * 0.27, s * 0.84, s * 0.27)
+          ..lineTo(s * 0.52, s * 0.27)
+          ..lineTo(s * 0.42, s * 0.15)
+          ..lineTo(s * 0.16, s * 0.15)
+          ..quadraticBezierTo(s * 0.08, s * 0.15, s * 0.08, s * 0.23)
+          ..close();
+        paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
+        canvas.drawPath(folderPath, paint);
         break;
     }
   }

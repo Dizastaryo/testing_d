@@ -101,6 +101,14 @@ class User {
     };
   }
 
+  UserShort toShort() => UserShort(
+        id: id,
+        username: username,
+        fullName: fullName,
+        avatarUrl: avatarUrl ?? '',
+        isVerified: isVerified,
+      );
+
   User copyWith({
     String? id,
     String? username,
@@ -144,4 +152,28 @@ class User {
       createdAt: createdAt ?? this.createdAt,
     );
   }
+}
+
+class UserShort {
+  final String id;
+  final String username;
+  final String fullName;
+  final String avatarUrl;
+  final bool isVerified;
+
+  const UserShort({
+    required this.id,
+    required this.username,
+    required this.fullName,
+    required this.avatarUrl,
+    this.isVerified = false,
+  });
+
+  factory UserShort.fromJson(Map<String, dynamic> json) => UserShort(
+        id: json['id']?.toString() ?? '',
+        username: json['username']?.toString() ?? '',
+        fullName: json['full_name']?.toString() ?? '',
+        avatarUrl: _absUrl(json['avatar_url']?.toString()),
+        isVerified: (json['is_verified'] ?? false) as bool,
+      );
 }

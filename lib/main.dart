@@ -28,6 +28,8 @@ import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/reels/reels_screen.dart';
+import 'features/videos/watch_screen.dart';
+import 'features/library/library_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,6 +149,20 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/scanner',
               pageBuilder: (_, __) => CustomTransitionPage(
                 child: const ScannerScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/watch',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const WatchScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/files',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const LibraryScreen(),
                 transitionsBuilder: _fadeTransition,
               ),
             ),

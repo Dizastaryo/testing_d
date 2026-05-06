@@ -1,0 +1,285 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/design/tokens.dart';
+import '../../core/models/video.dart';
+import '../../core/providers/video_provider.dart';
+
+class WatchScreen extends ConsumerStatefulWidget {
+  const WatchScreen({super.key});
+
+  @override
+  ConsumerState<WatchScreen> createState() => _WatchScreenState();
+}
+
+class _WatchScreenState extends ConsumerState<WatchScreen> {
+  String _activeCategory = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final categoriesAsync = ref.watch(videoCategoriesProvider);
+    final featuredAsync = ref.watch(videosFeaturedProvider);
+    final videosAsync = ref.watch(videosProvider(_activeCategory.isEmpty ? null : _activeCategory));
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: _buildHeader(theme)),
+          SliverToBoxAdapter(
+            child: categoriesAsync.when(
+              data: (cats) => _buildCategories(cats, theme),
+              loading: () => const SizedBox(height: 50),
+              error: (_, __) => const SizedBox(),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: featuredAsync.when(
+              data: (video) => video != null ? _buildFeaturedCard(video, theme, isDark) : const SizedBox(),
+              loading: () => const SizedBox(height: 200),
+              error: (_, __) => const SizedBox(),
+            ),
+          ),
+          videosAsync.when(
+            data: (videos) => _buildGrid(videos, theme),
+            loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Ошибка загрузки: $e'))),
+          ),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 60, 20, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '◐ CINEMA · LIVE',
+                style: TextStyle(
+                  fontFamily: 'JetBrains Mono',
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  color: SeeUColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Видео',
+                style: TextStyle(
+                  fontFamily: 'Georgia',
+                  fontSize: 36,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: -1,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: Icon(Icons.search, color: theme.colorScheme.onSurface),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategories(List<VideoCategory> cats, ThemeData theme) {
+    final allCats = [VideoCategory(id: '', name: 'Все'), ...cats];
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: allCats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final cat = allCats[i];
+          final isActive = cat.id == _activeCategory;
+          return GestureDetector(
+            onTap: () => setState(() => _activeCategory = cat.id),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: isActive ? theme.colorScheme.onSurface : Colors.transparent,
+                border: isActive ? null : Border.all(color: theme.dividerColor),
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: Text(
+                cat.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isActive ? theme.scaffoldBackgroundColor : theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFeaturedCard(Video video, ThemeData theme, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: LinearGradient(
+            colors: [SeeUColors.accent.withOpacity(0.8), Colors.black87],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(color: SeeUColors.accent.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8)),
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                    stops: [0.3, 1.0],
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SeeUColors.accent,
+                  boxShadow: [BoxShadow(color: SeeUColors.accent.withOpacity(0.6), blurRadius: 30)],
+                ),
+                child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+              ),
+            ),
+            if (video.isLive)
+              Positioned(
+                top: 14,
+                left: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accent,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white)),
+                      const SizedBox(width: 4),
+                      Text('LIVE · ${video.viewsFormatted}', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 14,
+              right: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                child: Text('${video.resolution} · HDR', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: Colors.white, letterSpacing: 1, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(video.title, style: const TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.w400, color: Colors.white, letterSpacing: -0.5)),
+                  const SizedBox(height: 6),
+                  Text('@${video.user?.username ?? ''} · ${video.durationFormatted} · ${video.viewsFormatted} views', style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, color: Colors.white70)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrid(List<Video> videos, ThemeData theme) {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.65,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, i) => _buildVideoCard(videos[i], theme),
+          childCount: videos.length,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoCard(Video video, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: LinearGradient(
+                colors: [SeeUColors.accent.withOpacity(0.4), Colors.black54],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Stack(
+              children: [
+                if (video.thumbnailUrl.isNotEmpty)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(video.thumbnailUrl, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox()),
+                    ),
+                  ),
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), borderRadius: BorderRadius.circular(4)),
+                    child: Text(video.durationFormatted, style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
+        const SizedBox(height: 2),
+        Text('@${video.user?.username ?? ''} · ${video.viewsFormatted} views', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
+      ],
+    );
+  }
+}
