@@ -2,9 +2,9 @@ class ApiEndpoints {
   ApiEndpoints._();
 
   // Base URLs for microservices
-  static const String baseUrl = 'http://192.168.10.9:8001/api/v1';
-  static const String videoBaseUrl = 'http://192.168.10.9:8002/api/v1';
-  static const String libraryBaseUrl = 'http://192.168.10.9:8003/api/v1';
+  static const String baseUrl = 'http://172.20.10.3:8001/api/v1';
+  static const String videoBaseUrl = 'http://172.20.10.3:8002/api/v1';
+  static const String libraryBaseUrl = 'http://172.20.10.3:8003/api/v1';
 
   // Auth (phone + OTP)
   static const String sendOtp = '/auth/send-otp';
