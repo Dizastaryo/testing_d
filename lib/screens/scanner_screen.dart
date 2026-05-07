@@ -311,39 +311,15 @@ class _ScannerScreenState extends State<ScannerScreen>
               ),
             ),
 
-            // ─── Radar / List toggle ───
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: c.surface2,
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                ),
-                child: Row(
-                  children: [
-                    _buildToggleTab('Радар', 'radar'),
-                    _buildToggleTab('Список', 'list'),
-                  ],
-                ),
-              ),
-            ),
-
-            // ─── Content ───
+            // ─── Content: radar + device list below ───
             Expanded(
-              child: _viewMode == 'radar'
+              child: entries.isEmpty
                   ? _buildRadarView(entries)
-                  : _buildListView(entries),
+                  : _buildRadarWithList(entries),
             ),
           ],
         ),
       ),
-      floatingActionButton: _viewMode == 'list'
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 80),
-              child: _buildFab(),
-            )
-          : null,
     );
   }
 
@@ -547,6 +523,176 @@ class _ScannerScreenState extends State<ScannerScreen>
           right: 0,
           child: Center(child: _buildFab()),
         ),
+      ],
+    );
+  }
+
+  Widget _buildRadarWithList(List<_ResolvedEntry> entries) {
+    final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 120),
+      children: [
+        // Compact radar at top
+        SizedBox(
+          height: 260,
+          child: Center(
+            child: SizedBox(
+              width: 240,
+              height: 240,
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_sweepController, _pulseController, _floatController]),
+                builder: (_, __) {
+                  return CustomPaint(
+                    painter: _DesignRadarPainter(
+                      sweepProgress: _sweepController.value,
+                      pulseProgress: _pulseController.value,
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: Center(
+                            child: Transform.translate(
+                              offset: Offset(0, -3 * math.sin(_floatController.value * math.pi)),
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: SeeUColors.surface,
+                                  border: Border.all(color: SeeUColors.accent, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: SeeUColors.accent.withValues(alpha: 0.35),
+                                      blurRadius: 12,
+                                    ),
+                                  ],
+                                ),
+                                child: const Center(child: Text('🦊', style: TextStyle(fontSize: 22))),
+                              ),
+                            ),
+                          ),
+                        ),
+                        ...entries.asMap().entries.map((e) {
+                          final idx = e.key;
+                          final entry = e.value;
+                          final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
+                          final dist = _rssiToMeters(entry.device.rssi);
+                          final r = (dist / 50).clamp(0.0, 1.0) * 80 + 20;
+                          final x = math.cos(angle) * r;
+                          final y = math.sin(angle) * r;
+                          final emoji = emojis[entry.device.macAddress.hashCode.abs() % emojis.length];
+                          return Positioned(
+                            top: 120 + y - 16,
+                            left: 120 + x - 16,
+                            child: GestureDetector(
+                              onTap: () => _showPersonSheet(entry, emoji),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: SeeUColors.surface,
+                                  border: Border.all(color: SeeUColors.borderSubtle, width: 1),
+                                  boxShadow: SeeUShadows.sm,
+                                ),
+                                child: Center(child: Text(emoji, style: const TextStyle(fontSize: 16))),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        // Scan button
+        Center(child: _buildFab()),
+        const SizedBox(height: 16),
+        // Found list
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Text(
+            'Найдено ${entries.length} ${_personWord(entries.length)}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: context.seeuColors.ink2,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...entries.asMap().entries.map((e) {
+          final index = e.key;
+          final entry = e.value;
+          final emoji = emojis[entry.device.macAddress.hashCode.abs() % emojis.length];
+          final alias = (entry.resolved.user?.name ?? '').isNotEmpty
+              ? (entry.resolved.user?.name ?? '')
+              : 'user_${entry.device.macAddress.substring(0, 5)}';
+          final isOnline = entry.device.rssi > -80;
+
+          return TweenAnimationBuilder<double>(
+            key: ValueKey(entry.device.macAddress),
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: Duration(milliseconds: 300 + index * 40),
+            curve: Curves.easeOutCubic,
+            builder: (_, val, child) => Opacity(
+              opacity: val,
+              child: Transform.translate(offset: Offset(0, 8 * (1 - val)), child: child),
+            ),
+            child: GestureDetector(
+              onTap: () => _showPersonSheet(entry, emoji),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: SeeUColors.surface,
+                  borderRadius: BorderRadius.circular(SeeURadii.medium),
+                  border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: SeeUColors.surface,
+                        border: Border.all(color: SeeUColors.borderSubtle, width: 1.5),
+                      ),
+                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 20))),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(alias, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_fmtDist(entry.device.rssi)} · ${isOnline ? "онлайн" : "далеко"}',
+                            style: TextStyle(fontSize: 12, color: context.seeuColors.ink3),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isOnline ? SeeUColors.success : context.seeuColors.ink4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ],
     );
   }

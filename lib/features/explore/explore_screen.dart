@@ -55,7 +55,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     _searchCtrl.clear();
     ref.read(searchProvider.notifier).clear();
     _focusNode.unfocus();
-    setState(() {});
+    setState(() => _selectedTab = 0);
   }
 
   @override
@@ -77,11 +77,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             Expanded(
               child: hasQuery
                   ? _buildSearchResults(searchState)
-                  : _selectedTab == 3
-                      ? _buildAudioTab()
-                      : _selectedTab == 4
-                          ? _buildTagsTab()
-                          : _buildMixedGrid(),
+                  : _selectedTab == 1
+                      ? _buildReelsGrid()
+                      : _buildMixedGrid(),
             ),
           ],
         ),
@@ -95,9 +93,10 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   // Tab index for explore tabs
   int _selectedTab = 0;
-  static const List<String> _exploreTabs = [
-    'Всё', 'Reels', 'Люди', 'Аудио', 'Теги',
-  ];
+  // Browse mode tabs (no search active)
+  static const List<String> _browseTabs = ['Всё', 'Рилсы'];
+  // Search mode tabs (search active)
+  static const List<String> _searchTabs = ['Публикации', 'Аккаунты', 'Теги'];
 
   Widget _buildHeader(bool hasQuery) {
     final c = context.seeuColors;
@@ -177,55 +176,54 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
           const SizedBox(height: 10),
 
-          // Tab row: Всё | Reels | Люди | Аудио | Теги
+          // Tab row: depends on mode
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             child: Row(
-              children: List.generate(_exploreTabs.length, (i) {
-                final isActive = _selectedTab == i;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedTab = i);
-                      // Map tab index to search type for backend filtering
-                      String searchType;
-                      switch (i) {
-                        case 1: // Reels
-                          searchType = 'posts';
-                          break;
-                        case 2: // Люди
-                          searchType = 'users';
-                          break;
-                        default:
-                          searchType = 'all';
-                      }
-                      ref.read(searchProvider.notifier).setSearchType(searchType);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? c.ink
-                            : c.surface2,
-                        borderRadius: BorderRadius.circular(SeeURadii.pill),
-                      ),
-                      child: Text(
-                        _exploreTabs[i],
-                        style: SeeUTypography.caption.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color:
-                              isActive ? Colors.white : c.ink2,
+              children: List.generate(
+                hasQuery ? _searchTabs.length : _browseTabs.length,
+                (i) {
+                  final tabs = hasQuery ? _searchTabs : _browseTabs;
+                  final isActive = _selectedTab == i;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedTab = i);
+                        if (hasQuery) {
+                          // Search tabs: Публикации, Аккаунты, Теги
+                          String searchType;
+                          switch (i) {
+                            case 0: searchType = 'posts'; break;
+                            case 1: searchType = 'users'; break;
+                            case 2: searchType = 'tags'; break;
+                            default: searchType = 'all';
+                          }
+                          ref.read(searchProvider.notifier).setSearchType(searchType);
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: isActive ? c.ink : c.surface2,
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        ),
+                        child: Text(
+                          tabs[i],
+                          style: SeeUTypography.caption.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isActive ? Colors.white : c.ink2,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
             ),
           ),
 
@@ -382,6 +380,44 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   // Tags section removed - all content comes from backend search
 
+  Widget _buildReelsGrid() {
+    final c = context.seeuColors;
+    // Reuse the explore posts but filter to video type, or show all as reels
+    final postsAsync = ref.watch(explorePostsProvider);
+
+    return postsAsync.when(
+      loading: () => _buildGridShimmer(),
+      error: (_, __) => Center(
+        child: Text('Не удалось загрузить', style: SeeUTypography.body.copyWith(color: c.ink2)),
+      ),
+      data: (posts) {
+        final videoPosts = posts.where((p) => p.media.any((m) => m.type == MediaType.video)).toList();
+        // If no video posts, show all posts but navigate to reels on tap
+        final displayPosts = videoPosts.isNotEmpty ? videoPosts.take(18).toList() : posts.take(18).toList();
+
+        if (displayPosts.isEmpty) {
+          return Center(
+            child: Text('Нет рилсов', style: SeeUTypography.body.copyWith(color: c.ink2)),
+          );
+        }
+
+        return CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            SliverToBoxAdapter(
+              child: _MasonryGrid(
+                posts: displayPosts,
+                rng: Random(42),
+                onTapPost: (_) => context.push('/reels'),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 120)),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildMixedGrid() {
     final c = context.seeuColors;
     final postsAsync = ref.watch(explorePostsProvider);
@@ -438,15 +474,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               child: _MasonryGrid(
                 posts: displayPosts,
                 rng: rng,
-                onTapPost: (index) {
-                  final post = displayPosts[index];
-                  final isVideo = post.media.any((m) => m.type == MediaType.video);
-                  if (isVideo) {
-                    context.push('/reels');
-                  } else {
-                    context.push('/post/${post.id}');
-                  }
-                },
+                onTapPost: (_) => context.push('/reels'),
               ),
             ),
 

@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
@@ -22,7 +23,9 @@ class _Reel {
   final String fullName;
   final String? avatarUrl;
   final bool isVerified;
-  final String videoUrl; // full URL to video
+  final String videoUrl; // full URL to first media
+  final List<String> allMediaUrls; // all media URLs (for photo slideshows)
+  final String mediaType; // 'photo' or 'video'
   final String caption;
   final List<String> tags;
   final int likes;
@@ -38,6 +41,8 @@ class _Reel {
     this.avatarUrl,
     this.isVerified = false,
     required this.videoUrl,
+    this.allMediaUrls = const [],
+    this.mediaType = 'video',
     required this.caption,
     required this.tags,
     required this.likes,
@@ -46,6 +51,8 @@ class _Reel {
     this.duration = 30,
   });
 
+  bool get isVideo => mediaType == 'video';
+  bool get isPhoto => mediaType == 'photo';
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +206,12 @@ class _ReelsScreenState extends State<ReelsScreen>
             final tags = (r['hashtags'] as List<dynamic>?)?.cast<String>() ?? tagRegex.allMatches(caption).map((m) => m.group(1)!).toList();
             var avatarUrl = user['avatar_url']?.toString() ?? '';
             if (avatarUrl.startsWith('/')) avatarUrl = '${ApiEndpoints.baseUrl.replaceAll('/api/v1', '')}$avatarUrl';
+            // Build full URLs for all media
+            final allUrls = mediaUrls.map((u) {
+              if (u.startsWith('/')) return serverBase + u;
+              return u;
+            }).toList();
+            final mediaType = r['media_type']?.toString() ?? 'video';
             return _Reel(
               id: r['id']?.toString() ?? '',
               userId: r['user_id']?.toString() ?? '',
@@ -207,6 +220,8 @@ class _ReelsScreenState extends State<ReelsScreen>
               avatarUrl: avatarUrl,
               isVerified: (user['is_verified'] ?? false) as bool,
               videoUrl: url,
+              allMediaUrls: allUrls,
+              mediaType: mediaType,
               caption: caption,
               tags: tags,
               likes: r['likes_count'] ?? 0,
@@ -641,7 +656,7 @@ class _ReelsScreenState extends State<ReelsScreen>
 class _ReelBackground extends StatefulWidget {
   final _Reel reel;
   final bool playing;
-  final _Reel? nextReel; // preload next
+  final _Reel? nextReel;
   const _ReelBackground({
     required this.reel,
     this.playing = true,
@@ -654,23 +669,27 @@ class _ReelBackground extends StatefulWidget {
 
 class _ReelBackgroundState extends State<_ReelBackground> {
   VideoPlayerController? _controller;
-  VideoPlayerController? _nextController; // preloaded
+  VideoPlayerController? _nextController;
   bool _initialized = false;
   bool _hasError = false;
   String? _preloadedUrl;
 
+  // Photo slideshow
+  int _photoIndex = 0;
+
   @override
   void initState() {
     super.initState();
-    _initVideo();
-    _preloadNext();
+    if (widget.reel.isVideo) {
+      _initVideo();
+      _preloadNext();
+    }
   }
 
   void _initVideo() {
     _hasError = false;
     _initialized = false;
 
-    // Check if we already preloaded this video
     if (_nextController != null &&
         _preloadedUrl == widget.reel.videoUrl) {
       _controller = _nextController;
@@ -706,8 +725,10 @@ class _ReelBackgroundState extends State<_ReelBackground> {
   }
 
   void _preloadNext() {
-    final nextUrl = widget.nextReel?.videoUrl;
-    if (nextUrl == null || nextUrl.isEmpty || nextUrl == _preloadedUrl) return;
+    final next = widget.nextReel;
+    if (next == null || !next.isVideo) return;
+    final nextUrl = next.videoUrl;
+    if (nextUrl.isEmpty || nextUrl == _preloadedUrl) return;
 
     _nextController?.dispose();
     _preloadedUrl = nextUrl;
@@ -727,17 +748,22 @@ class _ReelBackgroundState extends State<_ReelBackground> {
   void didUpdateWidget(covariant _ReelBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Reel changed → switch video
     if (oldWidget.reel.id != widget.reel.id) {
-      _controller?.dispose();
-      _controller = null;
-      _initVideo();
-      _preloadNext();
+      _photoIndex = 0;
+      if (widget.reel.isVideo) {
+        _controller?.dispose();
+        _controller = null;
+        _initVideo();
+        _preloadNext();
+      } else {
+        _controller?.dispose();
+        _controller = null;
+        _initialized = false;
+      }
       return;
     }
 
-    // Play/pause sync
-    if (oldWidget.playing != widget.playing && _initialized && _controller != null) {
+    if (widget.reel.isVideo && oldWidget.playing != widget.playing && _initialized && _controller != null) {
       if (widget.playing) {
         _controller!.play();
       } else {
@@ -745,7 +771,6 @@ class _ReelBackgroundState extends State<_ReelBackground> {
       }
     }
 
-    // Preload next changed
     if (oldWidget.nextReel?.id != widget.nextReel?.id) {
       _preloadNext();
     }
@@ -760,6 +785,72 @@ class _ReelBackgroundState extends State<_ReelBackground> {
 
   @override
   Widget build(BuildContext context) {
+    // Photo reel — show image slideshow
+    if (widget.reel.isPhoto) {
+      final urls = widget.reel.allMediaUrls;
+      if (urls.isEmpty) {
+        return Container(color: Colors.black);
+      }
+      return GestureDetector(
+        onHorizontalDragEnd: (details) {
+          if (urls.length <= 1) return;
+          if (details.primaryVelocity != null && details.primaryVelocity! < -100) {
+            // Swipe left → next
+            if (_photoIndex < urls.length - 1) {
+              setState(() => _photoIndex++);
+            }
+          } else if (details.primaryVelocity != null && details.primaryVelocity! > 100) {
+            // Swipe right → previous
+            if (_photoIndex > 0) {
+              setState(() => _photoIndex--);
+            }
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: CachedNetworkImage(
+                key: ValueKey(urls[_photoIndex]),
+                imageUrl: urls[_photoIndex],
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(color: Colors.black),
+                errorWidget: (_, __, ___) => Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: Icon(Icons.image_not_supported, color: Colors.white38, size: 48),
+                  ),
+                ),
+              ),
+            ),
+            // Page indicator
+            if (urls.length > 1)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 44,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(urls.length, (i) => Container(
+                    width: i == _photoIndex ? 8 : 6,
+                    height: i == _photoIndex ? 8 : 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i == _photoIndex
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.4),
+                    ),
+                  )),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    // Video reel
     if (_hasError) {
       return Container(
         color: Colors.black,

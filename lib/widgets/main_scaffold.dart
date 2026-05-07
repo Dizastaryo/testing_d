@@ -15,17 +15,16 @@ class MainScaffold extends StatelessWidget {
   int _locationToIndex(String location) {
     if (location.startsWith('/feed')) return 0;
     if (location.startsWith('/explore')) return 1;
-    // index 2 is services button (no route mapping — handled separately)
+    // index 2 is services button
     if (location.startsWith('/services')) return 2;
-    if (location.startsWith('/reels')) return 3;
-    if (location.startsWith('/scanner')) return 4;
-    if (location.startsWith('/profile')) return 5;
+    if (location.startsWith('/scanner')) return 3;
+    if (location.startsWith('/profile')) return 4;
     return 0;
   }
 
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
-    const routes = ['/feed', '/explore', '/services', '/reels', '/scanner', '/profile'];
+    const routes = ['/feed', '/explore', '/services', '/scanner', '/profile'];
     if (index == 2) {
       context.go('/services');
       return;
@@ -97,25 +96,18 @@ class MainScaffold extends StatelessWidget {
                             onTap: () => _onTap(context, 2),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('reels', false),
-                            activeIcon: _buildNavIcon('reels', true),
-                            label: 'Рилсы',
-                            isSelected: currentIndex == 3,
-                            onTap: () => _onTap(context, 3),
-                          ),
-                          _NavItem(
                             icon: _buildNavIcon('radar', false),
                             activeIcon: _buildNavIcon('radar', true),
                             label: 'Сканер',
-                            isSelected: currentIndex == 4,
-                            onTap: () => _onTap(context, 4),
+                            isSelected: currentIndex == 3,
+                            onTap: () => _onTap(context, 3),
                           ),
                           _NavItem(
                             icon: _buildNavIcon('user', false),
                             activeIcon: _buildNavIcon('user', true),
                             label: 'Профиль',
-                            isSelected: currentIndex == 5,
-                            onTap: () => _onTap(context, 5),
+                            isSelected: currentIndex == 4,
+                            onTap: () => _onTap(context, 4),
                           ),
                         ],
                       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/design/design.dart';
 
 class ServicesScreen extends StatelessWidget {
@@ -58,7 +59,7 @@ class ServicesScreen extends StatelessWidget {
                       gradient: const [Color(0xFF667EEA), Color(0xFF764BA2)],
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        _showComingSoon(context, 'Видео');
+                        context.push('/watch');
                       },
                     ),
                     _ServiceCard(
@@ -68,7 +69,7 @@ class ServicesScreen extends StatelessWidget {
                       gradient: const [Color(0xFF11998E), Color(0xFF38EF7D)],
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        _showComingSoon(context, 'Библиотека');
+                        context.push('/files');
                       },
                     ),
                   ],
