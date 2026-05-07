@@ -30,6 +30,7 @@ import 'features/notifications/notifications_screen.dart';
 import 'features/reels/reels_screen.dart';
 import 'features/videos/watch_screen.dart';
 import 'features/library/library_screen.dart';
+import 'features/services/services_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -105,13 +106,6 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             transitionsBuilder: _fadeTransition,
           ),
         ),
-        GoRoute(
-          path: '/reels',
-          pageBuilder: (_, __) => CustomTransitionPage(
-            child: const ReelsScreen(),
-            transitionsBuilder: _fadeTransition,
-          ),
-        ),
         ShellRoute(
           builder: (context, state, child) => MainScaffold(child: child),
           routes: [
@@ -149,6 +143,20 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/scanner',
               pageBuilder: (_, __) => CustomTransitionPage(
                 child: const ScannerScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/reels',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ReelsScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/services',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ServicesScreen(),
                 transitionsBuilder: _fadeTransition,
               ),
             ),

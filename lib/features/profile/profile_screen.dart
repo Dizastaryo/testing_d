@@ -28,8 +28,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedTab = 0;
-  // Simulated nearby count (BLE badge); replace with real provider when available
-  static const int _nearbyCount = 3;
+  // TODO: Replace with real BLE nearby count from provider
+  int get _nearbyCount => 0;
 
   @override
   void initState() {
@@ -50,6 +50,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _showCreateSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.camera(), color: SeeUColors.accent),
+                title: const Text('Создать пост'),
+                onTap: () { Navigator.pop(context); context.push('/post/create'); },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.filmStrip(), color: SeeUColors.accent),
+                title: const Text('Создать рилс'),
+                onTap: () { Navigator.pop(context); context.push('/story/create'); },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.plusCircle(), color: SeeUColors.accent),
+                title: const Text('Создать историю'),
+                onTap: () { Navigator.pop(context); context.push('/story/create'); },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _resolveUsername() {
@@ -122,6 +157,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   if (isOwnProfile)
                     Row(
                       children: [
+                        // Create content button
+                        _HeaderIconButton(
+                          icon: PhosphorIcons.plusCircle(),
+                          onTap: () => _showCreateSheet(context),
+                        ),
+                        const SizedBox(width: 8),
                         // BLE button with "Рядом · N" badge when nearby > 0
                         Stack(
                           clipBehavior: Clip.none,

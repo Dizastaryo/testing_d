@@ -291,9 +291,9 @@ class _ReelsScreenState extends State<ReelsScreen>
     _callApi(() async {
       final dio = await _authedDio();
       if (!wasLiked) {
-        await dio.post('${ApiEndpoints.baseUrl}/posts/$reelId/like');
+        await dio.post('${ApiEndpoints.videoBaseUrl}${ApiEndpoints.reelLike(reelId)}');
       } else {
-        await dio.delete('${ApiEndpoints.baseUrl}/posts/$reelId/like');
+        await dio.delete('${ApiEndpoints.videoBaseUrl}${ApiEndpoints.reelLike(reelId)}');
       }
     });
   }
@@ -301,14 +301,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   void _toggleSave(String reelId) {
     final wasSaved = _savedMap[reelId] ?? false;
     setState(() => _savedMap[reelId] = !wasSaved);
-    _callApi(() async {
-      final dio = await _authedDio();
-      if (!wasSaved) {
-        await dio.post('${ApiEndpoints.baseUrl}/posts/$reelId/save');
-      } else {
-        await dio.delete('${ApiEndpoints.baseUrl}/posts/$reelId/save');
-      }
-    });
+    // Reels don't have a save endpoint — no-op for now
   }
 
   void _toggleFollow(String username) {
@@ -554,33 +547,7 @@ class _ReelsScreenState extends State<ReelsScreen>
               ),
             ),
 
-            // ── Close button (top-right) ──
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 10,
-              right: 12,
-              child: GestureDetector(
-                onTap: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go('/feed');
-                  }
-                },
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    PhosphorIconsBold.x,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-            ),
+            // Close button removed — reels is now a tab in bottom nav
 
             // ── Action rail (right) ──
             if (_reels.isNotEmpty) ...[

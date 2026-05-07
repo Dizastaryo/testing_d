@@ -14,60 +14,27 @@ class MainScaffold extends StatelessWidget {
 
   int _locationToIndex(String location) {
     if (location.startsWith('/feed')) return 0;
-    if (location.startsWith('/scanner')) return 1;
-    // index 2 is upload button (no route)
-    if (location.startsWith('/watch')) return 3;
-    if (location.startsWith('/files')) return 4;
+    if (location.startsWith('/explore')) return 1;
+    // index 2 is services button (no route mapping — handled separately)
+    if (location.startsWith('/services')) return 2;
+    if (location.startsWith('/reels')) return 3;
+    if (location.startsWith('/scanner')) return 4;
+    if (location.startsWith('/profile')) return 5;
     return 0;
   }
 
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
-    const routes = ['/feed', '/scanner', '', '/watch', '/files'];
+    const routes = ['/feed', '/explore', '/services', '/reels', '/scanner', '/profile'];
     if (index == 2) {
-      // Upload button — show action sheet
-      _showUploadSheet(context);
+      context.go('/services');
       return;
     }
     context.go(routes[index]);
   }
 
-  void _showUploadSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.photo_camera, color: SeeUColors.accent),
-                title: const Text('Создать пост'),
-                onTap: () { Navigator.pop(context); context.push('/post/create'); },
-              ),
-              ListTile(
-                leading: Icon(Icons.movie, color: SeeUColors.accent),
-                title: const Text('Создать рилс'),
-                onTap: () { Navigator.pop(context); context.push('/reels'); },
-              ),
-              ListTile(
-                leading: Icon(Icons.upload_file, color: SeeUColors.accent),
-                title: const Text('Загрузить файл'),
-                onTap: () { Navigator.pop(context); },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Routes where the bottom nav should be hidden (fullscreen experiences).
   bool _shouldHideNav(String location) {
-    // Hide on individual chat screens (but NOT the chat list)
     if (location.startsWith('/chat/') && location != '/chat') return true;
     return false;
   }
@@ -109,7 +76,7 @@ class MainScaffold extends StatelessWidget {
                     child: SizedBox(
                       height: 56,
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _NavItem(
                             icon: _buildNavIcon('home', false),
@@ -119,26 +86,36 @@ class MainScaffold extends StatelessWidget {
                             onTap: () => _onTap(context, 0),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('radar', false),
-                            activeIcon: _buildNavIcon('radar', true),
-                            label: 'Рядом',
+                            icon: _buildNavIcon('search', false),
+                            activeIcon: _buildNavIcon('search', true),
+                            label: 'Интересное',
                             isSelected: currentIndex == 1,
                             onTap: () => _onTap(context, 1),
                           ),
-                          _CreatePill(onTap: () => _showUploadSheet(context)),
+                          _ServicesPill(
+                            isSelected: currentIndex == 2,
+                            onTap: () => _onTap(context, 2),
+                          ),
                           _NavItem(
-                            icon: _buildNavIcon('video', false),
-                            activeIcon: _buildNavIcon('video', true),
-                            label: 'Видео',
+                            icon: _buildNavIcon('reels', false),
+                            activeIcon: _buildNavIcon('reels', true),
+                            label: 'Рилсы',
                             isSelected: currentIndex == 3,
                             onTap: () => _onTap(context, 3),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('folder', false),
-                            activeIcon: _buildNavIcon('folder', true),
-                            label: 'Файлы',
+                            icon: _buildNavIcon('radar', false),
+                            activeIcon: _buildNavIcon('radar', true),
+                            label: 'Сканер',
                             isSelected: currentIndex == 4,
                             onTap: () => _onTap(context, 4),
+                          ),
+                          _NavItem(
+                            icon: _buildNavIcon('user', false),
+                            activeIcon: _buildNavIcon('user', true),
+                            label: 'Профиль',
+                            isSelected: currentIndex == 5,
+                            onTap: () => _onTap(context, 5),
                           ),
                         ],
                       ),
@@ -153,18 +130,19 @@ class MainScaffold extends StatelessWidget {
 
   Widget _buildNavIcon(String name, bool filled) {
     return CustomPaint(
-      size: const Size(24, 24),
+      size: const Size(22, 22),
       painter: _NavIconPainter(name: name, filled: filled),
     );
   }
 }
 
-// ─── Create pill (center tab) ─────────────────────────────────────────────
+// ─── Services pill (center tab) ──────────────────────────────────────────
 
-class _CreatePill extends StatelessWidget {
+class _ServicesPill extends StatelessWidget {
+  final bool isSelected;
   final VoidCallback onTap;
 
-  const _CreatePill({required this.onTap});
+  const _ServicesPill({required this.isSelected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -172,8 +150,8 @@ class _CreatePill extends StatelessWidget {
       onTap: onTap,
       scaleFactor: 0.88,
       child: Container(
-        width: 48,
-        height: 36,
+        width: 46,
+        height: 34,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           gradient: const LinearGradient(
@@ -191,8 +169,8 @@ class _CreatePill extends StatelessWidget {
         ),
         child: const Center(
           child: CustomPaint(
-            size: Size(22, 22),
-            painter: _PlusIconPainter(),
+            size: Size(20, 20),
+            painter: _GridIconPainter(),
           ),
         ),
       ),
@@ -200,26 +178,45 @@ class _CreatePill extends StatelessWidget {
   }
 }
 
-// ─── Plus icon painter ────────────────────────────────────────────────────
+// ─── Grid icon painter (for services button) ─────────────────────────────
 
-class _PlusIconPainter extends CustomPainter {
-  const _PlusIconPainter();
+class _GridIconPainter extends CustomPainter {
+  const _GridIconPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.width;
     final paint = Paint()
       ..color = Colors.white
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round;
-    // Horizontal bar
-    canvas.drawLine(Offset(s * 0.2, s * 0.5), Offset(s * 0.8, s * 0.5), paint);
-    // Vertical bar
-    canvas.drawLine(Offset(s * 0.5, s * 0.2), Offset(s * 0.5, s * 0.8), paint);
+      ..style = PaintingStyle.fill;
+    final r = s * 0.14;
+    final gap = s * 0.08;
+    // 2x2 grid of rounded squares
+    final cellSize = (s - gap) / 2;
+    // Top-left
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, cellSize, cellSize), Radius.circular(r)),
+      paint,
+    );
+    // Top-right
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(cellSize + gap, 0, cellSize, cellSize), Radius.circular(r)),
+      paint,
+    );
+    // Bottom-left
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, cellSize + gap, cellSize, cellSize), Radius.circular(r)),
+      paint,
+    );
+    // Bottom-right
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(cellSize + gap, cellSize + gap, cellSize, cellSize), Radius.circular(r)),
+      paint,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _PlusIconPainter old) => false;
+  bool shouldRepaint(covariant _GridIconPainter old) => false;
 }
 
 // ─── Nav item ────────────────────────────────────────────────────────────
@@ -298,7 +295,7 @@ class _NavItemState extends State<_NavItem>
       onTap: widget.onTap,
       scaleFactor: 0.85,
       child: SizedBox(
-        width: 56,
+        width: 50,
         height: 56,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -325,17 +322,18 @@ class _NavItemState extends State<_NavItem>
                 child: widget.isSelected ? widget.activeIcon : widget.icon,
               ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
             Text(
               widget.label,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 9,
                 fontWeight:
                     widget.isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: widget.isSelected ? activeColor : inactiveColor,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: widget.isSelected ? 4 : 0,
@@ -376,7 +374,6 @@ class _NavIconPainter extends CustomPainter {
         final cx = s * 0.5;
         final cy = s * 0.5;
 
-        // Almond / eye outline: two quadratic curves forming the eye shape.
         final eyePath = Path();
         eyePath.moveTo(s * 0.08, cy);
         eyePath.quadraticBezierTo(cx, s * 0.2, s * 0.92, cy);
@@ -384,9 +381,7 @@ class _NavIconPainter extends CustomPainter {
         eyePath.close();
 
         if (filled) {
-          // Filled eye: solid almond shape
           canvas.drawPath(eyePath, paint..style = PaintingStyle.fill);
-          // Stroke the outline for definition
           canvas.drawPath(
             eyePath,
             Paint()
@@ -396,7 +391,6 @@ class _NavIconPainter extends CustomPainter {
               ..strokeCap = StrokeCap.round
               ..strokeJoin = StrokeJoin.round,
           );
-          // Pupil ring (stroke circle) so the icon reads as an eye, not a blob
           canvas.drawCircle(
             Offset(cx, cy),
             s * 0.14,
@@ -405,7 +399,6 @@ class _NavIconPainter extends CustomPainter {
               ..style = PaintingStyle.stroke
               ..strokeWidth = 1.6,
           );
-          // Highlight dot
           canvas.drawCircle(
             Offset(cx + s * 0.065, cy - s * 0.065),
             s * 0.045,
@@ -414,14 +407,12 @@ class _NavIconPainter extends CustomPainter {
               ..style = PaintingStyle.fill,
           );
         } else {
-          // Stroke eye outline
           canvas.drawPath(
             eyePath,
             paint
               ..style = PaintingStyle.stroke
               ..strokeWidth = 1.7,
           );
-          // Filled pupil circle
           canvas.drawCircle(
             Offset(cx, cy),
             s * 0.14,
@@ -429,7 +420,6 @@ class _NavIconPainter extends CustomPainter {
               ..color = Colors.white
               ..style = PaintingStyle.fill,
           );
-          // Small white highlight dot
           canvas.drawCircle(
             Offset(cx + s * 0.055, cy - s * 0.055),
             s * 0.04,
@@ -452,7 +442,6 @@ class _NavIconPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = filled ? 2.0 : 1.7,
         );
-        // Handle
         canvas.drawLine(
           Offset(s * 0.63, s * 0.63),
           Offset(s * 0.86, s * 0.86),
@@ -461,7 +450,6 @@ class _NavIconPainter extends CustomPainter {
             ..strokeWidth = filled ? 2.4 : 1.7,
         );
 
-        // 4-point sparkle star inside the search circle
         {
           final sc = searchCenter;
           final starPaint = Paint()
@@ -470,7 +458,6 @@ class _NavIconPainter extends CustomPainter {
           final armLong = s * 0.11;
           final armShort = s * 0.045;
           final starPath = Path();
-          // Top
           starPath.moveTo(sc.dx, sc.dy - armLong);
           starPath.quadraticBezierTo(sc.dx + armShort, sc.dy - armShort,
               sc.dx + armLong, sc.dy);
@@ -494,17 +481,14 @@ class _NavIconPainter extends CustomPainter {
           ..strokeWidth = filled ? 2.0 : 1.7
           ..strokeCap = StrokeCap.round;
 
-        // Outer arc
         canvas.drawArc(
           Rect.fromCircle(center: center, radius: s * 0.38),
           -2.4, 4.8, false, arcPaint,
         );
-        // Middle arc
         canvas.drawArc(
           Rect.fromCircle(center: center, radius: s * 0.24),
           -2.4, 4.8, false, arcPaint,
         );
-        // Center dot
         canvas.drawCircle(
           center,
           s * 0.07,
@@ -513,7 +497,6 @@ class _NavIconPainter extends CustomPainter {
             ..style = PaintingStyle.fill,
         );
 
-        // Sweep line from center toward upper-right; cos(0.9)≈0.6216, sin(0.9)≈0.7833
         {
           final endX = center.dx + s * 0.38 * 0.6216;
           final endY = center.dy - s * 0.38 * 0.7833;
@@ -526,7 +509,6 @@ class _NavIconPainter extends CustomPainter {
               ..strokeWidth = filled ? 2.0 : 1.7
               ..strokeCap = StrokeCap.round,
           );
-          // Dot at the end of the sweep line
           canvas.drawCircle(
             Offset(endX, endY),
             s * 0.055,
@@ -537,9 +519,8 @@ class _NavIconPainter extends CustomPainter {
         }
         break;
 
-      // ── User icon (softer/rounder proportions) ──────────────────────────
+      // ── User icon ─────────────────────────────────────────────────────
       case 'user':
-        // Head — slightly larger and rounder
         canvas.drawCircle(
           Offset(s * 0.5, s * 0.32),
           s * 0.19,
@@ -548,7 +529,6 @@ class _NavIconPainter extends CustomPainter {
                 filled ? PaintingStyle.fill : PaintingStyle.stroke
             ..strokeWidth = filled ? 2.0 : 1.7,
         );
-        // Body arc — wider, rounder shoulder curve
         final bodyPath = Path();
         bodyPath.moveTo(s * 0.14, s * 0.88);
         bodyPath.cubicTo(
@@ -579,6 +559,46 @@ class _NavIconPainter extends CustomPainter {
         }
         break;
 
+      // ── Reels icon (film strip with play) ─────────────────────────────
+      case 'reels':
+        final rect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(s * 0.1, s * 0.1, s * 0.8, s * 0.8),
+          Radius.circular(s * 0.15),
+        );
+        paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
+        paint.strokeWidth = 1.7;
+        canvas.drawRRect(rect, paint);
+
+        // Film perforations (top and bottom)
+        final dotPaint = Paint()
+          ..color = Colors.white
+          ..style = filled ? PaintingStyle.stroke : PaintingStyle.fill;
+        dotPaint.strokeWidth = 1.2;
+        for (var i = 0; i < 3; i++) {
+          final x = s * (0.28 + i * 0.22);
+          canvas.drawCircle(Offset(x, s * 0.21), s * 0.035, dotPaint);
+          canvas.drawCircle(Offset(x, s * 0.79), s * 0.035, dotPaint);
+        }
+
+        // Play triangle in center
+        if (!filled) {
+          final triPath = Path()
+            ..moveTo(s * 0.4, s * 0.35)
+            ..lineTo(s * 0.68, s * 0.5)
+            ..lineTo(s * 0.4, s * 0.65)
+            ..close();
+          canvas.drawPath(triPath, Paint()..color = Colors.white..style = PaintingStyle.fill);
+        } else {
+          // Inverted play triangle for filled state
+          final triPath = Path()
+            ..moveTo(s * 0.4, s * 0.35)
+            ..lineTo(s * 0.68, s * 0.5)
+            ..lineTo(s * 0.4, s * 0.65)
+            ..close();
+          canvas.drawPath(triPath, Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.8..strokeJoin = StrokeJoin.round);
+        }
+        break;
+
       // ── Video icon (play in rectangle) ─────────────────────────────────
       case 'video':
         final rect = RRect.fromRectAndRadius(
@@ -587,7 +607,6 @@ class _NavIconPainter extends CustomPainter {
         );
         paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
         canvas.drawRRect(rect, paint);
-        // Play triangle
         if (!filled) {
           final triPath = Path()
             ..moveTo(s * 0.4, s * 0.35)
