@@ -7,6 +7,8 @@ import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../widgets/report_sheet.dart';
+import '../../widgets/share_sheet.dart';
 import '../feed/widgets/post_card.dart';
 
 final _postDetailProvider =
@@ -29,101 +31,15 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   void _onShare(Post post) {
-    final c = context.seeuColors;
     HapticFeedback.lightImpact();
-    showModalBottomSheet(
+    showShareSheet(
       context: context,
-      backgroundColor: c.surface2,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: c.line,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Text('Поделиться', style: SeeUTypography.subtitle),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: Icon(PhosphorIcons.link(PhosphorIconsStyle.fill),
-                    color: SeeUColors.accent),
-                title:
-                    Text('Скопировать ссылку', style: SeeUTypography.body),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  Clipboard.setData(
-                      ClipboardData(text: 'https://seeu.app/p/${post.id}'));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Ссылка скопирована',
-                          style: SeeUTypography.body
-                              .copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(PhosphorIcons.paperPlaneTilt(PhosphorIconsStyle.fill),
-                    color: SeeUColors.accent),
-                title: Text('Отправить в сообщении',
-                    style: SeeUTypography.body),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Отправлено',
-                          style: SeeUTypography.body
-                              .copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(PhosphorIcons.shareFat(PhosphorIconsStyle.fill),
-                    color: SeeUColors.accent),
-                title: Text('Поделиться в историях',
-                    style: SeeUTypography.body),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Добавлено в историю',
-                          style: SeeUTypography.body
-                              .copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+      url: postShareUrl(post.id),
+      title: 'Поделиться постом',
+      subtitle: post.author.username.isNotEmpty
+          ? '@${post.author.username}'
+          : null,
+      forwardablePostId: post.id,
     );
   }
 
@@ -160,17 +76,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                         .copyWith(color: SeeUColors.error)),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Жалоба отправлена',
-                          style: SeeUTypography.body
-                              .copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.textSecondary,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(SeeURadii.small)),
-                    ),
+                  showReportSheet(
+                    context: context,
+                    ref: ref,
+                    targetType: 'post',
+                    targetId: post.id,
                   );
                 },
               ),

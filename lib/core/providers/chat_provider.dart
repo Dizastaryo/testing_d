@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/user.dart';
+import 'realtime_provider.dart';
 
 // Chat models (kept inline since they were previously in mock_service)
 class Chat {
@@ -37,6 +40,37 @@ class Chat {
   }
 }
 
+class AttachedPostShort {
+  final String id;
+  final String caption;
+  final String mediaUrl;
+  final String mediaType;
+  final String thumbnailUrl;
+  final String authorUsername;
+  final String authorAvatar;
+
+  const AttachedPostShort({
+    required this.id,
+    required this.caption,
+    required this.mediaUrl,
+    required this.mediaType,
+    required this.thumbnailUrl,
+    required this.authorUsername,
+    required this.authorAvatar,
+  });
+
+  factory AttachedPostShort.fromJson(Map<String, dynamic> j) =>
+      AttachedPostShort(
+        id: j['id']?.toString() ?? '',
+        caption: j['caption']?.toString() ?? '',
+        mediaUrl: j['media_url']?.toString() ?? '',
+        mediaType: j['media_type']?.toString() ?? '',
+        thumbnailUrl: j['thumbnail_url']?.toString() ?? '',
+        authorUsername: j['author_username']?.toString() ?? '',
+        authorAvatar: j['author_avatar']?.toString() ?? '',
+      );
+}
+
 class ChatMessage {
   final String id;
   final String chatId;
@@ -45,6 +79,16 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMe;
   final bool isRead;
+  /// "text" (default), "shared_post", "image".
+  final String kind;
+  final AttachedPostShort? attachedPost;
+  /// For kind="image" — server-relative URL like `/uploads/...`.
+  final String attachedMediaUrl;
+  final String attachedMediaType;
+  /// Reaction counts per emoji aggregated by server. Empty when none.
+  final Map<String, int> reactions;
+  /// The emoji the *current user* placed on this message — empty when none.
+  final String myReaction;
 
   const ChatMessage({
     required this.id,
@@ -54,9 +98,16 @@ class ChatMessage {
     required this.createdAt,
     this.isMe = false,
     this.isRead = false,
+    this.kind = 'text',
+    this.attachedPost,
+    this.attachedMediaUrl = '',
+    this.attachedMediaType = '',
+    this.reactions = const {},
+    this.myReaction = '',
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    final ap = json['attached_post'];
     return ChatMessage(
       id: json['id']?.toString() ?? '',
       chatId: json['chat_id']?.toString() ?? '',
@@ -67,8 +118,43 @@ class ChatMessage {
           : DateTime.now(),
       isMe: (json['is_me'] ?? false) as bool,
       isRead: (json['is_read'] ?? false) as bool,
+      kind: json['kind']?.toString() ?? 'text',
+      attachedPost: ap is Map<String, dynamic>
+          ? AttachedPostShort.fromJson(ap)
+          : null,
+      attachedMediaUrl: json['attached_media_url']?.toString() ?? '',
+      attachedMediaType: json['attached_media_type']?.toString() ?? '',
+      reactions: json['reactions'] is Map
+          ? Map<String, int>.from(
+              (json['reactions'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+              ),
+            )
+          : const {},
+      myReaction: json['my_reaction']?.toString() ?? '',
     );
   }
+
+  ChatMessage copyWith({
+    bool? isRead,
+    Map<String, int>? reactions,
+    String? myReaction,
+  }) =>
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        senderId: senderId,
+        text: text,
+        createdAt: createdAt,
+        isMe: isMe,
+        isRead: isRead ?? this.isRead,
+        kind: kind,
+        attachedPost: attachedPost,
+        attachedMediaUrl: attachedMediaUrl,
+        attachedMediaType: attachedMediaType,
+        reactions: reactions ?? this.reactions,
+        myReaction: myReaction ?? this.myReaction,
+      );
 }
 
 class ChatListState {
@@ -81,8 +167,36 @@ class ChatListState {
 
 class ChatListNotifier extends StateNotifier<ChatListState> {
   final ApiClient _api;
-  ChatListNotifier(this._api) : super(const ChatListState()) {
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+
+  ChatListNotifier(this._api, this._ref) : super(const ChatListState()) {
     load();
+    _listenRealtime();
+  }
+
+  void _listenRealtime() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'chat.message' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          final chatId = p['chat_id']?.toString() ?? '';
+          if (chatId.isEmpty) return;
+          // We don't have the full chat preview here (only the message), so
+          // the cheapest and correct path is to refetch the list — that
+          // gives us last_message, last_message_at and unread_count for free.
+          load();
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -138,8 +252,81 @@ class ChatMessagesState {
 class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final String chatId;
   final ApiClient _api;
-  ChatMessagesNotifier(this.chatId, this._api) : super(const ChatMessagesState()) {
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+
+  ChatMessagesNotifier(this.chatId, this._api, this._ref)
+      : super(const ChatMessagesState()) {
     load();
+    _listenRealtime();
+  }
+
+  void _listenRealtime() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          if (p['chat_id']?.toString() != chatId) return;
+
+          if (evt.type == 'chat.message') {
+            try {
+              final msg = ChatMessage.fromJson(p);
+              // Dedupe by id — server-bounce of own message is suppressed by
+              // pushChatMessage (only peers get the WS event), but defensive.
+              if (state.messages.any((m) => m.id == msg.id)) return;
+              state = state.copyWith(messages: [...state.messages, msg]);
+            } catch (e) {
+              debugPrint('[ChatMessagesNotifier] parse ws msg: $e');
+            }
+            return;
+          }
+
+          if (evt.type == 'chat.reaction') {
+            final messageId = p['message_id']?.toString() ?? '';
+            if (messageId.isEmpty) return;
+            final raw = p['reactions'];
+            final newCounts = raw is Map
+                ? Map<String, int>.from(raw.map(
+                    (k, v) => MapEntry(k.toString(), (v as num).toInt())))
+                : <String, int>{};
+            state = state.copyWith(
+              messages: state.messages.map((m) {
+                if (m.id != messageId) return m;
+                // myReaction not affected — it's *current user's* reaction.
+                // Server pushes only to peers, so for *us* this is always
+                // someone else's change.
+                return m.copyWith(reactions: newCounts);
+              }).toList(),
+            );
+            return;
+          }
+
+          if (evt.type == 'chat.read') {
+            // Peer just read the conversation — flip my outgoing messages
+            // to is_read so the checkmark turns blue without a refresh.
+            final readerId = p['reader_id']?.toString() ?? '';
+            final updated = state.messages.map((m) {
+              // Only flip messages I sent (m.isMe), and only if the reader
+              // is *not* me (avoid no-op echoes when own MarkRead bounces).
+              if (m.isMe && !m.isRead && readerId != m.senderId) {
+                return m.copyWith(isRead: true);
+              }
+              return m;
+            }).toList();
+            state = state.copyWith(messages: updated);
+            return;
+          }
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -161,8 +348,20 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     }
   }
 
-  Future<void> sendMessage(String text) async {
-    // Optimistic UI: add message locally
+  Future<void> sendMessage(
+    String text, {
+    String? attachedPostId,
+    String? attachedMediaUrl,
+    String? attachedMediaType,
+  }) async {
+    final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
+    final kind = attachedPostId != null
+        ? 'shared_post'
+        : hasMedia
+            ? (attachedMediaType ?? 'image')
+            : 'text';
+
+    // Optimistic UI: add message locally (no preview yet — server fills it).
     final optimistic = ChatMessage(
       id: 'local_${DateTime.now().millisecondsSinceEpoch}',
       chatId: chatId,
@@ -170,15 +369,24 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       text: text,
       createdAt: DateTime.now(),
       isMe: true,
+      kind: kind,
+      attachedMediaUrl: attachedMediaUrl ?? '',
+      attachedMediaType: attachedMediaType ?? '',
     );
     state = state.copyWith(messages: [...state.messages, optimistic]);
 
     try {
       await _api.post(
         ApiEndpoints.chatMessages(chatId),
-        data: {'text': text},
+        data: {
+          'text': text,
+          if (attachedPostId != null) 'attached_post_id': attachedPostId,
+          if (hasMedia) 'attached_media_url': attachedMediaUrl,
+          if (hasMedia)
+            'attached_media_type': attachedMediaType ?? 'image',
+        },
       );
-      // Reload to get the real message with server ID
+      // Reload to get the real message with server ID and post preview.
       await load();
     } catch (e) {
       debugPrint('[ChatMessagesNotifier] sendMessage error: $e');
@@ -192,15 +400,116 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       debugPrint('[ChatMessagesNotifier] markRead error: $e');
     }
   }
+
+  /// Toggle the current user's reaction on a message. If `emoji` matches the
+  /// existing one — sends DELETE; otherwise POST with the new emoji
+  /// (server upserts, so switching emojis is one call).
+  Future<void> toggleReaction(String messageId, String emoji) async {
+    final idx = state.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final original = state.messages[idx];
+    final isSame = original.myReaction == emoji;
+
+    // Optimistic: apply target shape locally so UI updates instantly.
+    final newCounts = Map<String, int>.from(original.reactions);
+    if (original.myReaction.isNotEmpty) {
+      newCounts[original.myReaction] =
+          (newCounts[original.myReaction] ?? 1) - 1;
+      if ((newCounts[original.myReaction] ?? 0) <= 0) {
+        newCounts.remove(original.myReaction);
+      }
+    }
+    final newMine = isSame ? '' : emoji;
+    if (newMine.isNotEmpty) {
+      newCounts[newMine] = (newCounts[newMine] ?? 0) + 1;
+    }
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, idx),
+        original.copyWith(reactions: newCounts, myReaction: newMine),
+        ...state.messages.sublist(idx + 1),
+      ],
+    );
+
+    try {
+      if (isSame) {
+        await _api.delete(ApiEndpoints.chatMessageReact(messageId));
+      } else {
+        await _api.post(ApiEndpoints.chatMessageReact(messageId),
+            data: {'emoji': emoji});
+      }
+    } catch (e) {
+      debugPrint('[ChatMessagesNotifier] toggleReaction error: $e');
+      // Roll back to previous shape on error.
+      final i = state.messages.indexWhere((m) => m.id == messageId);
+      if (i >= 0) {
+        state = state.copyWith(
+          messages: [
+            ...state.messages.sublist(0, i),
+            original,
+            ...state.messages.sublist(i + 1),
+          ],
+        );
+      }
+    }
+  }
 }
+
+/// Ephemeral "is the peer typing in this chat?" flag. Server-pushed events
+/// reset a timer; if no fresh event arrives within [_typingTtl], we clear.
+class TypingState {
+  final String? userId; // peer who is typing; null when idle
+  const TypingState({this.userId});
+  bool get isActive => userId != null;
+}
+
+class _TypingNotifier extends StateNotifier<TypingState> {
+  static const _typingTtl = Duration(seconds: 4);
+  final String chatId;
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _sub;
+  Timer? _expiry;
+
+  _TypingNotifier(this.chatId, this._ref) : super(const TypingState()) {
+    _sub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'chat.typing' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          if (p['chat_id']?.toString() != chatId) return;
+          final uid = p['user_id']?.toString() ?? '';
+          if (uid.isEmpty) return;
+          state = TypingState(userId: uid);
+          _expiry?.cancel();
+          _expiry = Timer(_typingTtl, () {
+            if (mounted) state = const TypingState();
+          });
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _expiry?.cancel();
+    _sub?.close();
+    super.dispose();
+  }
+}
+
+final typingProvider =
+    StateNotifierProvider.family<_TypingNotifier, TypingState, String>(
+  (ref, chatId) => _TypingNotifier(chatId, ref),
+);
 
 final chatListProvider = StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
   final api = ref.watch(apiClientProvider);
-  return ChatListNotifier(api);
+  return ChatListNotifier(api, ref);
 });
 
 final chatMessagesProvider =
     StateNotifierProvider.family<ChatMessagesNotifier, ChatMessagesState, String>((ref, chatId) {
   final api = ref.watch(apiClientProvider);
-  return ChatMessagesNotifier(chatId, api);
+  return ChatMessagesNotifier(chatId, api, ref);
 });

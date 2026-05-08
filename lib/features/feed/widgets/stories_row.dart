@@ -412,9 +412,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   Widget _buildOwnStoryBottom(Story story) {
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-      },
+      onTap: () => _openViewersSheet(story),
       child: Container(
         height: 48,
         decoration: BoxDecoration(
@@ -431,7 +429,9 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
             ),
             const SizedBox(width: 8),
             Text(
-              '${story.viewsCount} просмотров',
+              story.viewsCount == 0
+                  ? 'Пока никто не посмотрел'
+                  : '${story.viewsCount} ${_pluralViewers(story.viewsCount)}',
               style: SeeUTypography.body.copyWith(
                 color: Colors.white,
                 fontSize: 14,
@@ -448,6 +448,32 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
         ),
       ),
     );
+  }
+
+  String _pluralViewers(int n) {
+    final m100 = n % 100;
+    final m10 = n % 10;
+    if (m100 >= 11 && m100 <= 14) return 'просмотров';
+    if (m10 == 1) return 'просмотр';
+    if (m10 >= 2 && m10 <= 4) return 'просмотра';
+    return 'просмотров';
+  }
+
+  Future<void> _openViewersSheet(Story story) async {
+    HapticFeedback.lightImpact();
+    _progressController.stop();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _ViewersSheet(storyId: story.id),
+    );
+    if (mounted && !_isReplyOpen) {
+      _progressController.forward();
+    }
   }
 
   void _reactWithEmoji(String emoji) {
@@ -1125,5 +1151,187 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     if (diff.inMinutes < 60) return '${diff.inMinutes}m';
     if (diff.inHours < 24) return '${diff.inHours}h';
     return '${diff.inDays}d';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Viewers bottom sheet (own story only)
+// ---------------------------------------------------------------------------
+
+class _ViewersSheet extends StatefulWidget {
+  final String storyId;
+  const _ViewersSheet({required this.storyId});
+
+  @override
+  State<_ViewersSheet> createState() => _ViewersSheetState();
+}
+
+class _ViewersSheetState extends State<_ViewersSheet> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _viewers = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final dio = Dio();
+      const storage = FlutterSecureStorage(
+          aOptions: AndroidOptions(encryptedSharedPreferences: true));
+      final token = await storage.read(key: 'access_token');
+      if (token != null) {
+        dio.options.headers['Authorization'] = 'Bearer $token';
+      }
+      final r = await dio.get(
+          '${ApiEndpoints.baseUrl}${ApiEndpoints.storyViewers(widget.storyId)}',
+          queryParameters: {'limit': 100});
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List ? data : <dynamic>[];
+      if (mounted) {
+        setState(() {
+          _viewers = list.cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  PhosphorIcon(PhosphorIcons.eye(), color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    _loading
+                        ? 'Загружаем…'
+                        : 'Просмотры (${_viewers.length})',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: Colors.white12),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Text('Ошибка: $_error',
+              style: const TextStyle(color: Colors.white70)),
+        ),
+      );
+    }
+    if (_viewers.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: Text(
+            'Пока никто не посмотрел',
+            style: TextStyle(color: Colors.white60),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _viewers.length,
+      itemBuilder: (_, i) {
+        final v = _viewers[i];
+        final user = (v['user'] as Map?)?.cast<String, dynamic>() ?? const {};
+        final username = user['username']?.toString() ?? '';
+        final fullName = user['full_name']?.toString() ?? '';
+        final avatar = user['avatar_url']?.toString() ?? '';
+        final viewedAt = DateTime.tryParse(v['viewed_at']?.toString() ?? '');
+        return ListTile(
+          leading: CircleAvatar(
+            radius: 22,
+            backgroundColor: Colors.white12,
+            backgroundImage:
+                avatar.isNotEmpty ? CachedNetworkImageProvider(avatar) : null,
+            child: avatar.isEmpty
+                ? PhosphorIcon(PhosphorIcons.user(),
+                    color: Colors.white54, size: 20)
+                : null,
+          ),
+          title: Text('@$username',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              )),
+          subtitle: fullName.isEmpty
+              ? null
+              : Text(fullName,
+                  style: const TextStyle(
+                      color: Colors.white60, fontSize: 12)),
+          trailing: viewedAt == null
+              ? null
+              : Text(_relTime(viewedAt),
+                  style: const TextStyle(
+                      color: Colors.white54, fontSize: 12)),
+        );
+      },
+    );
+  }
+
+  String _relTime(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return 'только что';
+    if (d.inMinutes < 60) return '${d.inMinutes}м';
+    if (d.inHours < 24) return '${d.inHours}ч';
+    return '${d.inDays}д';
   }
 }

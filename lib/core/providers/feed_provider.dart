@@ -48,43 +48,63 @@ class FeedNotifier extends StateNotifier<FeedState> {
     loadFeed();
   }
 
+  static const _limit = 20;
+
   Future<void> loadFeed() async {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _api.get(ApiEndpoints.feed, queryParameters: {'page': '1', 'limit': '20'});
+      final response = await _api.get(ApiEndpoints.feed,
+          queryParameters: {'page': '1', 'limit': '$_limit'});
       final data = response.data;
-      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-      final posts = (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
+      final listData =
+          data is Map && data.containsKey('data') ? data['data'] : data;
+      final posts = (listData as List)
+          .map((j) => Post.fromJson(j as Map<String, dynamic>))
+          .toList();
       state = FeedState(
         posts: posts,
         isLoading: false,
-        hasMore: posts.length >= 20,
+        hasMore: _hasNext(data, posts.length),
         page: 2,
       );
     } catch (e) {
-      // H12: Preserve existing posts on error
+      // Preserve existing posts on error
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
   Future<void> loadMore() async {
-    if (state.isLoadingMore || !state.hasMore) return;
+    if (state.isLoadingMore || !state.hasMore || state.isLoading) return;
     state = state.copyWith(isLoadingMore: true);
     try {
-      final response = await _api.get(ApiEndpoints.feed, queryParameters: {'page': '${state.page}', 'limit': '20'});
+      final response = await _api.get(ApiEndpoints.feed,
+          queryParameters: {'page': '${state.page}', 'limit': '$_limit'});
       final data = response.data;
-      final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-      final newPosts = (listData as List).map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
+      final listData =
+          data is Map && data.containsKey('data') ? data['data'] : data;
+      final newPosts = (listData as List)
+          .map((j) => Post.fromJson(j as Map<String, dynamic>))
+          .toList();
       state = state.copyWith(
         posts: [...state.posts, ...newPosts],
         isLoadingMore: false,
-        hasMore: newPosts.length >= 20,
+        hasMore: _hasNext(data, newPosts.length),
         page: state.page + 1,
       );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);
     }
+  }
+
+  bool _hasNext(dynamic body, int returnedCount) {
+    if (body is Map) {
+      final meta = body['meta'];
+      if (meta is Map && meta.containsKey('has_next_page')) {
+        return meta['has_next_page'] == true;
+      }
+    }
+    return returnedCount >= _limit;
   }
 
   Future<void> refresh() => loadFeed();

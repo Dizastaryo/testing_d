@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:go_router/go_router.dart';
+import '../core/api/api_endpoints.dart';
 import '../core/design/design.dart';
 import '../models/ble_device_model.dart';
 import '../services/account_session.dart';
@@ -768,6 +771,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     final alias = (entry.resolved.user?.name ?? '').isNotEmpty ? (entry.resolved.user?.name ?? '') : 'unknown_${entry.device.macAddress.substring(0, 5)}';
     final dist = _fmtDist(entry.device.rssi);
     final isOnline = entry.device.rssi > -80;
+    final publicHex = entry.device.seeuPacket?.idHex;
 
     showModalBottomSheet(
       context: context,
@@ -786,8 +790,42 @@ class _ScannerScreenState extends State<ScannerScreen>
         onLikeChanged: (liked) {
           setState(() => _likedMap[entry.device.macAddress] = liked);
         },
+        // Show «Открыть профиль» only if we have a usable BLE id.
+        onOpenProfile: (publicHex != null && publicHex.isNotEmpty)
+            ? () => _resolveAndOpen(publicHex)
+            : null,
       ),
     );
+  }
+
+  /// Calls the backend `/users/by-device/:publicId` to turn a BLE chip's
+  /// public ID into a real account, then navigates to its profile.
+  Future<void> _resolveAndOpen(String publicHex) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final dio = Dio(BaseOptions(baseUrl: ApiEndpoints.baseUrl));
+      final r = await dio.get('/users/by-device/$publicHex');
+      final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
+      final username = (data as Map)['username'] as String? ?? '';
+      if (!mounted) return;
+      if (username.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Профиль не найден')),
+        );
+        return;
+      }
+      context.push('/profile/$username');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = e.response?.statusCode;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(code == 404
+              ? 'Никто не привязал эту метку'
+              : 'Не удалось найти профиль'),
+        ),
+      );
+    }
   }
 
   // ─── List view ─────────────────────────────────────────────────────────
@@ -1108,6 +1146,9 @@ class _PersonSheet extends StatefulWidget {
   final int rssi;
   final bool initialLiked;
   final void Function(bool liked)? onLikeChanged;
+  /// Optional: a callback that resolves the discovered chip's public ID into
+  /// a user and navigates to that profile. The Scanner builds it.
+  final Future<void> Function()? onOpenProfile;
 
   const _PersonSheet({
     required this.emoji,
@@ -1117,6 +1158,7 @@ class _PersonSheet extends StatefulWidget {
     required this.rssi,
     this.initialLiked = false,
     this.onLikeChanged,
+    this.onOpenProfile,
   });
 
   @override
@@ -1231,6 +1273,32 @@ class _PersonSheetState extends State<_PersonSheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                if (widget.onOpenProfile != null) ...[
+                  GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await widget.onOpenProfile!.call();
+                    },
+                    child: Container(
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Открыть профиль',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 // Actions
                 Row(
                   children: [

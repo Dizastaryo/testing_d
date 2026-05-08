@@ -83,12 +83,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> verifyOtp(String phone, String code) async {
+  Future<bool> verifyOtp(String phone, String code,
+      {bool acceptsTerms = false, String? inviteCode}) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final response = await _api.post(
         ApiEndpoints.verifyOtp,
-        data: {'phone': phone, 'code': code},
+        data: {
+          'phone': phone,
+          'code': code,
+          'accepts_terms': acceptsTerms,
+          if (inviteCode != null && inviteCode.isNotEmpty)
+            'invite_code': inviteCode,
+        },
       );
 
       final data = response.data;
@@ -131,8 +138,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState();
   }
 
+  /// Permanently deletes the account on the server, then clears local session.
+  /// Throws DioException on server error so the UI can show a message.
+  Future<void> deleteAccount() async {
+    await _api.delete(ApiEndpoints.deleteMe);
+    await _api.clearTokens();
+    state = const AuthState();
+  }
+
   void updateUser(User user) {
     state = state.copyWith(user: user);
+  }
+
+  /// Re-fetches `/users/me` and replaces the cached user. Use after profile
+  /// edits, chip binding, etc. so the UI gets fresh state.
+  Future<void> reloadMe() async {
+    try {
+      final r = await _api.get(ApiEndpoints.me);
+      final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
+      state = state.copyWith(user: User.fromJson(data as Map<String, dynamic>));
+    } catch (_) {}
   }
 
   void clearError() {

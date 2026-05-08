@@ -26,10 +26,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   final _focusNode = FocusNode();
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -37,7 +39,15 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     _searchCtrl.dispose();
     _debounce?.cancel();
     _focusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 400) {
+      ref.read(exploreProvider.notifier).loadMore();
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -382,59 +392,66 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   Widget _buildReelsGrid() {
     final c = context.seeuColors;
-    // Reuse the explore posts but filter to video type, or show all as reels
-    final postsAsync = ref.watch(explorePostsProvider);
+    final state = ref.watch(exploreProvider);
 
-    return postsAsync.when(
-      loading: () => _buildGridShimmer(),
-      error: (_, __) => Center(
-        child: Text('Не удалось загрузить', style: SeeUTypography.body.copyWith(color: c.ink2)),
-      ),
-      data: (posts) {
-        final videoPosts = posts.where((p) => p.media.any((m) => m.type == MediaType.video)).toList();
-        // If no video posts, show all posts but navigate to reels on tap
-        final displayPosts = videoPosts.isNotEmpty ? videoPosts.take(18).toList() : posts.take(18).toList();
+    if (state.isLoading && state.posts.isEmpty) return _buildGridShimmer();
+    if (state.error != null && state.posts.isEmpty) {
+      return Center(
+        child: Text('Не удалось загрузить',
+            style: SeeUTypography.body.copyWith(color: c.ink2)),
+      );
+    }
 
-        if (displayPosts.isEmpty) {
-          return Center(
-            child: Text('Нет рилсов', style: SeeUTypography.body.copyWith(color: c.ink2)),
-          );
-        }
+    final videoPosts = state.posts
+        .where((p) => p.media.any((m) => m.type == MediaType.video))
+        .toList();
+    final displayPosts = videoPosts.isNotEmpty ? videoPosts : state.posts;
 
-        return CustomScrollView(
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            SliverToBoxAdapter(
-              child: _MasonryGrid(
-                posts: displayPosts,
-                rng: Random(42),
-                onTapPost: (_) => context.push('/reels'),
-              ),
+    if (displayPosts.isEmpty) {
+      return Center(
+        child: Text('Нет рилсов',
+            style: SeeUTypography.body.copyWith(color: c.ink2)),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(exploreProvider.notifier).refresh(),
+      color: SeeUColors.accent,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverToBoxAdapter(
+            child: _MasonryGrid(
+              posts: displayPosts,
+              rng: Random(42),
+              onTapPost: (_) => context.push('/reels'),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 120)),
-          ],
-        );
-      },
+          ),
+          if (state.isLoadingMore)
+            const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
+          const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        ],
+      ),
     );
   }
 
   Widget _buildMixedGrid() {
     final c = context.seeuColors;
-    final postsAsync = ref.watch(explorePostsProvider);
+    final state = ref.watch(exploreProvider);
 
-    return postsAsync.when(
-      loading: () => _buildGridShimmer(),
-      error: (_, __) => Center(
+    if (state.isLoading && state.posts.isEmpty) return _buildGridShimmer();
+    if (state.error != null && state.posts.isEmpty) {
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(PhosphorIcons.warning(),
-                size: 48, color: c.ink3),
+            Icon(PhosphorIcons.warning(), size: 48, color: c.ink3),
             const SizedBox(height: 12),
             Text(
               'Не удалось загрузить',
-              style: SeeUTypography.body
-                  .copyWith(color: c.ink2),
+              style: SeeUTypography.body.copyWith(color: c.ink2),
             ),
             const SizedBox(height: 12),
             SeeUButton(
@@ -442,46 +459,43 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               variant: SeeUButtonVariant.primary,
               width: 120,
               height: 44,
-              onTap: () => ref.refresh(explorePostsProvider),
+              onTap: () => ref.read(exploreProvider.notifier).refresh(),
             ),
           ],
         ),
-      ),
-      data: (posts) {
-        if (posts.isEmpty) {
-          return Center(
-            child: Text(
-              'Нет публикаций',
-              style: SeeUTypography.body
-                  .copyWith(color: c.ink2),
+      );
+    }
+
+    if (state.posts.isEmpty) {
+      return Center(
+        child: Text(
+          'Нет публикаций',
+          style: SeeUTypography.body.copyWith(color: c.ink2),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(exploreProvider.notifier).refresh(),
+      color: SeeUColors.accent,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: _MasonryGrid(
+              posts: state.posts,
+              rng: Random(42),
+              onTapPost: (_) => context.push('/reels'),
             ),
-          );
-        }
-
-        final displayPosts = posts.take(18).toList();
-        final rng = Random(42);
-
-        return CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
           ),
-          slivers: [
-            // Tags section as a sliver header
-            // Tags section removed - search handles filtering
-
-            // 3-column masonry grid (every 7th item is 1:2, spans 2 rows)
-            SliverToBoxAdapter(
-              child: _MasonryGrid(
-                posts: displayPosts,
-                rng: rng,
-                onTapPost: (_) => context.push('/reels'),
-              ),
-            ),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 120)),
-          ],
-        );
-      },
+          if (state.isLoadingMore)
+            const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
+          const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        ],
+      ),
     );
   }
 
@@ -609,13 +623,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                     ? post.thumbnailUrl!
                     : (post.media.isNotEmpty ? post.media.first.url : '');
                 return GestureDetector(
-                  onTap: () {
-                    if (isVideo) {
-                      context.push('/reels');
-                    } else {
-                      context.push('/post/${post.id}');
-                    }
-                  },
+                  onTap: () => context.push('/post/${post.id}'),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: imgUrl.isNotEmpty
@@ -1212,6 +1220,27 @@ class _TagCard extends StatelessWidget {
                 color: c.ink3,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingMoreIndicator extends StatelessWidget {
+  const _LoadingMoreIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: SeeUColors.accent,
           ),
         ),
       ),

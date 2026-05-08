@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -76,7 +77,8 @@ class _CameraScreenState extends State<CameraScreen>
   final double _aiFilterOpacity = 0.6;
 
   // ── Gallery preview ──
-  File? _galleryFile;
+  XFile? _galleryFile;
+  Uint8List? _galleryBytes;
   bool _showGalleryPreview = false;
 
   // ── Upload state ──
@@ -330,11 +332,23 @@ class _CameraScreenState extends State<CameraScreen>
 
     final videoFile = await _controller?.stopVideoRecording();
     if (videoFile != null && mounted) {
-      setState(() {
-        _galleryFile = File(videoFile.path);
-        _showGalleryPreview = true;
-      });
+      await _setGallery(videoFile);
     }
+  }
+
+  Future<void> _setGallery(XFile file) async {
+    Uint8List? bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (e) {
+      debugPrint('camera readAsBytes: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _galleryFile = file;
+      _galleryBytes = bytes;
+      _showGalleryPreview = true;
+    });
   }
 
   void _toggleRecord() {
@@ -361,10 +375,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final file = await _controller!.takePicture();
       if (mounted) {
-        setState(() {
-          _galleryFile = File(file.path);
-          _showGalleryPreview = true;
-        });
+        await _setGallery(file);
       }
     } catch (_) {
       if (mounted) {
@@ -384,10 +395,7 @@ class _CameraScreenState extends State<CameraScreen>
     final picker = ImagePicker();
     final file = await picker.pickMedia();
     if (file == null || !mounted) return;
-    setState(() {
-      _galleryFile = File(file.path);
-      _showGalleryPreview = true;
-    });
+    await _setGallery(file);
   }
 
   // ── Zoom ──────────────────────────────────────────────────────────────
@@ -562,7 +570,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Upload story ─────────────────────────────────────────────────────
 
-  Future<void> _uploadStory(File file) async {
+  Future<void> _uploadStory(XFile file) async {
     if (_isUploading) return;
     setState(() => _isUploading = true);
     try {
@@ -575,9 +583,10 @@ class _CameraScreenState extends State<CameraScreen>
         dio.options.headers['Authorization'] = 'Bearer $token';
       }
 
-      // Upload file
+      // Upload file (cross-platform: read bytes, send via fromBytes).
+      final bytes = _galleryBytes ?? await file.readAsBytes();
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(file.path),
+        'file': MultipartFile.fromBytes(bytes, filename: file.name),
       });
       final uploadResp = await dio.post(
         '${ApiEndpoints.baseUrl}${ApiEndpoints.mediaUpload}',
@@ -631,7 +640,9 @@ class _CameraScreenState extends State<CameraScreen>
             InteractiveViewer(
               minScale: 0.5,
               maxScale: 4.0,
-              child: Image.file(_galleryFile!, fit: BoxFit.contain),
+              child: _galleryBytes != null
+                  ? Image.memory(_galleryBytes!, fit: BoxFit.contain)
+                  : Container(color: Colors.black),
             ),
 
             // Debug path
@@ -655,6 +666,7 @@ class _CameraScreenState extends State<CameraScreen>
                 onTap: () => setState(() {
                   _showGalleryPreview = false;
                   _galleryFile = null;
+                  _galleryBytes = null;
                 }),
                 child: Container(
                   width: 40,

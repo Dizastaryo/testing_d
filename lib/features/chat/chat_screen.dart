@@ -1,12 +1,18 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/realtime_provider.dart';
 // Chat uses existing chat_provider; no MockService needed
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -23,9 +29,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
   bool _hasText = false;
-
-  /// Tracks message reactions: messageId -> emoji string
-  final Map<String, String> _reactions = {};
+  bool _isUploading = false;
 
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
@@ -47,10 +51,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
+  /// Throttle typing pings: server can fan out at most once every 2s.
+  /// We send on first keystroke after idle, then suppress until the timer
+  /// expires or the field clears.
+  DateTime _lastTypingSentAt =
+      DateTime.fromMillisecondsSinceEpoch(0);
+
   void _onTextChanged() {
     final hasText = _textController.text.trim().isNotEmpty;
     if (hasText != _hasText) {
       setState(() => _hasText = hasText);
+    }
+    if (hasText) {
+      final now = DateTime.now();
+      if (now.difference(_lastTypingSentAt) >
+          const Duration(seconds: 2)) {
+        _lastTypingSentAt = now;
+        ref.read(realtimeSenderProvider).send(
+          'chat.typing',
+          {'chat_id': widget.chatId},
+        );
+      }
     }
   }
 
@@ -86,16 +107,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollToBottom();
   }
 
-  void _onReactionSelected(String messageId, String emoji) {
-    setState(() {
-      if (_reactions[messageId] == emoji) {
-        _reactions.remove(messageId);
-      } else {
-        _reactions[messageId] = emoji;
-      }
-      _reactionPickerMessageId = null;
-    });
+  /// Pick image from gallery → upload to /media/upload → send as image
+  /// message. Caption is the current text input (sent + cleared).
+  Future<void> _attachImage() async {
+    if (_isUploading) return;
     HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final caption = _textController.text.trim();
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = await picked.readAsBytes();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
+      });
+      final upload =
+          await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            caption,
+            attachedMediaUrl: url,
+            attachedMediaType: 'image',
+          );
+
+      if (caption.isNotEmpty) _textController.clear();
+      _scrollToBottom();
+    } on DioException catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
+      ));
+    } catch (e) {
+      messenger
+          .showSnackBar(SnackBar(content: Text('Не удалось отправить: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  void _onReactionSelected(String messageId, String emoji) {
+    setState(() => _reactionPickerMessageId = null);
+    HapticFeedback.selectionClick();
+    ref
+        .read(chatMessagesProvider(widget.chatId).notifier)
+        .toggleReaction(messageId, emoji);
   }
 
   void _onMessageLongPress(String messageId) {
@@ -201,13 +265,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             if (otherUser != null)
-                              Text(
-                                'был недавно',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: c.ink3,
-                                ),
-                              ),
+                              Builder(builder: (ctx) {
+                                final isTyping = ref
+                                    .watch(typingProvider(widget.chatId))
+                                    .isActive;
+                                return Text(
+                                  isTyping
+                                      ? 'печатает…'
+                                      : 'был недавно',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isTyping
+                                        ? SeeUColors.accent
+                                        : c.ink3,
+                                    fontWeight: isTyping
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                );
+                              }),
                           ],
                         ),
                       ),
@@ -326,7 +402,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             message: msg,
             isMine: isMine,
             showTail: showTail,
-            reaction: _reactions[msg.id],
+            reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
+            allReactions: msg.reactions,
             showReactionPicker: _reactionPickerMessageId == msg.id,
             onLongPress: () => _onMessageLongPress(msg.id),
             onReactionSelected: (emoji) => _onReactionSelected(msg.id, emoji),
@@ -363,14 +440,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Plus button: 38px, surface2
+              // Image attachment button: pick → upload → send as image message.
               GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Скоро')),
-                  );
-                },
+                onTap: _isUploading ? null : _attachImage,
                 child: Container(
                   width: 38,
                   height: 38,
@@ -378,11 +450,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     color: c.surface2,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    PhosphorIconsRegular.plus,
-                    size: 20,
-                    color: c.ink2,
-                  ),
+                  child: _isUploading
+                      ? Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: c.ink2,
+                          ),
+                        )
+                      : Icon(
+                          PhosphorIconsRegular.image,
+                          size: 20,
+                          color: c.ink2,
+                        ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -565,6 +645,7 @@ class _MessageBubble extends StatelessWidget {
   final bool isMine;
   final bool showTail;
   final String? reaction;
+  final Map<String, int> allReactions;
   final bool showReactionPicker;
   final VoidCallback onLongPress;
   final void Function(String emoji) onReactionSelected;
@@ -574,6 +655,7 @@ class _MessageBubble extends StatelessWidget {
     required this.isMine,
     this.showTail = true,
     this.reaction,
+    this.allReactions = const {},
     this.showReactionPicker = false,
     required this.onLongPress,
     required this.onReactionSelected,
@@ -588,7 +670,7 @@ class _MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(
         top: showTail ? 6 : 2,
-        bottom: reaction != null ? 10 : 0,
+        bottom: allReactions.isNotEmpty ? 14 : 0,
         left: isMine ? 48 : 0,
         right: isMine ? 0 : 48,
       ),
@@ -656,8 +738,13 @@ class _MessageBubble extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                        padding: (message.kind == 'shared_post' &&
+                                    message.attachedPost != null) ||
+                                (message.kind == 'image' &&
+                                    message.attachedMediaUrl.isNotEmpty)
+                            ? const EdgeInsets.all(6)
+                            : const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           // own = coral bg; other = surface bg + 0.5px border
                           color: isMine
@@ -677,34 +764,57 @@ class _MessageBubble extends StatelessWidget {
                                   width: 0.5,
                                 ),
                         ),
-                        child: Text(
-                          message.text,
-                          style: SeeUTypography.body.copyWith(
-                            fontSize: 14,
-                            color:
-                                isMine ? Colors.white : c.ink,
-                            height: 1.4,
-                          ),
-                        ),
+                        child: _buildBubbleContent(message, isMine, c),
                       ),
-                      // Reaction badge below the bubble
-                      if (reaction != null)
+                      // Reaction badges below the bubble. Each emoji shown
+                      // once with a count if >1; "mine" highlighted in
+                      // accent. Tap = toggle (sends to server).
+                      if (allReactions.isNotEmpty)
                         Positioned(
-                          bottom: -12,
+                          bottom: -14,
                           right: isMine ? 8 : null,
                           left: isMine ? null : 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: c.surface,
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: SeeUShadows.sm,
-                            ),
-                            child: Text(
-                              reaction!,
-                              style: const TextStyle(fontSize: 14),
-                            ),
+                          child: Wrap(
+                            spacing: 4,
+                            children: allReactions.entries
+                                .map((e) => GestureDetector(
+                                      onTap: () => onReactionSelected(e.key),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: e.key == reaction
+                                              ? SeeUColors.accentSoft
+                                              : c.surface,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          boxShadow: SeeUShadows.sm,
+                                          border: e.key == reaction
+                                              ? Border.all(
+                                                  color: SeeUColors.accent,
+                                                  width: 0.8)
+                                              : null,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(e.key,
+                                                style: const TextStyle(
+                                                    fontSize: 13)),
+                                            if (e.value > 1) ...[
+                                              const SizedBox(width: 3),
+                                              Text('${e.value}',
+                                                  style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: c.ink2,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ))
+                                .toList(),
                           ),
                         ),
                     ],
@@ -742,6 +852,32 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBubbleContent(
+      ChatMessage message, bool isMine, SeeUThemeColors c) {
+    if (message.kind == 'shared_post' && message.attachedPost != null) {
+      return _SharedPostPreview(
+        post: message.attachedPost!,
+        isMine: isMine,
+        trailingText: message.text,
+      );
+    }
+    if (message.kind == 'image' && message.attachedMediaUrl.isNotEmpty) {
+      return _ImageAttachment(
+        url: message.attachedMediaUrl,
+        isMine: isMine,
+        trailingText: message.text,
+      );
+    }
+    return Text(
+      message.text,
+      style: SeeUTypography.body.copyWith(
+        fontSize: 14,
+        color: isMine ? Colors.white : c.ink,
+        height: 1.4,
       ),
     );
   }
@@ -811,6 +947,187 @@ class _SmallAvatar extends StatelessWidget {
                     color: c.bg,
                     width: 2,
                   ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared post preview rendered inside a chat bubble
+// ---------------------------------------------------------------------------
+
+class _SharedPostPreview extends StatelessWidget {
+  final AttachedPostShort post;
+  final bool isMine;
+  final String trailingText;
+  const _SharedPostPreview({
+    required this.post,
+    required this.isMine,
+    required this.trailingText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final preview = post.thumbnailUrl.isNotEmpty
+        ? post.thumbnailUrl
+        : post.mediaUrl;
+    final fg = isMine ? Colors.white : c.ink;
+    final fgSoft = isMine ? Colors.white.withValues(alpha: 0.85) : c.ink2;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => context.push('/post/${post.id}'),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isMine
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : c.surface2,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: preview.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: preview,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(color: c.line),
+                            errorWidget: (_, __, ___) =>
+                                Container(color: c.line),
+                          )
+                        : Container(color: c.line),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          post.authorUsername.isNotEmpty
+                              ? '@${post.authorUsername}'
+                              : 'SeeU',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SeeUTypography.body.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: fg,
+                          ),
+                        ),
+                        if (post.caption.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            post.caption,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: SeeUTypography.body.copyWith(
+                              fontSize: 11,
+                              color: fgSoft,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (trailingText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: Text(
+                trailingText,
+                style: SeeUTypography.body.copyWith(
+                  fontSize: 14,
+                  color: fg,
+                  height: 1.4,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Image attachment rendered inside a chat bubble
+// ---------------------------------------------------------------------------
+
+class _ImageAttachment extends StatelessWidget {
+  final String url;
+  final bool isMine;
+  final String trailingText;
+  const _ImageAttachment({
+    required this.url,
+    required this.isMine,
+    required this.trailingText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final fg = isMine ? Colors.white : c.ink;
+    final absUrl = url.startsWith('http')
+        ? url
+        : (url.startsWith('/') ? '${AppConfig.apiOrigin}$url' : url);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                  maxHeight: 320, minHeight: 120, minWidth: 180),
+              child: CachedNetworkImage(
+                imageUrl: absUrl,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(
+                  color: c.line,
+                  height: 200,
+                  width: 180,
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  color: c.line,
+                  height: 120,
+                  width: 180,
+                  child: Icon(PhosphorIconsRegular.imageBroken,
+                      color: c.ink3, size: 32),
+                ),
+              ),
+            ),
+          ),
+          if (trailingText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: Text(
+                trailingText,
+                style: SeeUTypography.body.copyWith(
+                  fontSize: 14,
+                  color: fg,
+                  height: 1.4,
                 ),
               ),
             ),

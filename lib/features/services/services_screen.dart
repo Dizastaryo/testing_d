@@ -49,7 +49,7 @@ class ServicesScreen extends StatelessWidget {
                       gradient: const [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        _showComingSoon(context, 'Музыка');
+                        context.push('/music');
                       },
                     ),
                     _ServiceCard(

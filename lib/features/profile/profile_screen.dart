@@ -6,8 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/user_provider.dart';
+import 'create_highlight_sheet.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/blocks_provider.dart';
 import '../../core/providers/story_provider.dart';
+import '../../widgets/report_sheet.dart';
 import '../feed/widgets/stories_row.dart';
 import '../../core/models/user.dart';
 import '../../core/models/post.dart';
@@ -50,6 +53,88 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _showOtherProfileMenu(BuildContext context, User user) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.flag(), color: SeeUColors.like),
+                title: const Text('Пожаловаться'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  showReportSheet(
+                    context: context,
+                    ref: ref,
+                    targetType: 'user',
+                    targetId: user.id,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.block, color: Color(0xFFE74C3C)),
+                title: const Text('Заблокировать',
+                    style: TextStyle(color: Color(0xFFE74C3C))),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _confirmBlock(context, user);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmBlock(BuildContext context, User user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Заблокировать @${user.username}?'),
+        content: const Text(
+          'Вы перестанете видеть посты и истории этого пользователя, '
+          'а он — ваши. Подписки удалятся в обе стороны. Чаты закроются.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE74C3C),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Заблокировать'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final err = await ref.read(blocksProvider.notifier).block(user.username);
+    if (!context.mounted) return;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось заблокировать: $err')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('@${user.username} заблокирован')),
+      );
+      // Refresh profile so the follow state is gone.
+      ref.invalidate(userProfileProvider(user.username));
+    }
   }
 
   void _showCreateSheet(BuildContext context) {
@@ -154,6 +239,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                     ),
                   ),
+                  if (!isOwnProfile)
+                    _HeaderIconButton(
+                      icon: PhosphorIcons.dotsThreeOutline(),
+                      onTap: () => _showOtherProfileMenu(context, user),
+                    ),
                   if (isOwnProfile)
                     Row(
                       children: [
@@ -406,8 +496,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
 
         // ── Highlights ─────────────────────────────────────────────
-        if (profileState.highlights.isNotEmpty) ...[
-          _HighlightsRow(highlights: profileState.highlights, currentUserId: ref.read(authProvider).user?.id),
+        if (profileState.highlights.isNotEmpty || isOwnProfile) ...[
+          _HighlightsRow(
+            highlights: profileState.highlights,
+            currentUserId: ref.read(authProvider).user?.id,
+            isOwnProfile: isOwnProfile,
+            username: user.username,
+          ),
           const SizedBox(height: 4),
         ],
       ],
@@ -663,24 +758,56 @@ class _OtherProfileButtons extends ConsumerWidget {
 
   const _OtherProfileButtons({required this.user});
 
+  Future<void> _toggleFollow(BuildContext context, WidgetRef ref) async {
+    final err = await ref
+        .read(userProfileProvider(user.username).notifier)
+        .toggleFollow();
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  Future<void> _unblock(BuildContext context, WidgetRef ref) async {
+    final err = await ref.read(blocksProvider.notifier).unblock(user.username);
+    if (!context.mounted) return;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось разблокировать: $err')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('@${user.username} разблокирован')),
+    );
+    ref.invalidate(userProfileProvider(user.username));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isBlocked = ref.watch(blocksProvider).maybeWhen(
+          data: (items) => items.any((b) => b.username == user.username),
+          orElse: () => false,
+        );
+
+    if (isBlocked) {
+      return _ActionButton(
+        label: 'Разблокировать',
+        onTap: () => _unblock(context, ref),
+      );
+    }
+
     return Row(
       children: [
         Expanded(
           child: user.isFollowing
               ? _ActionButton(
                   label: 'Отписаться',
-                  onTap: () => ref
-                      .read(userProfileProvider(user.username).notifier)
-                      .toggleFollow(),
+                  onTap: () => _toggleFollow(context, ref),
                 )
               : _ActionButton(
                   label: 'Подписаться',
                   isPrimary: true,
-                  onTap: () => ref
-                      .read(userProfileProvider(user.username).notifier)
-                      .toggleFollow(),
+                  onTap: () => _toggleFollow(context, ref),
                 ),
         ),
         const SizedBox(width: 8),
@@ -808,26 +935,42 @@ class _StatItem extends StatelessWidget {
 
 // ── Highlights row ─────────────────────────────────────────────────────────
 
-class _HighlightsRow extends StatelessWidget {
+class _HighlightsRow extends ConsumerWidget {
   final List<Highlight> highlights;
   final String? currentUserId;
+  final bool isOwnProfile;
+  final String username;
 
-  const _HighlightsRow({required this.highlights, this.currentUserId});
+  const _HighlightsRow({
+    required this.highlights,
+    required this.username,
+    this.currentUserId,
+    this.isOwnProfile = false,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
+    // When own profile, prepend a "+" tile so user always has a way to
+    // create a new collection — even when the row is otherwise empty.
+    final addTileCount = isOwnProfile ? 1 : 0;
     return SizedBox(
       height: 100,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 18),
-        itemCount: highlights.length,
+        itemCount: highlights.length + addTileCount,
         itemBuilder: (context, index) {
-          final h = highlights[index];
+          if (isOwnProfile && index == 0) {
+            return Padding(
+              padding: EdgeInsets.only(right: highlights.isEmpty ? 0 : 16),
+              child: _AddHighlightTile(username: username),
+            );
+          }
+          final h = highlights[index - addTileCount];
+          final isLast = index == highlights.length + addTileCount - 1;
           return Padding(
-            padding: EdgeInsets.only(
-                right: index < highlights.length - 1 ? 16 : 0),
+            padding: EdgeInsets.only(right: isLast ? 0 : 16),
             child: GestureDetector(
               onTap: () {
                 if (h.stories.isNotEmpty) {
@@ -892,6 +1035,53 @@ class _HighlightsRow extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _AddHighlightTile extends ConsumerWidget {
+  final String username;
+  const _AddHighlightTile({required this.username});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () async {
+        final created = await showCreateHighlightSheet(
+          context: context,
+          username: username,
+        );
+        if (created) {
+          ref.invalidate(userProfileProvider(username));
+        }
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: c.surface2,
+              border: Border.all(
+                  color: SeeUColors.accent.withValues(alpha: 0.6), width: 1.5),
+            ),
+            child: Center(
+              child: Icon(PhosphorIcons.plus(),
+                  color: SeeUColors.accent, size: 28),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Создать',
+            style: SeeUTypography.caption.copyWith(color: SeeUColors.accent),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }

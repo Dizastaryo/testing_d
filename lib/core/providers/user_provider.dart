@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
@@ -122,9 +123,11 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     state = state.copyWith(taggedPosts: []);
   }
 
-  Future<void> toggleFollow() async {
+  /// Returns a friendly Russian error string on failure, null on success.
+  /// Most callers ignore the result and rely on optimistic UI rollback.
+  Future<String?> toggleFollow() async {
     final user = state.user;
-    if (user == null) return;
+    if (user == null) return null;
 
     final wasFollowing = user.isFollowing;
     state = state.copyWith(
@@ -140,10 +143,30 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
       if (wasFollowing) {
         await _api.delete(ApiEndpoints.followUser(username));
       } else {
-        await _api.post(ApiEndpoints.followUser(username));
+        final resp = await _api.post(ApiEndpoints.followUser(username));
+        final raw = resp.data;
+        final status = raw is Map
+            ? (raw['data'] is Map
+                ? (raw['data'] as Map)['status']?.toString()
+                : null)
+            : null;
+        if (status == 'requested') {
+          // Private account: we sent a request, no follow row yet. Revert
+          // the optimistic +1 + isFollowing flip so the UI tells the truth.
+          state = state.copyWith(user: user);
+          return 'Запрос отправлен. Ждите подтверждения.';
+        }
       }
+      return null;
+    } on DioException catch (e) {
+      state = state.copyWith(user: user);
+      if (e.response?.statusCode == 403) {
+        return 'Нельзя подписаться: пользователь вас заблокировал или вы его';
+      }
+      return apiErrorMessage(e);
     } catch (_) {
       state = state.copyWith(user: user);
+      return 'Что-то пошло не так';
     }
   }
 }
@@ -326,14 +349,107 @@ final trendingTagsProvider = FutureProvider<List<TrendingTag>>((ref) async {
   return [];
 });
 
-// Explore grid posts provider
-final explorePostsProvider = FutureProvider<List<Post>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  final resp = await api.get(ApiEndpoints.explore);
-  final data = resp.data;
-  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-  if (listData is List) {
-    return listData.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
+// Explore grid posts provider with pagination.
+class ExploreState {
+  final List<Post> posts;
+  final bool isLoading;
+  final bool isLoadingMore;
+  final bool hasMore;
+  final String? error;
+  final int page;
+
+  const ExploreState({
+    this.posts = const [],
+    this.isLoading = false,
+    this.isLoadingMore = false,
+    this.hasMore = true,
+    this.error,
+    this.page = 1,
+  });
+
+  ExploreState copyWith({
+    List<Post>? posts,
+    bool? isLoading,
+    bool? isLoadingMore,
+    bool? hasMore,
+    String? error,
+    int? page,
+  }) {
+    return ExploreState(
+      posts: posts ?? this.posts,
+      isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasMore: hasMore ?? this.hasMore,
+      error: error,
+      page: page ?? this.page,
+    );
   }
-  return [];
+}
+
+class ExploreNotifier extends StateNotifier<ExploreState> {
+  static const _limit = 20;
+  final ApiClient _api;
+  ExploreNotifier(this._api) : super(const ExploreState()) {
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    if (state.isLoading) return;
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final r = await _api.get(ApiEndpoints.explore,
+          queryParameters: {'page': '1', 'limit': '$_limit'});
+      final data = r.data is Map && r.data.containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List
+          ? data.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList()
+          : <Post>[];
+      final hasNext = _hasNext(r.data, list.length);
+      state = ExploreState(posts: list, isLoading: false, hasMore: hasNext, page: 2);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (state.isLoadingMore || !state.hasMore || state.isLoading) return;
+    state = state.copyWith(isLoadingMore: true);
+    try {
+      final r = await _api.get(ApiEndpoints.explore,
+          queryParameters: {'page': '${state.page}', 'limit': '$_limit'});
+      final data = r.data is Map && r.data.containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List
+          ? data.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList()
+          : <Post>[];
+      final hasNext = _hasNext(r.data, list.length);
+      state = state.copyWith(
+        posts: [...state.posts, ...list],
+        isLoadingMore: false,
+        hasMore: hasNext,
+        page: state.page + 1,
+      );
+    } catch (_) {
+      state = state.copyWith(isLoadingMore: false);
+    }
+  }
+
+  bool _hasNext(dynamic body, int returnedCount) {
+    // Prefer server-reported has_next_page; fall back to "got full page".
+    if (body is Map) {
+      final meta = body['meta'];
+      if (meta is Map && meta.containsKey('has_next_page')) {
+        return meta['has_next_page'] == true;
+      }
+    }
+    return returnedCount >= _limit;
+  }
+}
+
+final exploreProvider =
+    StateNotifierProvider<ExploreNotifier, ExploreState>((ref) {
+  final api = ref.watch(apiClientProvider);
+  return ExploreNotifier(api);
 });

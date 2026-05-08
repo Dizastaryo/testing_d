@@ -1,9 +1,13 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/config/app_config.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/invites_provider.dart';
 import '../../core/design/design.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -18,7 +22,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _otpControllers = List.generate(4, (_) => TextEditingController());
   final _otpFocusNodes = List.generate(4, (_) => FocusNode());
   bool _showOtp = false;
+  bool _acceptsTerms = false;
   String _phone = '';
+  // Invite code captured from the URL (?invite=...). Sent to backend on
+  // verify-otp so the inviter gets credit when this user registers.
+  String? _inviteCode;
+
+  @override
+  void initState() {
+    super.initState();
+    final fromUri =
+        Uri.base.queryParameters['invite'] ?? Uri.base.queryParameters['i'];
+    if (fromUri != null && fromUri.isNotEmpty) {
+      _inviteCode = fromUri.trim().toLowerCase();
+    }
+  }
 
   @override
   void dispose() {
@@ -40,6 +58,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _sendOtp() async {
     final digits = _phoneCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
     if (digits.length != 10) return;
+    if (!_acceptsTerms) return;
 
     _phone = _rawPhone;
     final success = await ref.read(authProvider.notifier).sendOtp(_phone);
@@ -56,11 +75,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (code.length != 4 || _isVerifying) return;
     _isVerifying = true;
 
-    final success = await ref.read(authProvider.notifier).verifyOtp(_phone, code);
+    final success = await ref.read(authProvider.notifier).verifyOtp(
+          _phone,
+          code,
+          acceptsTerms: _acceptsTerms,
+          inviteCode: _inviteCode,
+        );
     _isVerifying = false;
     if (success && mounted) {
       context.go('/feed');
     }
+  }
+
+  Future<void> _openLegal(String path) async {
+    final uri = Uri.parse('${AppConfig.apiOrigin}$path');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   void _onOtpChanged(int index, String value) {
@@ -174,6 +203,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   List<Widget> _buildPhoneStep(AuthState authState) {
     final c = context.seeuColors;
     return [
+      if (_inviteCode != null && _inviteCode!.isNotEmpty)
+        _InviteBanner(code: _inviteCode!),
+      if (_inviteCode != null && _inviteCode!.isNotEmpty)
+        const SizedBox(height: 20),
       // Phone label
       Align(
         alignment: Alignment.centerLeft,
@@ -237,16 +270,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ],
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: 16),
 
-      // Send OTP button
+      // Consent checkbox + links to legal docs
+      _buildConsent(),
+
+      const SizedBox(height: 16),
+
+      // Send OTP button — disabled until consent is given
       SeeUButton(
         label: 'Получить код',
         variant: SeeUButtonVariant.primary,
         isLoading: authState.isLoading,
-        onTap: authState.isLoading ? null : _sendOtp,
+        onTap: (authState.isLoading || !_acceptsTerms) ? null : _sendOtp,
       ),
     ];
+  }
+
+  Widget _buildConsent() {
+    final c = context.seeuColors;
+    final linkStyle = TextStyle(
+      color: SeeUColors.accent,
+      decoration: TextDecoration.underline,
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 24,
+          width: 24,
+          child: Checkbox(
+            value: _acceptsTerms,
+            onChanged: (v) => setState(() => _acceptsTerms = v ?? false),
+            activeColor: SeeUColors.accent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: RichText(
+              text: TextSpan(
+                style: SeeUTypography.caption.copyWith(color: c.ink2),
+                children: [
+                  const TextSpan(text: 'Принимаю '),
+                  TextSpan(
+                    text: 'Политику конфиденциальности',
+                    style: linkStyle,
+                    recognizer: TapGestureRecognizer()..onTap = () => _openLegal('/privacy'),
+                  ),
+                  const TextSpan(text: ' и '),
+                  TextSpan(
+                    text: 'Условия использования',
+                    style: linkStyle,
+                    recognizer: TapGestureRecognizer()..onTap = () => _openLegal('/terms'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   List<Widget> _buildOtpStep(AuthState authState) {
@@ -366,6 +453,60 @@ class _PhoneFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+/// Friendly banner shown on the auth screen when the user landed via an
+/// invite link (`?invite=CODE`). Resolves the code against the public
+/// `/invites/:code` endpoint and shows the inviter's name + avatar.
+class _InviteBanner extends ConsumerWidget {
+  final String code;
+  const _InviteBanner({required this.code});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    final async = ref.watch(inviteLookupProvider(code));
+    return async.when(
+      loading: () => const SizedBox(height: 56),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (inv) {
+        if (inv == null) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: SeeUColors.accent.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: SeeUColors.accent.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: c.surface2,
+                backgroundImage: inv.inviterAvatarUrl.isNotEmpty
+                    ? NetworkImage(inv.inviterAvatarUrl)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Вы пришли по приглашению',
+                        style: SeeUTypography.caption.copyWith(color: c.ink2)),
+                    const SizedBox(height: 2),
+                    Text('@${inv.inviterUsername}',
+                        style: SeeUTypography.body
+                            .copyWith(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -52,7 +52,15 @@ class ApiClient {
           requestHeader: false,
           responseHeader: false,
           error: true,
-          logPrint: (obj) => debugPrint('[API] $obj'),
+          // Wrap debugPrint so a malformed response body (e.g. U+FFFD bytes
+          // sneaking in via stored content) can't crash the whole app.
+          logPrint: (obj) {
+            try {
+              debugPrint('[API] $obj');
+            } catch (_) {
+              debugPrint('[API] (unprintable response — ${obj.toString().length} chars)');
+            }
+          },
         ),
       );
     }

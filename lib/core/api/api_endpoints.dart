@@ -1,10 +1,13 @@
+import '../config/app_config.dart';
+
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // Base URLs for microservices
-  static const String baseUrl = 'http://172.20.10.3:8001/api/v1';
-  static const String videoBaseUrl = 'http://172.20.10.3:8002/api/v1';
-  static const String libraryBaseUrl = 'http://172.20.10.3:8003/api/v1';
+  // Base URLs come from build-time config (--dart-define).
+  // Defaults target localhost; production builds pass real URLs.
+  static String get baseUrl => AppConfig.apiBaseUrl;
+  static String get videoBaseUrl => AppConfig.videoBaseUrl;
+  static String get libraryBaseUrl => AppConfig.libraryBaseUrl;
 
   // Auth (phone + OTP)
   static const String sendOtp = '/auth/send-otp';
@@ -36,6 +39,26 @@ class ApiEndpoints {
 
   // Users
   static const String me = '/users/me';
+  static const String deleteMe = '/users/me';
+  static const String exportMe = '/users/me/export';
+  static const String myBlocks = '/users/me/blocks';
+  static String blockUser(String username) => '/users/$username/block';
+
+  // Invites
+  static const String invites = '/invites';
+  static const String myInvites = '/invites/me/list';
+  static String inviteByCode(String code) => '/invites/$code';
+
+  // Device binding (BLE chip)
+  static const String myDevice = '/users/me/device';
+
+  // Follow requests (private accounts)
+  static const String myFollowRequests = '/users/me/follow-requests';
+  static String acceptFollowRequest(String id) =>
+      '/follow-requests/$id/accept';
+  static String declineFollowRequest(String id) =>
+      '/follow-requests/$id/decline';
+
   static String userProfile(String username) => '/users/$username';
   static String userPosts(String username) => '/users/$username/posts';
   static String userSavedPosts(String username) => '/users/$username/saved';
@@ -51,9 +74,19 @@ class ApiEndpoints {
   // Explore
   static const String explore = '/explore';
   static const String search = '/search';
+  static const String searchHistory = '/search/history';
 
   // Audio tracks
   static const String audioTracks = '/audio-tracks';
+  static const String myAudioTracks = '/audio-tracks/me';
+
+  // Playlists (Music v2)
+  static const String myPlaylists = '/playlists/me';
+  static const String createPlaylist = '/playlists/';
+  static String playlistById(String id) => '/playlists/$id';
+  static String playlistTracks(String id) => '/playlists/$id/tracks';
+  static String playlistTrackById(String id, String trackId) =>
+      '/playlists/$id/tracks/$trackId';
 
   // Tags
   static const String trendingTags = '/tags/trending';
@@ -70,6 +103,8 @@ class ApiEndpoints {
   static const String chats = '/chats';
   static String chatMessages(String id) => '/chats/$id/messages';
   static String chatRead(String id) => '/chats/$id/read';
+  static String chatMessageReact(String messageId) =>
+      '/chat-messages/$messageId/react';
 
   // === Video Service endpoints ===
   static const String videos = '/videos';

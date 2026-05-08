@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/notification.dart';
+import 'realtime_provider.dart';
 
 class NotificationState {
   final List<AppNotification> notifications;
@@ -33,9 +36,40 @@ class NotificationState {
 
 class NotificationNotifier extends StateNotifier<NotificationState> {
   final ApiClient _api;
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
-  NotificationNotifier(this._api) : super(const NotificationState()) {
+  NotificationNotifier(this._api, this._ref)
+      : super(const NotificationState()) {
     loadNotifications();
+    _listenRealtime();
+  }
+
+  /// Subscribe to the realtime channel so a push from the server prepends
+  /// the notification into our state without a manual refresh.
+  void _listenRealtime() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'notification' || evt.payload is! Map) return;
+          try {
+            final n = AppNotification.fromJson(
+                (evt.payload as Map).cast<String, dynamic>());
+            state = state.copyWith(
+              notifications: [n, ...state.notifications],
+              unreadCount: state.unreadCount + (n.isRead ? 0 : 1),
+            );
+          } catch (_) {/* malformed payload — ignore */}
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
   }
 
   Future<void> loadNotifications() async {
@@ -86,5 +120,5 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
   final api = ref.watch(apiClientProvider);
-  return NotificationNotifier(api);
+  return NotificationNotifier(api, ref);
 });

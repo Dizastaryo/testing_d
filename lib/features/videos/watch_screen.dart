@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/design/tokens.dart';
 import '../../core/models/video.dart';
 import '../../core/providers/video_provider.dart';
@@ -13,6 +14,27 @@ class WatchScreen extends ConsumerStatefulWidget {
 
 class _WatchScreenState extends ConsumerState<WatchScreen> {
   String _activeCategory = '';
+  String _query = '';
+  bool _searchOpen = false;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Video> _applySearch(List<Video> all) {
+    if (_query.isEmpty) return all;
+    final q = _query.toLowerCase();
+    return all
+        .where((v) =>
+            v.title.toLowerCase().contains(q) ||
+            v.description.toLowerCase().contains(q) ||
+            (v.user?.username.toLowerCase().contains(q) ?? false) ||
+            (v.user?.fullName.toLowerCase().contains(q) ?? false))
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +49,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(theme)),
+          if (_searchOpen) SliverToBoxAdapter(child: _buildSearchField(theme)),
           SliverToBoxAdapter(
             child: categoriesAsync.when(
               data: (cats) => _buildCategories(cats, theme),
@@ -34,20 +57,58 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               error: (_, __) => const SizedBox(),
             ),
           ),
-          SliverToBoxAdapter(
-            child: featuredAsync.when(
-              data: (video) => video != null ? _buildFeaturedCard(video, theme, isDark) : const SizedBox(),
-              loading: () => const SizedBox(height: 200),
-              error: (_, __) => const SizedBox(),
+          if (_query.isEmpty)
+            SliverToBoxAdapter(
+              child: featuredAsync.when(
+                data: (video) => video != null ? _buildFeaturedCard(video, theme, isDark) : const SizedBox(),
+                loading: () => const SizedBox(height: 200),
+                error: (_, __) => const SizedBox(),
+              ),
             ),
-          ),
           videosAsync.when(
-            data: (videos) => _buildGrid(videos, theme),
+            data: (videos) {
+              final filtered = _applySearch(videos);
+              if (filtered.isEmpty) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Center(
+                      child: Text(
+                        _query.isEmpty
+                            ? 'Видео ещё нет'
+                            : 'По запросу «$_query» ничего',
+                        style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return _buildGrid(filtered, theme);
+            },
             loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
             error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Ошибка загрузки: $e'))),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchField(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: TextField(
+        controller: _searchCtrl,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Поиск по видео…',
+          prefixIcon: const Icon(Icons.search),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+        onChanged: (v) => setState(() => _query = v.trim()),
       ),
     );
   }
@@ -85,8 +146,17 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             ],
           ),
           IconButton(
-            onPressed: () {},
-            icon: Icon(Icons.search, color: theme.colorScheme.onSurface),
+            onPressed: () => setState(() {
+              _searchOpen = !_searchOpen;
+              if (!_searchOpen) {
+                _searchCtrl.clear();
+                _query = '';
+              }
+            }),
+            icon: Icon(
+              _searchOpen ? Icons.close : Icons.search,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
         ],
       ),
@@ -132,7 +202,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   Widget _buildFeaturedCard(Video video, ThemeData theme, bool isDark) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Container(
+      child: GestureDetector(
+        onTap: () => context.push('/videos/${video.id}'),
+        child: Container(
         height: 220,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
@@ -217,6 +289,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -239,7 +312,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   }
 
   Widget _buildVideoCard(Video video, ThemeData theme) {
-    return Column(
+    return GestureDetector(
+      onTap: () => context.push('/videos/${video.id}'),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
@@ -280,6 +355,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         const SizedBox(height: 2),
         Text('@${video.user?.username ?? ''} · ${video.viewsFormatted} views', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
       ],
+      ),
     );
   }
 }

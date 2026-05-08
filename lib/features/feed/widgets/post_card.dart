@@ -10,7 +10,10 @@ import 'package:video_player/video_player.dart';
 import '../../video/fullscreen_video_player.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
+import '../../../core/providers/blocks_provider.dart';
 import '../../../core/providers/feed_provider.dart';
+import '../../../widgets/report_sheet.dart';
+import '../../../widgets/share_sheet.dart';
 
 class PostCard extends ConsumerStatefulWidget {
   final Post post;
@@ -135,6 +138,46 @@ class _PostCardState extends ConsumerState<PostCard>
     ref.read(feedProvider.notifier).toggleSave(widget.post.id);
   }
 
+  Future<void> _confirmBlockAuthor() async {
+    final author = widget.post.author;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Заблокировать @${author.username}?'),
+        content: const Text(
+          'Вы перестанете видеть посты и истории этого пользователя, '
+          'а он — ваши. Подписки удалятся в обе стороны.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Заблокировать'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final err = await ref.read(blocksProvider.notifier).block(author.username);
+    if (!mounted) return;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось заблокировать: $err')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('@${author.username} заблокирован')),
+    );
+    // Drop this post from the local feed cache so the UI matches the new visibility.
+    ref.read(feedProvider.notifier).removePost(widget.post.id);
+  }
+
   void _showReactionPickerUI() {
     HapticFeedback.mediumImpact();
     setState(() => _showReactionPicker = true);
@@ -168,53 +211,14 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   void _onShareTap() {
-    final c = context.seeuColors;
-    showSeeUBottomSheet(
+    showShareSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(PhosphorIcons.link(),
-                  color: c.ink),
-              title: Text('Копировать ссылку', style: SeeUTypography.body),
-              onTap: () {
-                Clipboard.setData(
-                    ClipboardData(text: 'https://seeu.app/post/${widget.post.id}'));
-                Navigator.pop(ctx);
-                // M19: mounted check before ScaffoldMessenger after Navigator.pop
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Ссылка скопирована')),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(PhosphorIcons.clockCounterClockwise(),
-                  color: c.ink),
-              title: Text('Поделиться в историю', style: SeeUTypography.body),
-              onTap: () {
-                Navigator.pop(ctx);
-                // M19: mounted check before ScaffoldMessenger after Navigator.pop
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Скоро будет доступно')),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(PhosphorIcons.x(),
-                  color: c.ink3),
-              title: Text('Отмена',
-                  style: SeeUTypography.body
-                      .copyWith(color: c.ink3)),
-              onTap: () => Navigator.pop(ctx),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+      url: postShareUrl(widget.post.id),
+      title: 'Поделиться постом',
+      subtitle: widget.post.author.username.isNotEmpty
+          ? '@${widget.post.author.username}'
+          : null,
+      forwardablePostId: widget.post.id,
     );
   }
 
@@ -988,13 +992,16 @@ class _PostCardState extends ConsumerState<PostCard>
                   color: c.ink),
               title: Text('Поделиться', style: SeeUTypography.body),
               onTap: () {
-                Clipboard.setData(
-                    ClipboardData(text: 'https://seeu.app/post/${post.id}'));
                 Navigator.pop(context);
-                // M19: mounted check before ScaffoldMessenger after Navigator.pop
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Ссылка скопирована')),
+                showShareSheet(
+                  context: context,
+                  url: postShareUrl(post.id),
+                  title: 'Поделиться постом',
+                  subtitle: post.author.username.isNotEmpty
+                      ? '@${post.author.username}'
+                      : null,
+                  forwardablePostId: post.id,
                 );
               },
             ),
@@ -1015,11 +1022,24 @@ class _PostCardState extends ConsumerState<PostCard>
                       .copyWith(color: SeeUColors.like)),
               onTap: () {
                 Navigator.pop(context);
-                // M19: mounted check before ScaffoldMessenger after Navigator.pop
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Жалоба отправлена. Спасибо!')),
+                showReportSheet(
+                  context: context,
+                  ref: ref,
+                  targetType: 'post',
+                  targetId: widget.post.id,
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: Color(0xFFE74C3C)),
+              title: Text('Заблокировать автора',
+                  style: SeeUTypography.body
+                      .copyWith(color: const Color(0xFFE74C3C))),
+              onTap: () {
+                Navigator.pop(context);
+                if (!mounted) return;
+                _confirmBlockAuthor();
               },
             ),
             const SizedBox(height: 8),

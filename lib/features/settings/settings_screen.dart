@@ -1,10 +1,22 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:dio/dio.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/blocks_provider.dart';
+import '../../core/providers/invites_provider.dart';
 import '../../core/providers/theme_provider.dart';
+import '../../widgets/share_sheet.dart';
+import '_export_download_web.dart' if (dart.library.io) '_export_download_io.dart' as exporter;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -72,33 +84,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.fromLTRB(0, 16, 0, 100),
               children: [
                 _buildSection(
-                  title: 'ПРИВАТНОСТЬ',
+                  title: 'АККАУНТ',
                   items: [
                     _SettingsRowData(
                       icon: PhosphorIcons.pencilSimple(),
-                      label: 'Псевдоним',
+                      label: 'Редактировать профиль',
                       value: ref.watch(authProvider).user?.username ?? '',
-                      onTap: () => _showComingSoon(context),
-                    ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.image(),
-                      label: 'Фото-маска',
-                      value: 'установлено',
-                      onTap: () => _showComingSoon(context),
-                    ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.eye(),
-                      label: 'Видимость в радаре',
-                      value: 'только публичные места',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => context.push('/profile/edit'),
                     ),
                     _SettingsRowData(
                       icon: PhosphorIcons.shield(),
                       label: 'Заблокированные',
-                      value: '0',
-                      onTap: () => _showComingSoon(context),
+                      value: ref.watch(blocksProvider).maybeWhen(
+                            data: (items) => items.isEmpty ? '' : '${items.length}',
+                            orElse: () => '',
+                          ),
+                      onTap: () => context.push('/settings/blocked'),
                     ),
+                    if (ref.watch(authProvider).user?.isPrivate == true)
+                      _SettingsRowData(
+                        icon: PhosphorIcons.usersThree(),
+                        label: 'Запросы на подписку',
+                        value: '',
+                        onTap: () =>
+                            context.push('/settings/follow-requests'),
+                      ),
                   ],
+                ),
+                const SizedBox(height: 24),
+                _buildSectionWithToggle(
+                  title: 'ПРИВАТНОСТЬ',
+                  icon: PhosphorIcons.lock(),
+                  label: 'Закрытый профиль',
+                  isDark:
+                      ref.watch(authProvider).user?.isPrivate ?? false,
+                  onToggle: () => _togglePrivate(),
                 ),
                 const SizedBox(height: 24),
                 _buildSection(
@@ -106,21 +126,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   items: [
                     _SettingsRowData(
                       icon: PhosphorIcons.bluetoothConnected(),
-                      label: 'ESP32C3_TAG · DEVICE_0001',
-                      value: 'подключен',
-                      onTap: () => _showComingSoon(context),
-                    ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.qrCode(),
-                      label: 'Привязать новый чип',
-                      value: 'отсканировать QR',
-                      onTap: () => _showComingSoon(context),
-                    ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.lock(),
-                      label: 'Авто-выкл когда один',
-                      value: 'вкл',
-                      onTap: () => _showComingSoon(context),
+                      label: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
+                          ? 'Чип ${ref.watch(authProvider).user!.devicePublicId}'
+                          : 'Чип не привязан',
+                      value: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
+                          ? 'управление'
+                          : 'привязать',
+                      onTap: () => context.push('/settings/chip'),
                     ),
                   ],
                 ),
@@ -140,13 +152,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 24),
                 _buildSection(
-                  title: 'АККАУНТ',
+                  title: 'ПРАВОВАЯ ИНФОРМАЦИЯ',
                   items: [
                     _SettingsRowData(
-                      icon: PhosphorIcons.bell(),
-                      label: 'Пуш-уведомления',
+                      icon: PhosphorIcons.shieldCheck(),
+                      label: 'Политика конфиденциальности',
                       value: '',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => _openLegal('${AppConfig.apiOrigin}/privacy'),
+                    ),
+                    _SettingsRowData(
+                      icon: PhosphorIcons.fileText(),
+                      label: 'Условия использования',
+                      value: '',
+                      onTap: () => _openLegal('${AppConfig.apiOrigin}/terms'),
+                    ),
+                    _SettingsRowData(
+                      icon: PhosphorIcons.downloadSimple(),
+                      label: 'Скачать мои данные',
+                      value: 'JSON',
+                      onTap: () => _exportData(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildSection(
+                  title: 'СЕССИЯ',
+                  items: [
+                    _SettingsRowData(
+                      icon: PhosphorIcons.userPlus(),
+                      label: 'Пригласить друга',
+                      value: '',
+                      onTap: () => _inviteFriend(),
                     ),
                     _SettingsRowData(
                       icon: PhosphorIcons.info(),
@@ -165,6 +201,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       },
                     ),
                   ],
+                ),
+                const SizedBox(height: 24),
+                _buildDangerSection(
+                  title: 'ОПАСНАЯ ЗОНА',
+                  label: 'Удалить аккаунт',
+                  icon: PhosphorIcons.trash(),
+                  onTap: () => _confirmDeleteAccount(context),
                 ),
               ],
             ),
@@ -286,10 +329,176 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Скоро будет доступно')),
+  Future<void> _togglePrivate() async {
+    final cur = ref.read(authProvider).user?.isPrivate ?? false;
+    final next = !cur;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.put(ApiEndpoints.me, data: {'is_private': next});
+      await ref.read(authProvider.notifier).reloadMe();
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+            next ? 'Профиль закрыт. Подписки требуют подтверждения.' : 'Профиль открыт.'),
+      ));
+    } on DioException catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Не удалось обновить: ${apiErrorMessage(e)}')));
+    }
+  }
+
+  Future<void> _inviteFriend() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Создаём код…')));
+    final code = await ref.read(invitesProvider.notifier).createCode();
+    if (!context.mounted) return;
+    if (code == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Не удалось создать инвайт')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final url = 'https://seeu.app/?invite=$code';
+    // ignore: use_build_context_synchronously
+    await showShareSheet(
+      context: context,
+      url: url,
+      title: 'Пригласить друга в SeeU',
+      subtitle: 'Код: $code',
     );
+  }
+
+  Future<void> _exportData() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Готовим экспорт…')));
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(ApiEndpoints.exportMe);
+      final bytes = utf8.encode(jsonEncode(r.data));
+      await exporter.saveExport(bytes: bytes, filename: 'seeu-export.json');
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(kIsWeb ? 'Файл скачан' : 'Файл сохранён')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось экспортировать: $e')));
+    }
+  }
+
+  Future<void> _openLegal(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось открыть страницу')),
+      );
+    }
+  }
+
+  Widget _buildDangerSection({
+    required String title,
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final c = context.seeuColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontFamily: 'JetBrains Mono',
+              fontSize: 10,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 1.0,
+              color: c.ink3,
+            ),
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE74C3C).withValues(alpha: 0.3), width: 0.5),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Tappable.faded(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE74C3C).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.delete_forever, size: 18, color: Color(0xFFE74C3C)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: SeeUTypography.body.copyWith(color: const Color(0xFFE74C3C)),
+                    ),
+                  ),
+                  Icon(icon, size: 14, color: const Color(0xFFE74C3C)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final c = context.seeuColors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: const Text('Удалить аккаунт?'),
+        content: const Text(
+          'Это действие безвозвратно удалит ваш аккаунт, все посты, истории, '
+          'комментарии, лайки, подписки и сообщения. Восстановить будет нельзя.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE74C3C)),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref.read(authProvider.notifier).deleteAccount();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Аккаунт удалён')),
+      );
+      context.go('/login');
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось удалить аккаунт: $e')),
+      );
+    }
   }
 
   void _showAbout(BuildContext context) {

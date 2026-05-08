@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/design/tokens.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
@@ -13,6 +14,26 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _activeCategory = '';
+  String _query = '';
+  bool _searchOpen = false;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<FileItem> _applySearch(List<FileItem> all) {
+    if (_query.isEmpty) return all;
+    final q = _query.toLowerCase();
+    return all
+        .where((f) =>
+            f.filename.toLowerCase().contains(q) ||
+            f.description.toLowerCase().contains(q) ||
+            (f.user?.username.toLowerCase().contains(q) ?? false))
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +46,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(theme)),
-          SliverToBoxAdapter(child: _buildUploadZone(theme)),
+          if (_searchOpen) SliverToBoxAdapter(child: _buildSearchField(theme)),
+          if (_query.isEmpty) SliverToBoxAdapter(child: _buildUploadZone(theme)),
           SliverToBoxAdapter(
             child: categoriesAsync.when(
               data: (cats) => _buildCategories(cats, theme),
@@ -34,12 +56,53 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           ),
           filesAsync.when(
-            data: (files) => _buildFileList(files, theme),
-            loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-            error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Ошибка: $e'))),
+            data: (files) {
+              final filtered = _applySearch(files);
+              if (filtered.isEmpty) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Center(
+                      child: Text(
+                        _query.isEmpty
+                            ? 'Файлов ещё нет'
+                            : 'По запросу «$_query» ничего',
+                        style: TextStyle(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.5)),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return _buildFileList(filtered, theme);
+            },
+            loading: () => const SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => SliverToBoxAdapter(
+                child: Center(child: Text('Ошибка: $e'))),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchField(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: TextField(
+        controller: _searchCtrl,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Поиск по файлам…',
+          prefixIcon: const Icon(Icons.search),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+        onChanged: (v) => setState(() => _query = v.trim()),
       ),
     );
   }
@@ -78,8 +141,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
           IconButton(
-            onPressed: () {},
-            icon: Icon(Icons.search, color: theme.colorScheme.onSurface),
+            onPressed: () => setState(() {
+              _searchOpen = !_searchOpen;
+              if (!_searchOpen) {
+                _searchCtrl.clear();
+                _query = '';
+              }
+            }),
+            icon: Icon(
+              _searchOpen ? Icons.close : Icons.search,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
         ],
       ),
@@ -94,10 +166,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: LinearGradient(colors: [
-            SeeUColors.accent.withOpacity(0.1),
-            Colors.amber.withOpacity(0.1),
+            SeeUColors.accent.withValues(alpha: 0.1),
+            Colors.amber.withValues(alpha: 0.1),
           ]),
-          border: Border.all(color: SeeUColors.accent.withOpacity(0.5), style: BorderStyle.none),
+          border: Border.all(
+              color: SeeUColors.accent.withValues(alpha: 0.5),
+              style: BorderStyle.none),
         ),
         child: Row(
           children: [
@@ -106,8 +180,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               height: 48,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                gradient: LinearGradient(colors: [SeeUColors.accent, Colors.amber]),
-                boxShadow: [BoxShadow(color: SeeUColors.accent.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
+                gradient: LinearGradient(
+                    colors: [SeeUColors.accent, Colors.amber]),
+                boxShadow: [
+                  BoxShadow(
+                      color: SeeUColors.accent.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8))
+                ],
               ),
               child: const Icon(Icons.add, color: Colors.white, size: 22),
             ),
@@ -116,19 +196,35 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Загрузить файл', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
+                  Text('Загрузить файл',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: theme.colorScheme.onSurface)),
                   const SizedBox(height: 2),
-                  Text('pdf · zip · img · exe · txt', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
+                  Text('pdf · zip · img · exe · txt',
+                      style: TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.5))),
                 ],
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: theme.colorScheme.onSurface,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text('+ DROP', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1, color: theme.scaffoldBackgroundColor)),
+              child: Text('+ DROP',
+                  style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: theme.scaffoldBackgroundColor)),
             ),
           ],
         ),
@@ -151,15 +247,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           return GestureDetector(
             onTap: () => setState(() => _activeCategory = cat.id),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
               decoration: BoxDecoration(
-                color: isActive ? theme.colorScheme.onSurface : Colors.transparent,
+                color:
+                    isActive ? theme.colorScheme.onSurface : Colors.transparent,
                 border: isActive ? null : Border.all(color: theme.dividerColor),
                 borderRadius: BorderRadius.circular(100),
               ),
               child: Text(
                 cat.name,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isActive ? theme.scaffoldBackgroundColor : theme.colorScheme.onSurface),
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? theme.scaffoldBackgroundColor
+                        : theme.colorScheme.onSurface),
               ),
             ),
           );
@@ -185,58 +288,94 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Widget _buildFileCard(FileItem file, ThemeData theme) {
     final color = _colorForType(file.fileExtension);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 4))],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 56,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [color.withOpacity(0.15), color.withOpacity(0.05)]),
-              border: Border.all(color: color.withOpacity(0.4)),
+    return GestureDetector(
+      onTap: () => context.push('/files/${file.id}'),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 16,
+                offset: const Offset(0, 4))
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 56,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      color.withValues(alpha: 0.15),
+                      color.withValues(alpha: 0.05)
+                    ]),
+                border: Border.all(color: color.withValues(alpha: 0.4)),
+              ),
+              alignment: Alignment.bottomCenter,
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(file.fileExtension.toUpperCase(),
+                  style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                      letterSpacing: 1)),
             ),
-            alignment: Alignment.bottomCenter,
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(file.fileExtension.toUpperCase(), style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 9, fontWeight: FontWeight.w700, color: color, letterSpacing: 1)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(file.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
-                const SizedBox(height: 4),
-                Text('${file.fileSizeFormatted} · ↓ ${file.downloadsFormatted} · @${file.user?.username ?? ''}', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: theme.colorScheme.onSurface.withOpacity(0.5))),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(file.filename,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface)),
+                  const SizedBox(height: 4),
+                  Text(
+                      '${file.fileSizeFormatted} · ↓ ${file.downloadsFormatted} · @${file.user?.username ?? ''}',
+                      style: TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontSize: 10,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.5))),
+                ],
+              ),
             ),
-          ),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: file.isPreviewable
-                  ? null
-                  : theme.colorScheme.surfaceContainerHighest,
-              gradient: file.isPreviewable
-                  ? LinearGradient(colors: [SeeUColors.accent, Colors.amber])
-                  : null,
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: file.isPreviewable
+                    ? null
+                    : theme.colorScheme.surfaceContainerHighest,
+                gradient: file.isPreviewable
+                    ? LinearGradient(
+                        colors: [SeeUColors.accent, Colors.amber])
+                    : null,
+              ),
+              child: Icon(
+                file.isPreviewable ? Icons.play_arrow : Icons.download,
+                color: file.isPreviewable
+                    ? Colors.white
+                    : theme.colorScheme.onSurface,
+                size: 14,
+              ),
             ),
-            child: Icon(
-              file.isPreviewable ? Icons.play_arrow : Icons.download,
-              color: file.isPreviewable ? Colors.white : theme.colorScheme.onSurface,
-              size: 14,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

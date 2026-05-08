@@ -24,12 +24,19 @@ import 'features/profile/following_screen.dart';
 import 'screens/scanner_screen.dart';
 import 'features/chat/chat_list_screen.dart';
 import 'features/chat/chat_screen.dart';
+import 'features/settings/blocked_users_screen.dart';
+import 'features/settings/chip_setup_screen.dart';
+import 'features/settings/follow_requests_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/reels/reels_screen.dart';
+import 'features/videos/video_detail_screen.dart';
 import 'features/videos/watch_screen.dart';
+import 'features/library/file_detail_screen.dart';
 import 'features/library/library_screen.dart';
+import 'features/music/music_screen.dart';
+import 'features/music/playlist_detail_screen.dart';
 import 'features/services/services_screen.dart';
 
 void main() async {
@@ -168,10 +175,36 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               ),
             ),
             GoRoute(
+              path: '/music',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const MusicScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/playlist/:id',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: PlaylistDetailScreen(
+                    playlistId: state.pathParameters['id']!),
+              ),
+            ),
+            GoRoute(
+              path: '/videos/:id',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: VideoDetailScreen(id: state.pathParameters['id']!),
+              ),
+            ),
+            GoRoute(
               path: '/files',
               pageBuilder: (_, __) => CustomTransitionPage(
                 child: const LibraryScreen(),
                 transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/files/:id',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: FileDetailScreen(id: state.pathParameters['id']!),
               ),
             ),
             GoRoute(
@@ -249,6 +282,24 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/settings',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: SettingsScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/blocked',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: BlockedUsersScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/chip',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: ChipSetupScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/follow-requests',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: FollowRequestsScreen(),
               ),
             ),
             GoRoute(

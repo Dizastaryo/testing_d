@@ -1,15 +1,20 @@
-import 'dart:io';
+import 'dart:io' show File;
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/design/design.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/providers/feed_provider.dart';
+import '../../core/providers/reel_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
@@ -19,7 +24,7 @@ import '../../core/providers/user_provider.dart';
 /// 3. Add caption, location, tags (for Post)
 /// 4. Crop / adjust framing
 class MediaPrepareScreen extends ConsumerStatefulWidget {
-  final File file;
+  final XFile file;
   final bool isVideo;
 
   const MediaPrepareScreen({
@@ -34,8 +39,10 @@ class MediaPrepareScreen extends ConsumerStatefulWidget {
 
 class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     with SingleTickerProviderStateMixin {
-  // 0 = Story, 1 = Post
+  // 0 = Story, 1 = Post, 2 = Reel (only when isVideo)
   int _publishMode = 1;
+
+  bool get _canPublishReel => widget.isVideo;
 
   // Post aspect ratio: 0 = original, 1 = 1:1, 2 = 4:5
   int _aspectIdx = 0;
@@ -55,18 +62,66 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   VideoPlayerController? _videoCtrl;
   bool _videoReady = false;
 
+  // Cached bytes for cross-platform image preview and upload (web has no real file path).
+  Uint8List? _bytes;
+
   @override
   void initState() {
     super.initState();
+    _loadBytes();
+
+    // Pick up "use in reel" preselection from Music screen, if any.
+    // Doing this in postFrame because StateProvider mutation outside of
+    // a Riverpod-aware build phase warns in debug.
+    //
+    // Note: pending track uses canonical `core/models/audio_track.dart::AudioTrack`,
+    // while this screen's `_selectedTrack` uses the legacy class declared in
+    // `core/providers/user_provider.dart`. Convert across the boundary.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = ref.read(pendingReelTrackProvider);
+      if (pending != null && widget.isVideo && mounted) {
+        setState(() {
+          _selectedTrack = AudioTrack(
+            id: pending.id,
+            title: pending.title,
+            artist: pending.artist,
+            coverUrl: pending.coverUrl,
+            audioUrl: pending.audioUrl,
+            durationSeconds: pending.durationSeconds,
+            usesCount: pending.usesCount,
+            genre: pending.genre,
+          );
+          _publishMode = 2; // Reel mode
+        });
+        ref.read(pendingReelTrackProvider.notifier).state = null;
+      }
+    });
+
     if (widget.isVideo) {
-      _videoCtrl = VideoPlayerController.file(widget.file)
+      // На web путь — это blob://, на mobile — реальный путь файла.
+      // VideoPlayerController.file использует dart:io.File, на web он валится.
+      _videoCtrl = kIsWeb
+          ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
+          : VideoPlayerController.file(File(widget.file.path));
+      _videoCtrl!
         ..setLooping(true)
         ..initialize().then((_) {
           if (mounted) {
             setState(() => _videoReady = true);
             _videoCtrl!.play();
           }
+        }).catchError((e) {
+          debugPrint('media_prepare video init: $e');
         });
+    }
+  }
+
+  Future<void> _loadBytes() async {
+    try {
+      final b = await widget.file.readAsBytes();
+      if (mounted) setState(() => _bytes = b);
+    } catch (e) {
+      debugPrint('media_prepare readAsBytes: $e');
     }
   }
 
@@ -108,9 +163,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         },
       ));
 
-      // 1. Upload media file
+      // 1. Upload media file (works on web и mobile)
+      final bytes = _bytes ?? await widget.file.readAsBytes();
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(widget.file.path),
+        'file': MultipartFile.fromBytes(bytes, filename: widget.file.name),
       });
       final uploadResp = await dio.post(
         '${ApiEndpoints.baseUrl}${ApiEndpoints.mediaUpload}',
@@ -137,6 +193,43 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
             ),
           );
           context.go('/feed');
+        }
+      } else if (_publishMode == 2) {
+        // 2c. Create Reel — POST goes to video service (port 8002).
+        final captionParts = <String>[];
+        if (_captionCtrl.text.trim().isNotEmpty) {
+          captionParts.add(_captionCtrl.text.trim());
+        }
+        if (_tags.isNotEmpty) {
+          captionParts.add(_tags.map((t) => '#$t').join(' '));
+        }
+
+        final reelData = <String, dynamic>{
+          'caption':
+              captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
+          'media_urls': [mediaUrl],
+          'media_type': 'video',
+          if (_tags.isNotEmpty) 'hashtags': _tags,
+          if (_selectedTrack != null) 'audio_track_id': _selectedTrack!.id,
+          if (_videoCtrl?.value.duration != null)
+            'duration_seconds':
+                _videoCtrl!.value.duration.inSeconds.clamp(1, 60),
+        };
+
+        await dio.post(
+          '${ApiEndpoints.videoBaseUrl}${ApiEndpoints.reels}',
+          data: reelData,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Рилс опубликован!',
+                  style: SeeUTypography.body.copyWith(color: Colors.white)),
+              backgroundColor: SeeUColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          context.go('/reels');
         }
       } else {
         // 2b. Create Post
@@ -209,7 +302,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
             _buildModeToggle(c),
             Expanded(child: _buildPreview(c)),
             _buildMusicButton(c),
-            if (_publishMode == 1) _buildPostForm(c),
+            if (_publishMode == 1 || _publishMode == 2) _buildPostForm(c),
             _buildPublishButton(c),
           ],
         ),
@@ -230,7 +323,11 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           ),
           const Spacer(),
           Text(
-            _publishMode == 0 ? 'Новая история' : 'Новый пост',
+            switch (_publishMode) {
+              0 => 'Новая история',
+              2 => 'Новый рилс',
+              _ => 'Новый пост',
+            },
             style: SeeUTypography.subtitle,
           ),
           const Spacer(),
@@ -244,7 +341,8 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
   Widget _buildModeToggle(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+      padding: EdgeInsets.symmetric(
+          horizontal: _canPublishReel ? 24 : 40, vertical: 12),
       child: Container(
         height: 40,
         decoration: BoxDecoration(
@@ -255,6 +353,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           children: [
             _modeTab('История', 0, c),
             _modeTab('Пост', 1, c),
+            if (_canPublishReel) _modeTab('Рилс', 2, c),
           ],
         ),
       ),
@@ -334,7 +433,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                               ),
                             ),
                           ))
-                    : Image.file(widget.file, fit: BoxFit.cover),
+                    : (_bytes != null
+                        ? Image.memory(_bytes!, fit: BoxFit.cover)
+                        : Container(color: Colors.black)),
               ),
             ),
           ),
@@ -717,7 +818,11 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     ),
                   )
                 : Text(
-                    _publishMode == 0 ? 'Опубликовать историю' : 'Опубликовать пост',
+                    switch (_publishMode) {
+                      0 => 'Опубликовать историю',
+                      2 => 'Опубликовать рилс',
+                      _ => 'Опубликовать пост',
+                    },
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,

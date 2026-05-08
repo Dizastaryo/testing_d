@@ -9,7 +9,7 @@ import '../../core/models/user.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 
-final _followersProvider = FutureProvider.family<List<User>, String>((ref, username) async {
+final _followersProvider = FutureProvider.autoDispose.family<List<User>, String>((ref, username) async {
   final api = ref.read(apiClientProvider);
   final resp = await api.get(ApiEndpoints.userFollowers(username));
   final data = resp.data;
