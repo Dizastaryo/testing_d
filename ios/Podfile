@@ -1,6 +1,8 @@
 # Uncomment this line to define a global platform for your project
-# Минимальная версия iOS для совместимости с современными версиями Flutter
-platform :ios, '13.0'
+# iOS 15.5 — минимум для google_mlkit_face_detection (on-device face mesh).
+# В 2026-м это покрывает 99% активных iPhone'ов; iPhone 7/6s (iOS <15)
+# уже EOL, пренебрегаемо для нашей пользовательской базы.
+platform :ios, '15.5'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 # ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -39,8 +41,8 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
-      # Установка минимальной версии iOS для всех Pods
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      # Установка минимальной версии iOS для всех Pods (нужно для ML Kit).
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
       # Единая версия Swift для всех подов (устраняет exit 65 и конфликты)
       config.build_settings['SWIFT_VERSION'] = '5.0'
 

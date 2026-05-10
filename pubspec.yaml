@@ -43,12 +43,10 @@ dependencies:
   # из-за несовпадения сигнатур.
   record: ^6.0.0
 
-  # NOTE: google_mlkit_face_detection временно убран — он тянет
-  # google_mlkit_commons, который требует iOS 15.5+ как min-deployment.
-  # Podfile сейчас на iOS 13.0; поднимать = риск сломать другие pod'ы.
-  # Маски остаются работать в static-heuristic режиме (mask_catalog.dart
-  # → _FaceFrame.fromSize fallback). Когда будет Apple Dev-аккаунт и
-  # стабильная сборка с iOS 15.5+ — раскомментируем и подключим в service.
+  # On-device face detection для AR-масок — open-source ML Kit пакет от
+  # Google. Считается локально на устройстве, в бэк не лезет.
+  # iOS-deployment поднят до 15.5 в Podfile + Runner.pbxproj.
+  google_mlkit_face_detection: ^0.13.1
   photo_view: ^0.14.0
 
   # UI
