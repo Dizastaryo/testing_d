@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../core/design/tokens.dart';
 import '../core/design/tappable.dart';
+import 'full_screen_player.dart';
+import 'mini_player.dart';
 
 /// Global notifier for hiding bottom nav from within a screen (e.g., feed camera swipe).
 final bottomNavHiddenNotifier = ValueNotifier<bool>(false);
@@ -56,24 +58,35 @@ class MainScaffold extends StatelessWidget {
           extendBody: true,
           bottomNavigationBar: hideNav
               ? null
-              : Container(
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? SeeUColors.darkBg
-                        : SeeUColors.background,
-                    border: Border(
-                      top: BorderSide(
-                        color: isDark
-                            ? SeeUColors.darkLine
-                            : SeeUColors.borderSubtle,
-                        width: 1,
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Persistent mini-player над bottom-nav. Сам решает показываться
+                    // ли (если нет активного трека — рендерит SizedBox.shrink()).
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: SeeUMiniPlayer(
+                        onTap: () => showFullScreenPlayer(context),
                       ),
                     ),
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: SizedBox(
-                      height: 56,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? SeeUColors.darkBg
+                            : SeeUColors.background,
+                        border: Border(
+                          top: BorderSide(
+                            color: isDark
+                                ? SeeUColors.darkLine
+                                : SeeUColors.borderSubtle,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: SizedBox(
+                          height: 56,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
@@ -113,6 +126,8 @@ class MainScaffold extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
+                  ],
                 ),
         );
       },

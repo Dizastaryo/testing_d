@@ -20,6 +20,12 @@ class Story {
   final int viewsCount;
   final DateTime createdAt;
   final DateTime expiresAt;
+  /// Aggregate emoji-reaction counts per emoji (server-aggregated). Visible
+  /// to author for analytics; viewers see it too but UI rarely renders
+  /// counts for non-authors.
+  final Map<String, int> reactions;
+  /// Emoji the *current viewer* placed on this story; empty when none.
+  final String myReaction;
 
   const Story({
     required this.id,
@@ -31,6 +37,8 @@ class Story {
     this.viewsCount = 0,
     required this.createdAt,
     required this.expiresAt,
+    this.reactions = const {},
+    this.myReaction = '',
   });
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
@@ -53,6 +61,14 @@ class Story {
           ? DateTime.tryParse(json['expires_at'].toString()) ??
               DateTime.now().add(const Duration(hours: 24))
           : DateTime.now().add(const Duration(hours: 24)),
+      reactions: json['reactions'] is Map
+          ? Map<String, int>.from(
+              (json['reactions'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+              ),
+            )
+          : const {},
+      myReaction: json['my_reaction']?.toString() ?? '',
     );
   }
 
@@ -68,7 +84,12 @@ class Story {
     'expires_at': expiresAt.toIso8601String(),
   };
 
-  Story copyWith({bool? isSeen}) {
+  Story copyWith({
+    bool? isSeen,
+    int? viewsCount,
+    Map<String, int>? reactions,
+    String? myReaction,
+  }) {
     return Story(
       id: id,
       author: author,
@@ -76,9 +97,11 @@ class Story {
       mediaType: mediaType,
       textOverlay: textOverlay,
       isSeen: isSeen ?? this.isSeen,
-      viewsCount: viewsCount,
+      viewsCount: viewsCount ?? this.viewsCount,
       createdAt: createdAt,
       expiresAt: expiresAt,
+      reactions: reactions ?? this.reactions,
+      myReaction: myReaction ?? this.myReaction,
     );
   }
 }

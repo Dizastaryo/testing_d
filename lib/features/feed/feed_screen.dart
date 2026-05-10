@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/design/design.dart';
+import '../../core/providers/chat_provider.dart';
+import '../../core/providers/daily_prompt_provider.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/notification_provider.dart';
 import '../camera/camera_screen.dart';
@@ -185,9 +187,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
               ? _buildShimmer()
               : feedState.error != null && feedState.posts.isEmpty
                   ? _buildError(feedState.error!)
-                  : RefreshIndicator(
+                  : SeeURadarRefresh(
                   onRefresh: _onRefresh,
-                  color: SeeUColors.accent,
                   child: feedState.posts.isEmpty
                       ? ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
@@ -238,11 +239,24 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                             ),
                                           );
                                         },
-                                        child: _HeaderIconButton(
-                                          icon: PhosphorIcon(
-                                              PhosphorIcons
-                                                  .chatCircleDots()),
-                                          onTap: () => context.push('/chat'),
+                                        child: Consumer(
+                                          builder: (context, ref, _) {
+                                            final unread = ref
+                                                .watch(chatListProvider)
+                                                .chats
+                                                .fold<int>(
+                                                    0,
+                                                    (acc, c) =>
+                                                        acc + c.unreadCount);
+                                            return _HeaderIconButton(
+                                              icon: PhosphorIcon(
+                                                  PhosphorIcons
+                                                      .chatCircleDots()),
+                                              badge: unread,
+                                              onTap: () =>
+                                                  context.push('/chat'),
+                                            );
+                                          },
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -266,13 +280,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                               context.push('/notifications'),
                                         ),
                                       ),
-                                      const SizedBox(width: 10),
-                                      _HeaderIconButton(
-                                        icon: PhosphorIcon(
-                                            PhosphorIcons.userCircle()),
-                                        onTap: () =>
-                                            context.push('/profile'),
-                                      ),
+                                      // Profile icon removed — bottom-nav
+                                      // already has «Профиль», this header
+                                      // button was a duplicate.
                                     ],
                                   ),
                                 ),
@@ -466,85 +476,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   }
 
   // U08: Error state with retry button
-  Widget _buildError(String error) {
-    final c = context.seeuColors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PhosphorIcon(
-              PhosphorIcons.wifiSlash(),
-              size: 56,
-              color: c.ink3,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Не удалось загрузить ленту',
-              style: SeeUTypography.subtitle
-                  .copyWith(color: c.ink2),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              style: SeeUTypography.caption
-                  .copyWith(color: c.ink3),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 20),
-            SeeUButton(
-              label: 'Повторить',
-              onTap: _onRefresh,
-              icon: PhosphorIcons.arrowCounterClockwise(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _buildError(String error) => SeeUErrorState(
+        error: error,
+        title: 'Не удалось загрузить ленту',
+        onRetry: _onRefresh,
+      );
 
-  // U09: Meaningful empty state with icon + CTA
-  Widget _buildEmpty() {
-    final c = context.seeuColors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PhosphorIcon(
-              PhosphorIcons.usersThree(),
-              size: 64,
-              color: c.line,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Пока нет постов',
-              style: SeeUTypography.subtitle
-                  .copyWith(color: c.ink2),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Подпишитесь на людей, чтобы видеть их посты',
-              style: SeeUTypography.caption
-                  .copyWith(color: c.ink3),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            SeeUButton(
-              label: 'Найти людей',
-              onTap: () => context.go('/explore'),
-              icon: PhosphorIcons.magnifyingGlass(),
-            ),
-          ],
+  Widget _buildEmpty() => SeeUEmptyState(
+        icon: PhosphorIconsRegular.usersThree,
+        title: 'Пока нет постов',
+        subtitle: 'Подпишитесь на людей, чтобы видеть их посты',
+        action: SeeUStateAction(
+          label: 'Найти людей',
+          icon: PhosphorIconsRegular.magnifyingGlass,
+          onTap: () => context.go('/explore'),
         ),
-      ),
-    );
-  }
+      );
 
 }
 
@@ -693,13 +640,17 @@ class _EyeMarkPainter extends CustomPainter {
 
 // ─── Daily Prompt card ────────────────────────────────────────────────────
 
-class _DailyPromptCard extends StatelessWidget {
+class _DailyPromptCard extends ConsumerWidget {
   final VoidCallback? onDismiss;
   const _DailyPromptCard({this.onDismiss});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
+    final prompt = ref.watch(dailyPromptProvider).maybeWhen(
+          data: (p) => p,
+          orElse: () => DailyPrompt.fallback,
+        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
       child: Container(
@@ -748,7 +699,7 @@ class _DailyPromptCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   // Serif question
                   Text(
-                    'что вас удивило\nсегодня?',
+                    prompt.text,
                     style: TextStyle(
                       fontSize: 22,
                       height: 1.15,

@@ -86,43 +86,78 @@ class ApiClient {
     ErrorInterceptorHandler handler,
   ) async {
     if (err.response?.statusCode == 401 && !_isRefreshing) {
-      _isRefreshing = true;
-      try {
-        final refreshToken = await storage.read(key: _refreshTokenKey);
-        if (refreshToken != null && refreshToken.isNotEmpty) {
-          final refreshDio = Dio(
-            BaseOptions(
-              baseUrl: ApiEndpoints.baseUrl,
-              connectTimeout: const Duration(seconds: 30),
-              receiveTimeout: const Duration(seconds: 30),
-            ),
-          );
-          final response = await refreshDio.post(
-            ApiEndpoints.refreshToken,
-            data: {'refresh_token': refreshToken},
-          );
-          final newAccessToken = response.data['access_token'] as String?;
-          final newRefreshToken = response.data['refresh_token'] as String?;
-          if (newAccessToken != null) {
-            await storage.write(key: _accessTokenKey, value: newAccessToken);
-            if (newRefreshToken != null) {
-              await storage.write(key: _refreshTokenKey, value: newRefreshToken);
-            }
-            final retryOptions = err.requestOptions;
-            retryOptions.headers['Authorization'] = 'Bearer $newAccessToken';
-            final retryResponse = await _dio.fetch(retryOptions);
-            handler.resolve(retryResponse);
-            return;
-          }
+      final refreshed = await refreshTokens();
+      if (refreshed) {
+        final retryOptions = err.requestOptions;
+        final newToken = await storage.read(key: _accessTokenKey);
+        if (newToken != null) {
+          retryOptions.headers['Authorization'] = 'Bearer $newToken';
         }
-      } catch (_) {
-        await storage.delete(key: _accessTokenKey);
-        await storage.delete(key: _refreshTokenKey);
-      } finally {
-        _isRefreshing = false;
+        try {
+          final retryResponse = await _dio.fetch(retryOptions);
+          handler.resolve(retryResponse);
+          return;
+        } catch (_) {
+          // Fall through to original error.
+        }
       }
     }
     handler.next(err);
+  }
+
+  /// Forces a refresh-token round-trip and persists the new pair. Public so
+  /// non-REST clients (WebSocket reconnect logic) can prompt a refresh when
+  /// they detect their own auth-related failure. Returns true on success.
+  /// Concurrent callers are debounced via `_isRefreshing`.
+  Future<bool> refreshTokens() async {
+    if (_isRefreshing) {
+      // Another caller is mid-refresh — wait for them to finish, then report
+      // whether storage has a fresh access token.
+      while (_isRefreshing) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      final tok = await storage.read(key: _accessTokenKey);
+      return tok != null && tok.isNotEmpty;
+    }
+    _isRefreshing = true;
+    try {
+      final refreshToken = await storage.read(key: _refreshTokenKey);
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return false;
+      }
+      final refreshDio = Dio(
+        BaseOptions(
+          baseUrl: ApiEndpoints.baseUrl,
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      final response = await refreshDio.post(
+        ApiEndpoints.refreshToken,
+        data: {'refresh_token': refreshToken},
+      );
+      // Server envelopes everything as `{data: {...}, error: null}` — unwrap.
+      // Falling back to top-level keys preserves compatibility if a future
+      // endpoint returns the bare token object.
+      final body = response.data;
+      final inner = (body is Map && body['data'] is Map) ? body['data'] : body;
+      final newAccessToken = inner is Map ? inner['access_token'] as String? : null;
+      final newRefreshToken = inner is Map ? inner['refresh_token'] as String? : null;
+      if (newAccessToken == null) return false;
+      await storage.write(key: _accessTokenKey, value: newAccessToken);
+      if (newRefreshToken != null) {
+        await storage.write(key: _refreshTokenKey, value: newRefreshToken);
+      }
+      return true;
+    } catch (_) {
+      // Refresh-token itself rejected — wipe credentials so the app drops to
+      // login-screen on next gated screen instead of looping.
+      await storage.delete(key: _accessTokenKey);
+      await storage.delete(key: _refreshTokenKey);
+      return false;
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   Future<Response<T>> get<T>(

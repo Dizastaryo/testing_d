@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/design/tokens.dart';
+import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 
@@ -43,7 +43,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
+      body: SeeURadarRefresh(
+        onRefresh: () async {
+          ref.invalidate(filesProvider);
+          ref.invalidate(fileCategoriesProvider);
+          await ref.read(filesProvider(
+                  _activeCategory.isEmpty ? null : _activeCategory).future);
+        },
+        child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(theme)),
           if (_searchOpen) SliverToBoxAdapter(child: _buildSearchField(theme)),
@@ -84,6 +91,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
         ],
+        ),
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'core/providers/theme_provider.dart';
 import 'widgets/main_scaffold.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/register_screen.dart';
+import 'features/auth/splash_screen.dart';
 import 'features/feed/feed_screen.dart';
 import 'features/explore/explore_screen.dart';
 import 'features/post/post_detail_screen.dart';
@@ -22,7 +23,9 @@ import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/followers_screen.dart';
 import 'features/profile/following_screen.dart';
 import 'screens/scanner_screen.dart';
+import 'features/chat/chat_create_group_screen.dart';
 import 'features/chat/chat_list_screen.dart';
+import 'features/chat/chat_members_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/settings/blocked_users_screen.dart';
 import 'features/settings/chip_setup_screen.dart';
@@ -30,7 +33,7 @@ import 'features/settings/follow_requests_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
-import 'features/reels/reels_screen.dart';
+import 'features/explore/publication_viewer.dart';
 import 'features/videos/video_detail_screen.dart';
 import 'features/videos/watch_screen.dart';
 import 'features/library/file_detail_screen.dart';
@@ -77,13 +80,15 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
   void initState() {
     super.initState();
     _router = GoRouter(
-      initialLocation: '/login',
+      initialLocation: '/splash',
       redirect: (context, state) {
         final authState = ref.read(authProvider);
         // While initial token check is in progress, don't redirect
         if (authState.isLoading) return null;
         final isAuth = authState.isAuthenticated;
         final loc = state.matchedLocation;
+        // splash сама себя перенаправит когда отыграет cinematic-анимацию
+        if (loc == '/splash') return null;
         // /register redirects to /login (phone auth handles registration)
         if (loc == '/register') return '/login';
         final isAuthRoute = loc == '/login';
@@ -92,6 +97,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
         return null;
       },
       routes: [
+        GoRoute(
+          path: '/splash',
+          pageBuilder: (_, __) => CustomTransitionPage(
+            child: const SplashScreen(),
+            transitionsBuilder: _fadeTransition,
+          ),
+        ),
         GoRoute(
           path: '/onboarding',
           pageBuilder: (_, __) => CustomTransitionPage(
@@ -137,12 +149,28 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               ),
               routes: [
                 GoRoute(
+                  path: 'new-group',
+                  pageBuilder: (_, __) => const CupertinoPage(
+                    child: ChatCreateGroupScreen(),
+                  ),
+                ),
+                GoRoute(
                   path: ':chatId',
                   pageBuilder: (context, state) => CupertinoPage(
                     child: ChatScreen(
                       chatId: state.pathParameters['chatId']!,
                     ),
                   ),
+                  routes: [
+                    GoRoute(
+                      path: 'members',
+                      pageBuilder: (context, state) => CupertinoPage(
+                        child: ChatMembersScreen(
+                          chatId: state.pathParameters['chatId']!,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -153,11 +181,15 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 transitionsBuilder: _fadeTransition,
               ),
             ),
+            // Vertical-swipe viewer for any publication. Replaces the old
+            // /reels route — every post (photo, photo collection, video) is
+            // a «рилс» in this product, so one viewer covers all of them.
             GoRoute(
-              path: '/reels',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ReelsScreen(),
-                transitionsBuilder: _fadeTransition,
+              path: '/view/:postId',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: PublicationViewer(
+                  initialPostId: state.pathParameters['postId']!,
+                ),
               ),
             ),
             GoRoute(
@@ -314,13 +346,34 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
     );
   }
 
+  /// Shared-axis transition (horizontal): входящий экран лёгко сдвигается
+  /// справа + fade-in, исходящий — слева + fade-out. Замена тупого
+  /// FadeTransition'а — даёт ощущение «единого потока» между bottom-nav
+  /// сценами и стандартный «push»-feel при `context.push`. Easing —
+  /// easeInOutCubic для согласованности с `SeeUMotion.smooth`.
   static Widget _fadeTransition(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return FadeTransition(opacity: animation, child: child);
+    const curve = Curves.easeInOutCubic;
+    final inOffset = Tween<Offset>(
+      begin: const Offset(0.06, 0),
+      end: Offset.zero,
+    ).chain(CurveTween(curve: curve)).animate(animation);
+    final outOffset = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-0.06, 0),
+    ).chain(CurveTween(curve: curve)).animate(secondaryAnimation);
+    final inOpacity = CurvedAnimation(parent: animation, curve: curve);
+    return SlideTransition(
+      position: outOffset,
+      child: SlideTransition(
+        position: inOffset,
+        child: FadeTransition(opacity: inOpacity, child: child),
+      ),
+    );
   }
 
   @override

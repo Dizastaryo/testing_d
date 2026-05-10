@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import '../../core/utils/time_format.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/design/design.dart';
@@ -195,26 +195,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       ),
                     )
                   : notifState.error != null && filtered.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(PhosphorIcons.wifiSlash(), size: 48, color: c.ink3),
-                          const SizedBox(height: 12),
-                          Text('Не удалось загрузить', style: SeeUTypography.subtitle.copyWith(color: c.ink3)),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: _onRefresh,
-                            child: const Text('Повторить'),
-                          ),
-                        ],
-                      ),
-                    )
+                  ? SeeUErrorState(onRetry: _onRefresh)
                   : filtered.isEmpty
                   ? _buildEmpty()
-                  : RefreshIndicator(
+                  : SeeURadarRefresh(
                       onRefresh: _onRefresh,
-                      color: SeeUColors.accent,
                       child: AnimationLimiter(
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
@@ -397,7 +382,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    timeago.format(n.createdAt),
+                    formatRelativeTime(n.createdAt),
                     style: SeeUTypography.micro.copyWith(
                       color: c.ink3,
                     ),
@@ -439,35 +424,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     );
   }
 
-  Widget _buildEmpty() {
-    final c = context.seeuColors;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PhosphorIcon(
-            PhosphorIcons.bell(),
-            size: 64,
-            color: c.line,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _activeFilter != _NotifFilter.all
-                ? 'Нет уведомлений этого типа'
-                : 'Нет уведомлений',
-            style: SeeUTypography.subtitle.copyWith(
-              color: c.ink2,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Здесь появятся ваши уведомления',
-            style: SeeUTypography.caption.copyWith(
-              color: c.ink3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildEmpty() => SeeUEmptyState(
+        icon: PhosphorIconsRegular.bell,
+        title: _activeFilter != _NotifFilter.all
+            ? 'Нет уведомлений этого типа'
+            : 'Нет уведомлений',
+        subtitle: 'Здесь появятся ваши уведомления',
+      );
 }

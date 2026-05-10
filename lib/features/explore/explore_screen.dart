@@ -84,12 +84,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             _buildHeader(hasQuery),
 
             // -- Content --
+            // No browse tabs — every publication is a «рилс» (photo,
+            // photo collection, or video). Only search-mode shows tabs
+            // (Публикации / Аккаунты / Теги).
             Expanded(
               child: hasQuery
                   ? _buildSearchResults(searchState)
-                  : _selectedTab == 1
-                      ? _buildReelsGrid()
-                      : _buildMixedGrid(),
+                  : _buildMixedGrid(),
             ),
           ],
         ),
@@ -101,10 +102,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Header: title + search bar + privacy hint
   // =========================================================================
 
-  // Tab index for explore tabs
+  // Tab index for explore tabs (only used in search mode now).
   int _selectedTab = 0;
-  // Browse mode tabs (no search active)
-  static const List<String> _browseTabs = ['Всё', 'Рилсы'];
   // Search mode tabs (search active)
   static const List<String> _searchTabs = ['Публикации', 'Аккаунты', 'Теги'];
 
@@ -184,25 +183,23 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             ),
           ),
 
-          const SizedBox(height: 10),
-
-          // Tab row: depends on mode
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: List.generate(
-                hasQuery ? _searchTabs.length : _browseTabs.length,
-                (i) {
-                  final tabs = hasQuery ? _searchTabs : _browseTabs;
-                  final isActive = _selectedTab == i;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() => _selectedTab = i);
-                        if (hasQuery) {
-                          // Search tabs: Публикации, Аккаунты, Теги
+          // Tab row only when searching. Browse mode = single grid of all
+          // publications (см. user model: каждая публикация = «рилс»).
+          if (hasQuery) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: List.generate(
+                  _searchTabs.length,
+                  (i) {
+                    final isActive = _selectedTab == i;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _selectedTab = i);
                           String searchType;
                           switch (i) {
                             case 0: searchType = 'posts'; break;
@@ -211,31 +208,31 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             default: searchType = 'all';
                           }
                           ref.read(searchProvider.notifier).setSearchType(searchType);
-                        }
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: isActive ? c.ink : c.surface2,
-                          borderRadius: BorderRadius.circular(SeeURadii.pill),
-                        ),
-                        child: Text(
-                          tabs[i],
-                          style: SeeUTypography.caption.copyWith(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isActive ? Colors.white : c.ink2,
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: isActive ? c.ink : c.surface2,
+                            borderRadius: BorderRadius.circular(SeeURadii.pill),
+                          ),
+                          child: Text(
+                            _searchTabs[i],
+                            style: SeeUTypography.caption.copyWith(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isActive ? Colors.white : c.ink2,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
+          ],
 
           const SizedBox(height: 8),
         ],
@@ -390,53 +387,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   // Tags section removed - all content comes from backend search
 
-  Widget _buildReelsGrid() {
-    final c = context.seeuColors;
-    final state = ref.watch(exploreProvider);
-
-    if (state.isLoading && state.posts.isEmpty) return _buildGridShimmer();
-    if (state.error != null && state.posts.isEmpty) {
-      return Center(
-        child: Text('Не удалось загрузить',
-            style: SeeUTypography.body.copyWith(color: c.ink2)),
-      );
-    }
-
-    final videoPosts = state.posts
-        .where((p) => p.media.any((m) => m.type == MediaType.video))
-        .toList();
-    final displayPosts = videoPosts.isNotEmpty ? videoPosts : state.posts;
-
-    if (displayPosts.isEmpty) {
-      return Center(
-        child: Text('Нет рилсов',
-            style: SeeUTypography.body.copyWith(color: c.ink2)),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () => ref.read(exploreProvider.notifier).refresh(),
-      color: SeeUColors.accent,
-      child: CustomScrollView(
-        controller: _scrollController,
-        physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          SliverToBoxAdapter(
-            child: _MasonryGrid(
-              posts: displayPosts,
-              rng: Random(42),
-              onTapPost: (_) => context.push('/reels'),
-            ),
-          ),
-          if (state.isLoadingMore)
-            const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
-          const SliverToBoxAdapter(child: SizedBox(height: 120)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMixedGrid() {
     final c = context.seeuColors;
     final state = ref.watch(exploreProvider);
@@ -475,20 +425,31 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
-    return RefreshIndicator(
+    return SeeURadarRefresh(
       onRefresh: () => ref.read(exploreProvider.notifier).refresh(),
-      color: SeeUColors.accent,
       child: CustomScrollView(
         controller: _scrollController,
         physics: const BouncingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          if (state.posts.length >= 4)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                child: _BentoFeatured(
+                  posts: state.posts.take(4).toList(),
+                  onTap: (i) =>
+                      context.push('/view/${state.posts[i].id}'),
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: _MasonryGrid(
               posts: state.posts,
               rng: Random(42),
-              onTapPost: (_) => context.push('/reels'),
+              onTapPost: (idx) =>
+                  context.push('/view/${state.posts[idx].id}'),
             ),
           ),
           if (state.isLoadingMore)
@@ -618,10 +579,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               itemCount: filteredPosts.length,
               itemBuilder: (context, index) {
                 final post = filteredPosts[index];
-                final isVideo = post.media.any((m) => m.type == MediaType.video);
-                final imgUrl = isVideo && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty
-                    ? post.thumbnailUrl!
-                    : (post.media.isNotEmpty ? post.media.first.url : '');
+                final imgUrl = post.gridThumbnailUrl;
                 return GestureDetector(
                   onTap: () => context.push('/post/${post.id}'),
                   child: ClipRRect(
@@ -666,10 +624,7 @@ class _MasonryGrid extends StatelessWidget {
     final c = context.seeuColors;
     final post = posts[index];
     final isReel = post.media.any((m) => m.type == MediaType.video);
-    // For video posts: use thumbnail, for images: use first media URL
-    final imageUrl = isReel && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty
-        ? post.thumbnailUrl!
-        : (post.media.isNotEmpty ? post.media.first.url : '');
+    final imageUrl = post.gridThumbnailUrl;
     final likeCount = post.likesCount;
     final isTall = (index + 3) % 7 == 0;
     final height = isTall ? cellSize * 2 + 2 : cellSize;
@@ -1242,6 +1197,156 @@ class _LoadingMoreIndicator extends StatelessWidget {
             strokeWidth: 2,
             color: SeeUColors.accent,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Bento featured strip — большой блок в шапке Explore: 1 крупная карточка
+// слева + 2 поменьше справа, с фирменным оранжевым обрамлением для feature-
+// эффекта. Отдельная сущность от masonry — те же посты в нём появляются и в
+// основной ленте ниже, но визуально выделены.
+// ===========================================================================
+
+class _BentoFeatured extends StatelessWidget {
+  final List<Post> posts;
+  final void Function(int index) onTap;
+
+  const _BentoFeatured({required this.posts, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 18,
+                decoration: BoxDecoration(
+                  gradient: SeeUGradients.heroOrange,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('В тренде', style: SeeUTypography.title),
+              const SizedBox(width: 6),
+              Text('• сейчас',
+                  style: SeeUTypography.caption.copyWith(color: c.ink3)),
+            ],
+          ),
+        ),
+        SeeUBento(
+          gap: 6,
+          chunks: [
+            BentoChunk.oneLeftTwoRight(
+              left: _bentoTile(context, 0, big: true),
+              top: _bentoTile(context, 1),
+              bottom: _bentoTile(context, 2),
+              height: 240,
+            ),
+            if (posts.length >= 4)
+              BentoChunk.threeStripe(
+                a: _bentoTile(context, 3),
+                b: _bentoTile(
+                    context, posts.length > 4 ? 4 : posts.length - 1),
+                c: _bentoTile(
+                    context, posts.length > 5 ? 5 : posts.length - 1),
+                height: 100,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _bentoTile(BuildContext context, int idx, {bool big = false}) {
+    final c = context.seeuColors;
+    if (idx >= posts.length) {
+      return Container(color: c.surface2);
+    }
+    final post = posts[idx];
+    final isReel = post.media.any((m) => m.type == MediaType.video);
+    return GestureDetector(
+      onTap: () => onTap(idx),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(big ? 20 : 14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CachedNetworkImage(
+              imageUrl: post.gridThumbnailUrl,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: c.surface2),
+              errorWidget: (_, __, ___) => Container(color: c.surface2),
+            ),
+            if (big)
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      SeeUColors.accent.withValues(alpha: 0.0),
+                      SeeUColors.accent.withValues(alpha: 0.0),
+                      SeeUColors.accent.withValues(alpha: 0.18),
+                    ],
+                    stops: const [0.0, 0.7, 1.0],
+                  ),
+                ),
+              ),
+            if (big)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(14, 24, 14, 12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.55),
+                      ],
+                    ),
+                  ),
+                  child: Text(
+                    (post.caption ?? '').split('\n').first,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: SeeUTypography.subtitle.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            if (isReel)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    PhosphorIcons.play(PhosphorIconsStyle.fill),
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

@@ -7,33 +7,63 @@ import '../api/api_endpoints.dart';
 import '../models/user.dart';
 import 'realtime_provider.dart';
 
-// Chat models (kept inline since they were previously in mock_service)
+// Chat models (kept inline since they were previously in mock_service).
+// kind == 'direct' → otherUser != null, title/coverUrl пустые.
+// kind == 'group'  → otherUser == null, заполнены title/coverUrl + participantsCount.
 class Chat {
   final String id;
-  final User otherUser;
+  final String kind; // 'direct' | 'group'
+  final String title; // только для group
+  final String coverUrl; // только для group
+  final User? otherUser; // только для direct
+  final int participantsCount; // только для group
   final String lastMessage;
+  final String lastSenderUsername; // для group: префикс «X: ...» в last-сообщении
   final DateTime lastMessageAt;
   final int unreadCount;
 
   const Chat({
     required this.id,
-    required this.otherUser,
+    this.kind = 'direct',
+    this.title = '',
+    this.coverUrl = '',
+    this.otherUser,
+    this.participantsCount = 0,
     required this.lastMessage,
+    this.lastSenderUsername = '',
     required this.lastMessageAt,
     this.unreadCount = 0,
   });
 
+  bool get isGroup => kind == 'group';
+
+  /// Display label: title для group, username для direct.
+  String get displayLabel => isGroup ? title : (otherUser?.username ?? '');
+
   factory Chat.fromJson(Map<String, dynamic> json) {
+    final kind = (json['kind']?.toString().isNotEmpty ?? false)
+        ? json['kind'].toString()
+        : 'direct';
     final otherUserData = json['other_user'];
-    if (otherUserData == null || otherUserData is! Map<String, dynamic>) {
-      throw FormatException('Chat.fromJson: missing or invalid "other_user" field');
+    User? other;
+    if (otherUserData is Map<String, dynamic>) {
+      other = User.fromJson(otherUserData);
+    }
+    if (kind == 'direct' && other == null) {
+      throw FormatException('Chat.fromJson: direct chat без other_user');
     }
     return Chat(
       id: json['id']?.toString() ?? '',
-      otherUser: User.fromJson(otherUserData),
+      kind: kind,
+      title: json['title']?.toString() ?? '',
+      coverUrl: json['cover_url']?.toString() ?? '',
+      otherUser: other,
+      participantsCount: (json['participants_count'] ?? 0) as int,
       lastMessage: json['last_message']?.toString() ?? '',
+      lastSenderUsername: json['last_sender_username']?.toString() ?? '',
       lastMessageAt: json['last_message_at'] != null
-          ? DateTime.tryParse(json['last_message_at'].toString()) ?? DateTime.now()
+          ? DateTime.tryParse(json['last_message_at'].toString()) ??
+              DateTime.now()
           : DateTime.now(),
       unreadCount: (json['unread_count'] ?? 0) as int,
     );
@@ -79,12 +109,17 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMe;
   final bool isRead;
-  /// "text" (default), "shared_post", "image".
+  /// "text" (default), "shared_post", "image", "voice".
   final String kind;
   final AttachedPostShort? attachedPost;
-  /// For kind="image" — server-relative URL like `/uploads/...`.
+  /// For kind="image"/"voice" — server-relative URL like `/uploads/...`.
   final String attachedMediaUrl;
   final String attachedMediaType;
+  /// For kind="voice" — длительность аудио в секундах.
+  final int mediaDurationSeconds;
+  /// For kind="voice" — нормализованные сэмплы 0..1 (обычно ~48 точек) для
+  /// прорисовки waveform'а в bubble без декодирования аудио клиентом.
+  final List<double> waveform;
   /// Reaction counts per emoji aggregated by server. Empty when none.
   final Map<String, int> reactions;
   /// The emoji the *current user* placed on this message — empty when none.
@@ -102,6 +137,8 @@ class ChatMessage {
     this.attachedPost,
     this.attachedMediaUrl = '',
     this.attachedMediaType = '',
+    this.mediaDurationSeconds = 0,
+    this.waveform = const [],
     this.reactions = const {},
     this.myReaction = '',
   });
@@ -124,6 +161,13 @@ class ChatMessage {
           : null,
       attachedMediaUrl: json['attached_media_url']?.toString() ?? '',
       attachedMediaType: json['attached_media_type']?.toString() ?? '',
+      mediaDurationSeconds:
+          (json['media_duration_seconds'] as num?)?.toInt() ?? 0,
+      waveform: json['waveform'] is List
+          ? (json['waveform'] as List)
+              .map((e) => (e as num).toDouble())
+              .toList()
+          : const [],
       reactions: json['reactions'] is Map
           ? Map<String, int>.from(
               (json['reactions'] as Map).map(
@@ -180,13 +224,17 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       realtimeEventsProvider,
       (prev, next) {
         next.whenData((evt) {
-          if (evt.type != 'chat.message' || evt.payload is! Map) return;
-          final p = (evt.payload as Map).cast<String, dynamic>();
-          final chatId = p['chat_id']?.toString() ?? '';
-          if (chatId.isEmpty) return;
-          // We don't have the full chat preview here (only the message), so
-          // the cheapest and correct path is to refetch the list — that
-          // gives us last_message, last_message_at and unread_count for free.
+          // Любое из событий ниже инвалидирует превью чат-листа: новое
+          // сообщение, добавление/удаление участников группы, создание новой
+          // группы (где меня указали). Refetch один — получаем свежие
+          // last_message, unread, kind, title, participants_count.
+          const triggerEvents = {
+            'chat.message',
+            'chat.group.joined',
+            'chat.group.member.added',
+            'chat.group.member.removed',
+          };
+          if (!triggerEvents.contains(evt.type)) return;
           load();
         });
       },
@@ -353,12 +401,17 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     String? attachedPostId,
     String? attachedMediaUrl,
     String? attachedMediaType,
+    int mediaDurationSeconds = 0,
+    List<double> waveform = const [],
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
+    // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
     final kind = attachedPostId != null
         ? 'shared_post'
         : hasMedia
-            ? (attachedMediaType ?? 'image')
+            ? (attachedMediaType == 'audio'
+                ? 'voice'
+                : (attachedMediaType ?? 'image'))
             : 'text';
 
     // Optimistic UI: add message locally (no preview yet — server fills it).
@@ -372,6 +425,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       kind: kind,
       attachedMediaUrl: attachedMediaUrl ?? '',
       attachedMediaType: attachedMediaType ?? '',
+      mediaDurationSeconds: mediaDurationSeconds,
+      waveform: waveform,
     );
     state = state.copyWith(messages: [...state.messages, optimistic]);
 
@@ -381,6 +436,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         data: {
           'text': text,
           if (attachedPostId != null) 'attached_post_id': attachedPostId,
+          if (mediaDurationSeconds > 0)
+            'media_duration_seconds': mediaDurationSeconds,
+          if (waveform.isNotEmpty) 'waveform': waveform,
           if (hasMedia) 'attached_media_url': attachedMediaUrl,
           if (hasMedia)
             'attached_media_type': attachedMediaType ?? 'image',

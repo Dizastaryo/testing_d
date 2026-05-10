@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -8,12 +10,20 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
 import '../post/media_prepare_screen.dart';
+import 'filters/filter_overlay.dart';
+import 'filters/filter_picker.dart';
+import 'filters/filter_sliders_sheet.dart';
+import 'filters/filter_state.dart';
+import 'masks/face_tracking_service.dart';
+import 'masks/mask_catalog.dart';
+import 'masks/mask_overlay.dart';
+import 'masks/mask_picker.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -23,7 +33,7 @@ const Color _kGlassBg = Color(0x73000000); // rgba(0,0,0,0.45)
 
 // ─── CameraScreen ─────────────────────────────────────────────────────────
 
-class CameraScreen extends StatefulWidget {
+class CameraScreen extends ConsumerStatefulWidget {
   final VoidCallback? onClose;
   final VoidCallback? onNext;
   final VoidCallback? onOpenMusic;
@@ -31,10 +41,10 @@ class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key, this.onClose, this.onNext, this.onOpenMusic});
 
   @override
-  State<CameraScreen> createState() => _CameraScreenState();
+  ConsumerState<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen>
+class _CameraScreenState extends ConsumerState<CameraScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   // ── Camera state ──
   CameraController? _controller;
@@ -55,6 +65,11 @@ class _CameraScreenState extends State<CameraScreen>
   // ── Recording state ──
   bool _isRecording = false;
   List<double> _segments = []; // completed segment durations in seconds
+  MaskDescriptor? _selectedMask; // AR-маска поверх preview
+  bool _showMaskPicker = false; // toggle для picker'а (по дефолту скрыт)
+  FilterState _filter = FilterState.identity; // color/grain/vignette state
+  String? _filterPresetId;
+  bool _showFilterPicker = false;
   double _currentSegDur = 0.0; // live elapsed seconds for active segment
 
   // ── Timer state ──
@@ -64,17 +79,10 @@ class _CameraScreenState extends State<CameraScreen>
   // ── Settings ──
   bool _flashOn = false;
   bool _showGrid = false;
-  double _speed = 1.0;
-  String _tab = 'reel'; // photo | reel | live | duet
+  String _tab = 'reel'; // photo | reel
 
   // ── Fake music track label ──
   final String _audioTitle = 'Любимая музыка';
-
-  // ── AI Filter ──
-  String? _aiFilterUrl;
-  bool _aiFilterLoading = false;
-  String? _aiFilterError;
-  final double _aiFilterOpacity = 0.6;
 
   // ── Gallery preview ──
   XFile? _galleryFile;
@@ -303,7 +311,7 @@ class _CameraScreenState extends State<CameraScreen>
     _ticker = createTicker((elapsed) {
       if (!mounted) return;
       _tickerStart ??= elapsed;
-      final secs = (elapsed - _tickerStart!).inMilliseconds / 1000.0 * _speed;
+      final secs = (elapsed - _tickerStart!).inMilliseconds / 1000.0;
       final clamped = secs.clamp(0.0, _kMaxDuration - _totalCompleted);
       setState(() => _currentSegDur = clamped);
       if (_totalCompleted + clamped >= _kMaxDuration) {
@@ -374,8 +382,11 @@ class _CameraScreenState extends State<CameraScreen>
     HapticFeedback.mediumImpact();
     try {
       final file = await _controller!.takePicture();
+      // Bake AR-маску и color-filter в финальное изображение, чтобы они
+      // остались на снимке а не только на preview.
+      final composed = await _composeCapture(file);
       if (mounted) {
-        await _setGallery(file);
+        await _setGallery(composed);
       }
     } catch (_) {
       if (mounted) {
@@ -387,6 +398,82 @@ class _CameraScreenState extends State<CameraScreen>
         );
       }
     }
+  }
+
+  /// Композирует raw-фото с активным фильтром и маской.
+  /// 1. Decode raw в `ui.Image`.
+  /// 2. PictureRecorder + Canvas — рисует image, поверх — viewport-сайзов
+  ///    vignette/grain, затем mask-painter (через `_FaceFrame.fromSize`).
+  /// 3. Для color matrix используем `saveLayer + ColorFilter` — один shader pass.
+  /// 4. Encode picture обратно в PNG, пишем в файл рядом с raw.
+  ///
+  /// Web: File I/O недоступен в браузере — для Chrome-dev возвращаем raw как
+  /// есть (см. CLAUDE.md — Chrome это dev-preview, mobile это shipping).
+  Future<XFile> _composeCapture(XFile raw) async {
+    if (_filter.isIdentity && _selectedMask == null) return raw;
+    if (kIsWeb) return raw; // web: dart:io недоступен — отдаём raw
+
+    final bytes = await raw.readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final w = image.width.toDouble();
+    final h = image.height.toDouble();
+    final size = Size(w, h);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // 1. Image (с color-filter если есть).
+    if (_filter.isIdentity) {
+      canvas.drawImage(image, Offset.zero, Paint());
+    } else {
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, w, h),
+        Paint()..colorFilter = ColorFilter.matrix(_filter.toMatrix()),
+      );
+      canvas.drawImage(image, Offset.zero, Paint());
+      canvas.restore();
+    }
+
+    // 2. Vignette overlay.
+    if (_filter.vignette > 0) {
+      final rect = Rect.fromLTWH(0, 0, w, h);
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..shader = RadialGradient(
+            radius: 0.9,
+            colors: [
+              Colors.black.withValues(alpha: 0),
+              Colors.black.withValues(alpha: _filter.vignette * 0.75),
+            ],
+            stops: const [0.55, 1.0],
+          ).createShader(rect),
+      );
+    }
+
+    // 3. Grain — пропускаем при bake (heavy на full-res и плёночный noise
+    // на 4k-фотке выглядит сильнее чем в preview). Если нужно — отдельный
+    // toggle «зерно в финале».
+
+    // 4. Mask painter — рисуется в pixel-space фотографии, _FaceFrame
+    // автоматически масштабируется по size.
+    if (_selectedMask != null) {
+      _selectedMask!.painter().paint(canvas, size);
+    }
+
+    final picture = recorder.endRecording();
+    final composedImg = await picture.toImage(w.toInt(), h.toInt());
+    final pngBytes =
+        await composedImg.toByteData(format: ui.ImageByteFormat.png);
+    if (pngBytes == null) return raw;
+
+    // Запись рядом с raw — тот же каталог, новое имя.
+    final outPath =
+        '${raw.path.replaceAll(RegExp(r'\.[^.]+$'), '')}_composed.png';
+    await File(outPath).writeAsBytes(pngBytes.buffer.asUint8List());
+    return XFile(outPath);
   }
 
   // ── Gallery picker ─────────────────────────────────────────────────────
@@ -454,10 +541,24 @@ class _CameraScreenState extends State<CameraScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.dispose();
+    // Stop face-tracking перед disposal'ом controller'а — иначе
+    // service попытается stopImageStream на уже-dispose'нутом controller'е.
+    unawaited(FaceTrackingService.instance.stop());
     _controller?.dispose();
     _switchController.dispose();
     _flashPulseController.dispose();
     super.dispose();
+  }
+
+  /// Дёргается каждый раз когда юзер выбирает/снимает маску. Стартует или
+  /// останавливает face-tracking. Без выбранной маски detection не нужен —
+  /// сэкономим батарею.
+  void _syncFaceTracking() {
+    if (_selectedMask != null && _isInitialized && _controller != null) {
+      unawaited(FaceTrackingService.instance.start(_controller!));
+    } else if (_selectedMask == null && FaceTrackingService.instance.isRunning) {
+      unawaited(FaceTrackingService.instance.stop());
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────
@@ -476,43 +577,18 @@ class _CameraScreenState extends State<CameraScreen>
             GestureDetector(
               onScaleStart: _onScaleStart,
               onScaleUpdate: _onScaleUpdate,
-              child: _buildCameraPreview(),
+              child: FilterOverlay(
+                state: _filter,
+                child: _buildCameraPreview(),
+              ),
             )
           else
             const Center(
               child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
             ),
 
-          // ── AI filter overlay ──
-          if (_aiFilterUrl != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Opacity(
-                  opacity: _aiFilterOpacity,
-                  child: CachedNetworkImage(
-                    imageUrl: _aiFilterUrl!,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => const SizedBox.shrink(),
-                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                ),
-              ),
-            ),
-
-          // ── AI filter loading indicator ──
-          if (_aiFilterLoading)
-            const Positioned.fill(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: _kAccent, strokeWidth: 2),
-                    SizedBox(height: 12),
-                    Text('Генерация AI эффекта...', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ),
+          // ── AR mask overlay ──
+          MaskOverlay(descriptor: _selectedMask),
 
           // ── Grid overlay ──
           if (_showGrid)
@@ -531,8 +607,56 @@ class _CameraScreenState extends State<CameraScreen>
           // ── Right tools ──
           _buildRightTools(),
 
-          // ── Left speed pills (reel mode) ──
-          if (_tab == 'reel') _buildSpeedPills(),
+          // ── Mask picker — между preview и record-row, когда включён ──
+          if (_showMaskPicker)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 220,
+              child: MaskPicker(
+                selected: _selectedMask,
+                onChanged: (m) {
+                  setState(() => _selectedMask = m);
+                  _syncFaceTracking();
+                },
+              ),
+            ),
+
+          // ── Filter picker (presets + sliders entry) ──
+          if (_showFilterPicker)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 220,
+              child: FilterPicker(
+                selectedPresetId: _filterPresetId,
+                state: _filter,
+                onPresetSelected: (preset) {
+                  setState(() {
+                    _filter = preset?.state ?? FilterState.identity;
+                    _filterPresetId = preset?.id;
+                  });
+                },
+                onOpenSliders: () {
+                  showFilterSlidersSheet(
+                    context: context,
+                    initial: _filter,
+                    onChange: (s) {
+                      setState(() {
+                        _filter = s;
+                        _filterPresetId = null; // ручная настройка
+                      });
+                    },
+                    onReset: () {
+                      setState(() {
+                        _filter = FilterState.identity;
+                        _filterPresetId = null;
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
 
           // ── Record button row ──
           _buildRecordRow(),
@@ -574,29 +698,26 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isUploading) return;
     setState(() => _isUploading = true);
     try {
-      const storage = FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
-      );
-      final token = await storage.read(key: 'access_token');
-      final dio = Dio();
-      if (token != null && token.isNotEmpty) {
-        dio.options.headers['Authorization'] = 'Bearer $token';
-      }
+      final api = ref.read(apiClientProvider);
 
       // Upload file (cross-platform: read bytes, send via fromBytes).
       final bytes = _galleryBytes ?? await file.readAsBytes();
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: file.name),
       });
-      final uploadResp = await dio.post(
-        '${ApiEndpoints.baseUrl}${ApiEndpoints.mediaUpload}',
+      final uploadResp = await api.post(
+        ApiEndpoints.mediaUpload,
         data: formData,
+        options: Options(
+          sendTimeout: const Duration(seconds: 120),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
       final mediaUrl = uploadResp.data['data']['url'] as String;
 
       // Create story
-      await dio.post(
-        '${ApiEndpoints.baseUrl}${ApiEndpoints.stories}',
+      await api.post(
+        ApiEndpoints.stories,
         data: {
           'media_url': mediaUrl,
           'media_type': 'image',
@@ -976,28 +1097,6 @@ class _CameraScreenState extends State<CameraScreen>
               },
             ),
             const SizedBox(height: 12),
-            // AI Effects
-            _ToolButton(
-              icon: Icon(Icons.auto_fix_high_rounded,
-                  color: _aiFilterUrl != null ? _kAccent : Colors.white, size: 20),
-              label: 'AI эффект',
-              active: _aiFilterUrl != null,
-              onTap: _showAIFilterSheet,
-            ),
-            const SizedBox(height: 12),
-            // Remove AI filter
-            if (_aiFilterUrl != null)
-              _ToolButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
-                label: 'убрать',
-                onTap: () => setState(() {
-                  _aiFilterUrl = null;
-                  _aiFilterError = null;
-                }),
-              ),
-            if (_aiFilterUrl != null)
-              const SizedBox(height: 12),
-            const SizedBox(height: 12),
             // Grid
             _ToolButton(
               icon: const Icon(Icons.grid_on_rounded, color: Colors.white, size: 20),
@@ -1005,253 +1104,41 @@ class _CameraScreenState extends State<CameraScreen>
               active: _showGrid,
               onTap: () => setState(() => _showGrid = !_showGrid),
             ),
+            const SizedBox(height: 12),
+            // AR Masks
+            _ToolButton(
+              icon: Icon(
+                Icons.face_retouching_natural,
+                color: _selectedMask != null || _showMaskPicker
+                    ? SeeUColors.accent
+                    : Colors.white,
+                size: 22,
+              ),
+              label: 'маска',
+              active: _selectedMask != null,
+              onTap: () => setState(() {
+                _showMaskPicker = !_showMaskPicker;
+                if (_showMaskPicker) _showFilterPicker = false;
+              }),
+            ),
+            const SizedBox(height: 12),
+            // AI / color filters
+            _ToolButton(
+              icon: Icon(
+                Icons.auto_awesome,
+                color: !_filter.isIdentity || _showFilterPicker
+                    ? SeeUColors.accent
+                    : Colors.white,
+                size: 22,
+              ),
+              label: 'фильтр',
+              active: !_filter.isIdentity,
+              onTap: () => setState(() {
+                _showFilterPicker = !_showFilterPicker;
+                if (_showFilterPicker) _showMaskPicker = false;
+              }),
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  // ── AI Filter ──────────────────────────────────────────────────────────
-
-  void _showAIFilterSheet() {
-    HapticFeedback.mediumImpact();
-    final promptController = TextEditingController();
-    String selectedStyle = 'filter';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Container(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            top: 20, left: 20, right: 20,
-          ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'AI эффект',
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Опишите эффект который хотите',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              // Style chips
-              Wrap(
-                spacing: 8,
-                children: [
-                  _aiStyleChip('Фильтр', 'filter', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
-                  _aiStyleChip('Маска', 'mask', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
-                  _aiStyleChip('Стикер', 'sticker', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
-                  _aiStyleChip('Фон', 'background', selectedStyle, (v) => setSheetState(() => selectedStyle = v)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Prompt input
-              TextField(
-                controller: promptController,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
-                maxLines: 2,
-                decoration: InputDecoration(
-                  hintText: 'Например: ретро плёнка 90-х, тёплые тона',
-                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.1),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Generate button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _aiFilterLoading ? null : () {
-                    final prompt = promptController.text.trim();
-                    if (prompt.isEmpty) return;
-                    Navigator.of(ctx).pop();
-                    _generateAIFilter(prompt, selectedStyle);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _kAccent,
-                    disabledBackgroundColor: _kAccent.withValues(alpha: 0.5),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: _aiFilterLoading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-                            SizedBox(width: 8),
-                            Text('Сгенерировать', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _aiStyleChip(String label, String value, String selected, ValueChanged<String> onTap) {
-    final isSelected = value == selected;
-    return GestureDetector(
-      onTap: () => onTap(value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? _kAccent : Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _generateAIFilter(String prompt, String style) async {
-    setState(() {
-      _aiFilterLoading = true;
-      _aiFilterError = null;
-    });
-
-    try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 60),
-        receiveTimeout: const Duration(seconds: 60),
-      ));
-
-      final response = await dio.post(
-        '${ApiEndpoints.baseUrl}/ai/generate-filter',
-        data: {'prompt': prompt, 'style': style},
-      );
-
-      final data = response.data;
-      final resultData = data is Map && data.containsKey('data') ? data['data'] : data;
-      final url = resultData['result_url']?.toString();
-
-      if (mounted) {
-        setState(() {
-          _aiFilterUrl = (url != null && url.isNotEmpty) ? url : null;
-          _aiFilterLoading = false;
-          if (url == null || url.isEmpty) {
-            _aiFilterError = resultData['description']?.toString() ?? 'Не удалось создать эффект';
-          }
-        });
-
-        if (_aiFilterUrl != null) {
-          HapticFeedback.heavyImpact();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('AI эффект применён!'),
-              backgroundColor: _kAccent,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        } else if (_aiFilterError != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_aiFilterError!), backgroundColor: Colors.orange),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _aiFilterLoading = false;
-          _aiFilterError = 'Ошибка генерации';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось сгенерировать эффект'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  // ── Speed pills ────────────────────────────────────────────────────────
-
-  Widget _buildSpeedPills() {
-    const speeds = [0.3, 0.5, 1.0, 2.0, 3.0];
-    return Positioned(
-      left: 14,
-      top: 110,
-      child: SafeArea(
-        bottom: false,
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: _kGlassBg,
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.12),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: speeds.map((s) {
-              final selected = _speed == s;
-              final label = s == s.truncateToDouble()
-                  ? '${s.toInt()}x'
-                  : '${s}x';
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _speed = s);
-                },
-                child: Container(
-                  width: 38,
-                  height: 32,
-                  margin: const EdgeInsets.symmetric(vertical: 1),
-                  decoration: BoxDecoration(
-                    color: selected ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: selected ? SeeUColors.textPrimary : Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
         ),
       ),
     );
@@ -1338,11 +1225,12 @@ class _CameraScreenState extends State<CameraScreen>
   // ── Mode tabs ──────────────────────────────────────────────────────────
 
   Widget _buildModeTabs() {
+    // `live` and `duet` tabs were UI-only stubs without backend/recording
+    // wiring — hidden 2026-05-09 to stop dead-end taps. Re-add when those
+    // modes have real flows.
     const tabs = [
       ('photo', 'Фото'),
       ('reel', 'Reel'),
-      ('live', 'LIVE'),
-      ('duet', 'Дуэт'),
     ];
 
     return Positioned(

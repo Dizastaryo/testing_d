@@ -123,6 +123,8 @@ Future<void> _showChatPicker(BuildContext context, {required String postId}) asy
     ),
     builder: (sheetCtx) => Consumer(
       builder: (consumerCtx, ref, _) {
+        // Показываем все чаты — direct и group. Для группы используется
+        // title и cover_url (или fallback heroOrange-плейсхолдер).
         final chatList = ref.watch(chatListProvider).chats;
         final c = consumerCtx.seeuColors;
         return SafeArea(
@@ -160,24 +162,77 @@ Future<void> _showChatPicker(BuildContext context, {required String postId}) asy
                           itemCount: chatList.length,
                           itemBuilder: (_, i) {
                             final chat = chatList[i];
-                            final avatar = chat.otherUser.avatarUrl ?? '';
+                            final isGroup = chat.isGroup;
+                            // Avatar logic: group → cover_url + group-fallback,
+                            // direct → otherUser avatar.
+                            final avatar = isGroup
+                                ? chat.coverUrl
+                                : (chat.otherUser?.avatarUrl ?? '');
+                            final label = isGroup
+                                ? chat.title
+                                : '@${chat.otherUser?.username ?? ''}';
+                            final subLabel = isGroup
+                                ? '${chat.participantsCount} участников'
+                                : (chat.lastMessage.isNotEmpty
+                                    ? chat.lastMessage
+                                    : '');
                             return ListTile(
-                              leading: CircleAvatar(
-                                radius: 22,
-                                backgroundColor: c.surface2,
-                                backgroundImage: avatar.isNotEmpty
-                                    ? NetworkImage(avatar)
+                              leading: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: isGroup && avatar.isEmpty
+                                      ? SeeUGradients.heroOrange
+                                      : null,
+                                  color: avatar.isEmpty && !isGroup
+                                      ? c.surface2
+                                      : null,
+                                  image: avatar.isNotEmpty
+                                      ? DecorationImage(
+                                          image: NetworkImage(avatar),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : null,
+                                ),
+                                child: avatar.isEmpty && isGroup
+                                    ? const Icon(
+                                        PhosphorIconsBold.usersThree,
+                                        color: Colors.white,
+                                        size: 20,
+                                      )
                                     : null,
                               ),
-                              title: Text('@${chat.otherUser.username}',
+                              title: Text(label,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600)),
-                              subtitle: chat.lastMessage.isNotEmpty
-                                  ? Text(chat.lastMessage,
+                              subtitle: subLabel.isNotEmpty
+                                  ? Text(subLabel,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                           fontSize: 12, color: c.ink2))
+                                  : null,
+                              trailing: isGroup
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: SeeUColors.accent
+                                            .withValues(alpha: 0.10),
+                                        borderRadius: BorderRadius.circular(
+                                            99),
+                                      ),
+                                      child: const Text(
+                                        'группа',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          color: SeeUColors.accent,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    )
                                   : null,
                               onTap: () async {
                                 Navigator.pop(sheetCtx);
@@ -194,8 +249,9 @@ Future<void> _showChatPicker(BuildContext context, {required String postId}) asy
                                   );
                                   messenger.showSnackBar(
                                     SnackBar(
-                                      content: Text(
-                                          'Отправлено @${chat.otherUser.username}'),
+                                      content: Text(isGroup
+                                          ? 'Отправлено в «${chat.title}»'
+                                          : 'Отправлено @${chat.otherUser?.username ?? ''}'),
                                     ),
                                   );
                                 } on DioException catch (e) {

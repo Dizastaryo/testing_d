@@ -203,6 +203,81 @@ class SeeURadii {
   static const double pill = 999;
 }
 
+// ─── Motion ───────────────────────────────────────────────────────────────
+//
+// Единые длительности и кривые. Без них переходы по приложению живут «каждый
+// сам по себе». Используется в transitions, hot-таппах, story-pulse.
+
+class SeeUMotion {
+  SeeUMotion._();
+
+  // Длительности
+  static const Duration quick = Duration(milliseconds: 120);     // hot-press feedback
+  static const Duration normal = Duration(milliseconds: 220);    // page-element transitions
+  static const Duration slow = Duration(milliseconds: 360);      // sheets / shared-axis
+  static const Duration cinematic = Duration(milliseconds: 600); // splash, hero
+  static const Duration radarSweep = Duration(milliseconds: 1400); // pull-to-refresh radar
+  static const Duration storyPulse = Duration(milliseconds: 2400); // unread story-ring breathing
+
+  // Кривые
+  static const Curve smooth = Curves.easeOutCubic;
+  static const Curve springy = Curves.easeOutBack;
+  static const Curve overshoot = Cubic(0.34, 1.56, 0.64, 1.0);
+  static const Curve breathe = Curves.easeInOutSine;
+}
+
+// ─── Gradients ────────────────────────────────────────────────────────────
+//
+// Бренд-градиенты на оранжевом. Используются для hero-блоков, glass-cards,
+// pull-to-refresh, sunset-card в рилсах.
+
+class SeeUGradients {
+  SeeUGradients._();
+
+  // Hero — закат над городом, основной brand
+  static const LinearGradient heroOrange = LinearGradient(
+    colors: [
+      Color(0xFFFF5A3C),
+      Color(0xFFFF8060),
+      Color(0xFFFFB547),
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    stops: [0.0, 0.55, 1.0],
+  );
+
+  // Closer-to-pink for «like» / engagement chips
+  static const LinearGradient sunsetCard = LinearGradient(
+    colors: [
+      Color(0xFFFF5A3C),
+      Color(0xFFFF3B6B),
+      Color(0xFFC04CFD),
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  // Glass-tint поверх blur'а для bottom-sheet'ов и floating-mini-player
+  static LinearGradient glassOrange({double opacity = 0.12}) => LinearGradient(
+        colors: [
+          SeeUColors.accent.withValues(alpha: opacity),
+          SeeUColors.accent.withValues(alpha: opacity * 0.4),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+
+  // Радиальный «радар-импульс» — центр оранжевый, края прозрачные.
+  // Используется в pull-to-refresh + аватар-кольцо непрочитанной story.
+  static RadialGradient radar({double innerOpacity = 0.7}) => RadialGradient(
+        colors: [
+          SeeUColors.accent.withValues(alpha: innerOpacity),
+          SeeUColors.accent.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 1.0],
+      );
+}
+
 // ─── Shadows ──────────────────────────────────────────────────────────────
 
 class SeeUShadows {

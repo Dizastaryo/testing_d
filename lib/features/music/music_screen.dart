@@ -7,11 +7,12 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/models/playlist.dart';
 import '../../core/providers/playlist_provider.dart';
-import '../../core/providers/reel_compose_provider.dart';
+import '../../core/providers/post_compose_provider.dart';
 import 'track_upload_sheet.dart';
 
 final _tracksProvider =
@@ -49,34 +50,28 @@ class MusicScreen extends ConsumerStatefulWidget {
 }
 
 class _MusicScreenState extends ConsumerState<MusicScreen> {
-  final _player = AudioPlayer();
-  AudioTrack? _current;
+  // Music screen больше не владеет собственным плеером — переходим на
+  // глобальный AudioPlayerService через провайдер. Это даёт persistent
+  // mini-player'у переживать навигацию между экранами и hot-reload'ом
+  // music_screen'а не убивает воспроизведение.
+  AudioPlayer get _player =>
+      ref.read(audioPlayerServiceProvider).raw;
+  AudioTrack? get _current =>
+      ref.watch(miniPlayerProvider).track;
+
   String _query = '';
   bool _searchOpen = false;
   final _searchCtrl = TextEditingController();
 
   @override
   void dispose() {
-    _player.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _toggleTrack(AudioTrack track) async {
     try {
-      if (_current?.id == track.id) {
-        if (_player.playing) {
-          await _player.pause();
-        } else {
-          await _player.play();
-        }
-        setState(() {});
-        return;
-      }
-      setState(() => _current = track);
-      await _player.setUrl(track.audioUrl);
-      await _player.play();
-      setState(() {});
+      await ref.read(miniPlayerProvider.notifier).play(track);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -107,7 +102,14 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
       body: Column(
         children: [
           Expanded(
-            child: CustomScrollView(
+            child: SeeURadarRefresh(
+              onRefresh: () async {
+                ref.invalidate(_tracksProvider);
+                // Wait for next provider load to settle so the spinner
+                // doesn't yank closed before data lands.
+                await ref.read(_tracksProvider.future);
+              },
+              child: CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(child: _buildHeader(theme, c)),
                 if (_searchOpen) SliverToBoxAdapter(child: _buildSearch()),
@@ -154,15 +156,11 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
                 ),
               ],
             ),
+            ),
           ),
-          if (_current != null) _MiniPlayer(
-            track: _current!,
-            player: _player,
-            onClose: () async {
-              await _player.stop();
-              setState(() => _current = null);
-            },
-          ),
+          // Дополнительный inline-плеер на экране music убран:
+          // персистентный SeeUMiniPlayer теперь живёт над bottom-nav и
+          // сопровождает юзера через все экраны.
         ],
       ),
     );
@@ -635,7 +633,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
     // Stash the track so MediaPrepareScreen picks it up on initState. Camera
     // defaults to reel-mode tab, user records video, hits «Далее» and lands
     // in MediaPrepare with publish mode = Reel and audio preselected.
-    ref.read(pendingReelTrackProvider.notifier).state = track;
+    ref.read(pendingPostTrackProvider.notifier).state = track;
     context.push('/story/create');
   }
 

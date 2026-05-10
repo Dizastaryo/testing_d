@@ -5,16 +5,16 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/design/design.dart';
+import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/providers/feed_provider.dart';
-import '../../core/providers/reel_compose_provider.dart';
+import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
@@ -39,10 +39,9 @@ class MediaPrepareScreen extends ConsumerStatefulWidget {
 
 class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     with SingleTickerProviderStateMixin {
-  // 0 = Story, 1 = Post, 2 = Reel (only when isVideo)
+  // 0 = Story, 1 = Post (any media: photo, multi-photo, video). Reels are
+  // gone — every publication is a "rils" in the unified product model.
   int _publishMode = 1;
-
-  bool get _canPublishReel => widget.isVideo;
 
   // Post aspect ratio: 0 = original, 1 = 1:1, 2 = 4:5
   int _aspectIdx = 0;
@@ -70,30 +69,17 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     super.initState();
     _loadBytes();
 
-    // Pick up "use in reel" preselection from Music screen, if any.
-    // Doing this in postFrame because StateProvider mutation outside of
-    // a Riverpod-aware build phase warns in debug.
-    //
-    // Note: pending track uses canonical `core/models/audio_track.dart::AudioTrack`,
-    // while this screen's `_selectedTrack` uses the legacy class declared in
-    // `core/providers/user_provider.dart`. Convert across the boundary.
+    // Pick up preselected track from Music screen ("Использовать в посте"),
+    // if any. Doing this in postFrame because StateProvider mutation outside
+    // of a Riverpod-aware build phase warns in debug.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final pending = ref.read(pendingReelTrackProvider);
+      final pending = ref.read(pendingPostTrackProvider);
       if (pending != null && widget.isVideo && mounted) {
         setState(() {
-          _selectedTrack = AudioTrack(
-            id: pending.id,
-            title: pending.title,
-            artist: pending.artist,
-            coverUrl: pending.coverUrl,
-            audioUrl: pending.audioUrl,
-            durationSeconds: pending.durationSeconds,
-            usesCount: pending.usesCount,
-            genre: pending.genre,
-          );
-          _publishMode = 2; // Reel mode
+          _selectedTrack = pending;
+          _publishMode = 1;
         });
-        ref.read(pendingReelTrackProvider.notifier).state = null;
+        ref.read(pendingPostTrackProvider.notifier).state = null;
       }
     });
 
@@ -148,37 +134,30 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     setState(() => _isPublishing = true);
 
     try {
-      // Auth
-      const storage = FlutterSecureStorage(
-        aOptions: AndroidOptions(encryptedSharedPreferences: true),
-      );
-      final token = await storage.read(key: 'access_token');
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-        sendTimeout: const Duration(seconds: 120),
-        headers: {
-          if (token != null && token.isNotEmpty)
-            'Authorization': 'Bearer $token',
-        },
-      ));
+      final api = ref.read(apiClientProvider);
 
-      // 1. Upload media file (works on web и mobile)
+      // 1. Upload media file (works on web и mobile). Video uploads can be
+      // large — bump sendTimeout to 120s for this single call (apiClient's
+      // global default is 30s, which is fine for everything else).
       final bytes = _bytes ?? await widget.file.readAsBytes();
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: widget.file.name),
       });
-      final uploadResp = await dio.post(
-        '${ApiEndpoints.baseUrl}${ApiEndpoints.mediaUpload}',
+      final uploadResp = await api.post(
+        ApiEndpoints.mediaUpload,
         data: formData,
+        options: Options(
+          sendTimeout: const Duration(seconds: 120),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
       final mediaUrl = uploadResp.data['data']['url'] as String;
       final mediaType = widget.isVideo ? 'video' : 'image';
 
       if (_publishMode == 0) {
         // 2a. Create Story
-        await dio.post(
-          '${ApiEndpoints.baseUrl}${ApiEndpoints.stories}',
+        await api.post(
+          ApiEndpoints.stories,
           data: {
             'media_url': mediaUrl,
             'media_type': mediaType,
@@ -194,45 +173,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           );
           context.go('/feed');
         }
-      } else if (_publishMode == 2) {
-        // 2c. Create Reel — POST goes to video service (port 8002).
-        final captionParts = <String>[];
-        if (_captionCtrl.text.trim().isNotEmpty) {
-          captionParts.add(_captionCtrl.text.trim());
-        }
-        if (_tags.isNotEmpty) {
-          captionParts.add(_tags.map((t) => '#$t').join(' '));
-        }
-
-        final reelData = <String, dynamic>{
-          'caption':
-              captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
-          'media_urls': [mediaUrl],
-          'media_type': 'video',
-          if (_tags.isNotEmpty) 'hashtags': _tags,
-          if (_selectedTrack != null) 'audio_track_id': _selectedTrack!.id,
-          if (_videoCtrl?.value.duration != null)
-            'duration_seconds':
-                _videoCtrl!.value.duration.inSeconds.clamp(1, 60),
-        };
-
-        await dio.post(
-          '${ApiEndpoints.videoBaseUrl}${ApiEndpoints.reels}',
-          data: reelData,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Рилс опубликован!',
-                  style: SeeUTypography.body.copyWith(color: Colors.white)),
-              backgroundColor: SeeUColors.success,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          context.go('/reels');
-        }
       } else {
-        // 2b. Create Post
+        // Create Post — every publication is a unified post now (photo,
+        // multi-photo, or video). Audio track may overlay a video.
         final captionParts = <String>[];
         if (_captionCtrl.text.trim().isNotEmpty) {
           captionParts.add(_captionCtrl.text.trim());
@@ -245,12 +188,14 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           'caption': captionParts.isNotEmpty ? captionParts.join('\n\n') : '',
           'media_urls': [mediaUrl],
           'media_types': [mediaType],
+          if (_selectedTrack != null && widget.isVideo)
+            'audio_track_id': _selectedTrack!.id,
         };
         final loc = _locationCtrl.text.trim();
         if (loc.isNotEmpty) postData['location'] = loc;
 
-        await dio.post(
-          '${ApiEndpoints.baseUrl}${ApiEndpoints.posts}',
+        await api.post(
+          ApiEndpoints.posts,
           data: postData,
         );
         if (mounted) {
@@ -302,7 +247,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
             _buildModeToggle(c),
             Expanded(child: _buildPreview(c)),
             _buildMusicButton(c),
-            if (_publishMode == 1 || _publishMode == 2) _buildPostForm(c),
+            if (_publishMode == 1) _buildPostForm(c),
             _buildPublishButton(c),
           ],
         ),
@@ -323,11 +268,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
           ),
           const Spacer(),
           Text(
-            switch (_publishMode) {
-              0 => 'Новая история',
-              2 => 'Новый рилс',
-              _ => 'Новый пост',
-            },
+            _publishMode == 0 ? 'Новая история' : 'Новая публикация',
             style: SeeUTypography.subtitle,
           ),
           const Spacer(),
@@ -341,8 +282,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
   Widget _buildModeToggle(SeeUThemeColors c) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-          horizontal: _canPublishReel ? 24 : 40, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
       child: Container(
         height: 40,
         decoration: BoxDecoration(
@@ -352,8 +292,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         child: Row(
           children: [
             _modeTab('История', 0, c),
-            _modeTab('Пост', 1, c),
-            if (_canPublishReel) _modeTab('Рилс', 2, c),
+            _modeTab('Публикация', 1, c),
           ],
         ),
       ),
@@ -818,11 +757,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     ),
                   )
                 : Text(
-                    switch (_publishMode) {
-                      0 => 'Опубликовать историю',
-                      2 => 'Опубликовать рилс',
-                      _ => 'Опубликовать пост',
-                    },
+                    _publishMode == 0
+                        ? 'Опубликовать историю'
+                        : 'Опубликовать',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,

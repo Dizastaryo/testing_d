@@ -13,6 +13,8 @@ import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
+import 'widgets/voice_bubble.dart';
+import 'widgets/voice_recorder.dart';
 // Chat uses existing chat_provider; no MockService needed
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -30,6 +32,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _focusNode = FocusNode();
   bool _hasText = false;
   bool _isUploading = false;
+  bool _recording = false;
 
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
@@ -154,6 +157,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Голосовое сообщение: расшариваем уже-готовый файл (recorder сохранил
+  /// в temp), грузим как multipart на /media/upload и отправляем сообщение
+  /// с attached_media_type='audio' → backend выставит kind='voice'.
+  Future<void> _uploadAndSendVoice(
+      String filePath, int durationSec, List<double> samples) async {
+    if (filePath.isEmpty) return;
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(filePath),
+      });
+      final upload =
+          await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'audio',
+            mediaDurationSeconds: durationSec,
+            waveform: samples,
+          );
+      _scrollToBottom();
+    } on DioException catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Не удалось отправить: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
   void _onReactionSelected(String messageId, String emoji) {
     setState(() => _reactionPickerMessageId = null);
     HapticFeedback.selectionClick();
@@ -239,52 +279,88 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 2),
-                      // Avatar 36px
-                      if (otherUser != null) ...[
-                        _SmallAvatar(
-                          avatarUrl: otherUser.avatarUrl,
-                          isOnline: false,
-                          size: 36,
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      // Name + online status
+                      // Header-tail: для group тапается всё подряд → /members,
+                      // для direct — статичная плашка с именем (тап на профиль
+                      // оставлен как future task).
                       Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              otherUser?.fullName ?? 'Чат',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: c.ink,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: chat?.isGroup == true
+                              ? () => context.push(
+                                  '/chat/${widget.chatId}/members')
+                              : null,
+                          child: Row(
+                            children: [
+                              // Avatar 36px — для group cover_url или
+                              // gradient-fallback с usersThree-icon.
+                              if (chat?.isGroup == true)
+                                _SmallAvatar(
+                                  avatarUrl: chat!.coverUrl,
+                                  isOnline: false,
+                                  size: 36,
+                                  isGroup: true,
+                                )
+                              else if (otherUser != null)
+                                _SmallAvatar(
+                                  avatarUrl: otherUser.avatarUrl,
+                                  isOnline: false,
+                                  size: 36,
+                                ),
+                              const SizedBox(width: 10),
+                              // Name + subtitle
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      chat?.isGroup == true
+                                          ? chat!.title
+                                          : (otherUser?.fullName ?? 'Чат'),
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: c.ink,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (chat?.isGroup == true)
+                                      Text(
+                                        '${chat!.participantsCount} участников',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: c.ink3,
+                                        ),
+                                      )
+                                    else if (otherUser != null)
+                                      Builder(builder: (ctx) {
+                                        final isTyping = ref
+                                            .watch(typingProvider(
+                                                widget.chatId))
+                                            .isActive;
+                                        return Text(
+                                          isTyping
+                                              ? 'печатает…'
+                                              : 'был недавно',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isTyping
+                                                ? SeeUColors.accent
+                                                : c.ink3,
+                                            fontWeight: isTyping
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        );
+                                      }),
+                                  ],
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (otherUser != null)
-                              Builder(builder: (ctx) {
-                                final isTyping = ref
-                                    .watch(typingProvider(widget.chatId))
-                                    .isActive;
-                                return Text(
-                                  isTyping
-                                      ? 'печатает…'
-                                      : 'был недавно',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isTyping
-                                        ? SeeUColors.accent
-                                        : c.ink3,
-                                    fontWeight: isTyping
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                );
-                              }),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       // More vertical icon
@@ -423,6 +499,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildInputBar() {
     final c = context.seeuColors;
+    // Recorder mode — заменяем весь input на VoiceRecorderBar.
+    if (_recording) {
+      return VoiceRecorderBar(
+        onCancel: () => setState(() => _recording = false),
+        onSubmit: (path, dur, samples) async {
+          setState(() => _recording = false);
+          await _uploadAndSendVoice(path, dur, samples);
+        },
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         color: c.surface,
@@ -497,18 +583,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Send button: 38px, coral
+              // Send / Voice button: paperPlane если есть текст, mic если нет.
               GestureDetector(
-                onTap: _hasText ? _sendMessage : null,
+                onTap: _hasText
+                    ? _sendMessage
+                    : () => setState(() => _recording = true),
                 child: Container(
                   width: 38,
                   height: 38,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: SeeUColors.accent,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    PhosphorIconsFill.paperPlaneRight,
+                    _hasText
+                        ? PhosphorIconsFill.paperPlaneRight
+                        : PhosphorIconsFill.microphone,
                     size: 18,
                     color: Colors.white,
                   ),
@@ -632,14 +722,6 @@ class _DateSeparator extends StatelessWidget {
 // Message bubble with reactions and read receipts
 // ---------------------------------------------------------------------------
 
-const List<String> _reactionEmojis = [
-  '\u{1F525}',
-  '\u{2764}\u{FE0F}',
-  '\u{1F602}',
-  '\u{1F92F}',
-  '\u{1F44F}',
-];
-
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMine;
@@ -690,7 +772,7 @@ class _MessageBubble extends StatelessWidget {
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: _reactionEmojis.map((emoji) {
+                children: kQuickReactionEmojis.map((emoji) {
                   final isSelected = reaction == emoji;
                   return GestureDetector(
                     onTap: () => onReactionSelected(emoji),
@@ -739,17 +821,23 @@ class _MessageBubble extends StatelessWidget {
                     children: [
                       Container(
                         padding: (message.kind == 'shared_post' &&
-                                    message.attachedPost != null) ||
-                                (message.kind == 'image' &&
-                                    message.attachedMediaUrl.isNotEmpty)
+                                        message.attachedPost != null) ||
+                                    (message.kind == 'image' &&
+                                        message.attachedMediaUrl.isNotEmpty)
                             ? const EdgeInsets.all(6)
-                            : const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
+                            : (message.kind == 'voice' ||
+                                    message.kind == 'audio')
+                                // VoiceBubble сам приносит padding + bg —
+                                // обнуляем wrapper'у фон и отступы.
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
                           // own = coral bg; other = surface bg + 0.5px border
-                          color: isMine
-                              ? SeeUColors.accent
-                              : c.surface,
+                          color: (message.kind == 'voice' ||
+                                  message.kind == 'audio')
+                              ? Colors.transparent
+                              : (isMine ? SeeUColors.accent : c.surface),
                           // own: 20 20 4 20 / other: 20 20 20 4
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(20),
@@ -757,12 +845,15 @@ class _MessageBubble extends StatelessWidget {
                             bottomLeft: Radius.circular(isMine ? 20 : 4),
                             bottomRight: Radius.circular(isMine ? 4 : 20),
                           ),
-                          border: isMine
+                          border: (message.kind == 'voice' ||
+                                  message.kind == 'audio')
                               ? null
-                              : Border.all(
-                                  color: c.line,
-                                  width: 0.5,
-                                ),
+                              : isMine
+                                  ? null
+                                  : Border.all(
+                                      color: c.line,
+                                      width: 0.5,
+                                    ),
                         ),
                         child: _buildBubbleContent(message, isMine, c),
                       ),
@@ -872,6 +963,22 @@ class _MessageBubble extends StatelessWidget {
         trailingText: message.text,
       );
     }
+    // Voice-message: kind='voice' от сервера (или 'audio' для optimistic
+    // local-message до прихода response — провайдер uses 'voice' напрямую,
+    // но оставляем 'audio' fallback на случай legacy-данных).
+    if ((message.kind == 'voice' || message.kind == 'audio') &&
+        message.attachedMediaUrl.isNotEmpty) {
+      final url = message.attachedMediaUrl.startsWith('http')
+          ? message.attachedMediaUrl
+          : '${AppConfig.apiOrigin}${message.attachedMediaUrl}';
+      return VoiceBubble(
+        audioUrl: url,
+        durationSec: message.mediaDurationSeconds,
+        waveformSamples:
+            message.waveform.isNotEmpty ? message.waveform : null,
+        isMine: isMine,
+      );
+    }
     return Text(
       message.text,
       style: SeeUTypography.body.copyWith(
@@ -891,16 +998,32 @@ class _SmallAvatar extends StatelessWidget {
   final String? avatarUrl;
   final bool isOnline;
   final double size;
+  final bool isGroup;
 
   const _SmallAvatar({
     this.avatarUrl,
     this.isOnline = false,
     this.size = 36,
+    this.isGroup = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
+    final hasUrl = avatarUrl != null && avatarUrl!.isNotEmpty;
+    final placeholder = Container(
+      decoration: isGroup
+          ? const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SeeUGradients.heroOrange,
+            )
+          : BoxDecoration(shape: BoxShape.circle, color: c.surface2),
+      child: Icon(
+        isGroup ? PhosphorIconsBold.usersThree : PhosphorIconsRegular.user,
+        size: size * 0.45,
+        color: isGroup ? Colors.white : c.ink3,
+      ),
+    );
     return SizedBox(
       width: size,
       height: size,
@@ -914,24 +1037,14 @@ class _SmallAvatar extends StatelessWidget {
               color: c.surface2,
             ),
             clipBehavior: Clip.antiAlias,
-            child: avatarUrl != null && avatarUrl!.isNotEmpty
+            child: hasUrl
                 ? CachedNetworkImage(
                     imageUrl: avatarUrl!,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: c.line,
-                    ),
-                    errorWidget: (_, __, ___) => Icon(
-                      PhosphorIconsRegular.user,
-                      size: size * 0.45,
-                      color: c.ink3,
-                    ),
+                    placeholder: (_, __) => placeholder,
+                    errorWidget: (_, __, ___) => placeholder,
                   )
-                : Icon(
-                    PhosphorIconsRegular.user,
-                    size: size * 0.45,
-                    color: c.ink3,
-                  ),
+                : placeholder,
           ),
           if (isOnline)
             Positioned(

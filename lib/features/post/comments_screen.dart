@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import '../../core/utils/time_format.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/comment.dart';
@@ -99,7 +99,9 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
       if (c.id == commentId) {
         return c.copyWith(
           isLiked: !c.isLiked,
-          likesCount: c.isLiked ? c.likesCount - 1 : c.likesCount + 1,
+          likesCount: c.isLiked
+              ? (c.likesCount > 0 ? c.likesCount - 1 : 0)
+              : c.likesCount + 1,
         );
       }
       // Search in replies too
@@ -109,7 +111,9 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
             if (r.id == commentId) {
               return r.copyWith(
                 isLiked: !r.isLiked,
-                likesCount: r.isLiked ? r.likesCount - 1 : r.likesCount + 1,
+                likesCount: r.isLiked
+                    ? (r.likesCount > 0 ? r.likesCount - 1 : 0)
+                    : r.likesCount + 1,
               );
             }
             return r;
@@ -619,7 +623,7 @@ class _CommentTile extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          timeago.format(comment.createdAt),
+                          formatRelativeTime(comment.createdAt),
                           style: SeeUTypography.micro,
                         ),
                         const SizedBox(width: 16),

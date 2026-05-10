@@ -1,14 +1,19 @@
 /// Build-time configuration. Values come from `--dart-define` flags;
-/// defaults point at the dev machine's LAN IP so a phone on the same Wi-Fi
-/// can reach the backend out-of-the-box.
+/// defaults point at the dev-laptop's **LAN IPv4** (`192.168.10.13`).
 ///
-/// Usage at build/run time:
-///   flutter run -d chrome \
-///       --dart-define=API_BASE_URL=http://192.168.10.13:8001/api/v1 \
-///       --dart-define=VIDEO_BASE_URL=http://192.168.10.13:8002/api/v1 \
-///       --dart-define=LIBRARY_BASE_URL=http://192.168.10.13:8003/api/v1
+/// **Why LAN, not localhost:** shipping target — iOS + Android (см. CLAUDE.md).
+/// Юзер собирает APK/IPA и ставит на телефон, телефон и ноут в одной Wi-Fi
+/// сети → телефон достучится до бэка по LAN-IP. localhost резолвится на
+/// сам телефон и API недоступен.
 ///
-///   flutter build web --release \
+/// Если LAN-IP ноута меняется (пересоздание сети / новый роутер) — поменять
+/// здесь или пробросить через `--dart-define`.
+///
+/// Usage:
+///   flutter build apk                                # default LAN IP
+///   flutter build ipa --no-codesign                  # default LAN IP
+///
+///   flutter run \                                    # для другого IP / прода
 ///       --dart-define=API_BASE_URL=https://api.seeu.kz/api/v1 \
 ///       --dart-define=VIDEO_BASE_URL=https://video.seeu.kz/api/v1 \
 ///       --dart-define=LIBRARY_BASE_URL=https://library.seeu.kz/api/v1
@@ -30,8 +35,9 @@ class AppConfig {
     defaultValue: 'http://192.168.10.13:8003/api/v1',
   );
 
-  /// Public origin of the main user-facing web app. Admin uses it to
-  /// build deep links into the moderated content (post / user / story).
+  /// Public origin of the admin-bundle (used by main-app для deep-link'ов в
+  /// модерированный контент через admin). admin-bundle сам остаётся
+  /// Chrome production target — это **исключение** из rule «mobile only».
   static const String mainAppUrl = String.fromEnvironment(
     'MAIN_APP_URL',
     defaultValue: 'http://192.168.10.13:5000',

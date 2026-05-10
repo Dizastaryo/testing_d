@@ -22,6 +22,7 @@ class ApiEndpoints {
   static const String posts = '/posts';
   static String postById(String id) => '/posts/$id';
   static String likePost(String id) => '/posts/$id/like';
+  static String reactPost(String id) => '/posts/$id/react';
   static String savePost(String id) => '/posts/$id/save';
   static String postComments(String id) => '/posts/$id/comments';
   static String commentReplies(String commentId) => '/comments/$commentId/replies';
@@ -36,6 +37,7 @@ class ApiEndpoints {
   static String storyViewers(String id) => '/stories/$id/viewers';
   static String userStories(String username) => '/stories/$username';
   static String likeStory(String id) => '/stories/$id/like';
+  static String reactStory(String id) => '/stories/$id/react';
 
   // Users
   static const String me = '/users/me';
@@ -73,6 +75,7 @@ class ApiEndpoints {
 
   // Explore
   static const String explore = '/explore';
+  static const String dailyPrompt = '/daily-prompt';
   static const String search = '/search';
   static const String searchHistory = '/search/history';
 
@@ -105,6 +108,13 @@ class ApiEndpoints {
   static String chatRead(String id) => '/chats/$id/read';
   static String chatMessageReact(String messageId) =>
       '/chat-messages/$messageId/react';
+  // Group chats
+  static String chatGroup(String id) => '/chats/$id';
+  static String chatMembers(String id) => '/chats/$id/members';
+  static String chatMember(String chatId, String userId) =>
+      '/chats/$chatId/members/$userId';
+  static String chatMemberRole(String chatId, String userId) =>
+      '/chats/$chatId/members/$userId/role';
 
   // === Video Service endpoints ===
   static const String videos = '/videos';
@@ -116,13 +126,7 @@ class ApiEndpoints {
   static String userVideos(String userId) => '/users/$userId/videos';
 
   // Reels
-  static const String reelsFeed = '/reels/feed';
-  static String reelById(String id) => '/reels/$id';
-  static String reelView(String id) => '/reels/$id/view';
-  static String reelLike(String id) => '/reels/$id/like';
-  static String reelShare(String id) => '/reels/$id/share';
-  static String userReels(String userId) => '/users/$userId/reels';
-  static const String reels = '/reels';
+  // Reels endpoints removed (migration 23 unified them with posts).
 
   // === Library Service endpoints ===
   static const String files = '/files';

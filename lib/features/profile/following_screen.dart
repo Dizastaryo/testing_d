@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
+import '../../core/services/haptics.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 
@@ -41,55 +42,14 @@ class FollowingScreen extends ConsumerWidget {
         ),
       ),
       body: followingAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: SeeUColors.accent),
-        ),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '!',
-                style: TextStyle(
-                  fontFamily: 'Fraunces',
-                  fontSize: 48,
-                  color: SeeUColors.textTertiary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text('Не удалось загрузить',
-                  style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary)),
-              const SizedBox(height: 12),
-              SeeUButton(
-                label: 'Повторить',
-                variant: SeeUButtonVariant.primary,
-                width: 120,
-                height: 44,
-                onTap: () => ref.refresh(_followingProvider(username)),
-              ),
-            ],
-          ),
+        loading: () => const SeeUListSkeleton(),
+        error: (e, _) => SeeUErrorState(
+          onRetry: () => ref.refresh(_followingProvider(username)),
         ),
         data: (users) => users.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '\u2022',
-                      style: TextStyle(
-                        fontFamily: 'Fraunces',
-                        fontSize: 48,
-                        color: SeeUColors.textTertiary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Пока нет подписок',
-                      style: SeeUTypography.body.copyWith(color: SeeUColors.textSecondary),
-                    ),
-                  ],
-                ),
+            ? const SeeUEmptyState(
+                icon: PhosphorIconsRegular.userList,
+                title: 'Пока нет подписок',
               )
             : AnimationLimiter(
                 child: ListView.builder(
@@ -135,6 +95,7 @@ class _FollowingUserRowState extends ConsumerState<_FollowingUserRow> {
   }
 
   Future<void> _toggleFollow() async {
+    SeeUHaptics.press();
     final previous = _isFollowing;
     setState(() => _isFollowing = !_isFollowing);
     try {

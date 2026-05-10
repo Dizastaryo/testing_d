@@ -5,8 +5,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import '../../../core/utils/time_format.dart';
 import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import '../../video/fullscreen_video_player.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
@@ -31,6 +32,13 @@ class _PostCardState extends ConsumerState<PostCard>
   late Animation<double> _heartScaleAnim;
   late Animation<double> _heartOpacityAnim;
   bool _showHeart = false;
+  // Burst — particle-эффект поверх большой anim'ы. Два GlobalKey'а потому что
+  // wave-layout и normal-layout рендерятся в разных Stack'ах, на экране в
+  // момент времени только один — пуляем burst в оба (другой просто null'ится).
+  final GlobalKey<SeeUHeartBurstState> _burstKeyWave =
+      GlobalKey<SeeUHeartBurstState>();
+  final GlobalKey<SeeUHeartBurstState> _burstKeyNormal =
+      GlobalKey<SeeUHeartBurstState>();
   final PageController _pageController = PageController();
 
   // Reaction picker state
@@ -42,14 +50,6 @@ class _PostCardState extends ConsumerState<PostCard>
   late Animation<double> _reactionPickerOpacityAnim;
   String? _selectedEmoji;
   bool _showSelectedEmoji = false;
-
-  static const List<String> _reactionEmojis = [
-    '\u{1F525}', // fire
-    '\u{2764}\u{FE0F}', // red heart
-    '\u{1F602}', // laughing
-    '\u{1F92F}', // exploding head
-    '\u{1F44F}', // clap
-  ];
 
   @override
   void initState() {
@@ -126,6 +126,9 @@ class _PostCardState extends ConsumerState<PostCard>
     HapticFeedback.mediumImpact();
     setState(() => _showHeart = true);
     _heartAnimController.forward(from: 0);
+    // Particle-burst — стреляем в оба ключа, ответит только тот что mounted.
+    _burstKeyWave.currentState?.burst();
+    _burstKeyNormal.currentState?.burst();
   }
 
   void _likePost() {
@@ -194,9 +197,10 @@ class _PostCardState extends ConsumerState<PostCard>
 
   void _selectReaction(String emoji) {
     HapticFeedback.lightImpact();
-    if (!widget.post.isLiked) {
-      ref.read(feedProvider.notifier).toggleLike(widget.post.id);
-    }
+    // Persisted via FeedNotifier (toggle = same emoji removes, different
+    // upserts). Server fan-outs `post.reaction` over WS so other viewers
+    // see the count change too.
+    ref.read(feedProvider.notifier).toggleReaction(widget.post.id, emoji);
     setState(() {
       _selectedEmoji = emoji;
       _showSelectedEmoji = true;
@@ -243,6 +247,7 @@ class _PostCardState extends ConsumerState<PostCard>
             _buildMedia(context, post),
             const SizedBox(height: 12),
             _buildActions(context, post),
+            _buildReactionPills(context, post),
             _buildLikesRow(context, post),
             _buildCaption(context, post),
             _buildCommentsPreview(context, post),
@@ -554,7 +559,7 @@ class _PostCardState extends ConsumerState<PostCard>
                         ),
                       ),
 
-                      // Double-tap heart animation
+                      // Double-tap heart animation + particle burst overlay
                       if (_showHeart)
                         Positioned.fill(
                           child: Center(
@@ -574,6 +579,14 @@ class _PostCardState extends ConsumerState<PostCard>
                             ),
                           ),
                         ),
+                      Positioned.fill(
+                        child: Center(
+                          child: SeeUHeartBurst(
+                            key: _burstKeyWave,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -669,7 +682,7 @@ class _PostCardState extends ConsumerState<PostCard>
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: _reactionEmojis.map((emoji) {
+                    children: kQuickReactionEmojis.map((emoji) {
                       return GestureDetector(
                         onTap: () => _selectReaction(emoji),
                         child: Padding(
@@ -806,7 +819,7 @@ class _PostCardState extends ConsumerState<PostCard>
               else
                 _buildMediaItem(post.media.first),
 
-              // Double-tap heart animation
+              // Double-tap heart animation + particle burst
               if (_showHeart)
                 Center(
                   child: AnimatedBuilder(
@@ -824,6 +837,9 @@ class _PostCardState extends ConsumerState<PostCard>
                     ),
                   ),
                 ),
+              Center(
+                child: SeeUHeartBurst(key: _burstKeyNormal),
+              ),
 
               // Dot indicator for multiple images
               if (hasMultiple)
@@ -899,12 +915,65 @@ class _PostCardState extends ConsumerState<PostCard>
     return _buildActionsRow(context, post);
   }
 
+  /// Aggregate emoji-reaction pills under the action row. Mirrors the
+  /// chat-message reaction strip: tap a pill to toggle (same emoji = unreact,
+  /// new emoji = upsert). Only renders when there's at least one reaction.
+  Widget _buildReactionPills(BuildContext context, Post post) {
+    if (post.reactions.isEmpty) return const SizedBox.shrink();
+    final c = context.seeuColors;
+    final entries = post.reactions.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: entries.map((e) {
+          final mine = e.key == post.myReaction;
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ref.read(feedProvider.notifier).toggleReaction(post.id, e.key);
+            },
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: mine ? SeeUColors.accentSoft : c.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: mine ? SeeUColors.accent : c.line,
+                  width: mine ? 1 : 0.6,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(e.key, style: const TextStyle(fontSize: 14)),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatCount(e.value),
+                    style: SeeUTypography.caption.copyWith(
+                      fontSize: 12,
+                      color: mine ? SeeUColors.accent : c.ink2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildLikesRow(BuildContext context, Post post) {
     final c = context.seeuColors;
-    if (post.likesCount == 0) return const SizedBox.shrink();
-    // M18: Guard likesCount == 1 with likedByUsername — avoid "и ещё 0"
+    if (post.likesCount <= 0) return const SizedBox.shrink();
     String likesText;
-    if (post.likedByUsername != null) {
+    final hasNamed = post.likedByUsername != null && post.likesCount > 0;
+    if (hasNamed) {
       if (post.likesCount == 1) {
         likesText = 'Нравится ${post.likedByUsername}';
       } else {
@@ -959,7 +1028,7 @@ class _PostCardState extends ConsumerState<PostCard>
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Text(
-        timeago.format(post.createdAt, locale: 'ru', allowFromNow: true).toUpperCase(),
+        formatRelativeTime(post.createdAt),
         style: SeeUTypography.micro,
       ),
     );
@@ -1187,15 +1256,38 @@ class _FeedVideoPlayer extends StatefulWidget {
   State<_FeedVideoPlayer> createState() => _FeedVideoPlayerState();
 }
 
-class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
-    with AutomaticKeepAliveClientMixin {
+/// Memory-aware feed video player.
+///
+/// Previously the widget used [AutomaticKeepAliveClientMixin] with
+/// `wantKeepAlive: true`, which kept every video controller alive across
+/// the entire feed scroll session. Scroll past 50 video posts → 50 live
+/// `VideoPlayerController`s with decoded buffers in RAM, ~30MB each on
+/// low-end Android = OOM crash within a minute.
+///
+/// New behaviour:
+/// - No keep-alive — widget gets disposed when SliverList recycles it,
+///   controller is freed immediately.
+/// - [VisibilityDetector] reports viewport coverage: < 50% visible → pause
+///   playback (frame decoder idles), > 50% visible → play. Cuts ambient
+///   CPU/battery use to ~zero when the post is not the focused one.
+/// - On returning to a post (re-scroll), the widget initialises a fresh
+///   controller — same as opening for the first time. Slight buffering
+///   flicker, but bounded memory usage.
+class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
   VideoPlayerController? _controller;
   bool _initialized = false;
   bool _hasError = false;
   bool _isMuted = true;
+  /// Once we paused for fullscreen we don't want visibility-driven autoplay
+  /// to fight the navigator transition. Resume is handled in [.then(...)].
+  bool _suspendedForFullscreen = false;
 
-  @override
-  bool get wantKeepAlive => true;
+  // Stable key for VisibilityDetector — must be unique per widget instance
+  // and survive rebuilds. Using URL is fine; if two posts share the same
+  // video URL, both will receive the same callbacks but each has its own
+  // state, so behaviour stays correct.
+  late final Key _visibilityKey =
+      Key('feed-video-${widget.url.hashCode}-${identityHashCode(this)}');
 
   @override
   void initState() {
@@ -1214,7 +1306,8 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);
-          _controller!.play();
+          // Don't auto-play here — the visibility detector will start
+          // playback if the widget is on-screen, and skip it otherwise.
         }
       }).catchError((e) {
         debugPrint('Feed video error: $e');
@@ -1234,9 +1327,20 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
     _controller!.setVolume(_isMuted ? 0 : 1);
   }
 
+  void _onVisibilityChanged(VisibilityInfo info) {
+    if (!_initialized || _hasError || _suspendedForFullscreen) return;
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    final visible = info.visibleFraction > 0.5;
+    if (visible && !ctrl.value.isPlaying) {
+      ctrl.play();
+    } else if (!visible && ctrl.value.isPlaying) {
+      ctrl.pause();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     if (_hasError) {
       return Container(
         color: Colors.black,
@@ -1273,55 +1377,65 @@ class _FeedVideoPlayerState extends State<_FeedVideoPlayer>
         ),
       );
     }
-    return GestureDetector(
-      onTap: () {
-        // Pause feed player and open fullscreen
-        _controller?.pause();
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            opaque: false,
-            pageBuilder: (_, __, ___) => FullscreenVideoPlayer(url: widget.url),
-            transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-          ),
-        ).then((_) {
-          // Resume on return
-          if (mounted) _controller?.play();
-        });
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller!.value.size.width,
-              height: _controller!.value.size.height,
-              child: VideoPlayer(_controller!),
+    return VisibilityDetector(
+      key: _visibilityKey,
+      onVisibilityChanged: _onVisibilityChanged,
+      child: GestureDetector(
+        onTap: () {
+          // Pause feed player and open fullscreen.
+          _suspendedForFullscreen = true;
+          _controller?.pause();
+          Navigator.of(context).push(
+            PageRouteBuilder(
+              opaque: false,
+              pageBuilder: (_, __, ___) =>
+                  FullscreenVideoPlayer(url: widget.url),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
             ),
-          ),
-          // Mute toggle
-          Positioned(
-            bottom: 8,
-            right: 8,
-            child: GestureDetector(
-              onTap: _toggleMute,
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                  color: Colors.white,
-                  size: 16,
+          ).then((_) {
+            if (!mounted) return;
+            _suspendedForFullscreen = false;
+            // Visibility detector will resume playback if the widget is
+            // still on-screen after the fullscreen route is popped.
+          });
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller!.value.size.width,
+                height: _controller!.value.size.height,
+                child: VideoPlayer(_controller!),
+              ),
+            ),
+            // Mute toggle
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: _toggleMute,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isMuted
+                        ? Icons.volume_off_rounded
+                        : Icons.volume_up_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

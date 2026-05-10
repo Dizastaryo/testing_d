@@ -35,7 +35,13 @@ dependencies:
   cached_network_image: ^3.3.1
   video_player: ^2.8.6
   chewie: ^1.8.5
+  visibility_detector: ^0.4.0+2
   just_audio: ^0.9.42
+  record: ^5.1.2
+
+  # AR — face detection / mesh для масок. Native-only (iOS+Android).
+  # В Chrome — graceful noop, маски fallback'ятся на static heuristic.
+  google_mlkit_face_detection: ^0.13.1
   photo_view: ^0.14.0
 
   # UI

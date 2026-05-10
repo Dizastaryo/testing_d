@@ -66,6 +66,10 @@ class Post {
   final DateTime createdAt;
   final bool isWave;
   final int? waveColorValue;
+  /// Emoji-reactions count per emoji aggregated by server.
+  final Map<String, int> reactions;
+  /// The emoji *current user* placed on this post (empty when none).
+  final String myReaction;
 
   const Post({
     required this.id,
@@ -82,7 +86,21 @@ class Post {
     required this.createdAt,
     this.isWave = false,
     this.waveColorValue,
+    this.reactions = const {},
+    this.myReaction = '',
   });
+
+  /// URL подходящий для grid-cell'а (Explore / Profile / chat-share preview).
+  /// Для видео-постов — `thumbnailUrl` если задан (видео не отрендерится в
+  /// grid-картинке). Для фото-постов — первая media URL. Empty string когда
+  /// у поста вообще нет медиа.
+  String get gridThumbnailUrl {
+    final isVideo = media.any((m) => m.type == MediaType.video);
+    if (isVideo && thumbnailUrl != null && thumbnailUrl!.isNotEmpty) {
+      return thumbnailUrl!;
+    }
+    return media.isNotEmpty ? media.first.url : '';
+  }
 
   factory Post.fromJson(Map<String, dynamic> json) {
     // Support both structured 'media' array and flat 'media_urls' + 'media_types'
@@ -132,6 +150,14 @@ class Post {
           : DateTime.now(),
       isWave: (json['is_wave'] ?? json['isWave'] ?? false) as bool,
       waveColorValue: (json['wave_color_value'] ?? json['waveColorValue']) as int?,
+      reactions: json['reactions'] is Map
+          ? Map<String, int>.from(
+              (json['reactions'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+              ),
+            )
+          : const {},
+      myReaction: json['my_reaction']?.toString() ?? '',
     );
   }
 
@@ -167,6 +193,8 @@ class Post {
     DateTime? createdAt,
     bool? isWave,
     int? waveColorValue,
+    Map<String, int>? reactions,
+    String? myReaction,
   }) {
     return Post(
       id: id ?? this.id,
@@ -183,6 +211,8 @@ class Post {
       createdAt: createdAt ?? this.createdAt,
       isWave: isWave ?? this.isWave,
       waveColorValue: waveColorValue ?? this.waveColorValue,
+      reactions: reactions ?? this.reactions,
+      myReaction: myReaction ?? this.myReaction,
     );
   }
 

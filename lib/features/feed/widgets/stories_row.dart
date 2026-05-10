@@ -1,13 +1,14 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import '../../../core/utils/time_format.dart';
 import '../../../core/design/design.dart';
+import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/story.dart';
@@ -124,7 +125,7 @@ class StoryViewerRoute extends StatelessWidget {
   }
 }
 
-class _InlineStoryViewer extends StatefulWidget {
+class _InlineStoryViewer extends ConsumerStatefulWidget {
   final List<StoryGroup> groups;
   final int initialGroupIndex;
   final String? currentUserId;
@@ -136,10 +137,11 @@ class _InlineStoryViewer extends StatefulWidget {
   });
 
   @override
-  State<_InlineStoryViewer> createState() => _InlineStoryViewerState();
+  ConsumerState<_InlineStoryViewer> createState() =>
+      _InlineStoryViewerState();
 }
 
-class _InlineStoryViewerState extends State<_InlineStoryViewer>
+class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     with TickerProviderStateMixin {
   late int _groupIndex;
   late int _storyIndex;
@@ -153,6 +155,13 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   // Like state: track liked story IDs
   final Set<String> _likedStoryIds = {};
+
+  /// Per-session realtime override of `views_count`. When the server
+  /// pushes `story.view.added`, we stash the new count here and use it in
+  /// build over `widget.groups[i].viewsCount`. Stays empty until at least
+  /// one event arrives. Cleared on dispose with the State itself.
+  final Map<String, int> _liveViewsOverride = {};
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
   // Like animation
   AnimationController? _likeAnimController;
@@ -173,14 +182,6 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
   // M17: Track long-press state to prevent onTapUp from firing after long-press
   bool _isLongPressing = false;
 
-  static const List<String> _quickEmojis = [
-    '\u{1F525}',
-    '\u{2764}\u{FE0F}',
-    '\u{1F602}',
-    '\u{1F92F}',
-    '\u{1F44F}',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -191,12 +192,35 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
       vsync: this,
       duration: const Duration(seconds: 5),
     )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          if (!mounted) return;
-          _nextStory();
-        }
+        if (status != AnimationStatus.completed) return;
+        if (!mounted) return;
+        // Defensive guard: even if the progress controller somehow finishes
+        // (race between `.stop()` in `_openReply` and a pending status tick,
+        // a hot-reload, etc.) while the reply sheet is open, do NOT advance
+        // — the user is mid-typing and getting yanked to the next story is
+        // the bug audit-flagged in P1.
+        if (_isReplyOpen) return;
+        _nextStory();
       });
     _progressController.forward();
+
+    // Subscribe to realtime view-count pushes (`story.view.added`) so the
+    // open viewer's «X views» badge updates live as new viewers arrive,
+    // instead of being stale from when the sheet was opened.
+    _wsSub = ref.listenManual<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'story.view.added' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          final id = p['story_id']?.toString() ?? '';
+          final n = p['views_count'];
+          if (id.isEmpty || n is! num) return;
+          if (!mounted) return;
+          setState(() => _liveViewsOverride[id] = n.toInt());
+        });
+      },
+    );
 
     // Center heart animation
     _likeAnimController = AnimationController(
@@ -260,6 +284,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   @override
   void dispose() {
+    _wsSub?.close();
     _progressController.dispose();
     _likeAnimController?.dispose();
     _emojiAnimController?.dispose();
@@ -396,21 +421,17 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
 
   Future<void> _likeStoryApi(String storyId, bool isNowLiked) async {
     try {
-      final dio = Dio();
-      const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
-      final token = await storage.read(key: 'access_token');
-      if (token != null) {
-        dio.options.headers['Authorization'] = 'Bearer $token';
-      }
+      final api = ref.read(apiClientProvider);
       if (isNowLiked) {
-        await dio.post('${ApiEndpoints.baseUrl}${ApiEndpoints.likeStory(storyId)}');
+        await api.post(ApiEndpoints.likeStory(storyId));
       } else {
-        await dio.delete('${ApiEndpoints.baseUrl}${ApiEndpoints.likeStory(storyId)}');
+        await api.delete(ApiEndpoints.likeStory(storyId));
       }
     } catch (_) {}
   }
 
   Widget _buildOwnStoryBottom(Story story) {
+    final live = _liveViewsOverride[story.id] ?? story.viewsCount;
     return GestureDetector(
       onTap: () => _openViewersSheet(story),
       child: Container(
@@ -429,9 +450,9 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
             ),
             const SizedBox(width: 8),
             Text(
-              story.viewsCount == 0
+              live == 0
                   ? 'Пока никто не посмотрел'
-                  : '${story.viewsCount} ${_pluralViewers(story.viewsCount)}',
+                  : '$live ${_pluralViewers(live)}',
               style: SeeUTypography.body.copyWith(
                 color: Colors.white,
                 fontSize: 14,
@@ -486,20 +507,11 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
         _progressController.forward();
       }
     });
-    // M16: mounted check before ScaffoldMessenger
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Реакция отправлена'),
-        backgroundColor: SeeUColors.accent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(SeeURadii.small),
-        ),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    // Fire-and-forget: provider does optimistic update + rollback on failure.
+    // We intentionally don't await — the emoji animation runs immediately and
+    // the network call shouldn't block the UI feedback loop.
+    final storyId = _currentStory.id;
+    ref.read(storyProvider.notifier).toggleReaction(storyId, emoji);
   }
 
   @override
@@ -791,7 +803,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              _timeAgo(story.createdAt),
+                              formatRelativeTime(story.createdAt),
                               style: SeeUTypography.caption.copyWith(
                                 color:
                                     Colors.white.withValues(alpha: 0.7),
@@ -882,7 +894,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      '${story.viewsCount}',
+                      '${_liveViewsOverride[story.id] ?? story.viewsCount}',
                       style: SeeUTypography.caption.copyWith(
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 12,
@@ -913,7 +925,7 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
                           child: Row(
                             mainAxisAlignment:
                                 MainAxisAlignment.spaceEvenly,
-                            children: _quickEmojis.map((emoji) {
+                            children: kQuickReactionEmojis.map((emoji) {
                               return GestureDetector(
                                 onTap: () => _reactWithEmoji(emoji),
                                 child: Container(
@@ -1144,68 +1156,111 @@ class _InlineStoryViewerState extends State<_InlineStoryViewer>
     );
   }
 
-  String _timeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    // U10: Return 'только что' for stories less than 1 minute old
-    if (diff.inSeconds < 60) return 'только что';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    return '${diff.inDays}d';
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Viewers bottom sheet (own story only)
 // ---------------------------------------------------------------------------
 
-class _ViewersSheet extends StatefulWidget {
+class _ViewersSheet extends ConsumerStatefulWidget {
   final String storyId;
   const _ViewersSheet({required this.storyId});
 
   @override
-  State<_ViewersSheet> createState() => _ViewersSheetState();
+  ConsumerState<_ViewersSheet> createState() => _ViewersSheetState();
 }
 
-class _ViewersSheetState extends State<_ViewersSheet> {
+class _ViewersSheetState extends ConsumerState<_ViewersSheet> {
+  static const int _pageSize = 50;
+
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
-  List<Map<String, dynamic>> _viewers = const [];
+  int _page = 1;
+  final List<Map<String, dynamic>> _viewers = [];
+  final ScrollController _scrollCtrl = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _scrollCtrl.addListener(_onScroll);
+    _loadFirst();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Trigger next-page load when within 200px of the end. Single-instance
+  /// guard via `_loadingMore` so a fast scroll doesn't fire 3 in flight.
+  void _onScroll() {
+    if (_loadingMore || !_hasMore) return;
+    if (!_scrollCtrl.hasClients) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadFirst() async {
+    final ok = await _fetch(page: 1, replace: true);
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        if (!ok) _error = _error ?? 'Ошибка загрузки';
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    final next = _page + 1;
+    final ok = await _fetch(page: next, replace: false);
+    if (mounted) {
+      setState(() {
+        _loadingMore = false;
+        if (ok) _page = next;
+      });
+    }
+  }
+
+  /// Returns true on success. Appends or replaces `_viewers` based on
+  /// `replace`, and updates `_hasMore` from server meta.
+  Future<bool> _fetch({required int page, required bool replace}) async {
     try {
-      final dio = Dio();
-      const storage = FlutterSecureStorage(
-          aOptions: AndroidOptions(encryptedSharedPreferences: true));
-      final token = await storage.read(key: 'access_token');
-      if (token != null) {
-        dio.options.headers['Authorization'] = 'Bearer $token';
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(
+        ApiEndpoints.storyViewers(widget.storyId),
+        queryParameters: {'page': '$page', 'limit': '$_pageSize'},
+      );
+      final body = r.data;
+      final data = body is Map && body.containsKey('data') ? body['data'] : body;
+      final list = data is List ? data.cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
+      // Server may return `meta.has_next_page`; if absent, fall back to
+      // "got a full page → maybe more" heuristic.
+      bool hasNext = list.length >= _pageSize;
+      if (body is Map && body['meta'] is Map) {
+        final meta = (body['meta'] as Map).cast<String, dynamic>();
+        if (meta.containsKey('has_next_page')) {
+          hasNext = meta['has_next_page'] == true;
+        }
       }
-      final r = await dio.get(
-          '${ApiEndpoints.baseUrl}${ApiEndpoints.storyViewers(widget.storyId)}',
-          queryParameters: {'limit': 100});
-      final data = r.data is Map && (r.data as Map).containsKey('data')
-          ? r.data['data']
-          : r.data;
-      final list = data is List ? data : <dynamic>[];
       if (mounted) {
         setState(() {
-          _viewers = list.cast<Map<String, dynamic>>();
-          _loading = false;
+          if (replace) _viewers.clear();
+          _viewers.addAll(list);
+          _hasMore = hasNext;
         });
       }
+      return true;
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
+      return false;
     }
   }
 
@@ -1288,8 +1343,28 @@ class _ViewersSheetState extends State<_ViewersSheet> {
       );
     }
     return ListView.builder(
-      itemCount: _viewers.length,
+      controller: _scrollCtrl,
+      // +1 row reserved for the "loading more" / "end" footer when we
+      // believe more pages exist.
+      itemCount: _viewers.length + (_hasMore ? 1 : 0),
       itemBuilder: (_, i) {
+        if (i >= _viewers.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: _loadingMore
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white54,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          );
+        }
         final v = _viewers[i];
         final user = (v['user'] as Map?)?.cast<String, dynamic>() ?? const {};
         final username = user['username']?.toString() ?? '';
@@ -1319,7 +1394,7 @@ class _ViewersSheetState extends State<_ViewersSheet> {
                       color: Colors.white60, fontSize: 12)),
           trailing: viewedAt == null
               ? null
-              : Text(_relTime(viewedAt),
+              : Text(formatRelativeTime(viewedAt),
                   style: const TextStyle(
                       color: Colors.white54, fontSize: 12)),
         );
@@ -1327,11 +1402,4 @@ class _ViewersSheetState extends State<_ViewersSheet> {
     );
   }
 
-  String _relTime(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.inSeconds < 60) return 'только что';
-    if (d.inMinutes < 60) return '${d.inMinutes}м';
-    if (d.inHours < 24) return '${d.inHours}ч';
-    return '${d.inDays}д';
-  }
 }

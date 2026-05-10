@@ -1094,38 +1094,15 @@ class _PostsGrid extends StatelessWidget {
 
   const _PostsGrid({required this.posts});
 
-  String _postCoverUrl(Post post) {
-    final isVideo = post.media.any((m) => m.type == MediaType.video);
-    if (isVideo && post.thumbnailUrl != null && post.thumbnailUrl!.isNotEmpty) {
-      return post.thumbnailUrl!;
-    }
-    return post.media.first.url;
-  }
+  String _postCoverUrl(Post post) => post.gridThumbnailUrl;
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     if (posts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '\u2022',
-              style: TextStyle(
-                fontFamily: 'Fraunces',
-                fontSize: 56,
-                color: c.ink3,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Пока нет постов',
-              style: SeeUTypography.body
-                  .copyWith(color: c.ink2),
-            ),
-          ],
-        ),
+      return const SeeUEmptyState(
+        icon: PhosphorIconsRegular.imageSquare,
+        title: 'Пока нет постов',
       );
     }
     return GridView.builder(

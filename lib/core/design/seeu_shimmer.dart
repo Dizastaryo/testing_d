@@ -42,3 +42,47 @@ class ShimmerBox extends StatelessWidget {
     );
   }
 }
+
+/// Default list-row skeleton — single source of truth for screens that
+/// were spinning a `CircularProgressIndicator` on initial-list load.
+///
+/// Layout: avatar (44×44 pill) + title bar (60% width) + subtitle bar
+/// (40% width). Repeated `count` times. Mirrors the avatar/title/subtitle
+/// shape of music tracks, notifications, followers/following lists.
+///
+/// Use as a drop-in replacement for `Center(child: CircularProgressIndicator())`
+/// in `.when(loading: ...)` callbacks.
+class SeeUListSkeleton extends StatelessWidget {
+  final int count;
+  const SeeUListSkeleton({super.key, this.count = 8});
+
+  @override
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: ListView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: count,
+        itemBuilder: (_, __) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: const [
+              ShimmerBox(width: 44, height: 44, radius: 22),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ShimmerBox(width: 180, height: 12, radius: 6),
+                    SizedBox(height: 8),
+                    ShimmerBox(width: 120, height: 10, radius: 5),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -532,7 +532,16 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   Widget _buildRadarWithList(List<_ResolvedEntry> entries) {
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
-    return ListView(
+    return RefreshIndicator(
+      color: SeeUColors.accent,
+      onRefresh: () async {
+        // Pull-to-refresh = manual rescan: clear cached devices and start
+        // a fresh BLE scan window. The scan resolves async; we don't await
+        // it because it runs as a stream subscription. Returning quickly
+        // closes the spinner — a long-running re-scan would be confusing.
+        await _startScan();
+      },
+      child: ListView(
       padding: const EdgeInsets.only(bottom: 120),
       children: [
         // Compact radar at top
@@ -697,6 +706,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           );
         }),
       ],
+      ),
     );
   }
 

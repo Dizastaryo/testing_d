@@ -70,6 +70,13 @@ class _RealtimeConnection {
   Timer? _reconnect;
   Duration _backoff = const Duration(seconds: 1);
   bool _disposed = false;
+  /// Wall-clock time the last `_connect` attempt opened a channel. Used to
+  /// detect "WS handshake closes immediately" — a signature of token expiry.
+  DateTime? _connectStartedAt;
+  /// Set true while we've already triggered a refresh in the current
+  /// reconnect cycle, so we don't ping `/auth/refresh` repeatedly when the
+  /// refresh-token itself is also dead.
+  bool _refreshAttempted = false;
 
   _RealtimeConnection(this._ref) {
     _connect();
@@ -97,6 +104,7 @@ class _RealtimeConnection {
 
       debugPrint('[realtime] connecting to $uri');
       _channel = WebSocketChannel.connect(uri);
+      _connectStartedAt = DateTime.now();
 
       _sub = _channel!.stream.listen(
         _onMessage,
@@ -112,6 +120,17 @@ class _RealtimeConnection {
       debugPrint('[realtime] connect error: $e');
       _scheduleReconnect();
     }
+  }
+
+  /// Heuristic: if the connection died within 3 seconds of opening AND we
+  /// haven't already attempted a refresh in this cycle, the access token is
+  /// most likely expired (server's `middleware.Auth` rejected the upgrade).
+  /// A long-lived connection that dies from network blip would last longer.
+  bool _looksLikeAuthFailure() {
+    final start = _connectStartedAt;
+    if (start == null) return false;
+    final lifespan = DateTime.now().difference(start);
+    return lifespan < const Duration(seconds: 3) && !_refreshAttempted;
   }
 
   void _onMessage(dynamic raw) {
@@ -138,16 +157,50 @@ class _RealtimeConnection {
   }
 
   void _onDone() {
-    debugPrint('[realtime] socket closed');
+    final code = _channel?.closeCode;
+    final reason = _channel?.closeReason;
+    debugPrint('[realtime] socket closed code=$code reason=$reason');
     _scheduleReconnect();
+  }
+
+  /// Triggers an immediate refresh-token flow before the next reconnect when
+  /// we suspect the access token is the reason the WS keeps dying. Marks
+  /// `_refreshAttempted` so we don't loop refresh attempts within one cycle.
+  Future<void> _refreshAndReconnect() async {
+    if (_disposed) return;
+    _refreshAttempted = true;
+    debugPrint('[realtime] suspect token expiry — refreshing');
+    final ok = await _ref.read(apiClientProvider).refreshTokens();
+    if (_disposed) return;
+    if (ok) {
+      // Reset backoff on successful refresh — next attempt should succeed.
+      _backoff = const Duration(seconds: 1);
+      _connect();
+    } else {
+      // Refresh-token also dead: stop trying. Next user action will trigger
+      // a 401 on REST → auth_provider drops to login screen.
+      debugPrint('[realtime] refresh failed — giving up reconnect cycle');
+    }
   }
 
   void _scheduleReconnect() {
     if (_disposed) return;
     _reconnect?.cancel();
+    if (_looksLikeAuthFailure()) {
+      _refreshAndReconnect();
+      return;
+    }
     final delay = _backoff;
     debugPrint('[realtime] reconnecting in ${delay.inSeconds}s');
-    _reconnect = Timer(delay, _connect);
+    _reconnect = Timer(delay, () {
+      // A new attempt opens a window for refresh-on-quick-disconnect again,
+      // but only if backoff has grown past first try (i.e. multiple immediate
+      // disconnects in a row could each individually justify a refresh).
+      if (_backoff > const Duration(seconds: 4)) {
+        _refreshAttempted = false;
+      }
+      _connect();
+    });
     // Exponential backoff capped at 30s.
     _backoff = Duration(seconds: (_backoff.inSeconds * 2).clamp(1, 30));
   }

@@ -6,6 +6,14 @@ import '../api/api_endpoints.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../models/highlight.dart';
+import '../models/audio_track.dart';
+import 'realtime_provider.dart';
+
+// Re-export the canonical AudioTrack so legacy callers that imported it
+// from this file (explore/publication_viewer/media_prepare/profile) keep
+// compiling without churn. The local class duplicate was deleted 2026-05-09
+// — only one AudioTrack lives in the app now: `core/models/audio_track.dart`.
+export '../models/audio_track.dart' show AudioTrack;
 
 class UserProfileState {
   final User? user;
@@ -271,45 +279,6 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
   return SearchNotifier(api);
 });
 
-// Audio track model
-class AudioTrack {
-  final String id;
-  final String title;
-  final String artist;
-  final String coverUrl;
-  final String audioUrl;
-  final int durationSeconds;
-  final int usesCount;
-  final String genre;
-
-  const AudioTrack({
-    required this.id,
-    required this.title,
-    required this.artist,
-    required this.coverUrl,
-    required this.audioUrl,
-    this.durationSeconds = 0,
-    this.usesCount = 0,
-    this.genre = '',
-  });
-
-  factory AudioTrack.fromJson(Map<String, dynamic> json) {
-    final baseUrl = ApiEndpoints.baseUrl.replaceAll('/api/v1', '');
-    String toAbs(String url) =>
-        url.startsWith('/') ? baseUrl + url : url;
-    return AudioTrack(
-      id: json['id']?.toString() ?? '',
-      title: json['title']?.toString() ?? '',
-      artist: json['artist']?.toString() ?? '',
-      coverUrl: toAbs(json['cover_url']?.toString() ?? ''),
-      audioUrl: toAbs(json['audio_url']?.toString() ?? ''),
-      durationSeconds: (json['duration_seconds'] ?? 0) as int,
-      usesCount: (json['uses_count'] ?? 0) as int,
-      genre: json['genre']?.toString() ?? '',
-    );
-  }
-}
-
 // Trending tag model
 class TrendingTag {
   final String tag;
@@ -389,8 +358,38 @@ class ExploreState {
 class ExploreNotifier extends StateNotifier<ExploreState> {
   static const _limit = 20;
   final ApiClient _api;
-  ExploreNotifier(this._api) : super(const ExploreState()) {
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+
+  ExploreNotifier(this._api, this._ref) : super(const ExploreState()) {
     refresh();
+    _listenRealtime();
+  }
+
+  void _listenRealtime() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'post.reaction' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          final postId = p['post_id']?.toString() ?? '';
+          if (postId.isEmpty) return;
+          final raw = p['reactions'];
+          final counts = raw is Map
+              ? Map<String, int>.from(raw.map(
+                  (k, v) => MapEntry(k.toString(), (v as num).toInt())))
+              : <String, int>{};
+          applyReactionUpdate(postId, counts);
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
   }
 
   Future<void> refresh() async {
@@ -446,10 +445,145 @@ class ExploreNotifier extends StateNotifier<ExploreState> {
     }
     return returnedCount >= _limit;
   }
+
+  /// Optimistic like toggle. Mirrors FeedNotifier behaviour so the same
+  /// post seen in PublicationViewer reflects the updated state instantly.
+  Future<void> toggleLike(String postId) async {
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    final original = state.posts[idx];
+    final newLiked = !original.isLiked;
+    final updated = original.copyWith(
+      isLiked: newLiked,
+      likesCount: newLiked
+          ? original.likesCount + 1
+          : (original.likesCount > 0 ? original.likesCount - 1 : 0),
+    );
+    state = state.copyWith(
+      posts: [
+        ...state.posts.sublist(0, idx),
+        updated,
+        ...state.posts.sublist(idx + 1),
+      ],
+    );
+    try {
+      if (newLiked) {
+        await _api.post(ApiEndpoints.likePost(postId));
+      } else {
+        await _api.delete(ApiEndpoints.likePost(postId));
+      }
+    } catch (_) {
+      // Roll back on failure.
+      final i = state.posts.indexWhere((p) => p.id == postId);
+      if (i >= 0) {
+        state = state.copyWith(
+          posts: [
+            ...state.posts.sublist(0, i),
+            original,
+            ...state.posts.sublist(i + 1),
+          ],
+        );
+      }
+    }
+  }
+
+  Future<void> toggleSave(String postId) async {
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    final original = state.posts[idx];
+    final updated = original.copyWith(isSaved: !original.isSaved);
+    state = state.copyWith(
+      posts: [
+        ...state.posts.sublist(0, idx),
+        updated,
+        ...state.posts.sublist(idx + 1),
+      ],
+    );
+    try {
+      if (updated.isSaved) {
+        await _api.post(ApiEndpoints.savePost(postId));
+      } else {
+        await _api.delete(ApiEndpoints.savePost(postId));
+      }
+    } catch (_) {
+      final i = state.posts.indexWhere((p) => p.id == postId);
+      if (i >= 0) {
+        state = state.copyWith(
+          posts: [
+            ...state.posts.sublist(0, i),
+            original,
+            ...state.posts.sublist(i + 1),
+          ],
+        );
+      }
+    }
+  }
+
+  /// Optimistic emoji-reaction toggle. Same shape as FeedNotifier — Explore
+  /// lives in its own state silo so we can't share code without coupling.
+  Future<void> toggleReaction(String postId, String emoji) async {
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    final original = state.posts[idx];
+    final isSame = original.myReaction == emoji;
+
+    final newCounts = Map<String, int>.from(original.reactions);
+    if (original.myReaction.isNotEmpty) {
+      newCounts[original.myReaction] =
+          (newCounts[original.myReaction] ?? 1) - 1;
+      if ((newCounts[original.myReaction] ?? 0) <= 0) {
+        newCounts.remove(original.myReaction);
+      }
+    }
+    final newMine = isSame ? '' : emoji;
+    if (newMine.isNotEmpty) {
+      newCounts[newMine] = (newCounts[newMine] ?? 0) + 1;
+    }
+    state = state.copyWith(
+      posts: [
+        ...state.posts.sublist(0, idx),
+        original.copyWith(reactions: newCounts, myReaction: newMine),
+        ...state.posts.sublist(idx + 1),
+      ],
+    );
+
+    try {
+      if (isSame) {
+        await _api.delete(ApiEndpoints.reactPost(postId));
+      } else {
+        await _api.post(ApiEndpoints.reactPost(postId),
+            data: {'emoji': emoji});
+      }
+    } catch (_) {
+      final i = state.posts.indexWhere((p) => p.id == postId);
+      if (i >= 0) {
+        state = state.copyWith(
+          posts: [
+            ...state.posts.sublist(0, i),
+            original,
+            ...state.posts.sublist(i + 1),
+          ],
+        );
+      }
+    }
+  }
+
+  /// Apply a server-pushed reaction update (incoming WS event).
+  void applyReactionUpdate(String postId, Map<String, int> reactions) {
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    state = state.copyWith(
+      posts: [
+        ...state.posts.sublist(0, idx),
+        state.posts[idx].copyWith(reactions: reactions),
+        ...state.posts.sublist(idx + 1),
+      ],
+    );
+  }
 }
 
 final exploreProvider =
     StateNotifierProvider<ExploreNotifier, ExploreState>((ref) {
   final api = ref.watch(apiClientProvider);
-  return ExploreNotifier(api);
+  return ExploreNotifier(api, ref);
 });

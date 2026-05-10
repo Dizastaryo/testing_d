@@ -2,83 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/design/design.dart';
 
-// Radar pulse animation painter
-class _RadarPulsePainter extends CustomPainter {
-  final double progress; // 0..1
-  final int waveIndex;
+const _onboardingSeenKey = 'onboarding_seen_v1';
 
-  _RadarPulsePainter({required this.progress, required this.waveIndex});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = size.width * 0.5 + 30;
-
-    // Each wave starts at a different phase offset
-    final phaseOffset = waveIndex * 0.33;
-    final t = ((progress + phaseOffset) % 1.0);
-    final radius = maxRadius * t;
-    final opacity = (1.0 - t) * 0.5;
-
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: opacity)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawCircle(center, radius, paint);
-  }
-
-  @override
-  bool shouldRepaint(_RadarPulsePainter old) =>
-      old.progress != progress || old.waveIndex != waveIndex;
-}
-
-class _RadarPulse extends StatefulWidget {
-  final int waveIndex;
-  final double size;
-
-  const _RadarPulse({required this.waveIndex, required this.size});
-
-  @override
-  State<_RadarPulse> createState() => _RadarPulseState();
-}
-
-class _RadarPulseState extends State<_RadarPulse>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => CustomPaint(
-        size: Size(widget.size, widget.size),
-        painter: _RadarPulsePainter(
-          progress: _ctrl.value,
-          waveIndex: widget.waveIndex,
-        ),
-      ),
-    );
-  }
-}
-
+/// 5-экранный onboarding с parallax: фоновый «закатный» градиент со
+/// светлячком-радар-импульсом движется в 0.5× скорости PageView, передний
+/// слой (иконка + текст) — в 1×. Создаёт ощущение глубины при свайпе.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -86,262 +18,371 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with TickerProviderStateMixin {
   final _pageCtrl = PageController();
+  late final AnimationController _ambient;
   int _currentPage = 0;
 
-  static const _coralGradientColors = [Color(0xFFFF8060), Color(0xFFFF5A3C)];
-
-  final List<_OnboardingSlide> _slides = [
-    _OnboardingSlide(
+  // 5 слайдов: brand-promise → радар → library → музыка/кино → AI-камера.
+  final List<_Slide> _slides = const [
+    _Slide(
       tag: 'добро пожаловать',
       title: 'Видеть людей,\nне раскрывая себя',
       body:
-          'SeeU — социальная сеть, где ты сначала виден как псевдоним, а имя раскрываешь сам.',
-      accentIcon: _SlideIcon.eye,
+          'SeeU — социальная сеть нового типа. Имя ты раскрываешь сам, а до этого ты — псевдоним и оранжевая точка на чужом радаре.',
+      icon: PhosphorIconsBold.eye,
     ),
-    _OnboardingSlide(
-      tag: 'фишка',
-      title: 'Радар\nрядом с тобой',
+    _Slide(
+      tag: 'радар встреч',
+      title: 'Кто рядом?\nРадар покажет',
       body:
-          'Чип ESP32 показывает людей в радиусе 50 метров. Ставь лайки тем, кто понравился — без подписок.',
-      accentIcon: _SlideIcon.radar,
+          'BLE-чип ESP32 ловит людей в радиусе 50 метров. Помашите, оставьте реакцию, начните чат — без обязательной подписки.',
+      icon: PhosphorIconsBold.radioButton,
     ),
-    _OnboardingSlide(
-      tag: 'безопасно',
-      title: 'Только в\nобщественных местах',
+    _Slide(
+      tag: 'общая библиотека',
+      title: 'Один контент\nна всех',
       body:
-          'Чип сам выключается, когда ты один — никто не узнает где ты живёшь.',
-      accentIcon: _SlideIcon.shield,
+          'Делитесь PDF, наборами кистей, обоями, треками. Скачивайте у других. Файлы, которые живут вместе с сообществом.',
+      icon: PhosphorIconsBold.bookOpen,
+    ),
+    _Slide(
+      tag: 'музыка и кино',
+      title: 'Звук, который\nне исчезает',
+      body:
+          'Включите трек в Music — он играет, пока вы листаете ленту. Полнометражные фильмы и блоги — отдельная вкладка.',
+      icon: PhosphorIconsBold.musicNotes,
+    ),
+    _Slide(
+      tag: 'AI-камера',
+      title: 'Маски по запросу.\nФильтры на ползунках',
+      body:
+          'Опишите маску текстом — AI её сделает. Тон, контраст и зерно — точно как вам нравится. Камера понимает контекст.',
+      icon: PhosphorIconsBold.sparkle,
     ),
   ];
 
-  void _nextPage() {
-    HapticFeedback.lightImpact();
-    if (_currentPage < _slides.length - 1) {
-      _pageCtrl.nextPage(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      context.go('/login');
-    }
-  }
-
-  void _skip() {
-    context.go('/login');
+  @override
+  void initState() {
+    super.initState();
+    _ambient = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    )..repeat();
   }
 
   @override
   void dispose() {
     _pageCtrl.dispose();
+    _ambient.dispose();
     super.dispose();
+  }
+
+  void _next() {
+    HapticFeedback.lightImpact();
+    if (_currentPage < _slides.length - 1) {
+      _pageCtrl.nextPage(
+        duration: SeeUMotion.slow,
+        curve: SeeUMotion.smooth,
+      );
+    } else {
+      _finish();
+    }
+  }
+
+  Future<void> _finish() async {
+    // Сохраняем флаг чтобы splash не перенаправлял повторно при следующем
+    // запуске. /onboarding всё ещё достижим вручную через URL для тестов.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_onboardingSeenKey, true);
+    if (!mounted) return;
+    context.go('/login');
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
     final isLast = _currentPage == _slides.length - 1;
-    final isFirst = _currentPage == 0;
-
     return Scaffold(
-      backgroundColor: c.bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Slides (flex 1 = all remaining space above bottom panel)
-            Expanded(
-              child: PageView.builder(
-                controller: _pageCtrl,
-                itemCount: _slides.length,
-                onPageChanged: (i) => setState(() => _currentPage = i),
-                itemBuilder: (context, index) {
-                  return _buildSlide(_slides[index]);
-                },
-              ),
-            ),
-            // Dots + button + skip
-            Padding(
-              padding: const EdgeInsets.fromLTRB(32, 0, 32, 50),
-              child: Column(
-                children: [
-                  // Dot indicators
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      for (int i = 0; i < _slides.length; i++) ...[
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          width: i == _currentPage ? 22 : 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: i == _currentPage
-                                ? SeeUColors.accent
-                                : c.ink4,
-                            borderRadius:
-                                BorderRadius.circular(SeeURadii.pill),
-                          ),
-                        ),
-                        if (i < _slides.length - 1) const SizedBox(width: 6),
-                      ],
-                    ],
+      backgroundColor: SeeUColors.background,
+      body: Stack(
+        children: [
+          // Parallax-фон (медленный)
+          _ParallaxBackground(
+            controller: _pageCtrl,
+            ambient: _ambient,
+            slides: _slides,
+          ),
+          // Передний слой (быстрый PageView с контентом)
+          SafeArea(
+            child: Column(
+              children: [
+                // Skip top-right
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _finish(),
+                    child: Text(
+                      'Пропустить',
+                      style: SeeUTypography.caption.copyWith(
+                        color: SeeUColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 24),
-                  // Main button: full width, h=56, borderRadius 16, ink bg, bg text
-                  SizedBox(
+                ),
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageCtrl,
+                    itemCount: _slides.length,
+                    onPageChanged: (i) => setState(() => _currentPage = i),
+                    itemBuilder: (_, i) => _SlideContent(slide: _slides[i]),
+                  ),
+                ),
+                // Dots
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(_slides.length, (i) {
+                      final active = i == _currentPage;
+                      return AnimatedContainer(
+                        duration: SeeUMotion.normal,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: active ? 24 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          gradient:
+                              active ? SeeUGradients.heroOrange : null,
+                          color: active
+                              ? null
+                              : SeeUColors.accent.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                // Primary CTA
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
+                  child: SizedBox(
                     width: double.infinity,
-                    height: 56,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        backgroundColor: c.ink,
-                        foregroundColor: c.bg,
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: _next,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: SeeUColors.accent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
+                        padding: EdgeInsets.zero,
+                      ).copyWith(
+                        backgroundColor:
+                            WidgetStateProperty.all(Colors.transparent),
                       ),
-                      onPressed: _nextPage,
-                      child: Text(
-                        isLast ? 'Поехали' : 'Дальше',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          gradient: SeeUGradients.heroOrange,
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                      ),
-                    ),
-                  ),
-                  // "Пропустить" link — only on first slide
-                  if (isFirst) ...[
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: _skip,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(
-                          'Пропустить',
-                          style: SeeUTypography.caption.copyWith(
-                            color: c.ink3,
+                        child: Center(
+                          child: Text(
+                            isLast ? 'Начать' : 'Дальше',
+                            style: SeeUTypography.subtitle.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSlide(_OnboardingSlide slide) {
-    final c = context.seeuColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 40, 32, 0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Large icon box 160x160, coral gradient, borderRadius 36, radar pulses
-          SizedBox(
-            width: 200,
-            height: 200,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Radar pulse waves (behind the box)
-                for (int i = 0; i < 3; i++)
-                  _RadarPulse(waveIndex: i, size: 200),
-                // Icon box
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    gradient: const RadialGradient(
-                      center: Alignment(-0.4, -0.4),
-                      colors: _coralGradientColors,
-                    ),
-                    borderRadius: BorderRadius.circular(36),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFF5A3C).withValues(alpha: 0.4),
-                        blurRadius: 40,
-                        offset: const Offset(0, 16),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    _iconData(slide.accentIcon),
-                    size: 72,
-                    color: Colors.white,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 36),
-          // Tag: mono, coral, uppercase
-          Text(
-            slide.tag.toUpperCase(),
-            style: const TextStyle(
-              fontFamily: 'JetBrains Mono',
-              fontSize: 11,
-              color: SeeUColors.accent,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Serif title, fontSize 36
-          Text(
-            slide.title,
-            style: TextStyle(
-              fontFamily: 'Fraunces',
-              fontSize: 36,
-              fontWeight: FontWeight.w400,
-              color: c.ink,
-              height: 1.05,
-              letterSpacing: -0.72,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 18),
-          // Body text
-          Text(
-            slide.body,
-            style: SeeUTypography.body.copyWith(
-              color: c.ink2,
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
         ],
       ),
     );
   }
-
-  IconData _iconData(_SlideIcon icon) {
-    switch (icon) {
-      case _SlideIcon.eye:
-        return PhosphorIcons.eye(PhosphorIconsStyle.fill);
-      case _SlideIcon.radar:
-        return PhosphorIcons.waveform(PhosphorIconsStyle.fill);
-      case _SlideIcon.shield:
-        return PhosphorIcons.shield(PhosphorIconsStyle.fill);
-    }
-  }
 }
 
-enum _SlideIcon { eye, radar, shield }
-
-class _OnboardingSlide {
+class _Slide {
   final String tag;
   final String title;
   final String body;
-  final _SlideIcon accentIcon;
-
-  const _OnboardingSlide({
+  final IconData icon;
+  const _Slide({
     required this.tag,
     required this.title,
     required this.body,
-    required this.accentIcon,
+    required this.icon,
   });
+}
+
+/// Передний слой PageView — иконка + tag-pill + title + body.
+class _SlideContent extends StatelessWidget {
+  final _Slide slide;
+  const _SlideContent({required this.slide});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 32, 28, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(height: 24),
+          // Tag pill
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: SeeUColors.accent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(
+                color: SeeUColors.accent.withValues(alpha: 0.25),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              slide.tag.toUpperCase(),
+              style: SeeUTypography.micro.copyWith(
+                color: SeeUColors.accent,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // Big icon with brand-gradient backplate
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              gradient: SeeUGradients.heroOrange,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: SeeUColors.accent.withValues(alpha: 0.35),
+                  blurRadius: 32,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Icon(slide.icon, color: Colors.white, size: 52),
+          ),
+          const SizedBox(height: 36),
+          // Title
+          Text(
+            slide.title,
+            style: SeeUTypography.displayL.copyWith(
+              fontSize: 36,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Body
+          Text(
+            slide.body,
+            style: SeeUTypography.body.copyWith(
+              color: c.ink2,
+              fontSize: 16,
+              height: 1.45,
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Background-слой с parallax: декорация слайда смещается медленнее
+/// (фактор 0.5×) чем сам PageView. На каждом слайде — крупное светящееся
+/// пятно brand-цвета в разных позициях.
+class _ParallaxBackground extends StatelessWidget {
+  final PageController controller;
+  final Animation<double> ambient;
+  final List<_Slide> slides;
+
+  const _ParallaxBackground({
+    required this.controller,
+    required this.ambient,
+    required this.slides,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([controller, ambient]),
+      builder: (_, __) {
+        final width = MediaQuery.of(context).size.width;
+        final page = controller.hasClients && controller.position.haveDimensions
+            ? (controller.page ?? 0.0)
+            : 0.0;
+        return Stack(
+          children: [
+            // Soft moving radial blob — главный «солнечный зайчик»
+            for (var i = 0; i < slides.length; i++)
+              Positioned.fill(
+                child: Transform.translate(
+                  offset: Offset((i - page) * width * 0.5, 0),
+                  child: _Blob(
+                    seed: i,
+                    ambient: ambient.value,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Blob extends StatelessWidget {
+  final int seed;
+  final double ambient; // 0..1, для мерцания
+
+  const _Blob({required this.seed, required this.ambient});
+
+  @override
+  Widget build(BuildContext context) {
+    // Расположим blob в разных квадрантах по seed:
+    // 0 — top-right, 1 — bottom-left, 2 — middle-right, 3 — top-left, 4 — center
+    final positions = const [
+      Alignment(0.7, -0.6),
+      Alignment(-0.6, 0.6),
+      Alignment(0.7, 0.2),
+      Alignment(-0.5, -0.5),
+      Alignment(0.0, 0.0),
+    ];
+    final align = positions[seed % positions.length];
+    // Немного «дышит» вместе с ambient (0..1)
+    final breathe = 0.5 + 0.5 * (1 - (ambient * 2 - 1).abs());
+    return Align(
+      alignment: align,
+      child: Container(
+        width: 360,
+        height: 360,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [
+              SeeUColors.accent.withValues(alpha: 0.22 + 0.10 * breathe),
+              SeeUColors.amber.withValues(alpha: 0.10 + 0.06 * breathe),
+              SeeUColors.accent.withValues(alpha: 0.0),
+            ],
+            stops: const [0.0, 0.45, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,9 +7,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
+
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/models/user.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/providers/chat_provider.dart';
-// MockService removed; chat backend not yet implemented
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -30,26 +36,81 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     if (_searchQuery.isEmpty) return chats;
     final q = _searchQuery.toLowerCase();
     return chats.where((c) {
-      final name = c.otherUser.fullName.toLowerCase();
-      final username = c.otherUser.username.toLowerCase();
+      // Для direct ищем по имени/нику собеседника, для group — по title.
+      final label = c.isGroup
+          ? c.title.toLowerCase()
+          : (c.otherUser?.fullName.toLowerCase() ?? '');
+      final username = c.otherUser?.username.toLowerCase() ?? '';
       final msg = c.lastMessage.toLowerCase();
-      return name.contains(q) || username.contains(q) || msg.contains(q);
+      return label.contains(q) || username.contains(q) || msg.contains(q);
     }).toList();
   }
 
   void _showNewChatPicker() {
     HapticFeedback.mediumImpact();
+    // Сначала спрашиваем тип нового чата: direct (1-1) или group. Group →
+    // отдельный full-screen с picker'ом + title; direct — старый bottom-sheet.
+    showSeeUBottomSheet(
+      context: context,
+      builder: (sheetCtx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Новый чат', style: SeeUTypography.title),
+              const SizedBox(height: 4),
+              Text('Выберите формат',
+                  style: SeeUTypography.caption
+                      .copyWith(color: SeeUColors.textSecondary)),
+              const SizedBox(height: 16),
+              _NewChatTypeOption(
+                icon: PhosphorIconsBold.user,
+                title: 'Один на один',
+                subtitle: 'Личный чат с одним пользователем',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _openDirectPicker();
+                },
+              ),
+              const SizedBox(height: 10),
+              _NewChatTypeOption(
+                icon: PhosphorIconsBold.usersThree,
+                title: 'Группа',
+                subtitle: 'До 100 человек, одна тема',
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  context.push('/chat/new-group');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openDirectPicker() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _NewChatBottomSheet(
-        onUserSelected: (user) {
+        onUserSelected: (user) async {
           Navigator.of(context).pop();
-          ref.read(chatListProvider.notifier).load();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Создание чата пока недоступно')),
-          );
+          final messenger = ScaffoldMessenger.of(context);
+          final chatId = await ref
+              .read(chatListProvider.notifier)
+              .getOrCreateChat(user.id);
+          if (!mounted) return;
+          if (chatId == null || chatId.isEmpty) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Не удалось создать чат')),
+            );
+            return;
+          }
+          context.push('/chat/$chatId');
         },
       ),
     );
@@ -280,14 +341,21 @@ class _ChatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final user = chat.otherUser;
+    final isGroup = chat.isGroup;
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
-    // Simulated online/typing states from id hash until real-time data available
-    final isOnline = user.id.hashCode % 3 == 0;
-    final isTyping = user.id.hashCode % 5 == 1;
-    // "взаимный" badge shown when user id hash % 4 == 0
-    final isChipMatch = user.id.hashCode % 4 == 0;
+    // Для group last_message: «X: текст» если есть sender; для direct — как было.
+    final lastMsgWithPrefix = isGroup && chat.lastSenderUsername.isNotEmpty
+        ? '${chat.lastSenderUsername}: $lastMsg'
+        : lastMsg;
+    // Simulated online/typing states from id hash until real-time data available.
+    // Для группы — без online-точки, без typing-индикатора (отдельная задача).
+    final keyForSim = (user?.id ?? chat.id);
+    final isOnline = !isGroup && keyForSim.hashCode % 3 == 0;
+    final isTyping = !isGroup && keyForSim.hashCode % 5 == 1;
+    final isChipMatch = !isGroup && keyForSim.hashCode % 4 == 0;
+    final displayName = isGroup ? chat.title : (user?.fullName ?? '');
 
     return Tappable.scaled(
       onTap: onTap,
@@ -296,11 +364,13 @@ class _ChatTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(
           children: [
-            // Avatar 52px with online green dot
+            // Avatar 52px — для group используем cover_url или fallback-плейсхолдер
+            // с group-icon на оранжевом градиенте.
             _OnlineAvatar(
-              avatarUrl: user.avatarUrl,
+              avatarUrl: isGroup ? chat.coverUrl : (user?.avatarUrl ?? ''),
               isOnline: isOnline,
               size: 52,
+              isGroup: isGroup,
             ),
             const SizedBox(width: 12),
             // Name + badge + last message
@@ -312,7 +382,7 @@ class _ChatTile extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          user.fullName,
+                          displayName,
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -322,7 +392,31 @@ class _ChatTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (isChipMatch) ...[
+                      if (isGroup) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accent.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(
+                              color:
+                                  SeeUColors.accent.withValues(alpha: 0.25),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            'группа · ${chat.participantsCount}',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: SeeUColors.accent,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ] else if (isChipMatch) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -350,8 +444,8 @@ class _ChatTile extends StatelessWidget {
                   Text(
                     isTyping
                         ? 'печатает...'
-                        : lastMsg.isNotEmpty
-                            ? lastMsg
+                        : lastMsgWithPrefix.isNotEmpty
+                            ? lastMsgWithPrefix
                             : 'Начните общение',
                     style: TextStyle(
                       fontSize: 13,
@@ -433,16 +527,32 @@ class _OnlineAvatar extends StatelessWidget {
   final String? avatarUrl;
   final bool isOnline;
   final double size;
+  final bool isGroup;
 
   const _OnlineAvatar({
     this.avatarUrl,
     this.isOnline = false,
     this.size = 52,
+    this.isGroup = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
+    final hasUrl = avatarUrl != null && avatarUrl!.isNotEmpty;
+    Widget placeholder = Container(
+      decoration: isGroup
+          ? const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SeeUGradients.heroOrange,
+            )
+          : BoxDecoration(shape: BoxShape.circle, color: c.surface2),
+      child: Icon(
+        isGroup ? PhosphorIconsBold.usersThree : PhosphorIconsRegular.user,
+        size: size * 0.45,
+        color: isGroup ? Colors.white : c.ink3,
+      ),
+    );
     return SizedBox(
       width: size,
       height: size,
@@ -456,29 +566,14 @@ class _OnlineAvatar extends StatelessWidget {
               color: c.surface2,
             ),
             clipBehavior: Clip.antiAlias,
-            child: avatarUrl != null && avatarUrl!.isNotEmpty
+            child: hasUrl
                 ? CachedNetworkImage(
                     imageUrl: avatarUrl!,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: c.line,
-                      child: Icon(
-                        PhosphorIconsRegular.user,
-                        size: size * 0.45,
-                        color: c.ink3,
-                      ),
-                    ),
-                    errorWidget: (_, __, ___) => Icon(
-                      PhosphorIconsRegular.user,
-                      size: size * 0.45,
-                      color: c.ink3,
-                    ),
+                    placeholder: (_, __) => placeholder,
+                    errorWidget: (_, __, ___) => placeholder,
                   )
-                : Icon(
-                    PhosphorIconsRegular.user,
-                    size: size * 0.45,
-                    color: c.ink3,
-                  ),
+                : placeholder,
           ),
           if (isOnline)
             Positioned(
@@ -507,19 +602,22 @@ class _OnlineAvatar extends StatelessWidget {
 // New chat bottom sheet - user picker
 // ---------------------------------------------------------------------------
 
-class _NewChatBottomSheet extends StatefulWidget {
-  final void Function(dynamic user) onUserSelected;
+class _NewChatBottomSheet extends ConsumerStatefulWidget {
+  final void Function(User user) onUserSelected;
 
   const _NewChatBottomSheet({required this.onUserSelected});
 
   @override
-  State<_NewChatBottomSheet> createState() => _NewChatBottomSheetState();
+  ConsumerState<_NewChatBottomSheet> createState() =>
+      _NewChatBottomSheetState();
 }
 
-class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
+class _NewChatBottomSheetState extends ConsumerState<_NewChatBottomSheet> {
   final _controller = TextEditingController();
-  List<dynamic> _results = [];
+  Timer? _debounce;
+  List<User> _results = [];
   bool _isLoading = false;
+  String? _error;
 
   @override
   void initState() {
@@ -527,34 +625,99 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
     _loadFollowing();
   }
 
+  /// Default state when picker opens — fetch the people I follow. Most
+  /// likely chat target is someone I already interact with. Falls back
+  /// to an empty list with a hint if I'm not following anyone yet.
   Future<void> _loadFollowing() async {
-    setState(() => _isLoading = true);
-    // Chat backend not yet implemented; show empty list
-    if (mounted) {
-      setState(() {
-        _results = [];
-        _isLoading = false;
-      });
+    final me = ref.read(authProvider).user;
+    if (me == null) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(ApiEndpoints.userFollowing(me.username),
+          queryParameters: {'limit': 50});
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List
+          ? data
+              .map((e) => User.fromJson(e as Map<String, dynamic>))
+              .where((u) => u.id != me.id)
+              .toList()
+          : <User>[];
+      if (mounted) {
+        setState(() {
+          _results = list;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = e.toString();
+          _results = [];
+        });
+      }
     }
   }
 
-  Future<void> _search(String query) async {
-    if (query.isEmpty) {
+  /// Debounced search by username/full name — uses the existing /search
+  /// endpoint with type=users. Empty query → reset to following list.
+  void _search(String query) {
+    _debounce?.cancel();
+    final q = query.trim();
+    if (q.isEmpty) {
       _loadFollowing();
       return;
     }
-    setState(() => _isLoading = true);
-    // Chat backend not yet implemented; show empty list
-    if (mounted) {
-      setState(() {
-        _results = [];
-        _isLoading = false;
-      });
-    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+      final me = ref.read(authProvider).user;
+      try {
+        final api = ref.read(apiClientProvider);
+        final r = await api.get(
+          ApiEndpoints.search,
+          queryParameters: {'q': q, 'type': 'users'},
+        );
+        final data = r.data is Map && (r.data as Map).containsKey('data')
+            ? r.data['data']
+            : r.data;
+        List<User> users = const [];
+        if (data is Map && data['users'] is List) {
+          users = (data['users'] as List)
+              .map((e) => User.fromJson(e as Map<String, dynamic>))
+              .where((u) => me == null || u.id != me.id)
+              .toList();
+        }
+        if (mounted) {
+          setState(() {
+            _results = users;
+            _isLoading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _error = e.toString();
+            _results = [];
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -641,10 +804,18 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                   )
                 : _results.isEmpty
                     ? Center(
-                        child: Text(
-                          'Скоро',
-                          style: SeeUTypography.body.copyWith(
-                            color: c.ink2,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Text(
+                            _error != null
+                                ? 'Не удалось загрузить пользователей'
+                                : (_controller.text.trim().isEmpty
+                                    ? 'Никого не нашли. Подпишитесь на кого-нибудь, чтобы написать.'
+                                    : 'По запросу никого не нашли'),
+                            textAlign: TextAlign.center,
+                            style: SeeUTypography.body.copyWith(
+                              color: c.ink2,
+                            ),
                           ),
                         ),
                       )
@@ -699,6 +870,68 @@ class _NewChatBottomSheetState extends State<_NewChatBottomSheet> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Кнопка-карточка для выбора типа нового чата (direct / group).
+// ---------------------------------------------------------------------------
+
+class _NewChatTypeOption extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _NewChatTypeOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Material(
+      color: c.surface2,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SeeUGradients.heroOrange,
+                ),
+                child: Icon(icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: SeeUTypography.subtitle),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: SeeUTypography.caption
+                            .copyWith(color: c.ink3)),
+                  ],
+                ),
+              ),
+              Icon(PhosphorIcons.caretRight(),
+                  size: 16, color: c.ink3),
+            ],
+          ),
+        ),
       ),
     );
   }
