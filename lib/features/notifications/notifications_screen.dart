@@ -24,6 +24,18 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   _NotifFilter _activeFilter = _NotifFilter.all;
 
+  @override
+  void initState() {
+    super.initState();
+    // Открыли экран → бэйдж на колокольчике должен исчезнуть.
+    // Помечаем все как прочитанные сразу при mount (Instagram-pattern).
+    // Guard на unreadCount==0 внутри markAllRead → API не дёргается зря.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notificationProvider.notifier).markAllRead();
+    });
+  }
+
   List<AppNotification> _filtered(List<AppNotification> all) {
     switch (_activeFilter) {
       case _NotifFilter.all:

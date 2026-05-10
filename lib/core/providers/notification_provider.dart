@@ -95,6 +95,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   }
 
   Future<void> markAllRead() async {
+    if (state.unreadCount == 0) return; // ничего не помечать, API не дёргать
     final updated = state.notifications
         .map((n) => n.copyWith(isRead: true))
         .toList();
