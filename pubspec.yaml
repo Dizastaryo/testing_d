@@ -37,7 +37,11 @@ dependencies:
   chewie: ^1.8.5
   visibility_detector: ^0.4.0+2
   just_audio: ^0.9.42
-  record: ^5.1.2
+  # record 6.x синхронизирует federated реализации (record_linux 1.3+ есть
+  # startStream + hasPermission(request:) от record_platform_interface 1.5).
+  # 5.x всё ещё тянет старый record_linux 0.7.2 → build fail на iOS-actions
+  # из-за несовпадения сигнатур.
+  record: ^6.0.0
 
   # NOTE: google_mlkit_face_detection временно убран — он тянет
   # google_mlkit_commons, который требует iOS 15.5+ как min-deployment.
