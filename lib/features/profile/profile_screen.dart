@@ -353,7 +353,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       child: TabBarView(
                         controller: _tabController,
                         children: [
-                          _PostsGrid(posts: profileState.posts),
+                          // Приватный профиль + viewer не подписан → бэк
+                          // вернул 403 на /posts. Показываем locked-stub
+                          // вместо пустой сетки.
+                          profileState.isLocked
+                              ? const _PrivateContent()
+                              : _PostsGrid(posts: profileState.posts),
                           const Center(child: Text('Видео', style: TextStyle(color: Colors.grey))),
                           const Center(child: Text('Файлы', style: TextStyle(color: Colors.grey))),
                           isOwnProfile

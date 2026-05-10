@@ -23,6 +23,9 @@ class UserProfileState {
   final List<Highlight> highlights;
   final bool isLoading;
   final String? error;
+  /// true = приватный профиль, viewer не подписан → бэк отдал 403 на /posts.
+  /// Header показывается, но posts-grid заменяется на «Закрытый профиль».
+  final bool isLocked;
 
   const UserProfileState({
     this.user,
@@ -32,6 +35,7 @@ class UserProfileState {
     this.highlights = const [],
     this.isLoading = false,
     this.error,
+    this.isLocked = false,
   });
 
   UserProfileState copyWith({
@@ -42,6 +46,7 @@ class UserProfileState {
     List<Highlight>? highlights,
     bool? isLoading,
     String? error,
+    bool? isLocked,
   }) {
     return UserProfileState(
       user: user ?? this.user,
@@ -51,6 +56,7 @@ class UserProfileState {
       highlights: highlights ?? this.highlights,
       isLoading: isLoading ?? this.isLoading,
       error: error,
+      isLocked: isLocked ?? this.isLocked,
     );
   }
 }
@@ -84,20 +90,28 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   Future<void> loadProfile() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final userFuture = _api.get(ApiEndpoints.userProfile(username));
-      final postsFuture = _api.get(ApiEndpoints.userPosts(username));
-
-      final results = await Future.wait([userFuture, postsFuture]);
-
-      final userResp = results[0];
-      final postsResp = results[1];
-
+      // User-эндпоинт обязательный — без него вообще профиль не рендерится.
+      final userResp = await _api.get(ApiEndpoints.userProfile(username));
       final user = User.fromJson(_extractMap(userResp.data));
-      final posts = _extractList(postsResp.data)
-          .map((j) => Post.fromJson(j as Map<String, dynamic>))
-          .toList();
 
-      List<Highlight> highlights = [];
+      // Posts: если приватный профиль и viewer не подписан — backend
+      // отдаёт 403, тогда показываем locked-placeholder, остальной UI live.
+      List<Post> posts = const [];
+      bool isLocked = false;
+      try {
+        final postsResp = await _api.get(ApiEndpoints.userPosts(username));
+        posts = _extractList(postsResp.data)
+            .map((j) => Post.fromJson(j as Map<String, dynamic>))
+            .toList();
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 403) {
+          isLocked = true;
+        } else {
+          rethrow;
+        }
+      }
+
+      List<Highlight> highlights = const [];
       try {
         final hlResp = await _api.get(ApiEndpoints.userHighlights(username));
         highlights = _extractList(hlResp.data)
@@ -109,6 +123,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
         user: user,
         posts: posts,
         highlights: highlights,
+        isLocked: isLocked,
       );
     } catch (e) {
       state = UserProfileState(error: e.toString());
