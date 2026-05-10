@@ -39,9 +39,12 @@ dependencies:
   just_audio: ^0.9.42
   record: ^5.1.2
 
-  # AR — face detection / mesh для масок. Native-only (iOS+Android).
-  # В Chrome — graceful noop, маски fallback'ятся на static heuristic.
-  google_mlkit_face_detection: ^0.13.1
+  # NOTE: google_mlkit_face_detection временно убран — он тянет
+  # google_mlkit_commons, который требует iOS 15.5+ как min-deployment.
+  # Podfile сейчас на iOS 13.0; поднимать = риск сломать другие pod'ы.
+  # Маски остаются работать в static-heuristic режиме (mask_catalog.dart
+  # → _FaceFrame.fromSize fallback). Когда будет Apple Dev-аккаунт и
+  # стабильная сборка с iOS 15.5+ — раскомментируем и подключим в service.
   photo_view: ^0.14.0
 
   # UI
