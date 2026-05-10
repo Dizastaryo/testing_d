@@ -1,9 +1,12 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/user_provider.dart';
 import 'create_highlight_sheet.dart';
@@ -987,6 +990,9 @@ class _HighlightsRow extends ConsumerWidget {
           return Padding(
             padding: EdgeInsets.only(right: isLast ? 0 : 16),
             child: GestureDetector(
+              onLongPress: isOwnProfile
+                  ? () => _showHighlightActions(context, ref, h)
+                  : null,
               onTap: () {
                 if (h.stories.isNotEmpty) {
                   final group = StoryGroup(
@@ -1052,6 +1058,131 @@ class _HighlightsRow extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  void _showHighlightActions(
+      BuildContext context, WidgetRef ref, Highlight h) {
+    HapticFeedback.mediumImpact();
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(SeeURadii.card),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.pencilSimple(), color: c.ink),
+                title: const Text('Переименовать'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _renameHighlight(context, ref, h);
+                },
+              ),
+              Divider(height: 1, color: c.line),
+              ListTile(
+                leading: Icon(PhosphorIcons.trash(), color: Colors.red),
+                title: const Text('Удалить',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _deleteHighlight(context, ref, h);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _renameHighlight(
+      BuildContext context, WidgetRef ref, Highlight h) async {
+    final controller = TextEditingController(text: h.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Переименовать коллекцию'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 50,
+          decoration: const InputDecoration(
+            hintText: 'Новое название',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SeeUColors.accent),
+            onPressed: () => Navigator.of(dlgCtx).pop(controller.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    if (newTitle == null || newTitle.isEmpty || newTitle == h.title) return;
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.put(ApiEndpoints.highlightById(h.id),
+          data: {'title': newTitle});
+      ref.invalidate(userProfileProvider(username));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Коллекция переименована')),
+      );
+    } on DioException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')),
+      );
+    }
+  }
+
+  Future<void> _deleteHighlight(
+      BuildContext context, WidgetRef ref, Highlight h) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Удалить коллекцию?'),
+        content: Text(
+            'Коллекция «${h.title}» будет удалена. Сами сторис останутся в архиве.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(dlgCtx).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.highlightById(h.id));
+      ref.invalidate(userProfileProvider(username));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Коллекция удалена')),
+      );
+    } on DioException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')),
+      );
+    }
   }
 }
 
