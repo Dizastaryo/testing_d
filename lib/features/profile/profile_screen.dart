@@ -801,20 +801,30 @@ class _OtherProfileButtons extends ConsumerWidget {
       );
     }
 
+    // Три состояния для приватных профилей: подписан / запрос-отправлен / нет.
+    // Для публичных — только подписан / не подписан (pending не возникает).
+    final Widget followBtn;
+    if (user.isFollowing) {
+      followBtn = _ActionButton(
+        label: 'Отписаться',
+        onTap: () => _toggleFollow(context, ref),
+      );
+    } else if (user.hasPendingFollowRequest) {
+      followBtn = _ActionButton(
+        label: 'Запрос отправлен',
+        onTap: () => _toggleFollow(context, ref),
+      );
+    } else {
+      followBtn = _ActionButton(
+        label: 'Подписаться',
+        isPrimary: true,
+        onTap: () => _toggleFollow(context, ref),
+      );
+    }
+
     return Row(
       children: [
-        Expanded(
-          child: user.isFollowing
-              ? _ActionButton(
-                  label: 'Отписаться',
-                  onTap: () => _toggleFollow(context, ref),
-                )
-              : _ActionButton(
-                  label: 'Подписаться',
-                  isPrimary: true,
-                  onTap: () => _toggleFollow(context, ref),
-                ),
-        ),
+        Expanded(child: followBtn),
         const SizedBox(width: 8),
         Expanded(
           child: _ActionButton(

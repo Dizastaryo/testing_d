@@ -153,17 +153,38 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
     if (user == null) return null;
 
     final wasFollowing = user.isFollowing;
-    state = state.copyWith(
-      user: user.copyWith(
-        isFollowing: !wasFollowing,
-        followersCount: wasFollowing
-            ? user.followersCount - 1
-            : user.followersCount + 1,
-      ),
-    );
+    final wasPending = user.hasPendingFollowRequest;
+
+    // Три состояния → три варианта оптимистичного апдейта:
+    // 1. Подписан → жмём «Отписаться» → DELETE → followersCount-1.
+    // 2. Запрос отправлен → жмём «Отменить» → DELETE → флаг pending=false.
+    // 3. Не подписан/не отправлено → жмём «Подписаться» → POST. Оптимистично
+    //    флипаем в isFollowing=true + followersCount+1, после ответа если
+    //    приватный → revert на pending=true (без счётчика).
+    if (wasFollowing) {
+      state = state.copyWith(
+        user: user.copyWith(
+          isFollowing: false,
+          followersCount: user.followersCount - 1,
+        ),
+      );
+    } else if (wasPending) {
+      state = state.copyWith(
+        user: user.copyWith(hasPendingFollowRequest: false),
+      );
+    } else {
+      state = state.copyWith(
+        user: user.copyWith(
+          isFollowing: true,
+          followersCount: user.followersCount + 1,
+        ),
+      );
+    }
 
     try {
-      if (wasFollowing) {
+      if (wasFollowing || wasPending) {
+        // DELETE — backend сам разруливает: если pending → отменяет запрос,
+        // если follow → unfollow + декремент counter'а на бэке.
         await _api.delete(ApiEndpoints.followUser(username));
       } else {
         final resp = await _api.post(ApiEndpoints.followUser(username));
@@ -174,10 +195,11 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
                 : null)
             : null;
         if (status == 'requested') {
-          // Private account: we sent a request, no follow row yet. Revert
-          // the optimistic +1 + isFollowing flip so the UI tells the truth.
-          state = state.copyWith(user: user);
-          return 'Запрос отправлен. Ждите подтверждения.';
+          // Приватный → запрос отправлен. Откатываем optimistic isFollowing
+          // и счётчик; вместо этого выставляем pending=true.
+          state = state.copyWith(
+            user: user.copyWith(hasPendingFollowRequest: true),
+          );
         }
       }
       return null;

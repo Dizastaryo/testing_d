@@ -27,6 +27,11 @@ class User {
   final bool isFollowedBy;
   final bool isPrivate;
   final bool isVerified;
+  /// true = viewer запросил подписку на этого приватного юзера, но запрос
+  /// ещё не одобрен. Бэк возвращает только для приватных профилей с
+  /// !isFollowing. Используется чтобы Follow-кнопка показывала
+  /// «Запрос отправлен» вместо «Подписаться».
+  final bool hasPendingFollowRequest;
   final DateTime createdAt;
 
   const User({
@@ -48,6 +53,7 @@ class User {
     this.isFollowedBy = false,
     this.isPrivate = false,
     this.isVerified = false,
+    this.hasPendingFollowRequest = false,
     required this.createdAt,
   });
 
@@ -71,6 +77,8 @@ class User {
       isFollowedBy: (json['is_followed_by'] ?? json['isFollowedBy'] ?? false) as bool,
       isPrivate: (json['is_private'] ?? json['isPrivate'] ?? false) as bool,
       isVerified: (json['is_verified'] ?? json['isVerified'] ?? false) as bool,
+      hasPendingFollowRequest:
+          (json['has_pending_follow_request'] ?? false) as bool,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -97,6 +105,7 @@ class User {
       'is_followed_by': isFollowedBy,
       'is_private': isPrivate,
       'is_verified': isVerified,
+      'has_pending_follow_request': hasPendingFollowRequest,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -128,6 +137,7 @@ class User {
     bool? isFollowedBy,
     bool? isPrivate,
     bool? isVerified,
+    bool? hasPendingFollowRequest,
     DateTime? createdAt,
   }) {
     return User(
@@ -149,6 +159,8 @@ class User {
       isFollowedBy: isFollowedBy ?? this.isFollowedBy,
       isPrivate: isPrivate ?? this.isPrivate,
       isVerified: isVerified ?? this.isVerified,
+      hasPendingFollowRequest:
+          hasPendingFollowRequest ?? this.hasPendingFollowRequest,
       createdAt: createdAt ?? this.createdAt,
     );
   }
