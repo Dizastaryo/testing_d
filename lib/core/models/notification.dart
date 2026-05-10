@@ -18,6 +18,9 @@ class AppNotification {
   final String? commentText;
   final bool isRead;
   final DateTime createdAt;
+  /// Сколько ЕЩЁ юзеров присоединились к этому действию помимо fromUser.
+  /// Например, 99 = «лайкнули User и ещё 99 человек». 0 = одиночная нотификация.
+  final int othersCount;
 
   const AppNotification({
     required this.id,
@@ -28,9 +31,30 @@ class AppNotification {
     this.commentText,
     this.isRead = false,
     required this.createdAt,
+    this.othersCount = 0,
   });
 
+  /// Текст после юзернейма (юзернейм рендерится отдельным жирным TextSpan'ом
+  /// в notifications_screen). При othersCount > 0 — батч-фраза с глаголом
+  /// множ. числа и человек/человека/человек по русскому падежу.
   String get message {
+    if (othersCount > 0) {
+      final n = othersCount;
+      final ppl = _peopleWord(n);
+      switch (type) {
+        case NotificationType.like:
+          return 'и ещё $n $ppl поставили лайк.';
+        case NotificationType.comment:
+          return 'и ещё $n $ppl прокомментировали.';
+        case NotificationType.reply:
+          return 'и ещё $n $ppl ответили.';
+        case NotificationType.postTag:
+          return 'и ещё $n $ppl отметили вас.';
+        case NotificationType.follow:
+        case NotificationType.mention:
+          break; // эти типы backend не батчит — fallthrough к single-форме
+      }
+    }
     switch (type) {
       case NotificationType.like:
         return 'нравится ваше фото.';
@@ -51,6 +75,17 @@ class AppNotification {
     }
   }
 
+  /// «человек» / «человека» / «человек» — русское склонение для числовых
+  /// окончаний 1, 2-4, 5+ (а также особое правило для 11-14).
+  static String _peopleWord(int n) {
+    final mod100 = n % 100;
+    final mod10 = n % 10;
+    if (mod100 >= 11 && mod100 <= 14) return 'человек';
+    if (mod10 == 1) return 'человек';
+    if (mod10 >= 2 && mod10 <= 4) return 'человека';
+    return 'человек';
+  }
+
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(
       id: json['id']?.toString() ?? '',
@@ -63,6 +98,7 @@ class AppNotification {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      othersCount: (json['others_count'] ?? 0) as int,
     );
   }
 
@@ -94,6 +130,7 @@ class AppNotification {
     'comment_text': commentText,
     'is_read': isRead,
     'created_at': createdAt.toIso8601String(),
+    'others_count': othersCount,
   };
 
   AppNotification copyWith({bool? isRead}) {
@@ -106,6 +143,7 @@ class AppNotification {
       commentText: commentText,
       isRead: isRead ?? this.isRead,
       createdAt: createdAt,
+      othersCount: othersCount,
     );
   }
 
