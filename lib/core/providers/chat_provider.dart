@@ -21,6 +21,8 @@ class Chat {
   final String lastSenderUsername; // для group: префикс «X: ...» в last-сообщении
   final DateTime lastMessageAt;
   final int unreadCount;
+  /// Закреплённое сообщение (sticky-banner на topе чата). nil = ничего не закреплено.
+  final ReplyPreview? pinnedMessage;
 
   const Chat({
     required this.id,
@@ -33,6 +35,7 @@ class Chat {
     this.lastSenderUsername = '',
     required this.lastMessageAt,
     this.unreadCount = 0,
+    this.pinnedMessage,
   });
 
   bool get isGroup => kind == 'group';
@@ -66,6 +69,10 @@ class Chat {
               DateTime.now()
           : DateTime.now(),
       unreadCount: (json['unread_count'] ?? 0) as int,
+      pinnedMessage: json['pinned_message'] is Map<String, dynamic>
+          ? ReplyPreview.fromJson(
+              json['pinned_message'] as Map<String, dynamic>)
+          : null,
     );
   }
 }
@@ -280,6 +287,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             'chat.group.joined',
             'chat.group.member.added',
             'chat.group.member.removed',
+            'chat.pinned',
           };
           if (!triggerEvents.contains(evt.type)) return;
           load();

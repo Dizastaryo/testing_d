@@ -115,6 +115,7 @@ class ApiEndpoints {
       '/chats/$chatId/members/$userId';
   static String chatMemberRole(String chatId, String userId) =>
       '/chats/$chatId/members/$userId/role';
+  static String chatPin(String chatId) => '/chats/$chatId/pin';
 
   // === Video Service endpoints ===
   static const String videos = '/videos';

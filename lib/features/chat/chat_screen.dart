@@ -310,6 +310,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       );
                     },
                   ),
+                // Закрепить / Открепить — для всех; backend сам отдаст 403,
+                // если в group-чате не админ.
+                Builder(builder: (_) {
+                  final isAlreadyPinned =
+                      chat?.pinnedMessage?.id == m.id;
+                  return ListTile(
+                    leading: Icon(PhosphorIconsBold.pushPin,
+                        color: SeeUColors.accent),
+                    title: Text(
+                        isAlreadyPinned ? 'Открепить' : 'Закрепить'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _setPin(isAlreadyPinned ? null : m.id);
+                    },
+                  );
+                }),
               ],
             ),
           ),
@@ -501,6 +517,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
             ),
+            // Pinned sticky banner — между header'ом и messages.
+            if (chat?.pinnedMessage != null)
+              _buildPinnedBanner(chat!.pinnedMessage!),
             // Messages
             Expanded(
               child: msgState.isLoading
@@ -768,6 +787,109 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return days[dt.weekday - 1];
     }
     return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+  }
+
+  /// Sticky pinned-banner на topе чата. Тап = scroll к оригиналу
+  /// (отложено — нужен ScrollController.scrollToIndex по messageId).
+  /// Long-press = unpin (для admin/direct-юзера).
+  Widget _buildPinnedBanner(ReplyPreview pinned) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onLongPress: () => _confirmUnpin(),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border(
+            bottom: BorderSide(color: c.line, width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(PhosphorIconsBold.pushPin,
+                size: 16, color: SeeUColors.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Закреплено · @${pinned.senderUsername}',
+                    style: const TextStyle(
+                      color: SeeUColors.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    pinned.shortLabel(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: c.ink2,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmUnpin() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Открепить сообщение?'),
+        content: const Text('Закреплённое сообщение исчезнет из шапки чата.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Открепить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _setPin(null);
+  }
+
+  Future<void> _setPin(String? messageId) async {
+    HapticFeedback.mediumImpact();
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.put(
+        ApiEndpoints.chatPin(widget.chatId),
+        data: {'message_id': messageId},
+      );
+      // Чат-лист обновится через chat.pinned WS-event.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(messageId == null
+              ? 'Сообщение откреплено'
+              : 'Сообщение закреплено'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = e.response?.statusCode ?? 0;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(code == 403
+              ? 'Только админ группы может закреплять'
+              : 'Не удалось: ${apiErrorMessage(e)}'),
+        ),
+      );
+    }
   }
 
   /// Reply-banner над input'ом. Показывает превью оригинала + кнопка ✕.
