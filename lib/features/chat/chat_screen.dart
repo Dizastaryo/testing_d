@@ -34,6 +34,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasText = false;
   bool _isUploading = false;
   bool _recording = false;
+  ReplyPreview? _replyingTo;
 
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
@@ -105,9 +106,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _textController.clear();
     }
 
+    final reply = _replyingTo;
     await ref
         .read(chatMessagesProvider(widget.chatId).notifier)
-        .sendMessage(text);
+        .sendMessage(text, replyTo: reply);
+    if (reply != null && mounted) {
+      setState(() => _replyingTo = null);
+    }
     _scrollToBottom();
   }
 
@@ -138,11 +143,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           await api.post(ApiEndpoints.mediaUpload, data: formData);
       final url = upload.data['data']['url'] as String;
 
+      final reply = _replyingTo;
       await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
             caption,
             attachedMediaUrl: url,
             attachedMediaType: 'image',
+            replyTo: reply,
           );
+      if (reply != null && mounted) setState(() => _replyingTo = null);
 
       if (caption.isNotEmpty) _textController.clear();
       _scrollToBottom();
@@ -175,13 +183,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           await api.post(ApiEndpoints.mediaUpload, data: formData);
       final url = upload.data['data']['url'] as String;
 
+      final reply = _replyingTo;
       await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
             '',
             attachedMediaUrl: url,
             attachedMediaType: 'audio',
             mediaDurationSeconds: durationSec,
             waveform: samples,
+            replyTo: reply,
           );
+      if (reply != null && mounted) setState(() => _replyingTo = null);
       _scrollToBottom();
     } on DioException catch (e) {
       messenger.showSnackBar(SnackBar(
@@ -204,14 +215,107 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _onMessageLongPress(String messageId) {
-    setState(() {
-      if (_reactionPickerMessageId == messageId) {
-        _reactionPickerMessageId = null;
-      } else {
-        _reactionPickerMessageId = messageId;
-      }
-    });
     HapticFeedback.mediumImpact();
+    final messages =
+        ref.read(chatMessagesProvider(widget.chatId)).messages;
+    ChatMessage? msg;
+    for (final m in messages) {
+      if (m.id == messageId) {
+        msg = m;
+        break;
+      }
+    }
+    if (msg == null) return;
+    final m = msg;
+    // Username of reply target: own user или peer из direct-чата.
+    final me = ref.read(authProvider).user;
+    final chats = ref.read(chatListProvider).chats;
+    final chat = chats
+        .where((c) => c.id == widget.chatId)
+        .cast<Chat?>()
+        .firstWhere((_) => true, orElse: () => null);
+    final replyUsername = m.isMe
+        ? (me?.username ?? '')
+        : (chat?.otherUser?.username ?? '');
+
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(SeeURadii.card),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Reactions row
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: ['❤️', '🔥', '😂', '😮', '😢', '👍']
+                        .map((e) => GestureDetector(
+                              onTap: () {
+                                Navigator.of(sheetCtx).pop();
+                                _onReactionSelected(messageId, e);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6),
+                                child: Text(e,
+                                    style: const TextStyle(fontSize: 28)),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                Divider(height: 1, color: c.line),
+                ListTile(
+                  leading: Icon(PhosphorIcons.arrowBendUpLeft(),
+                      color: SeeUColors.accent),
+                  title: const Text('Ответить'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    setState(() {
+                      _replyingTo = ReplyPreview(
+                        id: m.id,
+                        senderId: m.senderId,
+                        senderUsername: replyUsername,
+                        text: m.text,
+                        kind: m.kind,
+                      );
+                    });
+                    _focusNode.requestFocus();
+                  },
+                ),
+                if (m.text.isNotEmpty)
+                  ListTile(
+                    leading:
+                        Icon(PhosphorIcons.copy(), color: c.ink),
+                    title: const Text('Скопировать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      Clipboard.setData(ClipboardData(text: m.text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Скопировано'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -532,7 +636,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         },
       );
     }
-    return Container(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_replyingTo != null) _buildReplyBanner(_replyingTo!),
+        Container(
       decoration: BoxDecoration(
         color: c.surface,
         border: Border(
@@ -631,6 +739,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ),
       ),
+        ),
+      ],
     );
   }
 
@@ -658,6 +768,63 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return days[dt.weekday - 1];
     }
     return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+  }
+
+  /// Reply-banner над input'ом. Показывает превью оригинала + кнопка ✕.
+  Widget _buildReplyBanner(ReplyPreview reply) {
+    final c = context.seeuColors;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(
+          top: BorderSide(color: c.line, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: SeeUGradients.heroOrange,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Ответ @${reply.senderUsername}',
+                  style: const TextStyle(
+                    color: SeeUColors.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  reply.shortLabel(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.ink2,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _replyingTo = null),
+            icon: Icon(PhosphorIcons.x(), size: 18, color: c.ink3),
+            tooltip: 'Отменить ответ',
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -878,7 +1045,18 @@ class _MessageBubble extends StatelessWidget {
                                       width: 0.5,
                                     ),
                         ),
-                        child: _buildBubbleContent(message, isMine, c),
+                        child: message.replyTo != null
+                            ? Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildReplyQuoted(message.replyTo!, isMine, c),
+                                  const SizedBox(height: 6),
+                                  _buildBubbleContent(message, isMine, c),
+                                ],
+                              )
+                            : _buildBubbleContent(message, isMine, c),
                       ),
                       // Reaction badges below the bubble. Each emoji shown
                       // once with a count if >1; "mine" highlighted in
@@ -966,6 +1144,60 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Quoted-block reply'я: тонкая accent-stripe слева + sender + краткое
+  /// превью текста/типа.
+  Widget _buildReplyQuoted(
+      ReplyPreview reply, bool isMine, SeeUThemeColors c) {
+    final stripeColor = isMine ? Colors.white : SeeUColors.accent;
+    final titleColor = isMine ? Colors.white : SeeUColors.accent;
+    final textColor = isMine ? Colors.white70 : c.ink2;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isMine
+            ? Colors.white.withValues(alpha: 0.15)
+            : c.surface2,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 3, color: stripeColor),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '@${reply.senderUsername}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    reply.shortLabel(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: textColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

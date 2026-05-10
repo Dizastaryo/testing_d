@@ -101,6 +101,46 @@ class AttachedPostShort {
       );
 }
 
+/// Сжатое превью оригинального message'а для reply-bubble'я.
+class ReplyPreview {
+  final String id;
+  final String senderId;
+  final String senderUsername;
+  final String text;
+  final String kind;
+
+  const ReplyPreview({
+    required this.id,
+    required this.senderId,
+    required this.senderUsername,
+    required this.text,
+    required this.kind,
+  });
+
+  factory ReplyPreview.fromJson(Map<String, dynamic> j) => ReplyPreview(
+        id: j['id']?.toString() ?? '',
+        senderId: j['sender_id']?.toString() ?? '',
+        senderUsername: j['sender_username']?.toString() ?? '',
+        text: j['text']?.toString() ?? '',
+        kind: j['kind']?.toString() ?? 'text',
+      );
+
+  /// Краткое описание для UI: текст для kind=text, иначе тип ("фото"/"голос"/"пост").
+  String shortLabel() {
+    switch (kind) {
+      case 'image':
+        return '📷 Фото';
+      case 'voice':
+      case 'audio':
+        return '🎙 Голосовое';
+      case 'shared_post':
+        return '📄 Пост';
+      default:
+        return text.isEmpty ? 'Сообщение' : text;
+    }
+  }
+}
+
 class ChatMessage {
   final String id;
   final String chatId;
@@ -120,6 +160,9 @@ class ChatMessage {
   /// For kind="voice" — нормализованные сэмплы 0..1 (обычно ~48 точек) для
   /// прорисовки waveform'а в bubble без декодирования аудио клиентом.
   final List<double> waveform;
+  /// Если это reply на другое сообщение — preview оригинала (text/username/kind).
+  /// nil — обычное сообщение.
+  final ReplyPreview? replyTo;
   /// Reaction counts per emoji aggregated by server. Empty when none.
   final Map<String, int> reactions;
   /// The emoji the *current user* placed on this message — empty when none.
@@ -139,6 +182,7 @@ class ChatMessage {
     this.attachedMediaType = '',
     this.mediaDurationSeconds = 0,
     this.waveform = const [],
+    this.replyTo,
     this.reactions = const {},
     this.myReaction = '',
   });
@@ -168,6 +212,9 @@ class ChatMessage {
               .map((e) => (e as num).toDouble())
               .toList()
           : const [],
+      replyTo: json['reply_to'] is Map<String, dynamic>
+          ? ReplyPreview.fromJson(json['reply_to'] as Map<String, dynamic>)
+          : null,
       reactions: json['reactions'] is Map
           ? Map<String, int>.from(
               (json['reactions'] as Map).map(
@@ -403,6 +450,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     String? attachedMediaType,
     int mediaDurationSeconds = 0,
     List<double> waveform = const [],
+    ReplyPreview? replyTo,
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
     // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
@@ -427,6 +475,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       attachedMediaType: attachedMediaType ?? '',
       mediaDurationSeconds: mediaDurationSeconds,
       waveform: waveform,
+      replyTo: replyTo,
     );
     state = state.copyWith(messages: [...state.messages, optimistic]);
 
@@ -439,6 +488,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (mediaDurationSeconds > 0)
             'media_duration_seconds': mediaDurationSeconds,
           if (waveform.isNotEmpty) 'waveform': waveform,
+          if (replyTo != null) 'reply_to_message_id': replyTo.id,
           if (hasMedia) 'attached_media_url': attachedMediaUrl,
           if (hasMedia)
             'attached_media_type': attachedMediaType ?? 'image',
