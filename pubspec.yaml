@@ -47,6 +47,10 @@ dependencies:
   # Google. Считается локально на устройстве, в бэк не лезет.
   # iOS-deployment поднят до 15.5 в Podfile + Runner.pbxproj.
   google_mlkit_face_detection: ^0.13.1
+
+  # WebRTC для video/voice calls 1-1. Signaling через наш WS hub
+  # (call.invite/offer/answer/ice/end), STUN — публичный Google.
+  flutter_webrtc: ^0.12.0
   photo_view: ^0.14.0
 
   # UI

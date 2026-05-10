@@ -23,6 +23,7 @@ import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/followers_screen.dart';
 import 'features/profile/following_screen.dart';
 import 'screens/scanner_screen.dart';
+import 'features/calls/call_listener.dart';
 import 'features/chat/chat_create_group_screen.dart';
 import 'features/chat/chat_list_screen.dart';
 import 'features/chat/chat_members_screen.dart';
@@ -399,6 +400,9 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: _router,
+      // CallListener должен сидеть выше навигатора, чтобы при incoming WS-event'е
+      // открывать полноэкранный CallScreen поверх любого роута.
+      builder: (context, child) => CallListener(child: child ?? const SizedBox()),
     );
   }
 }

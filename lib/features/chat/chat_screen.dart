@@ -13,6 +13,7 @@ import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../calls/call_service.dart';
 import 'widgets/voice_bubble.dart';
 import 'widgets/voice_recorder.dart';
 // Chat uses existing chat_provider; no MockService needed
@@ -363,6 +364,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                       ),
+                      // Video-call (только для direct, для group — не звоним).
+                      if (otherUser != null)
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            CallService.instance.startCall(
+                              peerId: otherUser.id,
+                              peerUsername: otherUser.username,
+                              peerAvatarUrl: otherUser.avatarUrl ?? '',
+                            );
+                          },
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              PhosphorIconsRegular.videoCamera,
+                              size: 22,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 4),
                       // More vertical icon
                       Icon(
                         PhosphorIconsRegular.dotsThreeVertical,
