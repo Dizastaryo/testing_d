@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +17,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
+import 'ai_stylize_sheet.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
 /// Allows user to:
@@ -63,6 +65,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
   // Cached bytes for cross-platform image preview and upload (web has no real file path).
   Uint8List? _bytes;
+  // Если юзер применил AI-стилизацию — bytes заменены, и filename должен
+  // отличаться от исходного (PNG вместо JPG, новое имя).
+  String? _stylizedFilename;
 
   @override
   void initState() {
@@ -140,8 +145,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       // large — bump sendTimeout to 120s for this single call (apiClient's
       // global default is 30s, which is fine for everything else).
       final bytes = _bytes ?? await widget.file.readAsBytes();
+      final uploadName = _stylizedFilename ?? widget.file.name;
       final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: widget.file.name),
+        'file': MultipartFile.fromBytes(bytes, filename: uploadName),
       });
       final uploadResp = await api.post(
         ApiEndpoints.mediaUpload,
@@ -411,7 +417,66 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
               }),
             ),
           ),
+
+        // AI Стилизация (только для фото — видео через DALL-E не реалистично)
+        if (!widget.isVideo)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            child: GestureDetector(
+              onTap: _bytes == null ? null : _openStylizeSheet,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: SeeUGradients.heroOrange,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI-стилизация',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
+    );
+  }
+
+  /// Открыть AI-стилизация sheet. На успех — заменяет preview-bytes
+  /// результатом + меняет `widget.file.name` через локальное состояние
+  /// (`_stylizedFilename`), чтобы upload при публикации использовал
+  /// сгенерированный image.
+  Future<void> _openStylizeSheet() async {
+    if (_bytes == null) return;
+    HapticFeedback.mediumImpact();
+    final result = await showAIStylizeSheet(
+      context: context,
+      sourceBytes: _bytes!,
+      sourceFilename: widget.file.name,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _bytes = result.bytes;
+      _stylizedFilename =
+          'stylized_${DateTime.now().millisecondsSinceEpoch}.png';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Кадр стилизован — посмотрите превью'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 
