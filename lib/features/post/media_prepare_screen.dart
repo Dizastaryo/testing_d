@@ -17,6 +17,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
+import 'ai_caption_sheet.dart';
 import 'ai_stylize_sheet.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
@@ -480,6 +481,33 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     );
   }
 
+  /// Открыть AI-caption sheet. Применяем выбранный caption (replace или
+  /// append) + добавляем выбранные хэштеги в массив _tags.
+  Future<void> _openCaptionSheet() async {
+    if (_bytes == null) return;
+    HapticFeedback.mediumImpact();
+    final picked = await showAICaptionSheet(
+      context: context,
+      sourceBytes: _bytes!,
+      sourceFilename: _stylizedFilename ?? widget.file.name,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      // Если у юзера уже что-то написано — добавляем через перенос строки.
+      final existing = _captionCtrl.text.trim();
+      _captionCtrl.text = existing.isEmpty
+          ? picked.caption
+          : '$existing\n${picked.caption}';
+      _captionCtrl.selection = TextSelection.collapsed(
+        offset: _captionCtrl.text.length,
+      );
+      // Hashtag'и добавляем только новые.
+      for (final h in picked.hashtags) {
+        if (!_tags.contains(h)) _tags.add(h);
+      }
+    });
+  }
+
   // ── Music button + trim slider ──────────────────────────────────────────
 
   /// Duration of the clip the user is publishing (video length or 15s for photo)
@@ -706,20 +734,46 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           children: [
-            // Caption
-            TextField(
-              controller: _captionCtrl,
-              maxLines: 2,
-              maxLength: 2000,
-              style: SeeUTypography.body.copyWith(fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Добавьте описание...',
-                hintStyle: SeeUTypography.body.copyWith(
-                  fontSize: 14, color: c.ink3,
+            // Caption + AI button
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _captionCtrl,
+                    maxLines: 2,
+                    maxLength: 2000,
+                    style: SeeUTypography.body.copyWith(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Добавьте описание...',
+                      hintStyle: SeeUTypography.body.copyWith(
+                        fontSize: 14,
+                        color: c.ink3,
+                      ),
+                      border: InputBorder.none,
+                      counterText: '',
+                    ),
+                  ),
                 ),
-                border: InputBorder.none,
-                counterText: '',
-              ),
+                if (!widget.isVideo)
+                  GestureDetector(
+                    onTap: _bytes == null ? null : _openCaptionSheet,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      margin: const EdgeInsets.only(left: 6, top: 4),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: SeeUGradients.heroOrange,
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
             // Location
