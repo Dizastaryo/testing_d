@@ -26,6 +26,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
   final _canvasKey = GlobalKey();
   final List<_TextOverlay> _texts = [];
   final List<_StickerOverlay> _stickers = [];
+  final List<_PollOverlay> _polls = [];
   int _nextId = 1;
   bool _exporting = false;
 
@@ -175,10 +176,97 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
     });
   }
 
+  Future<void> _addPoll() async {
+    final qCtrl = TextEditingController();
+    final aCtrl = TextEditingController(text: 'Да');
+    final bCtrl = TextEditingController(text: 'Нет');
+    final res = await showDialog<_PollInputResult>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Опрос'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: qCtrl,
+              autofocus: true,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                hintText: 'Вопрос...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: aCtrl,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      hintText: 'Вариант A',
+                      counterText: '',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: bCtrl,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      hintText: 'Вариант B',
+                      counterText: '',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SeeUColors.accent),
+            onPressed: () {
+              if (qCtrl.text.trim().isEmpty ||
+                  aCtrl.text.trim().isEmpty ||
+                  bCtrl.text.trim().isEmpty) {
+                return;
+              }
+              Navigator.of(dlgCtx).pop(_PollInputResult(
+                question: qCtrl.text.trim(),
+                optionA: aCtrl.text.trim(),
+                optionB: bCtrl.text.trim(),
+              ));
+            },
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+    if (res == null) return;
+    setState(() {
+      _polls.add(_PollOverlay(
+        id: _nextId++,
+        question: res.question,
+        optionA: res.optionA,
+        optionB: res.optionB,
+        position: const Offset(0.15, 0.4),
+        scale: 1.0,
+      ));
+    });
+  }
+
   void _removeOverlay(int id) {
     setState(() {
       _texts.removeWhere((t) => t.id == id);
       _stickers.removeWhere((s) => s.id == id);
+      _polls.removeWhere((p) => p.id == id);
     });
   }
 
@@ -316,6 +404,19 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                                 },
                                 onDelete: () => _removeOverlay(s.id),
                               )),
+                          ..._polls.map((p) => _buildOverlay(
+                                key: ValueKey('p${p.id}'),
+                                child: _PollWidget(poll: p),
+                                overlay: p,
+                                constraints: constraints,
+                                onUpdate: (pos, scale) {
+                                  setState(() {
+                                    p.position = pos;
+                                    p.scale = scale;
+                                  });
+                                },
+                                onDelete: () => _removeOverlay(p.id),
+                              )),
                         ],
                       );
                     }),
@@ -344,6 +445,12 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                     onTap: _addSticker,
                   ),
                   _toolButton(
+                    icon: Icon(PhosphorIconsBold.chartBar,
+                        color: Colors.white, size: 22),
+                    label: 'Опрос',
+                    onTap: _addPoll,
+                  ),
+                  _toolButton(
                     icon: Icon(PhosphorIcons.trash(), color: Colors.white),
                     label: 'Очистить',
                     onTap: () {
@@ -351,6 +458,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                       setState(() {
                         _texts.clear();
                         _stickers.clear();
+                        _polls.clear();
                       });
                     },
                   ),
@@ -459,8 +567,133 @@ class _StickerOverlay extends _Overlay {
   });
 }
 
+/// Poll-overlay: вопрос + 2 варианта. Instagram-style. Голосовать viewer
+/// сможет в будущем (нужен polls-API на бэке); пока — visual-only.
+class _PollOverlay extends _Overlay {
+  String question;
+  String optionA;
+  String optionB;
+  _PollOverlay({
+    required super.id,
+    required this.question,
+    required this.optionA,
+    required this.optionB,
+    required super.position,
+    required super.scale,
+  });
+}
+
 class _TextInputResult {
   final String text;
   final Color color;
   _TextInputResult({required this.text, required this.color});
+}
+
+class _PollInputResult {
+  final String question;
+  final String optionA;
+  final String optionB;
+  _PollInputResult({
+    required this.question,
+    required this.optionA,
+    required this.optionB,
+  });
+}
+
+/// Визуал poll-overlay'я. Белая карточка 240×96, accent ramка, вопрос сверху,
+/// две кнопки внизу. Scale применяется через Transform.scale в _buildOverlay.
+class _PollWidget extends StatelessWidget {
+  final _PollOverlay poll;
+  const _PollWidget({required this.poll});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = poll.scale;
+    return Transform.scale(
+      scale: s,
+      alignment: Alignment.topLeft,
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: SeeUColors.accent.withValues(alpha: 0.5),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              poll.question,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: SeeUColors.accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      poll.optionA,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: SeeUColors.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      poll.optionB,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
