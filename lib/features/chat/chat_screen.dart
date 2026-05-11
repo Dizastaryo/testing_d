@@ -426,6 +426,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     },
                   );
                 }),
+                // Удалить — только для собственных сообщений (бэк всё равно
+                // вернёт 403 если не автор, но фронт-фильтрация скрывает
+                // пункт от чужих).
+                if (m.isMe) ...[
+                  Divider(height: 1, color: c.line),
+                  ListTile(
+                    leading: Icon(PhosphorIcons.trash(), color: Colors.red),
+                    title: const Text('Удалить',
+                        style: TextStyle(color: Colors.red)),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _confirmDeleteMessage(messageId);
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -938,6 +953,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeleteMessage(String messageId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Удалить сообщение?'),
+        content: const Text(
+            'Сообщение пропадёт у всех участников чата.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // Optimistic: убираем из state сразу, чтобы UI отзывался мгновенно.
+    final notifier =
+        ref.read(chatMessagesProvider(widget.chatId).notifier);
+    final snapshot = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    notifier.removeLocally(messageId);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.chatMessageDelete(messageId));
+    } on DioException catch (e) {
+      // Rollback: возвращаем snapshot.
+      notifier.restoreMessages(snapshot);
+      messenger.showSnackBar(SnackBar(
+          content: Text('Не удалось удалить: ${apiErrorMessage(e)}')));
+    }
   }
 
   Future<void> _confirmUnpin() async {

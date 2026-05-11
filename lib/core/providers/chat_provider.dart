@@ -288,6 +288,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             'chat.group.member.added',
             'chat.group.member.removed',
             'chat.pinned',
+            'chat.message.deleted',
           };
           if (!triggerEvents.contains(evt.type)) return;
           load();
@@ -421,6 +422,17 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             state = state.copyWith(messages: updated);
             return;
           }
+
+          if (evt.type == 'chat.message.deleted') {
+            final messageId = p['message_id']?.toString() ?? '';
+            if (messageId.isEmpty) return;
+            state = state.copyWith(
+              messages: state.messages
+                  .where((m) => m.id != messageId)
+                  .toList(),
+            );
+            return;
+          }
         });
       },
     );
@@ -515,6 +527,20 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     } catch (e) {
       debugPrint('[ChatMessagesNotifier] markRead error: $e');
     }
+  }
+
+  /// Optimistic local-only removal — для delete-flow в UI. API DELETE
+  /// зовёт сам экран; на success WS event прилетит и подтвердит, на error
+  /// экран вызывает [restoreMessages] чтобы откатить.
+  void removeLocally(String messageId) {
+    state = state.copyWith(
+      messages: state.messages.where((m) => m.id != messageId).toList(),
+    );
+  }
+
+  /// Восстановить полный список (используется для rollback delete).
+  void restoreMessages(List<ChatMessage> snapshot) {
+    state = state.copyWith(messages: snapshot);
   }
 
   /// Toggle the current user's reaction on a message. If `emoji` matches the

@@ -108,6 +108,8 @@ class ApiEndpoints {
   static String chatRead(String id) => '/chats/$id/read';
   static String chatMessageReact(String messageId) =>
       '/chat-messages/$messageId/react';
+  static String chatMessageDelete(String messageId) =>
+      '/chat-messages/$messageId';
   // Group chats
   static String chatGroup(String id) => '/chats/$id';
   static String chatMembers(String id) => '/chats/$id/members';
