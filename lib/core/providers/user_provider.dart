@@ -64,9 +64,48 @@ class UserProfileState {
 class UserProfileNotifier extends StateNotifier<UserProfileState> {
   final String username;
   final ApiClient _api;
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
-  UserProfileNotifier(this.username, this._api) : super(const UserProfileState()) {
+  UserProfileNotifier(this.username, this._api, this._ref)
+      : super(const UserProfileState()) {
     loadProfile();
+    _listenPresence();
+  }
+
+  /// Live-update isOnline / lastSeenAt при connect/disconnect peer'а через WS.
+  /// Бэк broadcast'ит user.presence всем онлайн-юзерам; здесь фильтруем по
+  /// state.user.id и мутируем поля.
+  void _listenPresence() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (prev, next) {
+        next.whenData((evt) {
+          if (evt.type != 'user.presence' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          final userId = p['user_id']?.toString() ?? '';
+          final currentUser = state.user;
+          if (currentUser == null || userId.isEmpty) return;
+          if (currentUser.id != userId) return; // не наш юзер — игнор
+          final isOnline = (p['is_online'] ?? false) as bool;
+          final lastSeen = p['last_seen_at'] != null
+              ? DateTime.tryParse(p['last_seen_at'].toString())
+              : null;
+          state = state.copyWith(
+            user: currentUser.copyWith(
+              isOnline: isOnline,
+              lastSeenAt: lastSeen,
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
   }
 
   List<dynamic> _extractList(dynamic data) {
@@ -219,7 +258,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
 final userProfileProvider = StateNotifierProvider.family<
     UserProfileNotifier, UserProfileState, String>((ref, username) {
   final api = ref.watch(apiClientProvider);
-  return UserProfileNotifier(username, api);
+  return UserProfileNotifier(username, api, ref);
 });
 
 // Search provider
