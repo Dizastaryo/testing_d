@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import 'core/design/tokens.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/auth_provider.dart';
 import 'core/providers/theme_provider.dart';
@@ -352,20 +353,25 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
   /// FadeTransition'а — даёт ощущение «единого потока» между bottom-nav
   /// сценами и стандартный «push»-feel при `context.push`. Easing —
   /// easeInOutCubic для согласованности с `SeeUMotion.smooth`.
+  /// Shared-axis style transition между route'ами bottom-nav'а. Слайд + fade
+  /// одновременно — feels как «слой улетает влево, новый приходит справа».
+  /// Offset 0.10 = ~10% ширины экрана, чуть больше прежних 6% для более
+  /// заметного motion. Curve — `SeeUMotion.smooth` (Curves.easeOutCubic),
+  /// унифицировано с tokens.dart.
   static Widget _fadeTransition(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    const curve = Curves.easeInOutCubic;
+    const curve = SeeUMotion.smooth;
     final inOffset = Tween<Offset>(
-      begin: const Offset(0.06, 0),
+      begin: const Offset(0.10, 0),
       end: Offset.zero,
     ).chain(CurveTween(curve: curve)).animate(animation);
     final outOffset = Tween<Offset>(
       begin: Offset.zero,
-      end: const Offset(-0.06, 0),
+      end: const Offset(-0.10, 0),
     ).chain(CurveTween(curve: curve)).animate(secondaryAnimation);
     final inOpacity = CurvedAnimation(parent: animation, curve: curve);
     return SlideTransition(
