@@ -425,6 +425,9 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       await player.setUrl(track.audioUrl);
       _currentLoadedTrackId = trackId;
       await player.play();
+      // Rebuild чтобы music-tag overlay отобразил название трека —
+      // _audioCache теперь содержит подгруженный объект.
+      if (mounted) setState(() {});
     } catch (_) {/* network/decoding error — silent */}
   }
 
@@ -882,6 +885,42 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                 ),
               ),
             ),
+
+            // Music tag — Instagram-style плашка с названием трека.
+            // Показывается только когда story имеет audio_track_id и трек
+            // уже подгружен в кэш. До загрузки — ничего не рендерим (всё
+            // равно музыка ещё не играет).
+            if (story.audioTrackId != null &&
+                _audioCache[story.audioTrackId] != null)
+              Positioned(
+                bottom: 100,
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(PhosphorIconsBold.musicNote,
+                          size: 14, color: Colors.white),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_audioCache[story.audioTrackId!]!.title} · '
+                        '${_audioCache[story.audioTrackId!]!.artist}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // Text overlay
             if (story.textOverlay != null &&
