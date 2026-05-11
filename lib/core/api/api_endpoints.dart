@@ -138,5 +138,6 @@ class ApiEndpoints {
   static String fileById(String id) => '/files/$id';
   static String fileDownload(String id) => '/files/$id/download';
   static String filePreview(String id) => '/files/$id/preview';
+  static String fileLike(String id) => '/files/$id/like';
   static String userFiles(String userId) => '/users/$userId/files';
 }

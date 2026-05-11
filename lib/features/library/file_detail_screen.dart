@@ -31,6 +31,27 @@ class FileDetailScreen extends ConsumerStatefulWidget {
 class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   bool _downloading = false;
 
+  /// Optimistic toggle. Откат при ошибке через invalidate.
+  Future<void> _toggleLike(FileItem file) async {
+    final dio = ref.read(libraryApiClientProvider);
+    final wasLiked = file.isLiked;
+    final url = ApiEndpoints.fileLike(file.id);
+    try {
+      if (wasLiked) {
+        await dio.delete(url);
+      } else {
+        await dio.post(url);
+      }
+      // Перечитываем чтобы свежий counter подтянулся.
+      ref.invalidate(_fileDetailProvider(file.id));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось: ${e.message ?? e.type}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -111,6 +132,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
               _Chip(label: file.fileExtension.toUpperCase(), color: SeeUColors.accent),
               _Chip(label: file.fileSizeFormatted),
               _Chip(label: '↓ ${file.downloadsFormatted}'),
+              if (file.likesCount > 0) _Chip(label: '❤ ${file.likesCount}'),
               if (file.category?.name.isNotEmpty == true)
                 _Chip(label: file.category!.name),
             ],
@@ -149,10 +171,42 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
             ),
 
           const SizedBox(height: 24),
-          SeeUButton(
-            label: _downloading ? 'Скачивание…' : 'Скачать',
-            isLoading: _downloading,
-            onTap: _downloading ? null : () => _download(file),
+          Row(
+            children: [
+              Expanded(
+                child: SeeUButton(
+                  label: _downloading ? 'Скачивание…' : 'Скачать',
+                  isLoading: _downloading,
+                  onTap: _downloading ? null : () => _download(file),
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () => _toggleLike(file),
+                child: Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: file.isLiked
+                        ? SeeUColors.like.withValues(alpha: 0.12)
+                        : c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                    border: Border.all(
+                      color: file.isLiked
+                          ? SeeUColors.like.withValues(alpha: 0.4)
+                          : c.line,
+                    ),
+                  ),
+                  child: Icon(
+                    file.isLiked
+                        ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
+                        : PhosphorIcons.heart(),
+                    color: file.isLiked ? SeeUColors.like : c.ink2,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

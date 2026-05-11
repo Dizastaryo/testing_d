@@ -30,6 +30,8 @@ class FileItem {
   final int fileSize;
   final String categoryId;
   final int downloadsCount;
+  final int likesCount;
+  final bool isLiked;
   final bool isPreviewable;
   final String previewUrl;
   final String description;
@@ -46,6 +48,8 @@ class FileItem {
     required this.fileSize,
     this.categoryId = '',
     this.downloadsCount = 0,
+    this.likesCount = 0,
+    this.isLiked = false,
     this.isPreviewable = false,
     this.previewUrl = '',
     this.description = '',
@@ -63,12 +67,33 @@ class FileItem {
         fileSize: json['file_size'] ?? 0,
         categoryId: json['category_id'] ?? '',
         downloadsCount: json['downloads_count'] ?? 0,
+        likesCount: json['likes_count'] ?? 0,
+        isLiked: json['is_liked'] ?? false,
         isPreviewable: json['is_previewable'] ?? false,
         previewUrl: json['preview_url'] ?? '',
         description: json['description'] ?? '',
         createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
         user: json['user'] != null ? UserShort.fromJson(json['user']) : null,
         category: json['category'] != null ? FileCategory.fromJson(json['category']) : null,
+      );
+
+  FileItem copyWith({int? likesCount, bool? isLiked}) => FileItem(
+        id: id,
+        userId: userId,
+        filename: filename,
+        fileUrl: fileUrl,
+        mimeType: mimeType,
+        fileSize: fileSize,
+        categoryId: categoryId,
+        downloadsCount: downloadsCount,
+        likesCount: likesCount ?? this.likesCount,
+        isLiked: isLiked ?? this.isLiked,
+        isPreviewable: isPreviewable,
+        previewUrl: previewUrl,
+        description: description,
+        createdAt: createdAt,
+        user: user,
+        category: category,
       );
 
   String get fileSizeFormatted {
