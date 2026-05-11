@@ -27,6 +27,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
   final List<_TextOverlay> _texts = [];
   final List<_StickerOverlay> _stickers = [];
   final List<_PollOverlay> _polls = [];
+  final List<_QuestionOverlay> _questions = [];
   int _nextId = 1;
   bool _exporting = false;
 
@@ -267,6 +268,49 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
       _texts.removeWhere((t) => t.id == id);
       _stickers.removeWhere((s) => s.id == id);
       _polls.removeWhere((p) => p.id == id);
+      _questions.removeWhere((q) => q.id == id);
+    });
+  }
+
+  Future<void> _addQuestion() async {
+    final ctrl = TextEditingController(text: 'Спросите меня что угодно');
+    final res = await showDialog<String>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Вопрос viewer\'ам'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 60,
+          decoration: const InputDecoration(
+            hintText: 'Что показать viewer\'у...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dlgCtx).pop(),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SeeUColors.accent),
+            onPressed: () {
+              final v = ctrl.text.trim();
+              if (v.isEmpty) return;
+              Navigator.of(dlgCtx).pop(v);
+            },
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+    if (res == null) return;
+    setState(() {
+      _questions.add(_QuestionOverlay(
+        id: _nextId++,
+        prompt: res,
+        position: const Offset(0.15, 0.5),
+        scale: 1.0,
+      ));
     });
   }
 
@@ -417,6 +461,19 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                                 },
                                 onDelete: () => _removeOverlay(p.id),
                               )),
+                          ..._questions.map((q) => _buildOverlay(
+                                key: ValueKey('q${q.id}'),
+                                child: _QuestionWidget(question: q),
+                                overlay: q,
+                                constraints: constraints,
+                                onUpdate: (pos, scale) {
+                                  setState(() {
+                                    q.position = pos;
+                                    q.scale = scale;
+                                  });
+                                },
+                                onDelete: () => _removeOverlay(q.id),
+                              )),
                         ],
                       );
                     }),
@@ -451,6 +508,12 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                     onTap: _addPoll,
                   ),
                   _toolButton(
+                    icon: Icon(PhosphorIconsBold.question,
+                        color: Colors.white, size: 22),
+                    label: 'Вопрос',
+                    onTap: _addQuestion,
+                  ),
+                  _toolButton(
                     icon: Icon(PhosphorIcons.trash(), color: Colors.white),
                     label: 'Очистить',
                     onTap: () {
@@ -459,6 +522,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                         _texts.clear();
                         _stickers.clear();
                         _polls.clear();
+                        _questions.clear();
                       });
                     },
                   ),
@@ -583,6 +647,18 @@ class _PollOverlay extends _Overlay {
   });
 }
 
+/// Question-overlay: «Спросите меня что угодно» с одним свободным input'ом
+/// у viewer'а. На canvas автора виден как карточка с заголовком + placeholder.
+class _QuestionOverlay extends _Overlay {
+  String prompt;
+  _QuestionOverlay({
+    required super.id,
+    required this.prompt,
+    required super.position,
+    required super.scale,
+  });
+}
+
 class _TextInputResult {
   final String text;
   final Color color;
@@ -598,6 +674,72 @@ class _PollInputResult {
     required this.optionA,
     required this.optionB,
   });
+}
+
+/// Question-overlay визуал — заголовок-prompt + «Спросите...» plaholder
+/// в стиле Instagram «Sticker Question». Голосование не доступно в v1.
+class _QuestionWidget extends StatelessWidget {
+  final _QuestionOverlay question;
+  const _QuestionWidget({required this.question});
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: question.scale,
+      alignment: Alignment.topLeft,
+      child: Container(
+        width: 240,
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              question.prompt,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: SeeUColors.accentSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(
+                  'Введите ответ...',
+                  style: TextStyle(
+                    color: SeeUColors.accent.withValues(alpha: 0.7),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Визуал poll-overlay'я. Белая карточка 240×96, accent ramка, вопрос сверху,
