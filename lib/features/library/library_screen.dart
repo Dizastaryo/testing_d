@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -296,6 +297,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Widget _buildFileCard(FileItem file, ThemeData theme) {
     final color = _colorForType(file.fileExtension);
+    final isImage = file.mimeType.startsWith('image/');
+    final previewUrl = file.previewUrl.isNotEmpty
+        ? file.previewUrl
+        : (isImage ? file.fileUrl : '');
     return GestureDetector(
       onTap: () => context.push('/files/${file.id}'),
       child: Container(
@@ -313,29 +318,53 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
         child: Row(
           children: [
+            // Inline preview thumbnail. Для image-mime — реальное превью.
+            // Для остальных — gradient placeholder с extension-меткой.
             Container(
               width: 46,
               height: 56,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      color.withValues(alpha: 0.15),
-                      color.withValues(alpha: 0.05)
-                    ]),
+                gradient: previewUrl.isEmpty
+                    ? LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          color.withValues(alpha: 0.15),
+                          color.withValues(alpha: 0.05)
+                        ])
+                    : null,
+                color: previewUrl.isEmpty ? null : color.withValues(alpha: 0.05),
                 border: Border.all(color: color.withValues(alpha: 0.4)),
               ),
-              alignment: Alignment.bottomCenter,
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(file.fileExtension.toUpperCase(),
-                  style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: color,
-                      letterSpacing: 1)),
+              child: previewUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: previewUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Center(
+                        child: Text(file.fileExtension.toUpperCase(),
+                            style: TextStyle(
+                                fontFamily: 'JetBrains Mono',
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                                letterSpacing: 1)),
+                      ),
+                    )
+                  : Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(file.fileExtension.toUpperCase(),
+                            style: TextStyle(
+                                fontFamily: 'JetBrains Mono',
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                                letterSpacing: 1)),
+                      ),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
