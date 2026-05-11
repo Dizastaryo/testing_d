@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/utils/time_format.dart';
 import '../../../core/design/design.dart';
+import '../../../core/models/audio_track.dart';
 import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
 import '../../../core/providers/auth_provider.dart';
@@ -182,6 +184,14 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   // M17: Track long-press state to prevent onTapUp from firing after long-press
   bool _isLongPressing = false;
 
+  // ── Audio playback ─────────────────────────────────────────────────────
+  // Photo-stories с audio_track_id играют Spotify-style фоновую музыку.
+  // Кэш track-метадаты по UUID, чтобы повторно не дёргать /audio-tracks/:id
+  // при возврате к уже-проигранной story.
+  AudioPlayer? _audioPlayer;
+  final Map<String, AudioTrack?> _audioCache = {};
+  String? _currentLoadedTrackId; // последний загруженный URL в плеер
+
   @override
   void initState() {
     super.initState();
@@ -203,6 +213,10 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         _nextStory();
       });
     _progressController.forward();
+
+    // Audio: пробуем стартануть music для первой story в фоне (не ждём).
+    _audioPlayer = AudioPlayer();
+    _syncAudio();
 
     // Subscribe to realtime view-count pushes (`story.view.added`) so the
     // open viewer's «X views» badge updates live as new viewers arrive,
@@ -292,6 +306,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     _replyController.removeListener(_onReplyChanged);
     _replyController.dispose();
     _replyFocusNode.dispose();
+    _audioPlayer?.dispose();
     super.dispose();
   }
 
@@ -317,6 +332,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     } else {
       Navigator.of(context).pop();
     }
+    _syncAudio();
   }
 
   void _prevStory() {
@@ -333,6 +349,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     }
     if (!mounted) return;
     _progressController.forward();
+    _syncAudio();
   }
 
   void _nextGroup() {
@@ -345,6 +362,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       });
       if (!mounted) return;
       _progressController.forward();
+      _syncAudio();
     } else {
       Navigator.of(context).pop();
     }
@@ -360,7 +378,54 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       });
       if (!mounted) return;
       _progressController.forward();
+      _syncAudio();
     }
+  }
+
+  /// Подгоняет аудио-плеер под current story:
+  /// - audio_track_id null или mediaType=video → stop + clear (видео-сторис
+  ///   звучит сам, дублировать не надо).
+  /// - есть id → fetch из кэша или /audio-tracks/:id → setUrl + play.
+  Future<void> _syncAudio() async {
+    final story = _currentStory;
+    final player = _audioPlayer;
+    if (player == null) return;
+
+    final trackId = story.audioTrackId;
+    if (trackId == null || trackId.isEmpty ||
+        story.mediaType == StoryMediaType.video) {
+      if (_currentLoadedTrackId != null) {
+        await player.stop();
+        _currentLoadedTrackId = null;
+      }
+      return;
+    }
+    if (_currentLoadedTrackId == trackId && player.playing) return;
+
+    // Load (через кэш) и play.
+    AudioTrack? track = _audioCache[trackId];
+    if (track == null && !_audioCache.containsKey(trackId)) {
+      try {
+        final api = ref.read(apiClientProvider);
+        final r = await api.get(ApiEndpoints.audioTrackById(trackId));
+        final data = r.data is Map && (r.data as Map).containsKey('data')
+            ? r.data['data']
+            : r.data;
+        if (data is Map<String, dynamic>) {
+          track = AudioTrack.fromJson(data);
+        }
+      } catch (_) {
+        track = null;
+      }
+      _audioCache[trackId] = track;
+    }
+    if (track == null || track.audioUrl.isEmpty) return;
+    if (!mounted) return;
+    try {
+      await player.setUrl(track.audioUrl);
+      _currentLoadedTrackId = trackId;
+      await player.play();
+    } catch (_) {/* network/decoding error — silent */}
   }
 
   void _openReply() {

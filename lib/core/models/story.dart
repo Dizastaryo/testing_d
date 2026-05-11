@@ -26,6 +26,9 @@ class Story {
   final Map<String, int> reactions;
   /// Emoji the *current viewer* placed on this story; empty when none.
   final String myReaction;
+  /// Audio-track UUID для photo-story (Spotify-style музыка). null = без музыки.
+  /// Story-viewer лениво подгружает /audio-tracks/:id и проигрывает через just_audio.
+  final String? audioTrackId;
 
   const Story({
     required this.id,
@@ -39,6 +42,7 @@ class Story {
     required this.expiresAt,
     this.reactions = const {},
     this.myReaction = '',
+    this.audioTrackId,
   });
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
@@ -69,6 +73,7 @@ class Story {
             )
           : const {},
       myReaction: json['my_reaction']?.toString() ?? '',
+      audioTrackId: json['audio_track_id']?.toString(),
     );
   }
 
@@ -82,6 +87,7 @@ class Story {
     'views_count': viewsCount,
     'created_at': createdAt.toIso8601String(),
     'expires_at': expiresAt.toIso8601String(),
+    'audio_track_id': audioTrackId,
   };
 
   Story copyWith({
@@ -102,6 +108,7 @@ class Story {
       expiresAt: expiresAt,
       reactions: reactions ?? this.reactions,
       myReaction: myReaction ?? this.myReaction,
+      audioTrackId: audioTrackId,
     );
   }
 }

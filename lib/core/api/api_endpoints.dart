@@ -82,6 +82,7 @@ class ApiEndpoints {
   // Audio tracks
   static const String audioTracks = '/audio-tracks';
   static const String myAudioTracks = '/audio-tracks/me';
+  static String audioTrackById(String id) => '/audio-tracks/$id';
 
   // Playlists (Music v2)
   static const String myPlaylists = '/playlists/me';
