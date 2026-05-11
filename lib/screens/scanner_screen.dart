@@ -326,6 +326,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildToggleTab(String label, String mode) {
     final c = context.seeuColors;
     final isActive = _viewMode == mode;
@@ -585,9 +586,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                             ),
                           ),
                         ),
-                        ...entries.asMap().entries.map((e) {
-                          final idx = e.key;
-                          final entry = e.value;
+                        ...entries.map((entry) {
                           final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
                           final dist = _rssiToMeters(entry.device.rssi);
                           final r = (dist / 50).clamp(0.0, 1.0) * 80 + 20;
@@ -840,6 +839,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   // ─── List view ─────────────────────────────────────────────────────────
 
+  // ignore: unused_element
   Widget _buildListView(List<_ResolvedEntry> entries) {
     if (entries.isEmpty) return _buildEmptyState();
 

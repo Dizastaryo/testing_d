@@ -1,5 +1,5 @@
 /// Модель AI-сгенерированной маски (одна запись из `ai_masks` таблицы).
-/// PNG лежит на бэке в /uploads/ai/masks/<uuid>.png — frontend качает через
+/// PNG лежит на бэке в `/uploads/ai/masks/&lt;uuid&gt;.png` — frontend качает через
 /// CachedNetworkImage по absolute URL `AppConfig.apiOrigin + fileUrl`.
 class AIMask {
   final String id;

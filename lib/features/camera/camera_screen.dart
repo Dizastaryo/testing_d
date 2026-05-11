@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -692,8 +691,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  // ── Upload story ─────────────────────────────────────────────────────
-
+  // Раньше старый flow камеры публиковал story напрямую этой функцией.
+  // Заменено на MediaPrepareScreen (см. «Далее» кнопка ниже). Сохраняем
+  // как утилиту для quick-upload short-circuit'а, если когда-нибудь
+  // вернутся. Подавляем unused-warning.
+  // ignore: unused_element
   Future<void> _uploadStory(XFile file) async {
     if (_isUploading) return;
     setState(() => _isUploading = true);

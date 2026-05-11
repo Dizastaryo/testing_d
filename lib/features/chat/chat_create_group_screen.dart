@@ -261,12 +261,12 @@ class _ChatCreateGroupScreenState
                     return _CoverChoice(
                       isSelected: isSelected,
                       onTap: () => setState(() => _coverUrl = null),
+                      gradient: SeeUGradients.heroOrange,
                       child: Icon(
                         PhosphorIcons.usersThree(PhosphorIconsStyle.bold),
                         color: Colors.white,
                         size: 28,
                       ),
-                      gradient: SeeUGradients.heroOrange,
                     );
                   }
                   final url = _coverPresets[i - 1];

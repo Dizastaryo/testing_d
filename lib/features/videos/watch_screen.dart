@@ -209,12 +209,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           gradient: LinearGradient(
-            colors: [SeeUColors.accent.withOpacity(0.8), Colors.black87],
+            colors: [SeeUColors.accent.withValues(alpha: 0.8), Colors.black87],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           boxShadow: [
-            BoxShadow(color: SeeUColors.accent.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8)),
+            BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 8)),
           ],
         ),
         child: Stack(
@@ -239,7 +239,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: SeeUColors.accent,
-                  boxShadow: [BoxShadow(color: SeeUColors.accent.withOpacity(0.6), blurRadius: 30)],
+                  boxShadow: [BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.6), blurRadius: 30)],
                 ),
                 child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
               ),
@@ -322,7 +322,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               gradient: LinearGradient(
-                colors: [SeeUColors.accent.withOpacity(0.4), Colors.black54],
+                colors: [SeeUColors.accent.withValues(alpha: 0.4), Colors.black54],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -342,7 +342,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   right: 8,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), borderRadius: BorderRadius.circular(4)),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(4)),
                     child: Text(video.durationFormatted, style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600)),
                   ),
                 ),
@@ -353,7 +353,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         const SizedBox(height: 8),
         Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
         const SizedBox(height: 2),
-        Text('@${video.user?.username ?? ''} · ${video.viewsFormatted} views', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.5))),
+        Text('@${video.user?.username ?? ''} · ${video.viewsFormatted} views', style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
       ],
       ),
     );

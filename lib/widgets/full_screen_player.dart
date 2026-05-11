@@ -325,8 +325,11 @@ class _FullScreenPlayerSheetState
                   // Close в контексте: «закрыть совсем» = stop
                   TextButton.icon(
                     onPressed: () async {
+                      // Capture Navigator до async gap чтобы analyzer не ругался
+                      // на use_build_context_synchronously.
+                      final nav = Navigator.of(context);
                       await notifier.close();
-                      if (mounted) Navigator.of(context).maybePop();
+                      if (mounted) nav.maybePop();
                     },
                     icon: Icon(PhosphorIcons.x(),
                         color: Colors.white70, size: 16),

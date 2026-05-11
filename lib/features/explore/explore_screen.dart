@@ -244,6 +244,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Audio tab
   // =========================================================================
 
+  // ignore: unused_element
   Widget _buildAudioTab() {
     final c = context.seeuColors;
     final audioAsync = ref.watch(audioTracksProvider);
@@ -311,6 +312,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Tags tab
   // =========================================================================
 
+  // ignore: unused_element
   Widget _buildTagsTab() {
     final c = context.seeuColors;
     final tagsAsync = ref.watch(trendingTagsProvider);
