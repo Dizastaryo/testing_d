@@ -25,6 +25,9 @@ class AppNotification {
   /// здесь они UserShort из models/user.dart (re-exported). Когда othersCount=0,
   /// список всегда пустой.
   final List<UserShort> otherUsers;
+  /// UUID комментария — для deep-link'а к конкретному комментарию на /post/:id.
+  /// Заполняется бэком только для type=comment/reply/mention.
+  final String? commentId;
 
   const AppNotification({
     required this.id,
@@ -37,6 +40,7 @@ class AppNotification {
     required this.createdAt,
     this.othersCount = 0,
     this.otherUsers = const [],
+    this.commentId,
   });
 
   /// Текст после юзернейма (юзернейм рендерится отдельным жирным TextSpan'ом
@@ -110,6 +114,7 @@ class AppNotification {
               .map(UserShort.fromJson)
               .toList()
           : const [],
+      commentId: json['comment_id']?.toString(),
     );
   }
 
@@ -163,6 +168,7 @@ class AppNotification {
       createdAt: createdAt,
       othersCount: othersCount,
       otherUsers: otherUsers,
+      commentId: commentId,
     );
   }
 
