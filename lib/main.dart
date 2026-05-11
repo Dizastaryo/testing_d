@@ -293,6 +293,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               pageBuilder: (context, state) => CupertinoPage(
                 child: PostDetailScreen(
                   postId: state.pathParameters['id']!,
+                  focusedCommentId: state.uri.queryParameters['commentId'],
                 ),
               ),
               routes: [
@@ -301,6 +302,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                   pageBuilder: (context, state) => CupertinoPage(
                     child: CommentsScreen(
                       postId: state.pathParameters['id']!,
+                      focusedCommentId: state.uri.queryParameters['commentId'],
                     ),
                   ),
                 ),

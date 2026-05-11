@@ -22,8 +22,15 @@ final _postDetailProvider =
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
+  /// Опциональный comment_id для deep-link из уведомления.
+  /// PostDetailScreen открывает CommentsScreen с автоскроллом к нему.
+  final String? focusedCommentId;
 
-  const PostDetailScreen({super.key, required this.postId});
+  const PostDetailScreen({
+    super.key,
+    required this.postId,
+    this.focusedCommentId,
+  });
 
   @override
   ConsumerState<PostDetailScreen> createState() => _PostDetailScreenState();

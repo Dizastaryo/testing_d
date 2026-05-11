@@ -129,8 +129,15 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
 
 class CommentsScreen extends ConsumerStatefulWidget {
   final String postId;
+  /// Опциональный comment ID для подсветки + автоскролла (deep-link
+  /// из notification). nil = обычное открытие.
+  final String? focusedCommentId;
 
-  const CommentsScreen({super.key, required this.postId});
+  const CommentsScreen({
+    super.key,
+    required this.postId,
+    this.focusedCommentId,
+  });
 
   @override
   ConsumerState<CommentsScreen> createState() => _CommentsScreenState();
@@ -139,18 +146,40 @@ class CommentsScreen extends ConsumerStatefulWidget {
 class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   final _commentCtrl = TextEditingController();
   final _focusNode = FocusNode();
+  final _scrollController = ScrollController();
+  final _focusedCommentKey = GlobalKey();
   String? _replyToId;
   String? _replyToUsername;
+  bool _hasScrolledToFocused = false;
 
   @override
   void initState() {
     super.initState();
   }
 
+  /// Auto-scroll к подсвеченному комменту после того как список отрисуется.
+  /// Вызывается один раз (через _hasScrolledToFocused guard).
+  void _maybeScrollToFocused() {
+    if (_hasScrolledToFocused) return;
+    if (widget.focusedCommentId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _focusedCommentKey.currentContext;
+      if (ctx == null || !mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        alignment: 0.25,
+      );
+      _hasScrolledToFocused = true;
+    });
+  }
+
   @override
   void dispose() {
     _commentCtrl.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -222,38 +251,51 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: commentsState.comments.length,
-                        itemBuilder: (context, index) {
-                          final comment = commentsState.comments[index];
-                          final isExpanded = commentsState.expandedReplies
-                              .contains(comment.id);
-                          return _CommentTile(
-                            comment: comment,
-                            isExpanded: isExpanded,
-                            onLike: () => ref
-                                .read(_commentsProvider(widget.postId)
-                                    .notifier)
-                                .likeComment(comment.id),
-                            onReply: () {
-                              setState(() {
-                                _replyToId = comment.id;
-                                _replyToUsername = comment.author.username;
-                              });
-                              _commentCtrl.text = '@${comment.author.username} ';
-                              _commentCtrl.selection = TextSelection.fromPosition(
-                                TextPosition(offset: _commentCtrl.text.length),
-                              );
-                              _focusNode.requestFocus();
-                            },
-                            onToggleReplies: () => ref
-                                .read(_commentsProvider(widget.postId)
-                                    .notifier)
-                                .toggleReplies(comment.id),
-                          );
-                        },
-                      ),
+                    : Builder(builder: (_) {
+                        // Trigger scroll-to-focused после рендера, если есть.
+                        _maybeScrollToFocused();
+                        return ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: commentsState.comments.length,
+                          itemBuilder: (context, index) {
+                            final comment = commentsState.comments[index];
+                            final isExpanded = commentsState.expandedReplies
+                                .contains(comment.id);
+                            final isFocused =
+                                widget.focusedCommentId != null &&
+                                    comment.id == widget.focusedCommentId;
+                            return _CommentTile(
+                              key: isFocused ? _focusedCommentKey : null,
+                              comment: comment,
+                              isExpanded: isExpanded,
+                              isHighlighted: isFocused,
+                              onLike: () => ref
+                                  .read(_commentsProvider(widget.postId)
+                                      .notifier)
+                                  .likeComment(comment.id),
+                              onReply: () {
+                                setState(() {
+                                  _replyToId = comment.id;
+                                  _replyToUsername = comment.author.username;
+                                });
+                                _commentCtrl.text =
+                                    '@${comment.author.username} ';
+                                _commentCtrl.selection =
+                                    TextSelection.fromPosition(
+                                  TextPosition(
+                                      offset: _commentCtrl.text.length),
+                                );
+                                _focusNode.requestFocus();
+                              },
+                              onToggleReplies: () => ref
+                                  .read(_commentsProvider(widget.postId)
+                                      .notifier)
+                                  .toggleReplies(comment.id),
+                            );
+                          },
+                        );
+                      }),
           ),
           // Reply indicator
           if (_replyToUsername != null)
@@ -554,13 +596,17 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
 class _CommentTile extends StatelessWidget {
   final Comment comment;
   final bool isExpanded;
+  /// Подсветка для deep-link из notification — accent-soft фон + ramка.
+  final bool isHighlighted;
   final VoidCallback onLike;
   final VoidCallback onReply;
   final VoidCallback onToggleReplies;
 
   const _CommentTile({
+    super.key,
     required this.comment,
     required this.isExpanded,
+    this.isHighlighted = false,
     required this.onLike,
     required this.onReply,
     required this.onToggleReplies,
@@ -575,8 +621,19 @@ class _CommentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    return Padding(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      // Deep-link highlight: тонкая accent-soft подложка + лёгкая рамка.
+      decoration: isHighlighted
+          ? BoxDecoration(
+              color: c.accentSoft.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
+              border: Border.all(
+                color: SeeUColors.accent.withValues(alpha: 0.4),
+                width: 1,
+              ),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

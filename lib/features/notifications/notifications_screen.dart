@@ -136,13 +136,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     ref.read(notificationProvider.notifier).markRead(n.id);
     if (n.type == NotificationType.follow) {
       context.push('/profile/${n.fromUser.username}');
+    } else if (n.commentId != null && n.postId != null) {
+      // Deep-link: открываем сразу комментарии с автоскроллом к нему.
+      context.push('/post/${n.postId}/comments?commentId=${n.commentId}');
     } else if (n.postId != null) {
-      // Для comment/reply/mention — добавляем ?commentId= чтобы PostDetailScreen
-      // скроллился к конкретному комментарию.
-      final uri = n.commentId != null
-          ? '/post/${n.postId}?commentId=${n.commentId}'
-          : '/post/${n.postId}';
-      context.push(uri);
+      context.push('/post/${n.postId}');
     }
   }
 
