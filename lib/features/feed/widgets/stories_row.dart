@@ -797,8 +797,8 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                                             ),
                                             FractionallySizedBox(
                                               widthFactor:
-                                                  _progressController
-                                                      .value,
+                                                  Curves.easeOutQuad.transform(
+                                                      _progressController.value),
                                               child: Container(
                                                 decoration:
                                                     BoxDecoration(
