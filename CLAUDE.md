@@ -1,7 +1,15 @@
 # SeeU - Flutter Social Network App
 
+> Главный CLAUDE.md в корне проекта (`../CLAUDE.md`) — там общие правила, ship-blockers на удержании, обсидиан-синхронизация. Этот файл — про **frontend specifics**.
+
 ## Project Overview
-SeeU - социальная сеть с BLE-сканером на Flutter. Подключена к Go бэкенду (API).
+SeeU - социальная сеть с BLE-сканером на Flutter. Подключена к Go бэкенду (API на портах 8001/8002/8003 — api/video/library).
+
+## Что НЕ трогаем (см. корневой CLAUDE.md → «Ship-blockers на удержании»)
+
+- `.github/workflows/dart.yml` — собирает **unsigned IPA** намеренно. Любая правка которая включает codesign / provisioning → запрос Apple-сертификата → CI fail.
+- iOS code-signing, `IPHONEOS_DEPLOYMENT_TARGET`, Apple Team ID — нет аккаунта.
+- OTP SMS-провайдер — пока через WhatsApp bridge (не работает), фронт использует dev-fallback `0000`. Не предлагать Twilio/etc.
 
 ## Tech Stack
 - **Framework:** Flutter 3.x, Dart >=3.0.0

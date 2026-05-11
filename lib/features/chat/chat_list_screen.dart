@@ -328,7 +328,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 // Chat tile
 // ---------------------------------------------------------------------------
 
-class _ChatTile extends StatelessWidget {
+class _ChatTile extends ConsumerWidget {
   final Chat chat;
   final VoidCallback onTap;
 
@@ -338,7 +338,7 @@ class _ChatTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
     final user = chat.otherUser;
     final isGroup = chat.isGroup;
@@ -350,12 +350,13 @@ class _ChatTile extends StatelessWidget {
         ? '${chat.lastSenderUsername}: $lastMsg'
         : lastMsg;
     // Real online status from backend (otherUser.isOnline, обновляется
-    // через WS user.presence). Typing и chip-match пока simulation
-    // (последнее — для BLE-радар индикатора, отдельная задача).
+    // через WS user.presence).
     final isOnline = !isGroup && (user?.isOnline ?? false);
-    final keyForSim = (user?.id ?? chat.id);
-    final isTyping = !isGroup && keyForSim.hashCode % 5 == 1;
-    final isChipMatch = !isGroup && keyForSim.hashCode % 4 == 0;
+    // Реальный typing-индикатор: подписка на map активных typing'ов через
+    // chat.typing WS events (TTL 4s). `.select` гарантирует rebuild только
+    // когда меняется bool для ЭТОГО chat.id, не на любой typing-event.
+    final isTyping = ref.watch(typingChatsProvider
+        .select((m) => m.containsKey(chat.id)));
     final displayName = isGroup ? chat.title : (user?.fullName ?? '');
 
     return Tappable.scaled(
@@ -417,28 +418,10 @@ class _ChatTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ] else if (isChipMatch) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: c.accentSoft,
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Text(
-                            'взаимный',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: SeeUColors.accent,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
                       ],
+                      // Badge «взаимный» удалён 2026-05-11 (был фейк по
+                      // hashCode). Реальный BLE-match вернётся когда сделаем
+                      // PROFILE-1 (nearbyDevicesProvider).
                     ],
                   ),
                   const SizedBox(height: 2),

@@ -40,6 +40,10 @@ class _VoiceBubbleState extends State<VoiceBubble> {
   bool _loading = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  // Playback rate цикл: 1.0 → 1.5 → 2.0 → 1.0. Тап на pill справа.
+  // just_audio поддерживает stable до 2.0× без артефактов pitch'а.
+  double _speed = 1.0;
+  static const _speedCycle = [1.0, 1.5, 2.0];
 
   @override
   void initState() {
@@ -66,6 +70,10 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     setState(() => _loading = true);
     try {
       await _player.setUrl(widget.audioUrl);
+      // Применяем сохранённую скорость (юзер мог потыкать pill до load'а).
+      if (_speed != 1.0) {
+        try { await _player.setSpeed(_speed); } catch (_) {}
+      }
       _loaded = true;
     } catch (_) {
       // ignore — просто оставляем _loaded = false, юзер увидит
@@ -83,6 +91,26 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     } else {
       await _player.play();
     }
+  }
+
+  Future<void> _cycleSpeed() async {
+    HapticFeedback.selectionClick();
+    final idx = _speedCycle.indexOf(_speed);
+    final next = _speedCycle[(idx + 1) % _speedCycle.length];
+    setState(() => _speed = next);
+    try {
+      await _player.setSpeed(next);
+    } catch (_) {
+      // На некоторых платформах setSpeed может бросать до первого load'а.
+      // Игнорируем — следующий load применит сохранённый _speed (см.
+      // _ensureLoaded ниже).
+    }
+  }
+
+  /// Форматирование label'а: "1×" / "1.5×" / "2×". Без trailing ".0".
+  String _fmtSpeed(double s) {
+    final n = s.toInt();
+    return s == n.toDouble() ? '$n×' : '$s×';
   }
 
   @override
@@ -166,16 +194,55 @@ class _VoiceBubbleState extends State<VoiceBubble> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  _player.playing || _position > Duration.zero
-                      ? _fmt(_position)
-                      : _fmt(_duration),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: widget.isMine ? Colors.white70 : c.ink2,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      _player.playing || _position > Duration.zero
+                          ? _fmt(_position)
+                          : _fmt(_duration),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: widget.isMine ? Colors.white70 : c.ink2,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const Spacer(),
+                    // Speed pill. Активный (≠1×) выделен сильнее.
+                    GestureDetector(
+                      onTap: _cycleSpeed,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _speed == 1.0
+                              ? (widget.isMine
+                                  ? Colors.white.withValues(alpha: 0.15)
+                                  : SeeUColors.accent.withValues(alpha: 0.10))
+                              : (widget.isMine
+                                  ? Colors.white
+                                  : SeeUColors.accent),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          _fmtSpeed(_speed),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: _speed == 1.0
+                                ? (widget.isMine
+                                    ? Colors.white
+                                    : SeeUColors.accent)
+                                : (widget.isMine
+                                    ? SeeUColors.accent
+                                    : Colors.white),
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -564,13 +564,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     if (chat?.isGroup == true)
-                                      Text(
-                                        '${chat!.participantsCount} участников',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: c.ink3,
-                                        ),
-                                      )
+                                      Builder(builder: (ctx) {
+                                        final isTyping = ref
+                                            .watch(typingProvider(
+                                                widget.chatId))
+                                            .isActive;
+                                        // В группах резолвить username
+                                        // typer'а пока не можем — Chat-model
+                                        // не содержит participants list, а
+                                        // fetch на каждый event дорого. Для
+                                        // MVP — нейтральное «печатает…».
+                                        final subtitle = isTyping
+                                            ? 'кто-то печатает…'
+                                            : '${chat!.participantsCount} участников';
+                                        return Text(
+                                          subtitle,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isTyping
+                                                ? SeeUColors.accent
+                                                : c.ink3,
+                                            fontWeight: isTyping
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        );
+                                      })
                                     else if (otherUser != null)
                                       Builder(builder: (ctx) {
                                         final isTyping = ref
@@ -1413,13 +1432,20 @@ class _MessageBubble extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 2),
+                        // Read receipts 3-state (CHAT-10.1):
+                        //   ✓ (single, ink3)    — sent (POST 200, peer offline).
+                        //   ✓✓ (double, ink3)   — delivered (peer's WS получил).
+                        //   ✓✓ (double, accent) — read (peer открыл чат).
+                        //
+                        // isRead имеет приоритет над isDelivered: после read
+                        // событие delivered уже не важно.
                         Icon(
-                          message.isRead
+                          (message.isRead || message.isDelivered)
                               ? PhosphorIconsBold.checks
                               : PhosphorIconsRegular.check,
-                          size: 12,
+                          size: 13,
                           color: message.isRead
-                              ? const Color(0xFF4FC3F7)
+                              ? SeeUColors.accent
                               : c.ink3,
                         ),
                       ],

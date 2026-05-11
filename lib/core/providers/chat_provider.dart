@@ -185,6 +185,11 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMe;
   final bool isRead;
+  /// True когда сообщение реально доставлено в WS хотя бы одному peer'у
+  /// (CHAT-10.1). Промежуточное состояние между `sent` (✓ серая) и `read`
+  /// (✓✓ orange) — отображается ✓✓ серая. Поле computed на бэке как
+  /// `delivered_at IS NOT NULL`.
+  final bool isDelivered;
   /// "text" (default), "shared_post", "image", "voice".
   final String kind;
   final AttachedPostShort? attachedPost;
@@ -212,6 +217,7 @@ class ChatMessage {
     required this.createdAt,
     this.isMe = false,
     this.isRead = false,
+    this.isDelivered = false,
     this.kind = 'text',
     this.attachedPost,
     this.attachedMediaUrl = '',
@@ -235,6 +241,7 @@ class ChatMessage {
           : DateTime.now(),
       isMe: (json['is_me'] ?? false) as bool,
       isRead: (json['is_read'] ?? false) as bool,
+      isDelivered: (json['is_delivered'] ?? false) as bool,
       kind: json['kind']?.toString() ?? 'text',
       attachedPost: ap is Map<String, dynamic>
           ? AttachedPostShort.fromJson(ap)
@@ -264,6 +271,7 @@ class ChatMessage {
 
   ChatMessage copyWith({
     bool? isRead,
+    bool? isDelivered,
     Map<String, int>? reactions,
     String? myReaction,
   }) =>
@@ -275,6 +283,7 @@ class ChatMessage {
         createdAt: createdAt,
         isMe: isMe,
         isRead: isRead ?? this.isRead,
+        isDelivered: isDelivered ?? this.isDelivered,
         kind: kind,
         attachedPost: attachedPost,
         attachedMediaUrl: attachedMediaUrl,
@@ -461,9 +470,25 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             return;
           }
 
+          if (evt.type == 'chat.delivered') {
+            // Peer's WS получил моё сообщение (но ещё не открыл чат).
+            // Flip isDelivered=true → checkmark ✓ → ✓✓ серый (intermediate
+            // state перед read). Backend шлёт только sender'у в ChatService.
+            final messageId = p['message_id']?.toString() ?? '';
+            if (messageId.isEmpty) return;
+            state = state.copyWith(
+              messages: state.messages.map((m) {
+                if (m.id != messageId || !m.isMe || m.isDelivered) return m;
+                return m.copyWith(isDelivered: true);
+              }).toList(),
+            );
+            return;
+          }
+
           if (evt.type == 'chat.read') {
             // Peer just read the conversation — flip my outgoing messages
-            // to is_read so the checkmark turns blue without a refresh.
+            // to is_read so the checkmark turns accent (✓ → ✓✓) without a
+            // refresh. See _MessageBubble in chat_screen.dart for rendering.
             final readerId = p['reader_id']?.toString() ?? '';
             final updated = state.messages.map((m) {
               // Only flip messages I sent (m.isMe), and only if the reader
@@ -697,6 +722,60 @@ class _TypingNotifier extends StateNotifier<TypingState> {
 final typingProvider =
     StateNotifierProvider.family<_TypingNotifier, TypingState, String>(
   (ref, chatId) => _TypingNotifier(chatId, ref),
+);
+
+/// Тот же сигнал что [typingProvider], но в виде одного `Map<chatId, lastAt>`
+/// для chat-list. Слушает realtime ОДИН раз и обновляет карту, а tiles
+/// берут через `.select((m) => m.containsKey(chatId))` — O(1) на тайл вместо
+/// O(N) listener'ов как было бы с family-провайдером.
+class _TypingChatsNotifier extends StateNotifier<Map<String, DateTime>> {
+  static const _ttl = Duration(seconds: 4);
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _sub;
+  Timer? _gc;
+
+  _TypingChatsNotifier(this._ref) : super(const {}) {
+    _sub = _ref.listen<AsyncValue<RealtimeEvent>>(
+      realtimeEventsProvider,
+      (_, next) {
+        next.whenData((evt) {
+          if (evt.type != 'chat.typing' || evt.payload is! Map) return;
+          final p = (evt.payload as Map).cast<String, dynamic>();
+          final chatId = p['chat_id']?.toString() ?? '';
+          if (chatId.isEmpty) return;
+          state = {...state, chatId: DateTime.now()};
+        });
+      },
+    );
+    // GC раз в секунду: убираем устаревшие записи. Без этого даже если peer
+    // перестал печатать, карта продолжала бы хранить запись до перезапуска.
+    _gc = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (state.isEmpty) return;
+      final cutoff = DateTime.now().subtract(_ttl);
+      var changed = false;
+      final next = <String, DateTime>{};
+      state.forEach((k, v) {
+        if (v.isAfter(cutoff)) {
+          next[k] = v;
+        } else {
+          changed = true;
+        }
+      });
+      if (changed) state = next;
+    });
+  }
+
+  @override
+  void dispose() {
+    _gc?.cancel();
+    _sub?.close();
+    super.dispose();
+  }
+}
+
+final typingChatsProvider =
+    StateNotifierProvider<_TypingChatsNotifier, Map<String, DateTime>>(
+  (ref) => _TypingChatsNotifier(ref),
 );
 
 final chatListProvider = StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
