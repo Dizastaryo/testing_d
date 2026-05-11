@@ -53,7 +53,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>SeeU использует камеру для создания фото и видео.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>SeeU использует микрофон для записи видео со звуком.</string>
+	<string>SeeU использует микрофон для записи видео со звуком и голосовых сообщений в чате.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SeeU использует галерею для выбора фото и видео при публикации.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SeeU может сохранить ваши фото и видео в галерею.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>SeeU использует Bluetooth, чтобы находить людей рядом и управлять твоим устройством.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
