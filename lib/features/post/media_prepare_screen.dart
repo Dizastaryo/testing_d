@@ -19,6 +19,7 @@ import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
 import 'ai_caption_sheet.dart';
 import 'ai_stylize_sheet.dart';
+import '../stories/story_editor_screen.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
 /// Allows user to:
@@ -451,8 +452,65 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
               ),
             ),
           ),
+
+        // Редактировать (overlays) — только для фото. Открывает Story Editor,
+        // возвращает composite bytes (фото + текст + стикеры в один PNG).
+        // Видео-overlay требует ffmpeg-overlay-pass — отложено.
+        if (!widget.isVideo)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            child: GestureDetector(
+              onTap: _bytes == null ? null : _openStoryEditor,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: context.seeuColors.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  border: Border.all(
+                      color: SeeUColors.accent.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(PhosphorIcons.textT(),
+                        color: SeeUColors.accent, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Добавить текст / стикеры',
+                      style: TextStyle(
+                        color: context.seeuColors.ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
+  }
+
+  /// Открывает Story Editor с текущими bytes. На успех заменяет _bytes на
+  /// composite PNG и помечает «edited_….png» имя файла для backend upload'а.
+  Future<void> _openStoryEditor() async {
+    if (_bytes == null) return;
+    HapticFeedback.mediumImpact();
+    final composite = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => StoryEditorScreen(initialBytes: _bytes!),
+      ),
+    );
+    if (composite == null || !mounted) return;
+    setState(() {
+      _bytes = composite;
+      _stylizedFilename =
+          'edited_${DateTime.now().millisecondsSinceEpoch}.png';
+    });
   }
 
   /// Открыть AI-стилизация sheet. На успех — заменяет preview-bytes
