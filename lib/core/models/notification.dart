@@ -21,6 +21,10 @@ class AppNotification {
   /// Сколько ЕЩЁ юзеров присоединились к этому действию помимо fromUser.
   /// Например, 99 = «лайкнули User и ещё 99 человек». 0 = одиночная нотификация.
   final int othersCount;
+  /// Превью аватарок других юзеров батча (max 3). Бэк возвращает UserShort'ы;
+  /// здесь они UserShort из models/user.dart (re-exported). Когда othersCount=0,
+  /// список всегда пустой.
+  final List<UserShort> otherUsers;
 
   const AppNotification({
     required this.id,
@@ -32,6 +36,7 @@ class AppNotification {
     this.isRead = false,
     required this.createdAt,
     this.othersCount = 0,
+    this.otherUsers = const [],
   });
 
   /// Текст после юзернейма (юзернейм рендерится отдельным жирным TextSpan'ом
@@ -99,6 +104,12 @@ class AppNotification {
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
       othersCount: (json['others_count'] ?? 0) as int,
+      otherUsers: (json['other_users'] is List)
+          ? (json['other_users'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(UserShort.fromJson)
+              .toList()
+          : const [],
     );
   }
 
@@ -131,6 +142,13 @@ class AppNotification {
     'is_read': isRead,
     'created_at': createdAt.toIso8601String(),
     'others_count': othersCount,
+    'other_users': otherUsers.map((u) => {
+          'id': u.id,
+          'username': u.username,
+          'full_name': u.fullName,
+          'avatar_url': u.avatarUrl,
+          'is_verified': u.isVerified,
+        }).toList(),
   };
 
   AppNotification copyWith({bool? isRead}) {
@@ -144,6 +162,7 @@ class AppNotification {
       isRead: isRead ?? this.isRead,
       createdAt: createdAt,
       othersCount: othersCount,
+      otherUsers: otherUsers,
     );
   }
 

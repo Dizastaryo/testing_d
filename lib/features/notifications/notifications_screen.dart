@@ -326,45 +326,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ),
         child: Row(
           children: [
-            // Avatar with type icon badge
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: c.surface2,
-                  backgroundImage: n.fromUser.avatarUrl != null
-                      ? CachedNetworkImageProvider(n.fromUser.avatarUrl!)
-                      : null,
-                  child: n.fromUser.avatarUrl == null
-                      ? Text(
-                          n.fromUser.username[0].toUpperCase(),
-                          style: SeeUTypography.subtitle.copyWith(
-                            color: c.ink,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        )
-                      : null,
-                ),
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: _notifIconColor(n.type),
-                      shape: BoxShape.circle,
-                      border:
-                          Border.all(color: c.bg, width: 2),
-                    ),
-                    child: Center(
-                      child: Icon(_notifIcon(n.type),
-                          size: 10, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _buildAvatarBlock(n, c),
             const SizedBox(width: 12),
             // Text content
             Expanded(
@@ -443,4 +405,118 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             : 'Нет уведомлений',
         subtitle: 'Здесь появятся ваши уведомления',
       );
+
+  /// Аватарка нотификации. Для одиночных — обычный CircleAvatar 48px с
+  /// type-badge. Для батча (otherUsers.isNotEmpty) — стек 2-3 круглых
+  /// avatars (front = fromUser с border'ом, остальные смещены влево-вверх).
+  Widget _buildAvatarBlock(AppNotification n, SeeUThemeColors c) {
+    final badge = Positioned(
+      right: -2,
+      bottom: -2,
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _notifIconColor(n.type),
+          shape: BoxShape.circle,
+          border: Border.all(color: c.bg, width: 2),
+        ),
+        child: Center(
+          child: Icon(_notifIcon(n.type), size: 10, color: Colors.white),
+        ),
+      ),
+    );
+
+    if (n.otherUsers.isEmpty) {
+      return SizedBox(
+        width: 52,
+        height: 52,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _avatarCircle(
+                n.fromUser.avatarUrl, n.fromUser.username, c,
+                radius: 24, withBgBorder: false),
+            badge,
+          ],
+        ),
+      );
+    }
+
+    // Батч: 2-3 overlapping avatars в углу 56×56. fromUser спереди.
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (n.otherUsers.length >= 2)
+            Positioned(
+              left: 0,
+              top: 0,
+              child: _avatarCircle(
+                n.otherUsers[1].avatarUrl.isEmpty
+                    ? null
+                    : n.otherUsers[1].avatarUrl,
+                n.otherUsers[1].username,
+                c,
+                radius: 12,
+                withBgBorder: true,
+              ),
+            ),
+          Positioned(
+            right: 14,
+            top: 0,
+            child: _avatarCircle(
+              n.otherUsers[0].avatarUrl.isEmpty
+                  ? null
+                  : n.otherUsers[0].avatarUrl,
+              n.otherUsers[0].username,
+              c,
+              radius: 14,
+              withBgBorder: true,
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: _avatarCircle(
+                n.fromUser.avatarUrl, n.fromUser.username, c,
+                radius: 18, withBgBorder: true),
+          ),
+          badge,
+        ],
+      ),
+    );
+  }
+
+  Widget _avatarCircle(String? avatarUrl, String username, SeeUThemeColors c,
+      {required double radius, bool withBgBorder = false}) {
+    final ringWidth = withBgBorder ? 2.0 : 0.0;
+    final inner = CircleAvatar(
+      radius: radius,
+      backgroundColor: c.surface2,
+      backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+          ? CachedNetworkImageProvider(avatarUrl)
+          : null,
+      child: (avatarUrl == null || avatarUrl.isEmpty)
+          ? Text(
+              username.isNotEmpty ? username[0].toUpperCase() : '?',
+              style: SeeUTypography.subtitle.copyWith(
+                color: c.ink,
+                fontWeight: FontWeight.w700,
+                fontSize: radius * 0.7,
+              ),
+            )
+          : null,
+    );
+    if (!withBgBorder) return inner;
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: c.bg, width: ringWidth),
+      ),
+      child: inner,
+    );
+  }
 }
