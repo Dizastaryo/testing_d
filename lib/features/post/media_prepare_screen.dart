@@ -1,5 +1,4 @@
 import 'dart:io' show File;
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -163,14 +162,17 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       final mediaType = widget.isVideo ? 'video' : 'image';
 
       if (_publishMode == 0) {
-        // 2a. Create Story
-        await api.post(
-          ApiEndpoints.stories,
-          data: {
-            'media_url': mediaUrl,
-            'media_type': mediaType,
-          },
-        );
+        // 2a. Create Story — для photo-story можно прокинуть audio_track_id
+        // (Spotify-style музыка поверх). Для video — звук в самом видео,
+        // audio_track опускаем чтобы не дублировать.
+        final storyData = <String, dynamic>{
+          'media_url': mediaUrl,
+          'media_type': mediaType,
+        };
+        if (_selectedTrack != null && !widget.isVideo) {
+          storyData['audio_track_id'] = _selectedTrack!.id;
+        }
+        await api.post(ApiEndpoints.stories, data: storyData);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
