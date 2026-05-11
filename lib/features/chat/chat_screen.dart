@@ -206,6 +206,89 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Расширенный emoji-picker. Не тащим heavy emoji_picker_flutter (300+ kb),
+  /// вместо этого hardcoded grid из ~48 популярных эмодзи 4 категорий.
+  /// Для prod-MVP этого хватает; полный picker — отдельная задача.
+  static const _expandedEmojiCategories = {
+    'Эмоции': ['😀', '😂', '😍', '😎', '😭', '😡', '🤔', '🤩',
+        '🥳', '😴', '🥺', '😱'],
+    'Сердечки': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+        '💔', '💖', '💯', '✨'],
+    'Жесты': ['👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👌',
+        '✌️', '🤘', '🫶', '🫡'],
+    'Прочее': ['🔥', '🎉', '🚀', '⭐', '⚡', '💀', '🥰', '😅',
+        '🤯', '🤡', '👀', '🎯'],
+  };
+
+  void _showExpandedEmojiPicker(String messageId) {
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: c.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: c.line,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox.shrink(),
+              ..._expandedEmojiCategories.entries.expand((entry) => [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      child: Text(
+                        entry.key,
+                        style: SeeUTypography.caption.copyWith(
+                          color: c.ink3,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: entry.value
+                          .map((emoji) => GestureDetector(
+                                onTap: () {
+                                  Navigator.of(sheetCtx).pop();
+                                  _onReactionSelected(messageId, emoji);
+                                },
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: c.surface2,
+                                    borderRadius:
+                                        BorderRadius.circular(SeeURadii.small),
+                                  ),
+                                  child: Center(
+                                    child: Text(emoji,
+                                        style: const TextStyle(fontSize: 24)),
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _onReactionSelected(String messageId, String emoji) {
     setState(() => _reactionPickerMessageId = null);
     HapticFeedback.selectionClick();
@@ -253,26 +336,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Reactions row
+                // Reactions row: 6 popular + «+» для expanded picker
                 Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 12),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: ['❤️', '🔥', '😂', '😮', '😢', '👍']
-                        .map((e) => GestureDetector(
-                              onTap: () {
-                                Navigator.of(sheetCtx).pop();
-                                _onReactionSelected(messageId, e);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6),
-                                child: Text(e,
-                                    style: const TextStyle(fontSize: 28)),
-                              ),
-                            ))
-                        .toList(),
+                    children: [
+                      ...['❤️', '🔥', '😂', '😮', '😢', '👍'].map(
+                        (e) => GestureDetector(
+                          onTap: () {
+                            Navigator.of(sheetCtx).pop();
+                            _onReactionSelected(messageId, e);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: Text(e,
+                                style: const TextStyle(fontSize: 28)),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(sheetCtx).pop();
+                          _showExpandedEmojiPicker(messageId);
+                        },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: c.surface2,
+                          ),
+                          child: Icon(PhosphorIcons.plus(),
+                              size: 18, color: c.ink),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Divider(height: 1, color: c.line),
