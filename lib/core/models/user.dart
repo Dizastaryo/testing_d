@@ -32,6 +32,12 @@ class User {
   /// !isFollowing. Используется чтобы Follow-кнопка показывала
   /// «Запрос отправлен» вместо «Подписаться».
   final bool hasPendingFollowRequest;
+  /// true = у юзера есть хотя бы одно активное WS-соединение (онлайн прямо
+  /// сейчас). Снимок на момент запроса.
+  final bool isOnline;
+  /// Последнее обновление онлайн-статуса (connect или disconnect). Используется
+  /// для «был N мин назад» когда isOnline=false.
+  final DateTime? lastSeenAt;
   final DateTime createdAt;
 
   const User({
@@ -54,8 +60,24 @@ class User {
     this.isPrivate = false,
     this.isVerified = false,
     this.hasPendingFollowRequest = false,
+    this.isOnline = false,
+    this.lastSeenAt,
     required this.createdAt,
   });
+
+  /// «в сети» / «был N мин назад» / «давно». Используется в шапке чата
+  /// и в чат-листе. Если бэк не отдал lastSeenAt — возвращаем пустую строку.
+  String presenceLabel() {
+    if (isOnline) return 'в сети';
+    final ls = lastSeenAt;
+    if (ls == null) return '';
+    final diff = DateTime.now().difference(ls);
+    if (diff.inMinutes < 1) return 'только что';
+    if (diff.inMinutes < 60) return 'был ${diff.inMinutes} мин назад';
+    if (diff.inHours < 24) return 'был ${diff.inHours} ч назад';
+    if (diff.inDays < 7) return 'был ${diff.inDays} д назад';
+    return 'давно';
+  }
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
@@ -79,6 +101,10 @@ class User {
       isVerified: (json['is_verified'] ?? json['isVerified'] ?? false) as bool,
       hasPendingFollowRequest:
           (json['has_pending_follow_request'] ?? false) as bool,
+      isOnline: (json['is_online'] ?? false) as bool,
+      lastSeenAt: json['last_seen_at'] != null
+          ? DateTime.tryParse(json['last_seen_at'].toString())
+          : null,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -106,6 +132,8 @@ class User {
       'is_private': isPrivate,
       'is_verified': isVerified,
       'has_pending_follow_request': hasPendingFollowRequest,
+      'is_online': isOnline,
+      'last_seen_at': lastSeenAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -138,6 +166,8 @@ class User {
     bool? isPrivate,
     bool? isVerified,
     bool? hasPendingFollowRequest,
+    bool? isOnline,
+    DateTime? lastSeenAt,
     DateTime? createdAt,
   }) {
     return User(
@@ -161,6 +191,8 @@ class User {
       isVerified: isVerified ?? this.isVerified,
       hasPendingFollowRequest:
           hasPendingFollowRequest ?? this.hasPendingFollowRequest,
+      isOnline: isOnline ?? this.isOnline,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       createdAt: createdAt ?? this.createdAt,
     );
   }

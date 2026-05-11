@@ -577,16 +577,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                             .watch(typingProvider(
                                                 widget.chatId))
                                             .isActive;
+                                        // Текст: typing > online > last-seen.
+                                        // presenceLabel'у дать пустую строку
+                                        // когда бэк не отдал last_seen — тогда
+                                        // показываем нейтральное placeholder.
+                                        final presence =
+                                            otherUser.presenceLabel();
+                                        final subtitle = isTyping
+                                            ? 'печатает…'
+                                            : (presence.isEmpty
+                                                ? 'был недавно'
+                                                : presence);
+                                        final isAccent = isTyping ||
+                                            otherUser.isOnline;
                                         return Text(
-                                          isTyping
-                                              ? 'печатает…'
-                                              : 'был недавно',
+                                          subtitle,
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: isTyping
+                                            color: isAccent
                                                 ? SeeUColors.accent
                                                 : c.ink3,
-                                            fontWeight: isTyping
+                                            fontWeight: isAccent
                                                 ? FontWeight.w600
                                                 : FontWeight.normal,
                                           ),
