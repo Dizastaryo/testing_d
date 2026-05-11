@@ -43,6 +43,35 @@ class Chat {
   /// Display label: title для group, username для direct.
   String get displayLabel => isGroup ? title : (otherUser?.username ?? '');
 
+  /// Immutable update. Чаще всего меняется otherUser presence или lastMessage.
+  Chat copyWith({
+    String? id,
+    String? kind,
+    String? title,
+    String? coverUrl,
+    User? otherUser,
+    int? participantsCount,
+    String? lastMessage,
+    String? lastSenderUsername,
+    DateTime? lastMessageAt,
+    int? unreadCount,
+    ReplyPreview? pinnedMessage,
+  }) {
+    return Chat(
+      id: id ?? this.id,
+      kind: kind ?? this.kind,
+      title: title ?? this.title,
+      coverUrl: coverUrl ?? this.coverUrl,
+      otherUser: otherUser ?? this.otherUser,
+      participantsCount: participantsCount ?? this.participantsCount,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastSenderUsername: lastSenderUsername ?? this.lastSenderUsername,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      unreadCount: unreadCount ?? this.unreadCount,
+      pinnedMessage: pinnedMessage ?? this.pinnedMessage,
+    );
+  }
+
   factory Chat.fromJson(Map<String, dynamic> json) {
     final kind = (json['kind']?.toString().isNotEmpty ?? false)
         ? json['kind'].toString()
@@ -290,8 +319,33 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             'chat.pinned',
             'chat.message.deleted',
           };
-          if (!triggerEvents.contains(evt.type)) return;
-          load();
+          if (triggerEvents.contains(evt.type)) {
+            load();
+            return;
+          }
+          // user.presence — не рефетчим целиком, только мутируем
+          // otherUser у direct-чатов где id совпадает.
+          if (evt.type == 'user.presence' && evt.payload is Map) {
+            final p = (evt.payload as Map).cast<String, dynamic>();
+            final userId = p['user_id']?.toString() ?? '';
+            if (userId.isEmpty) return;
+            final isOnline = (p['is_online'] ?? false) as bool;
+            final lastSeen = p['last_seen_at'] != null
+                ? DateTime.tryParse(p['last_seen_at'].toString())
+                : null;
+            final updated = state.chats.map((chat) {
+              if (chat.otherUser == null || chat.otherUser!.id != userId) {
+                return chat;
+              }
+              return chat.copyWith(
+                otherUser: chat.otherUser!.copyWith(
+                  isOnline: isOnline,
+                  lastSeenAt: lastSeen,
+                ),
+              );
+            }).toList();
+            state = state.copyWith(chats: updated);
+          }
         });
       },
     );

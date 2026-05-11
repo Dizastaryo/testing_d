@@ -349,10 +349,11 @@ class _ChatTile extends StatelessWidget {
     final lastMsgWithPrefix = isGroup && chat.lastSenderUsername.isNotEmpty
         ? '${chat.lastSenderUsername}: $lastMsg'
         : lastMsg;
-    // Simulated online/typing states from id hash until real-time data available.
-    // Для группы — без online-точки, без typing-индикатора (отдельная задача).
+    // Real online status from backend (otherUser.isOnline, обновляется
+    // через WS user.presence). Typing и chip-match пока simulation
+    // (последнее — для BLE-радар индикатора, отдельная задача).
+    final isOnline = !isGroup && (user?.isOnline ?? false);
     final keyForSim = (user?.id ?? chat.id);
-    final isOnline = !isGroup && keyForSim.hashCode % 3 == 0;
     final isTyping = !isGroup && keyForSim.hashCode % 5 == 1;
     final isChipMatch = !isGroup && keyForSim.hashCode % 4 == 0;
     final displayName = isGroup ? chat.title : (user?.fullName ?? '');
