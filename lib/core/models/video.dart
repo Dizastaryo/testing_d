@@ -39,6 +39,9 @@ class Video {
   final UserShort? user;
   final VideoCategory? category;
   final bool isLiked;
+  /// VIDEO-5: URL VTT-файла с субтитрами. Пустая = без субтитров. Плеер
+  /// подгружает дорожку асинхронно при первом включении CC-кнопки.
+  final String subtitlesUrl;
 
   Video({
     required this.id,
@@ -58,6 +61,7 @@ class Video {
     this.user,
     this.category,
     this.isLiked = false,
+    this.subtitlesUrl = '',
   });
 
   factory Video.fromJson(Map<String, dynamic> json) => Video(
@@ -78,6 +82,7 @@ class Video {
         user: json['user'] != null ? UserShort.fromJson(json['user']) : null,
         category: json['category'] != null ? VideoCategory.fromJson(json['category']) : null,
         isLiked: json['is_liked'] ?? false,
+        subtitlesUrl: _absUrl(json['subtitles_url']),
       );
 
   String get durationFormatted {

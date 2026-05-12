@@ -2,10 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
+import '../../../core/providers/chat_provider.dart';
 
 /// Voice-message bubble — обёртка вокруг play/pause-кнопки + waveform-prerender'а.
 ///
@@ -13,11 +15,18 @@ import '../../../core/design/design.dart';
 /// уже probed ffprobe'ом или клиентом до отправки) и опциональный
 /// [waveformSamples] (список 0..1, длиной около 48). Если samples нет —
 /// рисуется ровная полоска.
-class VoiceBubble extends StatefulWidget {
+///
+/// Если переданы [chatId] и [messageId], bubble участвует в auto-next-play
+/// (CHAT-7): после завершения текущего voice'а через `chatMessagesProvider`
+/// ищется следующий voice-message в том же чате, его id кладётся в
+/// `voiceAutoPlayQueueProvider`, и соответствующий bubble стартует play.
+class VoiceBubble extends ConsumerStatefulWidget {
   final String audioUrl;
   final int durationSec;
   final List<double>? waveformSamples;
   final bool isMine;
+  final String? chatId;
+  final String? messageId;
 
   const VoiceBubble({
     super.key,
@@ -25,13 +34,15 @@ class VoiceBubble extends StatefulWidget {
     required this.durationSec,
     this.waveformSamples,
     required this.isMine,
+    this.chatId,
+    this.messageId,
   });
 
   @override
-  State<VoiceBubble> createState() => _VoiceBubbleState();
+  ConsumerState<VoiceBubble> createState() => _VoiceBubbleState();
 }
 
-class _VoiceBubbleState extends State<VoiceBubble> {
+class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
   // Один shared плеер для всех VoiceBubble не делаем — у каждой своя
   // позиция, и чаще нужен только один играющий за раз. Если будет issue
   // с одновременным воспроизведением — добавим coordinator-провайдер.
@@ -45,6 +56,9 @@ class _VoiceBubbleState extends State<VoiceBubble> {
   double _speed = 1.0;
   static const _speedCycle = [1.0, 1.5, 2.0];
 
+  ProviderSubscription<String?>? _queueSub;
+  ProviderSubscription<String?>? _coordinatorSub;
+
   @override
   void initState() {
     super.initState();
@@ -57,12 +71,101 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     });
     _player.playerStateStream.listen((s) {
       if (s.processingState == ProcessingState.completed) {
-        // По окончанию — сбрасываем для возможности replay.
+        // По окончанию — сбрасываем позицию + pause для возможности replay
+        // и триггерим auto-next (CHAT-7). Также освобождаем coordinator —
+        // следующий voice claim'ит сам (CHAT-6.1).
         _player.seek(Duration.zero);
         _player.pause();
+        _releaseCoordinatorIfMine();
+        _triggerAutoNext();
       }
       if (mounted) setState(() {});
     });
+
+    // Слушаем queue — если pushнули наш id, автозапуск (CHAT-7).
+    if (widget.chatId != null && widget.messageId != null) {
+      _queueSub = ref.listenManual<String?>(
+        voiceAutoPlayQueueProvider,
+        (prev, next) {
+          if (next != null && next == widget.messageId) {
+            ref.read(voiceAutoPlayQueueProvider.notifier).state = null;
+            _autoPlay();
+          }
+        },
+      );
+
+      // CHAT-6.1: coordinator — если кто-то другой claim'нул playback,
+      // pause'имся (если играли). Идемпотент: own claim не триггерит
+      // self-pause (next == widget.messageId).
+      _coordinatorSub = ref.listenManual<String?>(
+        currentlyPlayingVoiceProvider,
+        (prev, next) {
+          if (next != widget.messageId && _player.playing) {
+            _player.pause();
+          }
+        },
+      );
+    }
+  }
+
+  /// Помечает voice как прослушанный (CHAT-7.1) — auto-next пропустит его.
+  /// No-op если widget без messageId (legacy/single-message сценарий).
+  void _markListened() {
+    final mid = widget.messageId;
+    if (mid == null) return;
+    final cur = ref.read(listenedVoiceIdsProvider);
+    if (cur.contains(mid)) return;
+    ref.read(listenedVoiceIdsProvider.notifier).state = {...cur, mid};
+  }
+
+  /// Claim'им экcклюзивный playback (CHAT-6.1) — другие voice-bubble'ы
+  /// получат event и pause'ятся.
+  void _claimCoordinator() {
+    final mid = widget.messageId;
+    if (mid == null) return;
+    ref.read(currentlyPlayingVoiceProvider.notifier).state = mid;
+  }
+
+  /// Отпускаем coordinator если он сейчас на нас. Вызывается при manual
+  /// pause + при playback-completed. Идемпотент.
+  void _releaseCoordinatorIfMine() {
+    final mid = widget.messageId;
+    if (mid == null) return;
+    final cur = ref.read(currentlyPlayingVoiceProvider);
+    if (cur == mid) {
+      ref.read(currentlyPlayingVoiceProvider.notifier).state = null;
+    }
+  }
+
+  /// Поиск next voice-message в чате и установка его id в queue.
+  /// Используется при completion текущего voice'а. CHAT-7.1: пропускаем
+  /// voice'ы которые юзер уже слушал в этой сессии (filter через
+  /// `listenedVoiceIdsProvider`).
+  void _triggerAutoNext() {
+    final cid = widget.chatId;
+    final mid = widget.messageId;
+    if (cid == null || mid == null) return;
+    final messages = ref.read(chatMessagesProvider(cid)).messages;
+    final idx = messages.indexWhere((m) => m.id == mid);
+    if (idx < 0) return;
+    final listened = ref.read(listenedVoiceIdsProvider);
+    for (var i = idx + 1; i < messages.length; i++) {
+      final m = messages[i];
+      if (m.kind != 'voice' && m.kind != 'audio') continue;
+      if (listened.contains(m.id)) continue; // CHAT-7.1: skip прослушанные
+      ref.read(voiceAutoPlayQueueProvider.notifier).state = m.id;
+      return;
+    }
+  }
+
+  /// Like _toggle but always starts play (used by auto-next).
+  Future<void> _autoPlay() async {
+    await _ensureLoaded();
+    if (!_player.playing) {
+      _claimCoordinator();
+      _markListened();
+      await _player.play();
+    }
   }
 
   Future<void> _ensureLoaded() async {
@@ -88,7 +191,12 @@ class _VoiceBubbleState extends State<VoiceBubble> {
     await _ensureLoaded();
     if (_player.playing) {
       await _player.pause();
+      _releaseCoordinatorIfMine();
     } else {
+      // CHAT-6.1: claim перед play — другие voice'ы получат event и pause'ятся.
+      // CHAT-7.1: помечаем как прослушанный — auto-next пропустит при возврате.
+      _claimCoordinator();
+      _markListened();
       await _player.play();
     }
   }
@@ -115,6 +223,9 @@ class _VoiceBubbleState extends State<VoiceBubble> {
 
   @override
   void dispose() {
+    _queueSub?.close();
+    _coordinatorSub?.close();
+    _releaseCoordinatorIfMine();
     _player.dispose();
     super.dispose();
   }

@@ -185,11 +185,17 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMe;
   final bool isRead;
-  /// True когда сообщение реально доставлено в WS хотя бы одному peer'у
-  /// (CHAT-10.1). Промежуточное состояние между `sent` (✓ серая) и `read`
-  /// (✓✓ orange) — отображается ✓✓ серая. Поле computed на бэке как
-  /// `delivered_at IS NOT NULL`.
+  /// True когда сообщение доставлено хотя бы одному peer'у (CHAT-10.1).
+  /// Computed на бэке как `delivered_count > 0`.
   final bool isDelivered;
+  /// Per-recipient counts (CHAT-10.2). Для direct-чата recipientsCount=1.
+  /// Для group: bubble рисует «X из N» когда `readCount < recipientsCount`.
+  final int deliveredCount;
+  final int readCount;
+  final int recipientsCount;
+  /// CHAT-11: момент когда сообщение исчезнет. null = вечно. Frontend
+  /// рисует ⏱ countdown + auto-remove из local state по Timer'у.
+  final DateTime? expiresAt;
   /// "text" (default), "shared_post", "image", "voice".
   final String kind;
   final AttachedPostShort? attachedPost;
@@ -218,6 +224,10 @@ class ChatMessage {
     this.isMe = false,
     this.isRead = false,
     this.isDelivered = false,
+    this.deliveredCount = 0,
+    this.readCount = 0,
+    this.recipientsCount = 0,
+    this.expiresAt,
     this.kind = 'text',
     this.attachedPost,
     this.attachedMediaUrl = '',
@@ -242,6 +252,12 @@ class ChatMessage {
       isMe: (json['is_me'] ?? false) as bool,
       isRead: (json['is_read'] ?? false) as bool,
       isDelivered: (json['is_delivered'] ?? false) as bool,
+      deliveredCount: (json['delivered_count'] as num?)?.toInt() ?? 0,
+      readCount: (json['read_count'] as num?)?.toInt() ?? 0,
+      recipientsCount: (json['recipients_count'] as num?)?.toInt() ?? 0,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'].toString())
+          : null,
       kind: json['kind']?.toString() ?? 'text',
       attachedPost: ap is Map<String, dynamic>
           ? AttachedPostShort.fromJson(ap)
@@ -272,6 +288,9 @@ class ChatMessage {
   ChatMessage copyWith({
     bool? isRead,
     bool? isDelivered,
+    int? deliveredCount,
+    int? readCount,
+    int? recipientsCount,
     Map<String, int>? reactions,
     String? myReaction,
   }) =>
@@ -284,6 +303,10 @@ class ChatMessage {
         isMe: isMe,
         isRead: isRead ?? this.isRead,
         isDelivered: isDelivered ?? this.isDelivered,
+        deliveredCount: deliveredCount ?? this.deliveredCount,
+        readCount: readCount ?? this.readCount,
+        recipientsCount: recipientsCount ?? this.recipientsCount,
+        expiresAt: expiresAt,
         kind: kind,
         attachedPost: attachedPost,
         attachedMediaUrl: attachedMediaUrl,
@@ -471,31 +494,67 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           }
 
           if (evt.type == 'chat.delivered') {
-            // Peer's WS получил моё сообщение (но ещё не открыл чат).
-            // Flip isDelivered=true → checkmark ✓ → ✓✓ серый (intermediate
-            // state перед read). Backend шлёт только sender'у в ChatService.
+            // Peer's WS получил моё сообщение (CHAT-10.1 / CHAT-10.2).
+            // Payload содержит свежие per-recipient counts — обновляем
+            // их и isDelivered. В group-чате одно сообщение может прийти
+            // несколько раз (от каждого online peer'а), counts будут
+            // монотонно расти.
             final messageId = p['message_id']?.toString() ?? '';
             if (messageId.isEmpty) return;
+            final dc = (p['delivered_count'] as num?)?.toInt() ?? 0;
+            final rc = (p['read_count'] as num?)?.toInt() ?? 0;
+            final rec = (p['recipients_count'] as num?)?.toInt() ?? 0;
             state = state.copyWith(
               messages: state.messages.map((m) {
-                if (m.id != messageId || !m.isMe || m.isDelivered) return m;
-                return m.copyWith(isDelivered: true);
+                if (m.id != messageId || !m.isMe) return m;
+                return m.copyWith(
+                  isDelivered: true,
+                  deliveredCount: dc > m.deliveredCount ? dc : m.deliveredCount,
+                  readCount: rc > m.readCount ? rc : m.readCount,
+                  recipientsCount: rec > 0 ? rec : m.recipientsCount,
+                );
               }).toList(),
             );
             return;
           }
 
           if (evt.type == 'chat.read') {
-            // Peer just read the conversation — flip my outgoing messages
-            // to is_read so the checkmark turns accent (✓ → ✓✓) without a
-            // refresh. See _MessageBubble in chat_screen.dart for rendering.
+            // Peer прочитал часть моих сообщений (CHAT-10.2).
+            // Новый shape payload'а: `message_ids: [...]` + `counts_by_msg:
+            // {msg_id: {delivered_count, read_count, recipients_count}}`.
+            // Для backward compat fallback'имся на `reader_id` (старый
+            // flow без counts) — флипаем isRead на все мои unread в этой
+            // conversation.
             final readerId = p['reader_id']?.toString() ?? '';
+            final ids = (p['message_ids'] as List?)
+                    ?.map((e) => e.toString())
+                    .toSet() ??
+                <String>{};
+            final countsByMsg = p['counts_by_msg'] is Map
+                ? (p['counts_by_msg'] as Map).cast<String, dynamic>()
+                : const <String, dynamic>{};
+
             final updated = state.messages.map((m) {
-              // Only flip messages I sent (m.isMe), and only if the reader
-              // is *not* me (avoid no-op echoes when own MarkRead bounces).
-              if (m.isMe && !m.isRead && readerId != m.senderId) {
+              if (!m.isMe || readerId == m.senderId) return m;
+              // Новый flow: специфические message_id.
+              if (ids.isNotEmpty) {
+                if (!ids.contains(m.id)) return m;
+                final cnt = countsByMsg[m.id];
+                if (cnt is Map) {
+                  final c = cnt.cast<String, dynamic>();
+                  return m.copyWith(
+                    isRead: true,
+                    deliveredCount:
+                        (c['delivered_count'] as num?)?.toInt() ?? m.deliveredCount,
+                    readCount: (c['read_count'] as num?)?.toInt() ?? m.readCount,
+                    recipientsCount:
+                        (c['recipients_count'] as num?)?.toInt() ?? m.recipientsCount,
+                  );
+                }
                 return m.copyWith(isRead: true);
               }
+              // Legacy flow (старые серверы без counts) — флипаем всё.
+              if (!m.isRead) return m.copyWith(isRead: true);
               return m;
             }).toList();
             state = state.copyWith(messages: updated);
@@ -542,6 +601,17 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     }
   }
 
+  /// Локальное удаление сообщения из state (CHAT-11). Вызывается из bubble
+  /// когда Timer выявил что сообщение expired (даже до того как janitor
+  /// проснулся и удалил из БД). На refetch'ах список приедет уже без него
+  /// — GetMessages фильтрует expired в SQL.
+  void removeMessageLocally(String messageId) {
+    if (!state.messages.any((m) => m.id == messageId)) return;
+    state = state.copyWith(
+      messages: state.messages.where((m) => m.id != messageId).toList(),
+    );
+  }
+
   Future<void> sendMessage(
     String text, {
     String? attachedPostId,
@@ -550,6 +620,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     int mediaDurationSeconds = 0,
     List<double> waveform = const [],
     ReplyPreview? replyTo,
+    int expiresInSeconds = 0,
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
     // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
@@ -591,6 +662,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (hasMedia) 'attached_media_url': attachedMediaUrl,
           if (hasMedia)
             'attached_media_type': attachedMediaType ?? 'image',
+          if (expiresInSeconds > 0) 'expires_in_seconds': expiresInSeconds,
         },
       );
       // Reload to get the real message with server ID and post preview.
@@ -676,12 +748,56 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   }
 }
 
-/// Ephemeral "is the peer typing in this chat?" flag. Server-pushed events
-/// reset a timer; if no fresh event arrives within [_typingTtl], we clear.
+/// Один typer в чате (CHAT-2.1/2.2). Хранит username (опционально, может
+/// прийти пустым если бэк не резолвнул) + lastSeenAt для TTL GC.
+class TypingUser {
+  final String userId;
+  final String username;
+  final DateTime lastSeenAt;
+  const TypingUser({
+    required this.userId,
+    required this.username,
+    required this.lastSeenAt,
+  });
+}
+
+/// Snapshot активно-печатающих в этом чате (CHAT-2.2 multi-typer).
+/// `users` ключ — user_id; entries TTL-protected на 4с через периодический GC.
+///
+/// Helpers рендерят правильную русскую плюрализацию для bubble-header:
+///   1 typer  → «@user печатает…»
+///   2 typer'а → «@a и @b печатают…»
+///   3+ typer'ов → «@a, @b и ещё N печатают…»
 class TypingState {
-  final String? userId; // peer who is typing; null when idle
-  const TypingState({this.userId});
-  bool get isActive => userId != null;
+  final Map<String, TypingUser> users;
+  const TypingState({this.users = const {}});
+
+  bool get isActive => users.isNotEmpty;
+
+  /// Backward-compat для старого `state.userId` (если когда-нибудь.
+  /// Возвращает first key или null. Новый код должен использовать `users`.
+  String? get userId => users.isEmpty ? null : users.keys.first;
+
+  /// Готовый display-label («@a, @b и ещё N печатают…»). null если никто.
+  /// `fallbackLabel` — что показывать когда username не пришёл (анон typer).
+  String? buildLabel({String fallbackLabel = 'кто-то'}) {
+    if (users.isEmpty) return null;
+    // Сортируем по lastSeenAt DESC чтобы newest typer'ы попали в front.
+    final sorted = users.values.toList()
+      ..sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
+    String nameOf(TypingUser u) =>
+        u.username.isNotEmpty ? '@${u.username}' : fallbackLabel;
+    final n = sorted.length;
+    final verb = n == 1 ? 'печатает' : 'печатают';
+    if (n == 1) {
+      return '${nameOf(sorted[0])} $verb…';
+    }
+    if (n == 2) {
+      return '${nameOf(sorted[0])} и ${nameOf(sorted[1])} $verb…';
+    }
+    final extra = n - 2;
+    return '${nameOf(sorted[0])}, ${nameOf(sorted[1])} и ещё $extra $verb…';
+  }
 }
 
 class _TypingNotifier extends StateNotifier<TypingState> {
@@ -689,7 +805,7 @@ class _TypingNotifier extends StateNotifier<TypingState> {
   final String chatId;
   final Ref _ref;
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _sub;
-  Timer? _expiry;
+  Timer? _gc;
 
   _TypingNotifier(this.chatId, this._ref) : super(const TypingState()) {
     _sub = _ref.listen<AsyncValue<RealtimeEvent>>(
@@ -701,19 +817,38 @@ class _TypingNotifier extends StateNotifier<TypingState> {
           if (p['chat_id']?.toString() != chatId) return;
           final uid = p['user_id']?.toString() ?? '';
           if (uid.isEmpty) return;
-          state = TypingState(userId: uid);
-          _expiry?.cancel();
-          _expiry = Timer(_typingTtl, () {
-            if (mounted) state = const TypingState();
-          });
+          final uname = p['username']?.toString() ?? '';
+          final next = Map<String, TypingUser>.from(state.users);
+          next[uid] = TypingUser(
+            userId: uid,
+            username: uname,
+            lastSeenAt: DateTime.now(),
+          );
+          state = TypingState(users: next);
         });
       },
     );
+    // GC раз в секунду — удаляет TypingUser'ов которые перестали слать
+    // typing-events. Single timer для всех users; cheap.
+    _gc = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (state.users.isEmpty) return;
+      final cutoff = DateTime.now().subtract(_typingTtl);
+      final filtered = <String, TypingUser>{};
+      var changed = false;
+      state.users.forEach((k, v) {
+        if (v.lastSeenAt.isAfter(cutoff)) {
+          filtered[k] = v;
+        } else {
+          changed = true;
+        }
+      });
+      if (changed) state = TypingState(users: filtered);
+    });
   }
 
   @override
   void dispose() {
-    _expiry?.cancel();
+    _gc?.cancel();
     _sub?.close();
     super.dispose();
   }
@@ -788,3 +923,28 @@ final chatMessagesProvider =
   final api = ref.watch(apiClientProvider);
   return ChatMessagesNotifier(chatId, api, ref);
 });
+
+/// Queue для auto-next voice playback (CHAT-7). Когда один VoiceBubble
+/// завершил воспроизведение, он находит следующий voice-message в чате
+/// и записывает его id сюда. Соответствующий VoiceBubble слушает provider
+/// через `ref.listenManual` и на match — стартует play автоматически.
+///
+/// Используется как «one-shot» сигнал: после play queue сбрасывается в null,
+/// чтобы не залип на одном id (иначе при rebuild'е bubble захочет начать
+/// заново).
+final voiceAutoPlayQueueProvider = StateProvider<String?>((_) => null);
+
+/// Coordinator для voice playback (CHAT-6.1). Хранит id voice'а который
+/// сейчас играет — других voice-bubble'ов слушают и pause'ятся когда
+/// значение меняется на не-их id. null = никто не играет.
+///
+/// Преимущества Riverpod-провайдера vs static singleton: автоматический
+/// cleanup при logout, легко тестировать, race-safe через notifier.
+final currentlyPlayingVoiceProvider = StateProvider<String?>((_) => null);
+
+/// Session-only set прослушанных voice-message id'шников (CHAT-7.1).
+/// Auto-next loop пропускает messageId которые уже здесь. При рестарте
+/// приложения set очищается (live-session трекинг, без backend-persist).
+/// Если когда-нибудь надо persist — переехать на колонку
+/// `messages.voice_listened_by UUID[]` (отдельная задача).
+final listenedVoiceIdsProvider = StateProvider<Set<String>>((_) => const {});

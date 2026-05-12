@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -21,11 +23,45 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   final _localRenderer = RTCVideoRenderer();
   final _remoteRenderer = RTCVideoRenderer();
+  // C-4: ticker для display'а MM:SS таймера. Запускается только когда
+  // session.status == connected; до того отображается status-label.
+  Timer? _durationTicker;
 
   @override
   void initState() {
     super.initState();
     _initRenderers();
+    CallService.instance.session.addListener(_onSessionChanged);
+    _onSessionChanged();
+  }
+
+  /// C-4: следим за status'ом — стартуем/останавливаем тикер. Также вызывает
+  /// rebuild каждую секунду пока активный звонок connected.
+  void _onSessionChanged() {
+    final s = CallService.instance.session.value;
+    if (s == null) {
+      _durationTicker?.cancel();
+      _durationTicker = null;
+      return;
+    }
+    if (s.status == CallStatus.connected) {
+      if (_durationTicker == null || !_durationTicker!.isActive) {
+        _durationTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      _durationTicker?.cancel();
+      _durationTicker = null;
+    }
+  }
+
+  String _fmtDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:$m:$s';
+    return '$m:$s';
   }
 
   Future<void> _initRenderers() async {
@@ -50,6 +86,8 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    _durationTicker?.cancel();
+    CallService.instance.session.removeListener(_onSessionChanged);
     CallService.instance.localStream.removeListener(_syncLocal);
     CallService.instance.remoteStream.removeListener(_syncRemote);
     _localRenderer.dispose();
@@ -71,21 +109,35 @@ class _CallScreenState extends State<CallScreen> {
           });
           return const SizedBox.shrink();
         }
-        return Scaffold(
+        // C-2: voice-call → ни remote video, ни local PIP не нужны
+        // (камера выключена на обеих сторонах). Показываем full-screen
+        // gradient + аватар.
+        final isVoice = session.kind == CallKind.voice;
+        return PopScope(
+          // C-6: на back-gesture/back-button — НЕ останавливаем звонок,
+          // а минимизируем в PiP. CallListener рендерит floating mini.
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) {
+              CallService.instance.minimized.value = true;
+            }
+          },
+          child: Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
             children: [
               // Remote — full screen video или fallback с аватаром.
               Positioned.fill(child: _buildRemote(session)),
 
-              // Local — pip 100×130 в правом верхнем углу.
-              Positioned(
-                top: 50,
-                right: 20,
-                width: 100,
-                height: 130,
-                child: _buildLocalPip(),
-              ),
+              // Local — pip 100×130 в правом верхнем углу. Скрываем для voice.
+              if (!isVoice)
+                Positioned(
+                  top: 50,
+                  right: 20,
+                  width: 100,
+                  height: 130,
+                  child: _buildLocalPip(),
+                ),
 
               // Top status bar — имя peer'а + статус.
               Positioned(
@@ -93,6 +145,32 @@ class _CallScreenState extends State<CallScreen> {
                 left: 20,
                 child: SafeArea(
                   child: _buildPeerInfo(session),
+                ),
+              ),
+              // C-6: «свернуть» кнопка top-right (минимизирует в PiP).
+              Positioned(
+                top: 50,
+                right: 20,
+                child: SafeArea(
+                  child: GestureDetector(
+                    onTap: () {
+                      CallService.instance.minimized.value = true;
+                      Navigator.of(context).maybePop();
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.expand_more,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  ),
                 ),
               ),
 
@@ -111,13 +189,18 @@ class _CallScreenState extends State<CallScreen> {
               ),
             ],
           ),
+          ),
         );
       },
     );
   }
 
   Widget _buildRemote(CallSession s) {
-    if (s.status == CallStatus.connected && _remoteRenderer.srcObject != null) {
+    // C-2: voice-call → никогда не рендерим RTCVideoView, остаёмся на
+    // gradient + avatar (даже когда connected).
+    if (s.kind != CallKind.voice &&
+        s.status == CallStatus.connected &&
+        _remoteRenderer.srcObject != null) {
       return RTCVideoView(
         _remoteRenderer,
         objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
@@ -211,7 +294,12 @@ class _CallScreenState extends State<CallScreen> {
 
   Widget _buildPeerInfo(CallSession s) {
     if (s.status == CallStatus.connected) {
-      // На connected — peer-info сворачивается в маленький pill сверху.
+      // C-4: на connected pill показывает «@user · MM:SS». Длительность —
+      // от session.connectedAt до сейчас.
+      final connectedAt = s.connectedAt;
+      final dur = connectedAt != null
+          ? DateTime.now().difference(connectedAt)
+          : Duration.zero;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -230,6 +318,25 @@ class _CallScreenState extends State<CallScreen> {
                 color: Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 3,
+              height: 3,
+              decoration: const BoxDecoration(
+                color: Colors.white54,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _fmtDuration(dur),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
           ],
@@ -264,6 +371,9 @@ class _CallScreenState extends State<CallScreen> {
             );
           }
           // Connected / outgoing-ringing / connecting — controls + end.
+          // C-2: voice-call → скрываем camera-toggle + switch-cam (камера
+          // не используется, кнопки no-op'нули бы).
+          final isVoice = s.kind == CallKind.voice;
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -274,17 +384,19 @@ class _CallScreenState extends State<CallScreen> {
                 active: muted,
                 onTap: CallService.instance.toggleMute,
               ),
-              _smallButton(
-                icon: cameraOff
-                    ? PhosphorIconsFill.videoCameraSlash
-                    : PhosphorIconsFill.videoCamera,
-                active: cameraOff,
-                onTap: CallService.instance.toggleCamera,
-              ),
-              _smallButton(
-                icon: PhosphorIconsRegular.arrowsClockwise,
-                onTap: CallService.instance.switchCamera,
-              ),
+              if (!isVoice) ...[
+                _smallButton(
+                  icon: cameraOff
+                      ? PhosphorIconsFill.videoCameraSlash
+                      : PhosphorIconsFill.videoCamera,
+                  active: cameraOff,
+                  onTap: CallService.instance.toggleCamera,
+                ),
+                _smallButton(
+                  icon: PhosphorIconsRegular.arrowsClockwise,
+                  onTap: CallService.instance.switchCamera,
+                ),
+              ],
               _bigButton(
                 icon: PhosphorIconsFill.phoneSlash,
                 color: SeeUColors.error,
@@ -358,6 +470,8 @@ class _CallScreenState extends State<CallScreen> {
         return 'Подключение…';
       case CallStatus.connected:
         return 'В разговоре';
+      case CallStatus.reconnecting:
+        return 'Восстановление связи…';
       case CallStatus.ended:
         return 'Звонок завершён';
       case CallStatus.idle:

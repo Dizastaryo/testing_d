@@ -11,6 +11,8 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/video.dart';
+import '../../core/utils/time_format.dart';
+import '../../widgets/report_sheet.dart';
 
 /// Dedicated Dio for the video service. The default `apiClientProvider`
 /// targets `ApiEndpoints.baseUrl` (api on 8001), but videos live on 8002.
@@ -105,13 +107,19 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _setupPlayer(String url) async {
+  Future<void> _setupPlayer(String url, {String subtitlesUrl = ''}) async {
     if (_videoController != null) return;
     final vc = VideoPlayerController.networkUrl(Uri.parse(url));
     _videoController = vc;
     try {
       await vc.initialize();
       if (!mounted) return;
+      // VIDEO-5: subtitles — chewie принимает Subtitles via factory. Парсим
+      // VTT асинхронно после init player'а, чтобы не блокировать первый кадр.
+      Subtitles? subs;
+      if (subtitlesUrl.isNotEmpty) {
+        subs = await _loadVttSubtitles(subtitlesUrl);
+      }
       _chewieController = ChewieController(
         videoPlayerController: vc,
         autoPlay: true,
@@ -119,7 +127,27 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
         allowFullScreen: true,
         allowMuting: true,
         allowPlaybackSpeedChanging: true,
+        playbackSpeeds: const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
         showControlsOnInitialize: true,
+        subtitle: subs,
+        subtitleBuilder: subs == null
+            ? null
+            : (ctx, text) => Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    text is Text ? (text.data ?? '') : text.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
         // Chewie's default Material controls already include:
         //   play/pause, scrubber, current/total time, skip ±10s, fullscreen,
         //   mute, speed picker. Customising the colours below to match brand.
@@ -163,7 +191,86 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
     }
   }
 
-  Future<void> _markViewed() async {
+  /// VIDEO-5: VTT parser. Простая реализация — поддерживает базовые блоки
+   /// «HH:MM:SS.mmm --> HH:MM:SS.mmm\nTEXT». Игнорирует NOTE/STYLE/cue settings.
+   /// Если файл не загрузился → возвращает null (плеер без subtitles).
+   Future<Subtitles?> _loadVttSubtitles(String url) async {
+     try {
+       final r = await Dio().get<String>(url,
+           options: Options(responseType: ResponseType.plain));
+       final body = r.data ?? '';
+       if (body.isEmpty) return null;
+       final list = <Subtitle>[];
+       final blocks = body.split(RegExp(r'\r?\n\r?\n'));
+       int idx = 0;
+       for (final block in blocks) {
+         final lines = block
+             .split(RegExp(r'\r?\n'))
+             .where((l) => l.isNotEmpty)
+             .toList();
+         if (lines.isEmpty) continue;
+         // Skip WEBVTT header / NOTE / STYLE blocks.
+         if (lines.first.startsWith('WEBVTT') ||
+             lines.first.startsWith('NOTE') ||
+             lines.first.startsWith('STYLE')) {
+           continue;
+         }
+         // Optional cue identifier on first line; timing-arrow on next.
+         int timingLineIdx = 0;
+         if (!lines[0].contains('-->')) {
+           timingLineIdx = 1;
+         }
+         if (timingLineIdx >= lines.length) continue;
+         final timingLine = lines[timingLineIdx];
+         final m = RegExp(
+                 r'(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}|\d{1,2}:\d{2}[.,]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}|\d{1,2}:\d{2}[.,]\d{1,3})')
+             .firstMatch(timingLine);
+         if (m == null) continue;
+         final start = _parseVttTime(m.group(1)!);
+         final end = _parseVttTime(m.group(2)!);
+         final text = lines.sublist(timingLineIdx + 1).join('\n');
+         if (start == null || end == null || text.isEmpty) continue;
+         list.add(Subtitle(
+           index: idx++,
+           start: start,
+           end: end,
+           text: text,
+         ));
+       }
+       if (list.isEmpty) return null;
+       return Subtitles(list);
+     } catch (_) {
+       return null;
+     }
+   }
+
+   Duration? _parseVttTime(String s) {
+     // Принимает HH:MM:SS.mmm или MM:SS.mmm. Запятая → точка (для legacy SRT).
+     final norm = s.replaceAll(',', '.');
+     final parts = norm.split(':');
+     try {
+       if (parts.length == 3) {
+         final h = int.parse(parts[0]);
+         final m = int.parse(parts[1]);
+         final sec = double.parse(parts[2]);
+         return Duration(
+           hours: h,
+           minutes: m,
+           milliseconds: (sec * 1000).round(),
+         );
+       } else if (parts.length == 2) {
+         final m = int.parse(parts[0]);
+         final sec = double.parse(parts[1]);
+         return Duration(
+           minutes: m,
+           milliseconds: (sec * 1000).round(),
+         );
+       }
+     } catch (_) {}
+     return null;
+   }
+
+   Future<void> _markViewed() async {
     try {
       await ref.read(_videoApiProvider).post('/videos/${widget.id}/view');
     } catch (_) {}
@@ -197,7 +304,8 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
         error: (e, _) => _LoadFailure(message: e.toString(), onClose: () => context.pop()),
         data: (video) {
           if (!_initialized && !_hasError && _videoController == null) {
-            _setupPlayer(video.videoUrl);
+            _setupPlayer(video.videoUrl,
+                subtitlesUrl: video.subtitlesUrl);
           }
           return SafeArea(
             top: false,
@@ -326,8 +434,14 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
               title: const Text('Пожаловаться'),
               onTap: () {
                 Navigator.pop(sheetCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Жалоба на видео — скоро')),
+                // VIDEO-7: showReportSheet с targetType='video'. Бэк принимает
+                // его через ReportTargetVideo (domain/report.go), маршрутизация
+                // в общий /api/v1/reports.
+                showReportSheet(
+                  context: context,
+                  ref: ref,
+                  targetType: 'video',
+                  targetId: video.id,
                 );
               },
             ),
@@ -609,7 +723,7 @@ class _CommentTile extends StatelessWidget {
                     Text('@${item.username}',
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(width: 6),
-                    Text(_relativeTime(item.createdAt),
+                    Text(formatRelativeTime(item.createdAt),
                         style: TextStyle(fontSize: 11, color: c.ink3)),
                   ],
                 ),
@@ -631,14 +745,6 @@ class _CommentTile extends StatelessWidget {
     );
   }
 
-  String _relativeTime(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.inSeconds < 60) return 'только что';
-    if (d.inMinutes < 60) return '${d.inMinutes} мин назад';
-    if (d.inHours < 24) return '${d.inHours} ч назад';
-    if (d.inDays < 7) return '${d.inDays} дн назад';
-    return '${t.day}.${t.month.toString().padLeft(2, '0')}.${t.year}';
-  }
 }
 
 class _LoadFailure extends StatelessWidget {

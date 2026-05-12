@@ -6,10 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/providers/user_provider.dart';
 import '../../widgets/share_sheet.dart';
+import '../post/comments_screen.dart';
 
 /// Vertical-swipe viewer for any publication. Replaces the old ReelsScreen
 /// since the product model treats every post (photo, photo collection, or
@@ -72,6 +75,9 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
     });
   }
 
+  // REELS-1: infinite scroll работает через exploreProvider.loadMore при
+  // подходе к концу списка (idx >= posts.length - 3). Smart-ranking
+  // (interest-based persona) — отдельная EXP-1 задача в Explore-секции.
   void _onPageChanged(int idx, List<Post> posts) {
     setState(() => _currentIndex = idx);
     // Eager pagination: when within 3 of the end, ask for more.
@@ -116,6 +122,13 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
             controller: _pageCtrl,
             scrollDirection: Axis.vertical,
             itemCount: posts.length,
+            // REELS-2: allowImplicitScrolling=true говорит PageView кэшировать
+            // одну страницу впереди и сзади (default behavior, но явно).
+            // _PublicationPage в `initState` вызывает _ensureVideoFor(0)
+            // → video controller инициализируется СРАЗУ для соседних постов
+            // (isCurrent=false, паузой). Swipe = мгновенный play, не
+            // «чёрный экран → 500ms → видео».
+            allowImplicitScrolling: true,
             onPageChanged: (i) => _onPageChanged(i, posts),
             itemBuilder: (_, i) {
               final isCurrent = i == _currentIndex;
@@ -258,12 +271,61 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
     _syncVideoPlayback();
   }
 
+  /// REELS-6: long-press → bottom-sheet с «Не интересно» (fire-and-forget
+  /// POST /posts/:id/view — feed/explore queries filter'ят viewed-посты).
+  void _showLongPressMenu(BuildContext context, WidgetRef ref) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.visibility_off,
+                  color: Colors.white70),
+              title: const Text(
+                'Не интересно',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: const Text(
+                'Реже показывать подобные посты',
+                style: TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                // Reuse FEED-5 endpoint — view = filter from future feeds.
+                try {
+                  await ref
+                      .read(apiClientProvider)
+                      .post(ApiEndpoints.viewPost(widget.post.id));
+                } catch (_) {}
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Спасибо, учтём — реже будем показывать'),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
     final media = post.media;
 
-    return Stack(
+    return GestureDetector(
+      onLongPress: () => _showLongPressMenu(context, ref),
+      child: Stack(
       fit: StackFit.expand,
       children: [
         if (media.isEmpty)
@@ -339,6 +401,7 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -467,7 +530,24 @@ class _ActionColumn extends ConsumerWidget {
           color: Colors.white,
           onTap: () {
             HapticFeedback.lightImpact();
-            context.push('/post/${post.id}/comments');
+            // REELS-5: comments в bottom-sheet вместо push на отдельный
+            // screen — видео продолжает играть позади.
+            showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => DraggableScrollableSheet(
+                initialChildSize: 0.7,
+                minChildSize: 0.4,
+                maxChildSize: 0.95,
+                expand: false,
+                builder: (_, controller) => ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: CommentsScreen(postId: post.id),
+                ),
+              ),
+            );
           },
         ),
         const SizedBox(height: 18),
@@ -478,6 +558,10 @@ class _ActionColumn extends ConsumerWidget {
           showLabel: false,
           onTap: () {
             HapticFeedback.lightImpact();
+            // CHAT-5: прокидываем media-params чтобы в share-sheet
+            // появился пункт «Поделиться в сторис».
+            final firstMedia =
+                post.media.isNotEmpty ? post.media.first : null;
             showShareSheet(
               context: context,
               url: postShareUrl(post.id),
@@ -486,6 +570,9 @@ class _ActionColumn extends ConsumerWidget {
                   ? '@${post.author.username}'
                   : null,
               forwardablePostId: post.id,
+              sharedPostMediaUrl: firstMedia?.url,
+              sharedPostMediaType: firstMedia?.type.name,
+              sharedPostAuthor: post.author.username,
             );
           },
         ),
@@ -610,10 +697,71 @@ class _PublicationInfo extends ConsumerWidget {
             ),
           ),
         ],
+        // REELS-4: audio-track pill. Tap → camera с pre-selected track.
+        if ((post.audioTrackId ?? '').isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _AudioPill(audioTrackId: post.audioTrackId!),
+        ],
       ],
     );
   }
 }
+
+/// REELS-4: pill «🎵 Использовать музыку» — tap пушит trackId в
+/// `selectedAudioForCameraProvider` + переходит в /camera. Media-prepare на
+/// той стороне может прочитать provider и pre-select track для overlay'а.
+class _AudioPill extends ConsumerWidget {
+  final String audioTrackId;
+  const _AudioPill({required this.audioTrackId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(selectedAudioForCameraProvider.notifier).state = audioTrackId;
+        context.push('/camera');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Музыка готова — запиши свой реелс ✨'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.30),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.music_note, color: Colors.white, size: 14),
+            const SizedBox(width: 6),
+            const Text(
+              'Использовать музыку',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// REELS-4: global state — выбранный audio_track_id для следующего захода в
+/// camera. media_prepare_screen на init читает + сбрасывает в null.
+/// Future: extend to {trackId, startSec} когда audio-trimmer прикрутят.
+final selectedAudioForCameraProvider = StateProvider<String?>((_) => null);
 
 /// Aggregate emoji-reaction pills shown above the username on the fullscreen
 /// viewer. Dark-bg variant of the chat/feed pill: white-on-glass when others

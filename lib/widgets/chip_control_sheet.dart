@@ -1,21 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../core/design/design.dart';
-import '../services/account_session.dart';
+import '../core/providers/auth_provider.dart';
 import '../services/chip_control_service.dart';
 
-class ChipControlSheet extends StatefulWidget {
+class ChipControlSheet extends ConsumerStatefulWidget {
   final BluetoothDevice device;
 
   const ChipControlSheet({super.key, required this.device});
 
   @override
-  State<ChipControlSheet> createState() => _ChipControlSheetState();
+  ConsumerState<ChipControlSheet> createState() => _ChipControlSheetState();
 }
 
-class _ChipControlSheetState extends State<ChipControlSheet> {
+class _ChipControlSheetState extends ConsumerState<ChipControlSheet> {
   final _service = ChipControlService();
   ChipInfo? _chipInfo;
   int? _currentMode;
@@ -33,9 +34,12 @@ class _ChipControlSheetState extends State<ChipControlSheet> {
     try {
       final info = await _service.connectAndRead(widget.device);
 
-      // Верификация владельца
-      final session = AccountSession.instance;
-      if (info.publicIdHex != session.currentUser.publicIdHex) {
+      // PROFILE-2 (c): owner verification через authProvider (раньше был
+      // AccountSession.instance — legacy mock). User.devicePublicId — hex
+      // строка из БД, сравниваем с тем что чип шлёт по BLE.
+      final myDeviceId =
+          ref.read(authProvider).user?.devicePublicId ?? '';
+      if (info.publicIdHex.toLowerCase() != myDeviceId.toLowerCase()) {
         await _service.disconnect();
         if (mounted) {
           setState(() {
@@ -96,7 +100,10 @@ class _ChipControlSheetState extends State<ChipControlSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final user = AccountSession.instance.currentUser;
+    final user = ref.watch(authProvider).user;
+    final avatarLetter = (user?.username.isNotEmpty == true)
+        ? user!.username[0].toUpperCase()
+        : '?';
 
     return Padding(
       padding: EdgeInsets.only(
@@ -111,7 +118,23 @@ class _ChipControlSheetState extends State<ChipControlSheet> {
           // Header
           Row(
             children: [
-              Text(user.avatarEmoji, style: const TextStyle(fontSize: 28)),
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: SeeUColors.accentSoft,
+                backgroundImage:
+                    (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty)
+                        ? NetworkImage(user.avatarUrl!)
+                        : null,
+                child: (user?.avatarUrl == null || user!.avatarUrl!.isEmpty)
+                    ? Text(
+                        avatarLetter,
+                        style: TextStyle(
+                          color: SeeUColors.accent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    : null,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

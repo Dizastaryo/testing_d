@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
@@ -32,29 +34,45 @@ class StoryNotifier extends StateNotifier<StoryState> {
   final ApiClient _api;
   final Ref _ref;
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+  // FEED-6: debounce для story.created event'ов — burst (несколько друзей
+  // постят одновременно) → один reload вместо N.
+  Timer? _createdDebounce;
 
   StoryNotifier(this._api, this._ref) : super(const StoryState()) {
     loadStories();
     _listenRealtime();
   }
 
-  /// Subscribes to WS events that affect a story's lightweight aggregate
-  /// state (current: views_count). Author sees realtime view-counter
-  /// without polling/refresh. Reactions follow a separate path via
-  /// `post.reaction`-like push that's not yet wired to story (see DONE
-  /// 2026-05-09 — story reactions persist but rely on UI tap → optimistic
-  /// update; remote viewers' reactions are not pushed).
+  /// Realtime обработчики:
+  ///   - `story.view.added` — author видит view-counter без refresh.
+  ///   - `story.created` (FEED-6) — friend опубликовал story → reload
+  ///     storyFeed (debounced 500ms на случай burst'а).
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
       realtimeEventsProvider,
       (prev, next) {
         next.whenData((evt) {
-          if (evt.type != 'story.view.added' || evt.payload is! Map) return;
+          if (evt.payload is! Map) return;
           final p = (evt.payload as Map).cast<String, dynamic>();
-          final id = p['story_id']?.toString() ?? '';
-          final n = p['views_count'];
-          if (id.isEmpty || n is! num) return;
-          applyViewsCountUpdate(id, n.toInt());
+          if (evt.type == 'story.view.added') {
+            final id = p['story_id']?.toString() ?? '';
+            final n = p['views_count'];
+            if (id.isEmpty || n is! num) return;
+            applyViewsCountUpdate(id, n.toInt());
+            return;
+          }
+          if (evt.type == 'story.created') {
+            // Debounced reload — одна story = один refetch, burst = тоже один.
+            _createdDebounce?.cancel();
+            _createdDebounce = Timer(
+              const Duration(milliseconds: 500),
+              () {
+                if (!mounted) return;
+                loadStories();
+              },
+            );
+            return;
+          }
         });
       },
     );
@@ -62,6 +80,7 @@ class StoryNotifier extends StateNotifier<StoryState> {
 
   @override
   void dispose() {
+    _createdDebounce?.cancel();
     _wsSub?.close();
     super.dispose();
   }

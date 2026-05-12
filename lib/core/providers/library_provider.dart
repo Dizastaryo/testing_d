@@ -31,6 +31,14 @@ final fileCategoriesProvider = FutureProvider<List<FileCategory>>((ref) async {
   return data.map((e) => FileCategory.fromJson(e)).toList();
 });
 
+/// LIB-6: trending — top-N files за 7 дней по hot-score (likes*2+downloads).
+final trendingFilesProvider = FutureProvider<List<FileItem>>((ref) async {
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get('/files/trending', queryParameters: {'limit': '10'});
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+});
+
 final filesProvider = FutureProvider.family<List<FileItem>, String?>((ref, categoryId) async {
   final dio = ref.watch(libraryApiClientProvider);
   final params = <String, dynamic>{'limit': '20', 'page': '1'};

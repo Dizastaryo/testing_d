@@ -54,7 +54,31 @@ class MainScaffold extends StatelessWidget {
         final hideNav = hideNavByRoute || hiddenByScreen;
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          body: child,
+          // UX-7: tab-swipe transitions. AnimatedSwitcher с fade+small slide
+          // smooth'ит переключение между bottom-nav-tab'ами (Лента →
+          // Сервисы → Сканер). Key = current location чтобы AnimatedSwitcher
+          // понимал что child реально сменился.
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.012),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: KeyedSubtree(
+              key: ValueKey(location),
+              child: child,
+            ),
+          ),
           extendBody: true,
           bottomNavigationBar: hideNav
               ? null

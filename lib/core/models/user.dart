@@ -38,6 +38,14 @@ class User {
   /// Последнее обновление онлайн-статуса (connect или disconnect). Используется
   /// для «был N мин назад» когда isOnline=false.
   final DateTime? lastSeenAt;
+  /// PROFILE-6 privacy: если юзер скрыл last_seen — бэк отдаёт false/zero
+  /// другим зрителям, но self видит реальный статус. Поле нужно для toggle
+  /// в edit_profile.
+  final bool hideLastSeen;
+  /// VIDEO-4 channel fields. Если оба пусты — обычный профиль; иначе UI
+  /// рендерит channel-mode (hero-banner + about-text + Videos default tab).
+  final String channelAbout;
+  final String channelBannerUrl;
   final DateTime createdAt;
 
   const User({
@@ -62,8 +70,16 @@ class User {
     this.hasPendingFollowRequest = false,
     this.isOnline = false,
     this.lastSeenAt,
+    this.hideLastSeen = false,
+    this.channelAbout = '',
+    this.channelBannerUrl = '',
     required this.createdAt,
   });
+
+  /// VIDEO-4: true если у юзера заполнено что-то channel-специфичное —
+  /// баннер или about. Тогда UI переходит в channel-mode.
+  bool get isChannel =>
+      channelBannerUrl.isNotEmpty || channelAbout.isNotEmpty;
 
   /// «в сети» / «был N мин назад» / «давно». Используется в шапке чата
   /// и в чат-листе. Если бэк не отдал lastSeenAt — возвращаем пустую строку.
@@ -105,6 +121,9 @@ class User {
       lastSeenAt: json['last_seen_at'] != null
           ? DateTime.tryParse(json['last_seen_at'].toString())
           : null,
+      hideLastSeen: (json['hide_last_seen'] ?? false) as bool,
+      channelAbout: json['channel_about']?.toString() ?? '',
+      channelBannerUrl: _absUrl(json['channel_banner_url']?.toString()),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -168,6 +187,9 @@ class User {
     bool? hasPendingFollowRequest,
     bool? isOnline,
     DateTime? lastSeenAt,
+    bool? hideLastSeen,
+    String? channelAbout,
+    String? channelBannerUrl,
     DateTime? createdAt,
   }) {
     return User(
@@ -193,6 +215,9 @@ class User {
           hasPendingFollowRequest ?? this.hasPendingFollowRequest,
       isOnline: isOnline ?? this.isOnline,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      hideLastSeen: hideLastSeen ?? this.hideLastSeen,
+      channelAbout: channelAbout ?? this.channelAbout,
+      channelBannerUrl: channelBannerUrl ?? this.channelBannerUrl,
       createdAt: createdAt ?? this.createdAt,
     );
   }

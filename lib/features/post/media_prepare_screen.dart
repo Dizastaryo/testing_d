@@ -13,6 +13,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/design/design.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/models/story.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/user_provider.dart';
@@ -69,6 +70,8 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   // Если юзер применил AI-стилизацию — bytes заменены, и filename должен
   // отличаться от исходного (PNG вместо JPG, новое имя).
   String? _stylizedFilename;
+  // STORY-3: interactive poll, добавленный в Story Editor. null если poll'я нет.
+  StoryPoll? _pendingPoll;
 
   @override
   void initState() {
@@ -171,6 +174,14 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         };
         if (_selectedTrack != null && !widget.isVideo) {
           storyData['audio_track_id'] = _selectedTrack!.id;
+          // MUSIC-7: offset playback'а в viewer'е.
+          if (_audioStartSec > 0) {
+            storyData['audio_start_seconds'] = _audioStartSec.toInt();
+          }
+        }
+        // STORY-3: interactive poll если был добавлен в редакторе.
+        if (_pendingPoll != null) {
+          storyData['poll'] = _pendingPoll!.toJson();
         }
         await api.post(ApiEndpoints.stories, data: storyData);
         if (mounted) {
@@ -498,20 +509,23 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
   /// Открывает Story Editor с текущими bytes. На успех заменяет _bytes на
   /// composite PNG и помечает «edited_….png» имя файла для backend upload'а.
+  /// STORY-3: если в редакторе добавлен interactive poll, сохраняем его
+  /// в `_pendingPoll` чтобы отправить в body стори при публикации.
   Future<void> _openStoryEditor() async {
     if (_bytes == null) return;
     HapticFeedback.mediumImpact();
-    final composite = await Navigator.of(context).push<Uint8List>(
+    final result = await Navigator.of(context).push<StoryEditorResult>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => StoryEditorScreen(initialBytes: _bytes!),
       ),
     );
-    if (composite == null || !mounted) return;
+    if (result == null || !mounted) return;
     setState(() {
-      _bytes = composite;
+      _bytes = result.bytes;
       _stylizedFilename =
           'edited_${DateTime.now().millisecondsSinceEpoch}.png';
+      _pendingPoll = result.poll;
     });
   }
 

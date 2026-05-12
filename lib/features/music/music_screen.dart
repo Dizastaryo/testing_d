@@ -113,13 +113,22 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
               slivers: [
                 SliverToBoxAdapter(child: _buildHeader(theme, c)),
                 if (_searchOpen) SliverToBoxAdapter(child: _buildSearch()),
+                // MUSIC-1: «🎵 Слушают сейчас» — horizontal row друзей.
+                if (!_searchOpen)
+                  SliverToBoxAdapter(child: _NowPlayingFriendsRow()),
+                // MUSIC-4: «🌅 Твой день» hero-card — daily mix.
+                if (!_searchOpen)
+                  SliverToBoxAdapter(child: _DailyMixCard()),
                 if (!_searchOpen)
                   SliverToBoxAdapter(child: _buildPlaylistsStrip(c)),
                 if (!_searchOpen)
                   SliverToBoxAdapter(child: _buildMyUploadsSection(c)),
                 async.when(
                   loading: () => const SliverToBoxAdapter(
-                    child: Center(child: CircularProgressIndicator()),
+                    child: SizedBox(
+                      height: 400,
+                      child: SeeUListSkeleton(count: 6),
+                    ),
                   ),
                   error: (e, _) => SliverToBoxAdapter(
                     child: Padding(
@@ -925,6 +934,224 @@ class _MiniPlayerState extends State<_MiniPlayer> {
                   onPressed: widget.onClose,
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// MUSIC-4: hero-карточка «🌅 Твой день» — daily mix. Тап = play первого
+/// трека (последующие очередью идут через _service). Если backend ничего
+/// не отдал — карточка скрыта.
+class _DailyMixCard extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_DailyMixCard> createState() => _DailyMixCardState();
+}
+
+class _DailyMixCardState extends ConsumerState<_DailyMixCard> {
+  List<AudioTrack> _tracks = const [];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(ApiEndpoints.dailyMixTracks,
+          queryParameters: {'limit': '20'});
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List
+          ? data
+              .map((e) => AudioTrack.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <AudioTrack>[];
+      if (mounted) {
+        setState(() {
+          _tracks = list;
+          _loaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded || _tracks.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: GestureDetector(
+        onTap: () {
+          ref.read(miniPlayerProvider.notifier).play(_tracks.first);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: SeeUGradients.heroOrange,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: SeeUColors.accent.withValues(alpha: 0.35),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.20),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.wb_sunny_rounded,
+                    color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Твой день',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_tracks.length} треков по твоим интересам',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.play_arrow_rounded,
+                  color: Colors.white, size: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// MUSIC-1: horizontal row друзей которые сейчас слушают музыку.
+/// Появляется только когда есть активные слушатели среди подписок.
+class _NowPlayingFriendsRow extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final friends = ref.watch(nowPlayingFriendsProvider);
+    if (friends.isEmpty) return const SizedBox.shrink();
+    final c = context.seeuColors;
+    final list = friends.values.toList()
+      ..sort((a, b) => b.since.compareTo(a.since)); // newest first
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.music_note,
+                    color: SeeUColors.accent, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Слушают сейчас',
+                  style: SeeUTypography.subtitle
+                      .copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 88,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final n = list[i];
+                return Container(
+                  width: 140,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: SeeUColors.accent.withValues(alpha: 0.20),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          gradient: SeeUGradients.heroOrange,
+                          borderRadius: BorderRadius.circular(8),
+                          image: n.coverUrl.isNotEmpty
+                              ? DecorationImage(
+                                  image: NetworkImage(n.coverUrl),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: n.coverUrl.isEmpty
+                            ? const Icon(Icons.music_note,
+                                color: Colors.white, size: 16)
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              n.title.isNotEmpty ? n.title : 'Трек',
+                              style: SeeUTypography.caption.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              n.artist,
+                              style: SeeUTypography.micro
+                                  .copyWith(color: c.ink3, fontSize: 9),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ],

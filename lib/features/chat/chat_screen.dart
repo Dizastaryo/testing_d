@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -14,6 +17,7 @@ import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
 import '../calls/call_service.dart';
+import '../calls/group_call_service.dart';
 import 'widgets/voice_bubble.dart';
 import 'widgets/voice_recorder.dart';
 // Chat uses existing chat_provider; no MockService needed
@@ -29,12 +33,24 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _textController = TextEditingController();
-  final _scrollController = ScrollController();
+  // ScrollablePositionedList controllers (CHAT-3.1). reverse=true — index 0
+  // в нижней части viewport'а (newest message). scroll-to-message работает
+  // по индексу + alignment.
+  final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
   final _focusNode = FocusNode();
   bool _hasText = false;
   bool _isUploading = false;
   bool _recording = false;
   ReplyPreview? _replyingTo;
+  // CHAT-3.1: scroll-to-search-result + flash highlight. Timer сбрасывает
+  // подсветку через 2 сек.
+  String? _flashMessageId;
+  Timer? _flashTimer;
+  // CHAT-11: TTL для следующего сообщения. null/0 = вечно. После send'а
+  // сбрасывается обратно в null чтобы случайно не пометить весь чат
+  // disappearing'ом (per-message UX, не chat-wide).
+  int? _ttlSeconds;
 
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
@@ -50,8 +66,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    _flashTimer?.cancel();
     _textController.dispose();
-    _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -82,19 +98,93 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _scrollToBottom({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        final pos = _scrollController.position.maxScrollExtent;
-        if (animate) {
-          _scrollController.animateTo(
-            pos,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        } else {
-          _scrollController.jumpTo(pos);
-        }
+      if (!_itemScrollController.isAttached) return;
+      // reverse=true: index 0 = newest message (визуально внизу viewport'а).
+      if (animate) {
+        _itemScrollController.scrollTo(
+          index: 0,
+          alignment: 0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _itemScrollController.jumpTo(index: 0, alignment: 0.0);
       }
     });
+  }
+
+  /// Прокручивает chat к сообщению с заданным id и подсвечивает его на 2 сек
+  /// (CHAT-3.1). Если сообщение не в текущем msgState (например, не подгружено
+  /// через pagination — пока не реализовано) — silent no-op.
+  void _scrollToMessage(String messageId) {
+    final messages =
+        ref.read(chatMessagesProvider(widget.chatId)).messages;
+    final positionedIdx = _positionedIndexForMessage(messageId, messages);
+    if (positionedIdx == null) return;
+
+    _flashTimer?.cancel();
+    setState(() => _flashMessageId = messageId);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_itemScrollController.isAttached) return;
+      _itemScrollController.scrollTo(
+        index: positionedIdx,
+        // 0.35 — почти центр viewport'а. Так сообщение видно, плюс есть
+        // 1-2 соседних сверху/снизу для context'а.
+        alignment: 0.35,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
+
+    _flashTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _flashMessageId = null);
+    });
+  }
+
+  /// Возвращает positioned-index (для ScrollablePositionedList с reverse=true)
+  /// сообщения в widget-листе. Walks ту же day-grouping логику что
+  /// `_buildMessageList` чтобы попасть в тот же индекс.
+  int? _positionedIndexForMessage(
+      String messageId, List<ChatMessage> messages) {
+    final groups = <String, List<ChatMessage>>{};
+    for (final m in messages) {
+      final key = _dateKey(m.createdAt);
+      groups.putIfAbsent(key, () => []).add(m);
+    }
+    int idx = 0;
+    int? targetChronIdx;
+    for (final entry in groups.entries) {
+      idx++; // date separator
+      for (final m in entry.value) {
+        if (m.id == messageId) {
+          targetChronIdx = idx;
+        }
+        idx++;
+      }
+    }
+    final total = idx;
+    if (targetChronIdx == null) return null;
+    // reverse=true: positioned_index = total - 1 - chronological_index.
+    return total - 1 - targetChronIdx;
+  }
+
+  /// Bottom-sheet с поиском по этому чату (CHAT-3). Debounced API + результаты.
+  /// CHAT-3.1: тап на результат закрывает sheet, прокручивает chat к
+  /// сообщению через ScrollablePositionedList + flash-highlight 2 сек.
+  void _showSearchSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => _ChatSearchSheet(
+        chatId: widget.chatId,
+        onResultTap: (m) {
+          Navigator.of(sheetCtx).pop();
+          _scrollToMessage(m.id);
+        },
+      ),
+    );
   }
 
   Future<void> _sendMessage([String? overrideText]) async {
@@ -107,13 +197,110 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
 
     final reply = _replyingTo;
+    // CHAT-11: TTL prok'ается + сбрасывается после send'а (per-message, не
+    // chat-wide). Если юзер хочет каждое сообщение с TTL — нужно tap'ать
+    // ⏱ перед каждым отправлением. Чтобы не было «забыл выключить»
+    // ситуаций когда disappearing включается случайно для всего чата.
+    final ttl = _ttlSeconds ?? 0;
     await ref
         .read(chatMessagesProvider(widget.chatId).notifier)
-        .sendMessage(text, replyTo: reply);
-    if (reply != null && mounted) {
-      setState(() => _replyingTo = null);
+        .sendMessage(text, replyTo: reply, expiresInSeconds: ttl);
+    if (mounted) {
+      setState(() {
+        if (reply != null) _replyingTo = null;
+        _ttlSeconds = null;
+      });
     }
     _scrollToBottom();
+  }
+
+  /// Bottom-sheet выбора TTL (CHAT-11). Опции: off / 1h / 24h / 7d.
+  void _showTtlPicker() {
+    HapticFeedback.selectionClick();
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        Widget option(String label, int? seconds, IconData icon) {
+          final isSelected = _ttlSeconds == seconds;
+          return ListTile(
+            leading: Icon(icon,
+                color: isSelected ? SeeUColors.accent : c.ink),
+            title: Text(label,
+                style: SeeUTypography.subtitle.copyWith(
+                  color: isSelected ? SeeUColors.accent : c.ink,
+                  fontWeight: isSelected
+                      ? FontWeight.w700
+                      : FontWeight.w500,
+                )),
+            trailing: isSelected
+                ? Icon(PhosphorIconsBold.check,
+                    color: SeeUColors.accent, size: 18)
+                : null,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              setState(() => _ttlSeconds = seconds);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(SeeURadii.sheet)),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.ink3.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIcons.timer(),
+                          color: SeeUColors.accent),
+                      const SizedBox(width: 8),
+                      Text('Исчезающее сообщение',
+                          style: SeeUTypography.title),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                option('Отключить (вечно)', null,
+                    PhosphorIcons.infinity()),
+                option('Через 1 час', 3600,
+                    PhosphorIcons.timer()),
+                option('Через 24 часа', 86400,
+                    PhosphorIcons.calendarBlank()),
+                option('Через 7 дней', 604800,
+                    PhosphorIcons.calendarX()),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _shortTtlLabel(int seconds) {
+    if (seconds >= 604800) return '7д';
+    if (seconds >= 86400) return '${seconds ~/ 86400}д';
+    if (seconds >= 3600) return '${seconds ~/ 3600}ч';
+    if (seconds >= 60) return '${seconds ~/ 60}м';
+    return '${seconds}с'; // ignore: unnecessary_brace_in_string_interps
   }
 
   /// Pick image from gallery → upload to /media/upload → send as image
@@ -565,17 +752,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     ),
                                     if (chat?.isGroup == true)
                                       Builder(builder: (ctx) {
-                                        final isTyping = ref
-                                            .watch(typingProvider(
-                                                widget.chatId))
-                                            .isActive;
-                                        // В группах резолвить username
-                                        // typer'а пока не можем — Chat-model
-                                        // не содержит participants list, а
-                                        // fetch на каждый event дорого. Для
-                                        // MVP — нейтральное «печатает…».
+                                        // CHAT-2.1/2.2: для group typing'а
+                                        // показываем «@user печатает…»,
+                                        // «@a и @b печатают…», «@a, @b и
+                                        // ещё N печатают…».
+                                        final typing = ref.watch(
+                                            typingProvider(widget.chatId));
+                                        final label = typing.buildLabel();
+                                        final isTyping = label != null;
                                         final subtitle = isTyping
-                                            ? 'кто-то печатает…'
+                                            ? label
                                             : '${chat!.participantsCount} участников';
                                         return Text(
                                           subtitle,
@@ -592,18 +778,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                       })
                                     else if (otherUser != null)
                                       Builder(builder: (ctx) {
-                                        final isTyping = ref
-                                            .watch(typingProvider(
-                                                widget.chatId))
-                                            .isActive;
+                                        // Direct: один peer, label короче —
+                                        // «печатает…» без @username (он уже
+                                        // в заголовке) или «@x печатает…»
+                                        // если бэк прислал.
+                                        final typing = ref.watch(
+                                            typingProvider(widget.chatId));
+                                        final label = typing.buildLabel(
+                                            fallbackLabel: '');
+                                        final isTyping = label != null;
                                         // Текст: typing > online > last-seen.
-                                        // presenceLabel'у дать пустую строку
-                                        // когда бэк не отдал last_seen — тогда
-                                        // показываем нейтральное placeholder.
                                         final presence =
                                             otherUser.presenceLabel();
                                         final subtitle = isTyping
-                                            ? 'печатает…'
+                                            ? (label.startsWith('@')
+                                                ? label
+                                                : 'печатает…')
                                             : (presence.isEmpty
                                                 ? 'был недавно'
                                                 : presence);
@@ -629,7 +819,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                       ),
-                      // Video-call (только для direct, для group — не звоним).
+                      // Поиск в чате (CHAT-3). Bottom-sheet с TextField +
+                      // debounced API + results list.
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          _showSearchSheet();
+                        },
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            PhosphorIconsRegular.magnifyingGlass,
+                            size: 22,
+                            color: c.ink,
+                          ),
+                        ),
+                      ),
+                      // Voice-call (C-2 audio-only) для direct.
                       if (otherUser != null)
                         GestureDetector(
                           onTap: () {
@@ -638,6 +845,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               peerId: otherUser.id,
                               peerUsername: otherUser.username,
                               peerAvatarUrl: otherUser.avatarUrl ?? '',
+                              kind: CallKind.voice,
+                            );
+                          },
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              PhosphorIconsRegular.phone,
+                              size: 22,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                      // Video-call для direct.
+                      if (otherUser != null)
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            CallService.instance.startCall(
+                              peerId: otherUser.id,
+                              peerUsername: otherUser.username,
+                              peerAvatarUrl: otherUser.avatarUrl ?? '',
+                              kind: CallKind.video,
                             );
                           },
                           child: Padding(
@@ -650,6 +880,58 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                           ),
                         ),
+                      // C-7: group-call для group-чатов. Voice + video icons
+                      // вызывают GroupCallService.startGroupCall с chat_id.
+                      if (chat?.isGroup == true) ...[
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            final me =
+                                ref.read(authProvider).user;
+                            if (me == null) return;
+                            GroupCallService.instance.startGroupCall(
+                              chatId: widget.chatId,
+                              chatTitle: chat!.title,
+                              myId: me.id,
+                              myUsername: me.username,
+                              kind: CallKind.voice,
+                            );
+                          },
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              PhosphorIconsRegular.phone,
+                              size: 22,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            final me =
+                                ref.read(authProvider).user;
+                            if (me == null) return;
+                            GroupCallService.instance.startGroupCall(
+                              chatId: widget.chatId,
+                              chatTitle: chat!.title,
+                              myId: me.id,
+                              myUsername: me.username,
+                              kind: CallKind.video,
+                            );
+                          },
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              PhosphorIconsRegular.videoCamera,
+                              size: 22,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(width: 4),
                       // More vertical icon
                       Icon(
@@ -764,27 +1046,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         final isMine = msg.senderId == myId;
         final showTail = i == entry.value.length - 1 ||
             entry.value[i + 1].senderId != msg.senderId;
+        // CHAT-3.1: wrapper с animated bg для flash-highlight на scroll-to.
+        // Всегда рендерится (color transparent когда не flashing) чтобы
+        // AnimatedContainer мог анимировать color transition в обе стороны.
         widgets.add(
-          _MessageBubble(
-            message: msg,
-            isMine: isMine,
-            showTail: showTail,
-            reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
-            allReactions: msg.reactions,
-            showReactionPicker: _reactionPickerMessageId == msg.id,
-            onLongPress: () => _onMessageLongPress(msg.id),
-            onReactionSelected: (emoji) => _onReactionSelected(msg.id, emoji),
+          AnimatedContainer(
+            key: ValueKey('flash-${msg.id}'),
+            duration: const Duration(milliseconds: 350),
+            decoration: BoxDecoration(
+              color: msg.id == _flashMessageId
+                  ? SeeUColors.accent.withValues(alpha: 0.14)
+                  : SeeUColors.accent.withValues(alpha: 0.0),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: _MessageBubble(
+              message: msg,
+              isMine: isMine,
+              showTail: showTail,
+              reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
+              allReactions: msg.reactions,
+              showReactionPicker: _reactionPickerMessageId == msg.id,
+              onLongPress: () => _onMessageLongPress(msg.id),
+              onReactionSelected: (emoji) =>
+                  _onReactionSelected(msg.id, emoji),
+            ),
           ),
         );
       }
     }
 
-    return ListView.builder(
-      controller: _scrollController,
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       physics: const BouncingScrollPhysics(),
+      // reverse=true: index 0 рендерится в нижней части viewport'а
+      // (newest message внизу — как в любом мессенджере). Поэтому при
+      // builder'е достаём элементы в обратном порядке: index 0 = widgets.last.
+      reverse: true,
       itemCount: widgets.length,
-      itemBuilder: (context, index) => widgets[index],
+      itemBuilder: (context, index) =>
+          widgets[widgets.length - 1 - index],
     );
   }
 
@@ -844,6 +1146,58 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           size: 20,
                           color: c.ink2,
                         ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // CHAT-11: TTL для следующего сообщения. Active state — accent
+              // bg + label «1ч/24ч/7д» под icon'ом.
+              GestureDetector(
+                onTap: _showTtlPicker,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: _ttlSeconds != null
+                        ? SeeUColors.accent.withValues(alpha: 0.15)
+                        : c.surface2,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        _ttlSeconds != null
+                            ? PhosphorIconsFill.timer
+                            : PhosphorIconsRegular.timer,
+                        size: 20,
+                        color: _ttlSeconds != null
+                            ? SeeUColors.accent
+                            : c.ink2,
+                      ),
+                      if (_ttlSeconds != null)
+                        Positioned(
+                          bottom: 2,
+                          right: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 3, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: SeeUColors.accent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              _shortTtlLabel(_ttlSeconds!),
+                              style: const TextStyle(
+                                fontSize: 7,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1297,15 +1651,27 @@ class _MessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (!isMine) ...[
-                  // Time on the left
+                  // Time on the left + countdown if expiring (CHAT-11).
                   Padding(
                     padding: const EdgeInsets.only(right: 6, bottom: 2),
-                    child: Text(
-                      time,
-                      style: SeeUTypography.micro.copyWith(
-                        fontSize: 10,
-                        color: c.ink3,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          time,
+                          style: SeeUTypography.micro.copyWith(
+                            fontSize: 10,
+                            color: c.ink3,
+                          ),
+                        ),
+                        if (message.expiresAt != null)
+                          _TtlCountdown(
+                            expiresAt: message.expiresAt!,
+                            chatId: message.chatId,
+                            messageId: message.id,
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -1418,10 +1784,14 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ),
                 if (isMine) ...[
-                  // Time + read receipt on the right
+                  // Time + read receipt + TTL countdown on the right (CHAT-11).
                   Padding(
                     padding: const EdgeInsets.only(left: 4, bottom: 2),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
@@ -1432,13 +1802,12 @@ class _MessageBubble extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 2),
-                        // Read receipts 3-state (CHAT-10.1):
-                        //   ✓ (single, ink3)    — sent (POST 200, peer offline).
-                        //   ✓✓ (double, ink3)   — delivered (peer's WS получил).
-                        //   ✓✓ (double, accent) — read (peer открыл чат).
-                        //
-                        // isRead имеет приоритет над isDelivered: после read
-                        // событие delivered уже не важно.
+                        // Read receipts 3-state + group counter (CHAT-10.1/10.2):
+                        //   ✓ (single, ink3)    — sent.
+                        //   ✓✓ (double, ink3)   — delivered ≥1 peer.
+                        //   ✓✓ (double, accent) — read ≥1 peer.
+                        // Для group (recipientsCount > 1) рядом — «X/N»
+                        // когда есть прогресс прочтения но не все ещё.
                         Icon(
                           (message.isRead || message.isDelivered)
                               ? PhosphorIconsBold.checks
@@ -1448,6 +1817,31 @@ class _MessageBubble extends StatelessWidget {
                               ? SeeUColors.accent
                               : c.ink3,
                         ),
+                        if (message.recipientsCount > 1 &&
+                            message.readCount > 0 &&
+                            message.readCount < message.recipientsCount)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 3),
+                            child: Text(
+                              '${message.readCount}/${message.recipientsCount}',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: SeeUColors.accent,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (message.expiresAt != null)
+                      _TtlCountdown(
+                        expiresAt: message.expiresAt!,
+                        chatId: message.chatId,
+                        messageId: message.id,
+                      ),
                       ],
                     ),
                   ),
@@ -1544,6 +1938,8 @@ class _MessageBubble extends StatelessWidget {
         waveformSamples:
             message.waveform.isNotEmpty ? message.waveform : null,
         isMine: isMine,
+        chatId: message.chatId,
+        messageId: message.id,
       );
     }
     return Text(
@@ -1811,6 +2207,317 @@ class _ImageAttachment extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// CHAT-3: Search-sheet. TextField + debounced API + results list.
+// ===========================================================================
+
+class _ChatSearchSheet extends ConsumerStatefulWidget {
+  final String chatId;
+  final void Function(ChatMessage) onResultTap;
+  const _ChatSearchSheet({
+    required this.chatId,
+    required this.onResultTap,
+  });
+
+  @override
+  ConsumerState<_ChatSearchSheet> createState() => _ChatSearchSheetState();
+}
+
+class _ChatSearchSheetState extends ConsumerState<_ChatSearchSheet> {
+  final _ctrl = TextEditingController();
+  Timer? _debounce;
+  List<ChatMessage> _results = [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String v) {
+    _debounce?.cancel();
+    final q = v.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _results = [];
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
+    setState(() => _loading = true);
+    _debounce = Timer(const Duration(milliseconds: 300), () => _fetch(q));
+  }
+
+  Future<void> _fetch(String q) async {
+    if (!mounted) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(
+        ApiEndpoints.chatMessages(widget.chatId),
+        queryParameters: {'q': q, 'limit': 100},
+      );
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final list = data is List
+          ? data
+              .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <ChatMessage>[];
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (!mounted) return;
+      setState(() {
+        _results = list;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+        _results = [];
+      });
+    }
+  }
+
+  String _fmtTime(DateTime dt) {
+    final now = DateTime.now();
+    final sameDay =
+        now.year == dt.year && now.month == dt.month && now.day == dt.day;
+    if (sameDay) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SafeArea(
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(SeeURadii.sheet)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.ink3.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(PhosphorIcons.magnifyingGlass(),
+                      color: SeeUColors.accent),
+                  const SizedBox(width: 8),
+                  Text('Поиск в чате', style: SeeUTypography.title),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _ctrl,
+                autofocus: true,
+                onChanged: _onChanged,
+                decoration: InputDecoration(
+                  hintText: 'Слово или фраза…',
+                  filled: true,
+                  fillColor: c.surface2,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(child: _buildBody(c)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(SeeUThemeColors c) {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: SeeUColors.accent,
+          strokeWidth: 2.5,
+        ),
+      );
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text('Ошибка: $_error', style: TextStyle(color: c.ink2)),
+        ),
+      );
+    }
+    if (_ctrl.text.trim().isEmpty) {
+      return Center(
+        child: Text(
+          'Введите запрос для поиска',
+          style: SeeUTypography.body.copyWith(color: c.ink3),
+        ),
+      );
+    }
+    if (_results.isEmpty) {
+      return Center(
+        child: Text('Ничего не найдено',
+            style: SeeUTypography.body.copyWith(color: c.ink3)),
+      );
+    }
+    return ListView.separated(
+      itemCount: _results.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: c.line),
+      itemBuilder: (_, i) {
+        final m = _results[i];
+        return ListTile(
+          dense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          title: Text(
+            m.text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: SeeUTypography.body.copyWith(fontSize: 13),
+          ),
+          subtitle: Text(
+            _fmtTime(m.createdAt),
+            style: SeeUTypography.caption
+                .copyWith(color: c.ink3, fontSize: 11),
+          ),
+          trailing:
+              Icon(PhosphorIcons.caretRight(), size: 14, color: c.ink3),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onResultTap(m);
+          },
+        );
+      },
+    );
+  }
+}
+
+// ===========================================================================
+// CHAT-11: TTL countdown bubble — ⏱ N. Auto-remove когда expires_at достигнут.
+// ===========================================================================
+
+class _TtlCountdown extends ConsumerStatefulWidget {
+  final DateTime expiresAt;
+  final String chatId;
+  final String messageId;
+
+  const _TtlCountdown({
+    required this.expiresAt,
+    required this.chatId,
+    required this.messageId,
+  });
+
+  @override
+  ConsumerState<_TtlCountdown> createState() => _TtlCountdownState();
+}
+
+class _TtlCountdownState extends ConsumerState<_TtlCountdown> {
+  Timer? _ticker;
+  bool _removed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tick frequency adaptive: первые 60с — раз в секунду (видно «5с»,
+    // «4с»...). Дальше — раз в 30с (минуты/часы не нуждаются в plus-1s).
+    final remaining = widget.expiresAt.difference(DateTime.now());
+    final interval = remaining.inMinutes < 1
+        ? const Duration(seconds: 1)
+        : const Duration(seconds: 30);
+    _ticker = Timer.periodic(interval, (_) {
+      if (!mounted) return;
+      if (DateTime.now().isAfter(widget.expiresAt) && !_removed) {
+        _removed = true;
+        // Удаляем из local state. Janitor бэка добьёт row в БД при
+        // следующем тике (или уже добил — load() возвращает filtered).
+        ref
+            .read(chatMessagesProvider(widget.chatId).notifier)
+            .removeMessageLocally(widget.messageId);
+      } else {
+        setState(() {}); // pure redraw для countdown text
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    if (d.isNegative) return '0с';
+    if (d.inDays >= 1) return '${d.inDays}д';
+    if (d.inHours >= 1) {
+      final mins = d.inMinutes.remainder(60);
+      // ignore: unnecessary_brace_in_string_interps
+      return mins == 0 ? '${d.inHours}ч' : '${d.inHours}ч ${mins}м';
+    }
+    if (d.inMinutes >= 1) return '${d.inMinutes}м';
+    return '${d.inSeconds}с';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = widget.expiresAt.difference(DateTime.now());
+    if (remaining.isNegative) {
+      // Уже истёк, removeMessageLocally вот-вот сработает — пустой placeholder.
+      return const SizedBox.shrink();
+    }
+    final c = context.seeuColors;
+    // Цвет — accent если осталось <1ч (нагнетаем urgency), иначе ink3.
+    final urgent = remaining.inHours < 1;
+    final color = urgent ? SeeUColors.accent : c.ink3;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsFill.timer, size: 10, color: color),
+          const SizedBox(width: 2),
+          Text(
+            _format(remaining),
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ],
       ),
     );

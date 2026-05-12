@@ -38,6 +38,7 @@ class ApiEndpoints {
   static String userStories(String username) => '/stories/$username';
   static String likeStory(String id) => '/stories/$id/like';
   static String reactStory(String id) => '/stories/$id/react';
+  static String storyPollVote(String id) => '/stories/$id/poll-vote';
 
   // Users
   static const String me = '/users/me';
@@ -82,7 +83,12 @@ class ApiEndpoints {
   // Audio tracks
   static const String audioTracks = '/audio-tracks';
   static const String myAudioTracks = '/audio-tracks/me';
+  static const String recentAudioTracks = '/audio-tracks/recent'; // MUSIC-3
+  static const String likedAudioTracks = '/audio-tracks/liked'; // MUSIC-3
+  static const String dailyMixTracks = '/audio-tracks/daily-mix'; // MUSIC-4
   static String audioTrackById(String id) => '/audio-tracks/$id';
+  static String audioTrackPlay(String id) =>
+      '/audio-tracks/$id/play'; // MUSIC-3 record
 
   // Playlists (Music v2)
   static const String myPlaylists = '/playlists/me';
@@ -119,6 +125,8 @@ class ApiEndpoints {
   static String chatMemberRole(String chatId, String userId) =>
       '/chats/$chatId/members/$userId/role';
   static String chatPin(String chatId) => '/chats/$chatId/pin';
+  static const String myCalls = '/users/me/calls'; // C-1 история звонков
+  static String viewPost(String id) => '/posts/$id/view'; // FEED-5
 
   // === Video Service endpoints ===
   static const String videos = '/videos';

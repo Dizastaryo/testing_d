@@ -131,6 +131,222 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     }
   }
 
+  /// Cover-пресеты для «Изменить группу». Дублируют пресеты из
+  /// chat_create_group_screen — выносить в shared-файл пока нет смысла,
+  /// набор крошечный и контекст разный.
+  static const _coverPresets = [
+    '/uploads/seed/highlights/h1.jpg',
+    '/uploads/seed/highlights/h2.jpg',
+    '/uploads/seed/highlights/h3.jpg',
+    '/uploads/seed/highlights/h4.jpg',
+    '/uploads/seed/highlights/h5.jpg',
+  ];
+
+  Future<void> _showEditGroupSheet() async {
+    final chats = ref.read(chatListProvider).chats;
+    final chat = chats.where((c) => c.id == widget.chatId).cast<Chat?>().firstWhere(
+          (_) => true,
+          orElse: () => null,
+        );
+    if (chat == null) return;
+
+    final titleCtrl = TextEditingController(text: chat.title);
+    String? coverUrl = chat.coverUrl.isEmpty ? null : chat.coverUrl;
+    bool submitting = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: StatefulBuilder(builder: (innerCtx, setSheetState) {
+            final c = innerCtx.seeuColors;
+            final initialTitle = chat.title;
+            final initialCover =
+                chat.coverUrl.isEmpty ? null : chat.coverUrl;
+            final dirty = titleCtrl.text.trim() != initialTitle ||
+                coverUrl != initialCover;
+            final canSave =
+                dirty && titleCtrl.text.trim().isNotEmpty && !submitting;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(innerCtx).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(SeeURadii.sheet)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: c.ink3.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Изменить группу', style: SeeUTypography.title),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: titleCtrl,
+                      onChanged: (_) => setSheetState(() {}),
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Название',
+                        filled: true,
+                        fillColor: c.surface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                      ),
+                      style: SeeUTypography.subtitle,
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Обложка',
+                        style: SeeUTypography.caption.copyWith(
+                          color: c.ink3,
+                          fontWeight: FontWeight.w700,
+                        )),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 70,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _coverPresets.length + 1,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) {
+                          if (i == 0) {
+                            final isSelected = coverUrl == null;
+                            return _CoverChoice(
+                              isSelected: isSelected,
+                              onTap: () =>
+                                  setSheetState(() => coverUrl = null),
+                              gradient: SeeUGradients.heroOrange,
+                              child: Icon(
+                                PhosphorIcons.usersThree(
+                                    PhosphorIconsStyle.bold),
+                                color: Colors.white,
+                                size: 26,
+                              ),
+                            );
+                          }
+                          final url = _coverPresets[i - 1];
+                          final isSelected = coverUrl == url;
+                          return _CoverChoice(
+                            isSelected: isSelected,
+                            onTap: () =>
+                                setSheetState(() => coverUrl = url),
+                            child: CachedNetworkImage(
+                              imageUrl: url,
+                              fit: BoxFit.cover,
+                              width: 60,
+                              height: 60,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: canSave
+                          ? () async {
+                              HapticFeedback.mediumImpact();
+                              setSheetState(() => submitting = true);
+                              final messenger = ScaffoldMessenger.of(context);
+                              try {
+                                final api = ref.read(apiClientProvider);
+                                await api.put(
+                                  ApiEndpoints.chatGroup(widget.chatId),
+                                  data: {
+                                    'title': titleCtrl.text.trim(),
+                                    'cover_url': coverUrl ?? '',
+                                  },
+                                );
+                                // Refresh chat-list чтобы tile сразу показал
+                                // новый title/cover. Members-screen
+                                // обновлять не нужно — он показывает
+                                // participants, не meta.
+                                if (mounted) {
+                                  ref
+                                      .read(chatListProvider.notifier)
+                                      .load();
+                                }
+                                if (innerCtx.mounted) {
+                                  Navigator.of(innerCtx).pop();
+                                }
+                                messenger.showSnackBar(const SnackBar(
+                                    content: Text('Группа обновлена')));
+                              } catch (e) {
+                                if (innerCtx.mounted) {
+                                  setSheetState(() => submitting = false);
+                                }
+                                // 403 если бэк решил что caller не admin —
+                                // тогда показываем понятное сообщение.
+                                final estr = e.toString();
+                                final msg = estr.contains('403')
+                                    ? 'Только админы могут менять группу'
+                                    : 'Не удалось сохранить: $e';
+                                messenger.showSnackBar(
+                                    SnackBar(content: Text(msg)));
+                              }
+                            }
+                          : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient:
+                              canSave ? SeeUGradients.heroOrange : null,
+                          color: canSave
+                              ? null
+                              : SeeUColors.accent.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        alignment: Alignment.center,
+                        child: submitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.5,
+                                ),
+                              )
+                            : const Text(
+                                'Сохранить',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+
+    titleCtrl.dispose();
+  }
+
   Future<void> _confirmLeave() async {
     final me = ref.read(authProvider).user;
     if (me == null) return;
@@ -208,7 +424,36 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                 )
               : ListView(
                   children: [
-                    if (isMeAdmin)
+                    if (isMeAdmin) ...[
+                      ListTile(
+                        leading: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: SeeUColors.accent.withValues(alpha: 0.10),
+                            border: Border.all(
+                              color: SeeUColors.accent
+                                  .withValues(alpha: 0.30),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            PhosphorIcons.pencilSimple(),
+                            color: SeeUColors.accent,
+                            size: 20,
+                          ),
+                        ),
+                        title: Text('Изменить группу',
+                            style: SeeUTypography.subtitle.copyWith(
+                              color: SeeUColors.accent,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        subtitle: Text('Название и обложка',
+                            style: SeeUTypography.caption
+                                .copyWith(color: c.ink3)),
+                        onTap: _showEditGroupSheet,
+                      ),
                       ListTile(
                         leading: Container(
                           width: 44,
@@ -234,6 +479,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                             )),
                         onTap: _addMember,
                       ),
+                    ],
                     ..._members.map((p) {
                       final isSelf = p.user.id == myId;
                       final canKick = isMeAdmin && !isSelf;
@@ -470,6 +716,43 @@ class _Participant {
 // Picker для добавления нового члена в существующую группу.
 // Вынесен сюда же — узкая и одноразовая фича, отдельный файл избыточен.
 // ===========================================================================
+
+/// Маленькая обёртка для cover-preset в edit-sheet'е. Дублирует виджет из
+/// chat_create_group_screen — выносить в shared-файл пока преждевременно.
+class _CoverChoice extends StatelessWidget {
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Widget child;
+  final Gradient? gradient;
+
+  const _CoverChoice({
+    required this.isSelected,
+    required this.onTap,
+    required this.child,
+    this.gradient,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: gradient,
+          border: Border.all(
+            color: isSelected ? SeeUColors.accent : Colors.transparent,
+            width: 3,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+  }
+}
 
 class _PickUserToAddScreen extends ConsumerStatefulWidget {
   final String chatId;

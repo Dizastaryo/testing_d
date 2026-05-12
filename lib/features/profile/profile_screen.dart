@@ -12,8 +12,10 @@ import '../../core/providers/user_provider.dart';
 import 'create_highlight_sheet.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/blocks_provider.dart';
+import '../../core/providers/nearby_devices_provider.dart';
 import '../../core/providers/story_provider.dart';
 import '../../widgets/report_sheet.dart';
+import '../../widgets/verified_badge.dart';
 import '../feed/widgets/stories_row.dart';
 import '../../core/models/user.dart';
 import '../../core/models/post.dart';
@@ -34,8 +36,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedTab = 0;
-  // TODO: Replace with real BLE nearby count from provider
-  int get _nearbyCount => 0;
+  // VIDEO-4: switch default tab to «Videos» (idx=1) once when we see this
+  // is a channel-user. Toggle ensures we only do it on first load.
+  bool _appliedChannelDefaultTab = false;
+  // PROFILE-1: реальный counter из `nearbyDevicesCountProvider`. State
+  // обновляется пока scanner_screen активно сканирует — если scanner не открыт
+  // последние секунды, count останется 0 (BLE-stream живёт только пока
+  // FlutterBluePlus.startScan вызван).
+  int get _nearbyCount => ref.watch(nearbyDevicesCountProvider);
 
   @override
   void initState() {
@@ -82,6 +90,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     targetType: 'user',
                     targetId: user.id,
                   );
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.shieldWarning(),
+                    color: SeeUColors.accent),
+                title: const Text('Ограничить'),
+                subtitle: const Text(
+                  'Его комменты будут видны только ему и вам',
+                  style: TextStyle(fontSize: 11),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _restrictUser(context, user);
                 },
               ),
               ListTile(
@@ -140,6 +161,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
+  /// PROFILE-4: ограничить юзера — его комменты будут видны только ему
+  /// и автору поста. Подтверждение через простой dialog (менее агрессивно
+  /// чем block — без длинного предупреждения).
+  Future<void> _restrictUser(BuildContext context, User user) async {
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.post('/users/${user.username}/restrict');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('@${user.username} ограничен'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось ограничить: $e')),
+      );
+    }
+  }
+
   void _showCreateSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -167,6 +210,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 leading: Icon(PhosphorIcons.plusCircle(), color: SeeUColors.accent),
                 title: const Text('Создать историю'),
                 onTap: () { Navigator.pop(context); context.push('/story/create'); },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIconsBold.textT, color: SeeUColors.accent),
+                title: const Text('Текстовая история'),
+                onTap: () { Navigator.pop(context); context.push('/story/create-text'); },
               ),
             ],
           ),
@@ -233,13 +281,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                     ),
                   Expanded(
-                    child: Text(
-                      '@${user.username}',
-                      style: SeeUTypography.mono.copyWith(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: c.ink,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            '@${user.username}',
+                            overflow: TextOverflow.ellipsis,
+                            style: SeeUTypography.mono.copyWith(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: c.ink,
+                            ),
+                          ),
+                        ),
+                        if (user.isVerified) const VerifiedBadge(size: 14),
+                      ],
                     ),
                   ),
                   if (!isOwnProfile)
@@ -394,9 +451,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final hasStories = userStoryGroup.isNotEmpty;
     final hasUnseenStories = hasStories && !userStoryGroup.first.allSeen;
 
+    // VIDEO-4: channel-user default tab = Videos. Меняем один раз когда
+    // профиль впервые подъехал. Не дёргаем при self-tab-switch потом.
+    if (user.isChannel && !_appliedChannelDefaultTab) {
+      _appliedChannelDefaultTab = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _tabController.index == 0) {
+          _tabController.animateTo(1);
+        }
+      });
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // VIDEO-4: channel-banner hero. Рендерится только когда юзер задал
+        // channel_banner_url. 16:9 cover-image + gradient-overlay снизу для
+        // чтения username при necessary scroll'е.
+        if (user.channelBannerUrl.isNotEmpty)
+          AspectRatio(
+            aspectRatio: 16 / 6,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CachedNetworkImage(
+                  imageUrl: user.channelBannerUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: c.surface2),
+                  errorWidget: (_, __, ___) =>
+                      Container(color: c.surface2),
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.35),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         // ── Hero: avatar + stats ──────────────────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
@@ -470,6 +570,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 user.fullName.isNotEmpty ? user.fullName : user.username,
                 style: SeeUTypography.displayS,
               ),
+              // PROFILE-6: presence — «в сети» зелёным или «был X мин назад».
+              // Пустая строка означает hidden or unknown → ничего не рендерим.
+              if (user.presenceLabel().isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (user.isOnline) ...[
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF4CAF50),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      user.presenceLabel(),
+                      style: SeeUTypography.caption.copyWith(
+                        color: user.isOnline
+                            ? const Color(0xFF4CAF50)
+                            : c.ink2,
+                        fontSize: 12,
+                        fontWeight:
+                            user.isOnline ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (user.bio != null && user.bio!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -478,6 +610,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     color: c.ink2,
                     height: 1.4,
                     fontSize: 13,
+                  ),
+                ),
+              ],
+              // VIDEO-4: channel about — отдельный блок под bio, более
+              // длинный и форматированный (multi-line, до 2000 chars).
+              if (user.channelAbout.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.card),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(PhosphorIconsBold.filmStrip,
+                              size: 14, color: SeeUColors.accent),
+                          const SizedBox(width: 6),
+                          Text('О канале',
+                              style: SeeUTypography.caption.copyWith(
+                                color: SeeUColors.accent,
+                                fontWeight: FontWeight.w700,
+                              )),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        user.channelAbout,
+                        style: SeeUTypography.body.copyWith(
+                          color: c.ink,
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

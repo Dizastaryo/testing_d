@@ -120,6 +120,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ref.watch(authProvider).user?.isPrivate ?? false,
                   onToggle: () => _togglePrivate(),
                 ),
+                const SizedBox(height: 12),
+                // PROFILE-6: privacy для last_seen. Когда on — другие зрители
+                // не видят «онлайн / был N мин назад» (self видит).
+                _buildSectionWithToggle(
+                  title: '',
+                  icon: PhosphorIcons.eyeSlash(),
+                  label: 'Скрыть «был в сети»',
+                  isDark:
+                      ref.watch(authProvider).user?.hideLastSeen ?? false,
+                  onToggle: () => _toggleHideLastSeen(),
+                ),
                 const SizedBox(height: 24),
                 _buildSection(
                   title: 'ЧИП',
@@ -340,6 +351,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       messenger.showSnackBar(SnackBar(
         content: Text(
             next ? 'Профиль закрыт. Подписки требуют подтверждения.' : 'Профиль открыт.'),
+      ));
+    } on DioException catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Не удалось обновить: ${apiErrorMessage(e)}')));
+    }
+  }
+
+  /// PROFILE-6: переключает hide_last_seen. Бэк скрывает is_online +
+  /// last_seen_at от других зрителей, владелец продолжает видеть свой
+  /// реальный статус.
+  Future<void> _toggleHideLastSeen() async {
+    final cur = ref.read(authProvider).user?.hideLastSeen ?? false;
+    final next = !cur;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.put(ApiEndpoints.me, data: {'hide_last_seen': next});
+      await ref.read(authProvider.notifier).reloadMe();
+      messenger.showSnackBar(SnackBar(
+        content: Text(next
+            ? 'Статус «был в сети» скрыт от других.'
+            : 'Статус «был в сети» виден другим.'),
       ));
     } on DioException catch (e) {
       messenger.showSnackBar(

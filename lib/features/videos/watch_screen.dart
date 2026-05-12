@@ -145,18 +145,30 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
               ),
             ],
           ),
-          IconButton(
-            onPressed: () => setState(() {
-              _searchOpen = !_searchOpen;
-              if (!_searchOpen) {
-                _searchCtrl.clear();
-                _query = '';
-              }
-            }),
-            icon: Icon(
-              _searchOpen ? Icons.close : Icons.search,
-              color: theme.colorScheme.onSurface,
-            ),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Загрузить видео',
+                onPressed: () => context.push('/videos/upload'),
+                icon: Icon(
+                  Icons.add_circle_outline,
+                  color: SeeUColors.accent,
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() {
+                  _searchOpen = !_searchOpen;
+                  if (!_searchOpen) {
+                    _searchCtrl.clear();
+                    _query = '';
+                  }
+                }),
+                icon: Icon(
+                  _searchOpen ? Icons.close : Icons.search,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -8,6 +8,9 @@ class StoryCircle extends StatefulWidget {
   final String username;
   final bool isSeen;
   final bool isOwn;
+  /// PROFILE-3: true если хотя бы одна из stories в группе — close-friends-only.
+  /// Рисуем зелёный ring вместо оранжевого.
+  final bool hasCloseFriendsStory;
   final VoidCallback? onTap;
   final double size;
 
@@ -17,6 +20,7 @@ class StoryCircle extends StatefulWidget {
     required this.username,
     this.isSeen = false,
     this.isOwn = false,
+    this.hasCloseFriendsStory = false,
     this.onTap,
     this.size = 64,
   });
@@ -105,16 +109,19 @@ class _StoryCircleState extends State<StoryCircle>
                 ),
               // Outer ring container
               // L07: For own story, no ring so use size, not size + 4
+              // PROFILE-3: зелёный ring для CF-stories override'ит оранжевый.
               Container(
                 width: widget.isOwn ? widget.size : widget.size + 4,
                 height: widget.isOwn ? widget.size : widget.size + 4,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: showGradientRing
-                      ? SeeUColors.accent
-                      : showSeenStyle
-                          ? SeeUColors.textQuaternary
-                          : null,
+                  color: widget.hasCloseFriendsStory && !widget.isOwn
+                      ? const Color(0xFF4CAF50)
+                      : showGradientRing
+                          ? SeeUColors.accent
+                          : showSeenStyle
+                              ? SeeUColors.textQuaternary
+                              : null,
                 ),
                 child: Padding(
                   padding: EdgeInsets.all(showGradientRing ? 2.0 : 0),

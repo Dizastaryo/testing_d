@@ -70,6 +70,10 @@ class Post {
   final Map<String, int> reactions;
   /// The emoji *current user* placed on this post (empty when none).
   final String myReaction;
+  /// REELS-4: id audio-track'а если пост создан с music overlay. null/empty
+  /// = без фоновой музыки. Reels-viewer показывает pill «🎵 Track» → tap =
+  /// camera с pre-selected audio.
+  final String? audioTrackId;
 
   const Post({
     required this.id,
@@ -88,6 +92,7 @@ class Post {
     this.waveColorValue,
     this.reactions = const {},
     this.myReaction = '',
+    this.audioTrackId,
   });
 
   /// URL подходящий для grid-cell'а (Explore / Profile / chat-share preview).
@@ -158,6 +163,10 @@ class Post {
             )
           : const {},
       myReaction: json['my_reaction']?.toString() ?? '',
+      audioTrackId: () {
+        final v = json['audio_track_id']?.toString() ?? '';
+        return v.isEmpty ? null : v;
+      }(),
     );
   }
 
@@ -195,6 +204,7 @@ class Post {
     int? waveColorValue,
     Map<String, int>? reactions,
     String? myReaction,
+    String? audioTrackId,
   }) {
     return Post(
       id: id ?? this.id,
@@ -213,6 +223,7 @@ class Post {
       waveColorValue: waveColorValue ?? this.waveColorValue,
       reactions: reactions ?? this.reactions,
       myReaction: myReaction ?? this.myReaction,
+      audioTrackId: audioTrackId ?? this.audioTrackId,
     );
   }
 

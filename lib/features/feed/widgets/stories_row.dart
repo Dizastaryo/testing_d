@@ -14,6 +14,7 @@ import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/story.dart';
+import '../../stories/text_story_compose_screen.dart';
 import 'story_circle.dart';
 
 class StoriesRow extends ConsumerWidget {
@@ -48,12 +49,16 @@ class StoriesRow extends ConsumerWidget {
             );
           }
           final group = storyState.storyGroups[index - 1];
+          // PROFILE-3: зелёный ring если в группе есть хоть одна CF-story.
+          final hasCloseFriends =
+              group.stories.any((s) => s.isCloseFriendsOnly);
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: StoryCircle(
               imageUrl: group.author.avatarUrl,
               username: group.author.username,
               isSeen: group.allSeen,
+              hasCloseFriendsStory: hasCloseFriends,
               onTap: () => _openStoryViewer(
                   context, storyState.storyGroups, index - 1, me?.id),
             ),
@@ -313,6 +318,21 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   StoryGroup get _currentGroup => widget.groups[_groupIndex];
   Story get _currentStory => _currentGroup.stories[_storyIndex];
 
+  /// STORY-3: вызывается из _StoryPollOverlay после успешного POST.
+  /// Локально обновляет story.poll чтобы вся UI увидела новые counts без
+  /// re-fetch. Группа stories хранится в `widget.groups[_groupIndex].stories`,
+  /// но Story.copyWith создаёт новый instance — заменяем в списке.
+  void _updateStoryPoll(String storyId, StoryPoll updatedPoll) {
+    final stories = widget.groups[_groupIndex].stories;
+    for (var i = 0; i < stories.length; i++) {
+      if (stories[i].id == storyId) {
+        stories[i] = stories[i].copyWith(poll: updatedPoll);
+        if (mounted) setState(() {});
+        return;
+      }
+    }
+  }
+
   void _nextStory() {
     if (_isReplyOpen) return;
     _progressController.reset();
@@ -423,10 +443,12 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     if (!mounted) return;
     try {
       await player.setUrl(track.audioUrl);
+      // MUSIC-7: seek на offset до play если juzер выбрал не-начало трека.
+      if (story.audioStartSeconds > 0) {
+        await player.seek(Duration(seconds: story.audioStartSeconds));
+      }
       _currentLoadedTrackId = trackId;
       await player.play();
-      // Rebuild чтобы music-tag overlay отобразил название трека —
-      // _audioCache теперь содержит подгруженный объект.
       if (mounted) setState(() {});
     } catch (_) {/* network/decoding error — silent */}
   }
@@ -605,7 +627,29 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         story.mediaUrl.isNotEmpty;
 
     Widget storyImageWidget;
-    if (!hasValidUrl) {
+    if (story.isText) {
+      // STORY-1: text-сторис — рендерим background-preset из bg_color +
+      // центрированный текст из textOverlay.
+      final bg = textStoryBackgroundFor(story.bgColor);
+      storyImageWidget = Container(
+        decoration: BoxDecoration(
+          gradient: bg.gradient,
+          color: bg.color,
+        ),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Text(
+          story.textOverlay ?? '',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: bg.textColor,
+            fontSize: 30,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
+          ),
+        ),
+      );
+    } else if (!hasValidUrl) {
       // No URL — show gradient background immediately
       storyImageWidget = Container(
         decoration: BoxDecoration(
@@ -922,8 +966,34 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                 ),
               ),
 
-            // Text overlay
-            if (story.textOverlay != null &&
+            // STORY-3: интерактивный poll-overlay. Позиционируется в (x,y)
+            // фракциях экрана, viewer тапает option → POST → state apdate.
+            // Автор не видит интерактивные кнопки — для него просто превью.
+            if (story.poll != null)
+              LayoutBuilder(builder: (ctx, cs) {
+                final p = story.poll!;
+                final isAuthor = widget.currentUserId == story.author.id;
+                return Positioned(
+                  left: (p.x.clamp(0.0, 0.9)) * cs.maxWidth,
+                  top: (p.y.clamp(0.0, 0.85)) * cs.maxHeight,
+                  child: _StoryPollOverlay(
+                    storyId: story.id,
+                    poll: p,
+                    readOnly: isAuthor,
+                    onVoted: (updated) {
+                      // Обновляем story-state in-place чтобы вся группа
+                      // увидела новые counts без re-fetch.
+                      _updateStoryPoll(story.id, updated);
+                    },
+                  ),
+                );
+              }),
+
+            // Text overlay (для photo/video сторис с подписью).
+            // Для text-сторис текст уже отрендерен внутри storyImageWidget —
+            // здесь не дублируем.
+            if (!story.isText &&
+                story.textOverlay != null &&
                 story.textOverlay!.isNotEmpty)
               Center(
                 child: Container(
@@ -1505,5 +1575,198 @@ class _ViewersSheetState extends ConsumerState<_ViewersSheet> {
       },
     );
   }
+}
 
+/// STORY-3: интерактивный poll-overlay в story-viewer. До голоса — две
+/// кнопки с вариантами; после — те же кнопки с процентами и выделенным
+/// my-vote'ом. `readOnly` = true для автора (он сам не голосует, видит
+/// только результаты).
+class _StoryPollOverlay extends ConsumerStatefulWidget {
+  final String storyId;
+  final StoryPoll poll;
+  final bool readOnly;
+  final void Function(StoryPoll updated) onVoted;
+
+  const _StoryPollOverlay({
+    required this.storyId,
+    required this.poll,
+    required this.readOnly,
+    required this.onVoted,
+  });
+
+  @override
+  ConsumerState<_StoryPollOverlay> createState() => _StoryPollOverlayState();
+}
+
+class _StoryPollOverlayState extends ConsumerState<_StoryPollOverlay> {
+  bool _voting = false;
+
+  Future<void> _vote(int optionIndex) async {
+    if (widget.readOnly || _voting) return;
+    setState(() => _voting = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.post(
+        ApiEndpoints.storyPollVote(widget.storyId),
+        data: {'option_index': optionIndex},
+      );
+      final pollJson = r.data is Map && r.data['data'] is Map
+          ? (r.data['data']['poll'] as Map<String, dynamic>?)
+          : null;
+      if (pollJson != null) {
+        widget.onVoted(StoryPoll.fromJson(pollJson));
+      }
+    } catch (_) {
+      // Soft-fail — без ошибочной snackbar'ки чтобы не ломать UX. Юзер
+      // увидит что счётчики не обновились и попробует ещё раз.
+    } finally {
+      if (mounted) setState(() => _voting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.poll;
+    final hasVoted = p.hasVoted || widget.readOnly;
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            p.question,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _PollButton(
+                  label: p.optionA,
+                  percent: hasVoted ? p.percentA : null,
+                  selected: p.myVote == 0,
+                  highlighted: !hasVoted,
+                  onTap: hasVoted ? null : () => _vote(0),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _PollButton(
+                  label: p.optionB,
+                  percent: hasVoted ? p.percentB : null,
+                  selected: p.myVote == 1,
+                  highlighted: false,
+                  onTap: hasVoted ? null : () => _vote(1),
+                ),
+              ),
+            ],
+          ),
+          if (hasVoted && p.totalVotes > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${p.totalVotes} ${_pluralize(p.totalVotes)}',
+              style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _pluralize(int n) {
+    final mod10 = n % 10;
+    final mod100 = n % 100;
+    if (mod10 == 1 && mod100 != 11) return 'голос';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+      return 'голоса';
+    }
+    return 'голосов';
+  }
+}
+
+class _PollButton extends StatelessWidget {
+  final String label;
+  final double? percent;
+  final bool selected;
+  final bool highlighted;
+  final VoidCallback? onTap;
+  const _PollButton({
+    required this.label,
+    required this.percent,
+    required this.selected,
+    required this.highlighted,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? SeeUColors.accent.withValues(alpha: 0.22)
+              : (highlighted
+                  ? SeeUColors.accent.withValues(alpha: 0.10)
+                  : Colors.grey.shade200),
+          border: selected
+              ? Border.all(color: SeeUColors.accent, width: 1.5)
+              : null,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? SeeUColors.accent : Colors.black87,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (percent != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${percent!.toInt()}%',
+                style: TextStyle(
+                  color: selected ? SeeUColors.accent : Colors.black54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

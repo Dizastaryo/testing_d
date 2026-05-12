@@ -215,6 +215,11 @@ class _PostCardState extends ConsumerState<PostCard>
   }
 
   void _onShareTap() {
+    // Для CHAT-5 «Поделиться в сторис» прокидываем first media + author.
+    // Если у поста нет media (чисто текстовый wave) — params null и tile
+    // в sheet'е не появится.
+    final firstMedia =
+        widget.post.media.isNotEmpty ? widget.post.media.first : null;
     showShareSheet(
       context: context,
       url: postShareUrl(widget.post.id),
@@ -223,6 +228,9 @@ class _PostCardState extends ConsumerState<PostCard>
           ? '@${widget.post.author.username}'
           : null,
       forwardablePostId: widget.post.id,
+      sharedPostMediaUrl: firstMedia?.url,
+      sharedPostMediaType: firstMedia?.type.name,
+      sharedPostAuthor: widget.post.author.username,
     );
   }
 

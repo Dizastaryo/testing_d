@@ -109,6 +109,18 @@ class FileItem {
     return filename.substring(dot + 1).toLowerCase();
   }
 
+  /// LIB-2: audio-файл? Используется в library_screen чтобы выбрать
+  /// inline-play вместо download. Detect по mime_type или extension fallback.
+  bool get isAudio {
+    if (mimeType.startsWith('audio/')) return true;
+    const audioExts = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus'};
+    return audioExts.contains(fileExtension);
+  }
+
+  /// LIB-1: PDF? Используется для inline-preview через flutter_pdfview.
+  bool get isPdf =>
+      mimeType == 'application/pdf' || fileExtension == 'pdf';
+
   String get downloadsFormatted {
     if (downloadsCount >= 1000) return '${(downloadsCount / 1000).toStringAsFixed(1)}K';
     return downloadsCount.toString();

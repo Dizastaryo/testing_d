@@ -21,6 +21,70 @@ class SeeUMiniPlayer extends ConsumerWidget {
 
   final VoidCallback? onTap;
 
+  /// MUSIC-5: long-press → speed-picker. just_audio поддерживает setSpeed
+  /// без EQ-аппаратной обработки. True EQ (band gain control) требует
+  /// just_audio_effects (Android-only experimental) или native bridge —
+  /// отдельная подзадача MUSIC-5.1.
+  void _showSpeedSheet(BuildContext context, WidgetRef ref) {
+    final service = ref.read(audioPlayerServiceProvider);
+    final current = service.raw.speed;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final c = context.seeuColors;
+        Widget option(String label, double speed) {
+          final selected = (current - speed).abs() < 0.05;
+          return ListTile(
+            leading: Icon(Icons.speed,
+                color: selected ? SeeUColors.accent : c.ink2),
+            title: Text(label,
+                style: TextStyle(
+                  color: selected ? SeeUColors.accent : c.ink,
+                  fontWeight:
+                      selected ? FontWeight.w700 : FontWeight.w500,
+                )),
+            trailing: selected
+                ? const Icon(Icons.check, color: SeeUColors.accent)
+                : null,
+            onTap: () async {
+              Navigator.of(sheetCtx).pop();
+              await service.raw.setSpeed(speed);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.speed, color: SeeUColors.accent),
+                    const SizedBox(width: 8),
+                    Text('Скорость воспроизведения',
+                        style: SeeUTypography.title),
+                  ],
+                ),
+              ),
+              option('0.75×', 0.75),
+              option('1×', 1.0),
+              option('1.25×', 1.25),
+              option('1.5×', 1.5),
+              option('2×', 2.0),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(miniPlayerProvider);
@@ -61,6 +125,7 @@ class SeeUMiniPlayer extends ConsumerWidget {
               child: InkWell(
                 borderRadius: BorderRadius.circular(20),
                 onTap: onTap,
+                onLongPress: () => _showSpeedSheet(context, ref),
                 child: Stack(
                   children: [
                     // Контент: cover, title, controls
@@ -141,13 +206,23 @@ class _Cover extends StatelessWidget {
   }
 }
 
-class _TitleArtist extends StatelessWidget {
+class _TitleArtist extends ConsumerWidget {
   const _TitleArtist({required this.track});
   final AudioTrack track;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
+    // MUSIC-2: если у трека есть lyrics — показываем текущую строку вместо
+    // artist в subtitle (italic, accent для эффекта sing-along).
+    final state = ref.watch(miniPlayerProvider);
+    final lines = track.lyricsLrc.isNotEmpty
+        ? parseLrc(track.lyricsLrc)
+        : const <LyricLine>[];
+    final cur = lines.isEmpty
+        ? null
+        : currentLyricAt(lines, state.position.inMilliseconds);
+    final hasLyric = cur != null && cur.text.isNotEmpty && state.playing;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,10 +235,15 @@ class _TitleArtist extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          track.artist,
+          hasLyric ? cur.text : track.artist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: SeeUTypography.caption.copyWith(color: c.ink2, fontSize: 12),
+          style: SeeUTypography.caption.copyWith(
+            color: hasLyric ? SeeUColors.accent : c.ink2,
+            fontSize: 12,
+            fontStyle: hasLyric ? FontStyle.italic : FontStyle.normal,
+            fontWeight: hasLyric ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
       ],
     );

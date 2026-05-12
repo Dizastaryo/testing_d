@@ -21,6 +21,9 @@ class AudioTrack {
   /// "pending" | "approved" | "rejected" — empty for legacy seed rows.
   final String status;
   final String rejectionReason;
+  /// MUSIC-2: LRC-формат текст. Пустая = lyrics нет. Frontend парсит через
+  /// `parseLrc(String)` (см. ниже) и показывает sing-along scroller.
+  final String lyricsLrc;
 
   AudioTrack({
     required this.id,
@@ -34,6 +37,7 @@ class AudioTrack {
     this.userId = '',
     this.status = 'approved',
     this.rejectionReason = '',
+    this.lyricsLrc = '',
   });
 
   factory AudioTrack.fromJson(Map<String, dynamic> j) => AudioTrack(
@@ -48,6 +52,7 @@ class AudioTrack {
         userId: j['user_id']?.toString() ?? '',
         status: j['status']?.toString() ?? 'approved',
         rejectionReason: j['rejection_reason']?.toString() ?? '',
+        lyricsLrc: j['lyrics_lrc']?.toString() ?? '',
       );
 
   String get durationFormatted {
@@ -55,4 +60,46 @@ class AudioTrack {
     final s = durationSeconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
+}
+
+/// MUSIC-2: одна строка LRC-lyrics с timestamp'ом в миллисекундах.
+class LyricLine {
+  final int timeMs;
+  final String text;
+  const LyricLine(this.timeMs, this.text);
+}
+
+/// Парсит LRC-формат «[mm:ss.xx]Line\n[mm:ss.xx]Next line\n...».
+/// Игнорирует metadata lines («[ar:Artist]», «[ti:Title]» etc).
+/// Возвращает sorted-by-time список или пустой если parse failed.
+List<LyricLine> parseLrc(String lrc) {
+  if (lrc.isEmpty) return const [];
+  final regex = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?\]([^\[]*)');
+  final out = <LyricLine>[];
+  for (final m in regex.allMatches(lrc)) {
+    final mm = int.tryParse(m.group(1) ?? '0') ?? 0;
+    final ss = int.tryParse(m.group(2) ?? '0') ?? 0;
+    final centi = int.tryParse(m.group(3) ?? '0') ?? 0;
+    final text = (m.group(4) ?? '').trim();
+    if (text.isEmpty) continue;
+    final timeMs = mm * 60000 + ss * 1000 + centi * 10;
+    out.add(LyricLine(timeMs, text));
+  }
+  out.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+  return out;
+}
+
+/// Текущая строка lyrics для player position. Берёт последнюю с timestamp
+/// `<= positionMs`. null если до первой строки.
+LyricLine? currentLyricAt(List<LyricLine> lines, int positionMs) {
+  if (lines.isEmpty) return null;
+  LyricLine? cur;
+  for (final l in lines) {
+    if (l.timeMs <= positionMs) {
+      cur = l;
+    } else {
+      break;
+    }
+  }
+  return cur;
 }

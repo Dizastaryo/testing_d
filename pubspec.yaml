@@ -36,6 +36,10 @@ dependencies:
   video_player: ^2.8.6
   chewie: ^1.8.5
   visibility_detector: ^0.4.0+2
+  # ScrollablePositionedList — для scroll-to-message-by-index в chat
+  # (CHAT-3.1: tap на результат поиска прокручивает чат к этому сообщению).
+  # ListView.builder не умеет «прыгнуть к индексу N» без known item-heights.
+  scrollable_positioned_list: ^0.3.8
   just_audio: ^0.9.42
   # record 6.x синхронизирует federated реализации (record_linux 1.3+ есть
   # startStream + hasPermission(request:) от record_platform_interface 1.5).
@@ -71,6 +75,13 @@ dependencies:
   url_launcher: ^6.3.0
   share_plus: ^10.1.4
   web_socket_channel: ^3.0.1
+  # LIB-1: inline PDF preview в library (тап на PDF → bottom-sheet с
+  # scrollable страницами вместо download). Native iOS PDFKit + Android
+  # PDFViewer. На web не работает — fall back на url_launcher.
+  flutter_pdfview: ^1.3.2
+  # Temp-dir для cache PDF перед PDFView.fromPath. Уже транзитивно есть у
+  # многих пакетов, но указываем явно чтобы import был чистый.
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
@@ -92,3 +103,6 @@ flutter:
   assets:
     - assets/icon/
     - assets/images/
+    # C-3.1: ringtone/ringback/endtone (programmatically generated sine-WAVs
+    # — CC0 by construction, see assets/sounds/generate_tones.py).
+    - assets/sounds/

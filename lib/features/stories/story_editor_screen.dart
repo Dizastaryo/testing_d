@@ -6,10 +6,24 @@ import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../core/models/story.dart';
+
+/// Результат работы редактора: composite PNG-кадр + опционально interactive
+/// poll (STORY-3). Если poll присутствует — он НЕ растеризован в кадр; viewer
+/// рендерит интерактивные кнопки поверх media в позиции (x,y).
+class StoryEditorResult {
+  final Uint8List bytes;
+  final StoryPoll? poll;
+  const StoryEditorResult({required this.bytes, this.poll});
+}
 
 /// Полно-экранный редактор сторис: фото как фон + draggable текст/стикеры.
-/// На «Готово» делает `RepaintBoundary.toImage()` → возвращает PNG-bytes
-/// композитной картинки через `Navigator.pop(bytes)`.
+/// На «Готово» делает `RepaintBoundary.toImage()` → возвращает PNG-bytes +
+/// (опционально) interactive poll через `Navigator.pop(StoryEditorResult)`.
+///
+/// STORY-3: Poll-overlay'и НЕ растеризуются — берётся первый из _polls,
+/// конвертируется в StoryPoll и возвращается отдельно. Viewer на бэке
+/// рендерит интерактивные кнопки и собирает голоса.
 ///
 /// V1: только photo (Uint8List). Video с overlay'ями требует ffmpeg-overlay
 /// pass, скипнут (открывается обычная MediaPrepare без редактора).
@@ -178,6 +192,11 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
   }
 
   Future<void> _addPoll() async {
+    // STORY-3: только один interactive poll на сторис. Tap «Опрос» при уже
+    // существующем — заменяет (как в Insta).
+    if (_polls.isNotEmpty) {
+      _polls.clear();
+    }
     final qCtrl = TextEditingController();
     final aCtrl = TextEditingController(text: 'Да');
     final bCtrl = TextEditingController(text: 'Нет');
@@ -316,8 +335,32 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
 
   Future<void> _exportAndPop() async {
     if (_exporting) return;
-    setState(() => _exporting = true);
+    // STORY-3: poll выносим из растрового кадра — отдадим в StoryEditorResult.
+    // Сначала capture poll-data (нужна позиция), потом временно очищаем
+    // _polls перед toImage чтобы он не попал в PNG. После — возвращаем.
+    StoryPoll? interactivePoll;
+    if (_polls.isNotEmpty) {
+      final p = _polls.first;
+      interactivePoll = StoryPoll(
+        question: p.question,
+        optionA: p.optionA,
+        optionB: p.optionB,
+        x: p.position.dx,
+        y: p.position.dy,
+      );
+    }
+    final savedPolls = List<_PollOverlay>.from(_polls);
+    if (interactivePoll != null) {
+      setState(() {
+        _polls.clear();
+        _exporting = true;
+      });
+    } else {
+      setState(() => _exporting = true);
+    }
     try {
+      // Дать одну рамку чтобы Stack пересобрался без poll'ов.
+      await Future.delayed(const Duration(milliseconds: 16));
       final boundary = _canvasKey.currentContext!.findRenderObject()
           as RenderRepaintBoundary;
       // pixelRatio 2.0 — баланс между качеством и размером файла.
@@ -329,10 +372,16 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
       }
       final bytes = byteData.buffer.asUint8List();
       if (!mounted) return;
-      Navigator.of(context).pop(bytes);
+      Navigator.of(context).pop(
+        StoryEditorResult(bytes: bytes, poll: interactivePoll),
+      );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _exporting = false);
+      // Восстановить poll'ы для UI чтобы юзер мог попробовать снова.
+      setState(() {
+        _polls.addAll(savedPolls);
+        _exporting = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось экспортировать: $e')),
       );

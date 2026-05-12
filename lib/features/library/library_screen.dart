@@ -1,10 +1,16 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/api/api_client.dart';
+import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
+import '../../core/models/audio_track.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
+import 'pdf_preview_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -17,6 +23,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _activeCategory = '';
   String _query = '';
   bool _searchOpen = false;
+  bool _uploading = false;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -56,6 +63,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           SliverToBoxAdapter(child: _buildHeader(theme)),
           if (_searchOpen) SliverToBoxAdapter(child: _buildSearchField(theme)),
           if (_query.isEmpty) SliverToBoxAdapter(child: _buildUploadZone(theme)),
+          // LIB-6: trending hero row — только когда нет активного поиска и категории.
+          if (_query.isEmpty && _activeCategory.isEmpty)
+            SliverToBoxAdapter(child: _buildTrendingRow(theme)),
           SliverToBoxAdapter(
             child: categoriesAsync.when(
               data: (cats) => _buildCategories(cats, theme),
@@ -170,7 +180,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   Widget _buildUploadZone(ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
+      child: GestureDetector(
+        onTap: _uploading ? null : _pickAndUploadFile,
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
@@ -227,18 +239,81 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 color: theme.colorScheme.onSurface,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text('+ DROP',
-                  style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: theme.scaffoldBackgroundColor)),
+              child: _uploading
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.scaffoldBackgroundColor,
+                      ),
+                    )
+                  : Text(
+                      '+ DROP',
+                      style: TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                          color: theme.scaffoldBackgroundColor),
+                    ),
             ),
           ],
         ),
+        ),
       ),
     );
+  }
+
+  /// LIB-7: реальный multipart upload в library. file_picker → MultipartFile
+  /// → POST /files/upload (multipart) → invalidate filesProvider.
+  /// Backend (file_handler.Upload) validates MIME/size + кладёт в uploads/library/.
+  Future<void> _pickAndUploadFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withReadStream: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.first;
+    if (picked.bytes == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось прочитать файл')),
+      );
+      return;
+    }
+    setState(() => _uploading = true);
+    try {
+      final dio = ref.read(libraryApiClientProvider);
+      final form = FormData.fromMap({
+        'file': MultipartFile.fromBytes(picked.bytes!, filename: picked.name),
+      });
+      await dio.post(
+        '/files/upload',
+        data: form,
+        options: Options(
+          sendTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(minutes: 1),
+        ),
+      );
+      ref.invalidate(filesProvider);
+      ref.invalidate(trendingFilesProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${picked.name} загружен'),
+          backgroundColor: const Color(0xFF4CAF50),
+        ),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки: ${apiErrorMessage(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
 
   Widget _buildCategories(List<FileCategory> cats, ThemeData theme) {
@@ -280,7 +355,134 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  Widget _buildFileList(List<FileItem> files, ThemeData theme) {
+  /// LIB-6: горизонтальный row trending-файлов. Скрыт когда секция пустая
+   /// (нет файлов за 7 дней) — не показываем header'а.
+   Widget _buildTrendingRow(ThemeData theme) {
+     final async = ref.watch(trendingFilesProvider);
+     return async.when(
+       data: (files) {
+         if (files.isEmpty) return const SizedBox.shrink();
+         return Padding(
+           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+           child: Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Row(
+                 children: [
+                   const Text('🔥', style: TextStyle(fontSize: 16)),
+                   const SizedBox(width: 8),
+                   Text(
+                     'Популярное',
+                     style: TextStyle(
+                       fontFamily: 'Fraunces',
+                       fontSize: 18,
+                       fontWeight: FontWeight.w500,
+                       color: theme.colorScheme.onSurface,
+                     ),
+                   ),
+                 ],
+               ),
+               const SizedBox(height: 10),
+               SizedBox(
+                 height: 92,
+                 child: ListView.separated(
+                   scrollDirection: Axis.horizontal,
+                   itemCount: files.length,
+                   separatorBuilder: (_, __) => const SizedBox(width: 10),
+                   itemBuilder: (_, i) => _buildTrendingCard(files[i], theme),
+                 ),
+               ),
+             ],
+           ),
+         );
+       },
+       loading: () => const SizedBox(height: 80),
+       error: (_, __) => const SizedBox.shrink(),
+     );
+   }
+
+   Widget _buildTrendingCard(FileItem file, ThemeData theme) {
+     final color = _colorForType(file.fileExtension);
+     return GestureDetector(
+       onTap: () => _onFileTap(file),
+       child: Container(
+         width: 180,
+         padding: const EdgeInsets.all(10),
+         decoration: BoxDecoration(
+           color: theme.cardColor,
+           borderRadius: BorderRadius.circular(12),
+           border: Border.all(color: color.withValues(alpha: 0.3)),
+         ),
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Row(
+               children: [
+                 Container(
+                   width: 28,
+                   height: 28,
+                   decoration: BoxDecoration(
+                     color: color.withValues(alpha: 0.15),
+                     borderRadius: BorderRadius.circular(6),
+                   ),
+                   alignment: Alignment.center,
+                   child: Text(
+                     file.fileExtension.toUpperCase(),
+                     style: TextStyle(
+                       fontFamily: 'JetBrains Mono',
+                       fontSize: 9,
+                       fontWeight: FontWeight.w700,
+                       color: color,
+                     ),
+                   ),
+                 ),
+                 const SizedBox(width: 8),
+                 Expanded(
+                   child: Text(
+                     file.filename,
+                     maxLines: 1,
+                     overflow: TextOverflow.ellipsis,
+                     style: TextStyle(
+                       fontSize: 12,
+                       fontWeight: FontWeight.w600,
+                       color: theme.colorScheme.onSurface,
+                     ),
+                   ),
+                 ),
+               ],
+             ),
+             const Spacer(),
+             Row(
+               children: [
+                 Icon(Icons.favorite,
+                     size: 12,
+                     color: SeeUColors.like.withValues(alpha: 0.7)),
+                 const SizedBox(width: 3),
+                 Text('${file.likesCount}',
+                     style: TextStyle(
+                         fontSize: 10,
+                         color: theme.colorScheme.onSurface
+                             .withValues(alpha: 0.6))),
+                 const SizedBox(width: 8),
+                 Icon(Icons.download,
+                     size: 12,
+                     color: theme.colorScheme.onSurface
+                         .withValues(alpha: 0.5)),
+                 const SizedBox(width: 3),
+                 Text(file.downloadsFormatted,
+                     style: TextStyle(
+                         fontSize: 10,
+                         color: theme.colorScheme.onSurface
+                             .withValues(alpha: 0.6))),
+               ],
+             ),
+           ],
+         ),
+       ),
+     );
+   }
+
+   Widget _buildFileList(List<FileItem> files, ThemeData theme) {
     return SliverPadding(
       padding: const EdgeInsets.all(16),
       sliver: SliverList(
@@ -295,6 +497,45 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
+  /// LIB-2: audio-файлы играем inline через mini-player; остальные открываем
+  /// в file-detail. PDF откроется через inline-preview из detail-screen (LIB-1).
+  void _onFileTap(FileItem file) {
+    // LIB-1: PDF — inline preview через flutter_pdfview, не file-detail.
+    if (file.isPdf) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PdfPreviewScreen(
+            url: file.fileUrl,
+            filename: file.filename,
+          ),
+        ),
+      );
+      return;
+    }
+    if (file.isAudio) {
+      // Конвертируем FileItem → AudioTrack-подобный shape для mini-player.
+      // mini-player принимает AudioTrack через playTrack; используем filename
+      // как title, автор как artist.
+      ref.read(miniPlayerProvider.notifier).play(
+            AudioTrack(
+              id: file.id,
+              title: _stripExtension(file.filename),
+              artist: file.user?.username ?? '—',
+              audioUrl: file.fileUrl,
+              coverUrl: file.previewUrl,
+              durationSeconds: 0,
+            ),
+          );
+      return;
+    }
+    context.push('/files/${file.id}');
+  }
+
+  String _stripExtension(String filename) {
+    final dot = filename.lastIndexOf('.');
+    return dot == -1 ? filename : filename.substring(0, dot);
+  }
+
   Widget _buildFileCard(FileItem file, ThemeData theme) {
     final color = _colorForType(file.fileExtension);
     final isImage = file.mimeType.startsWith('image/');
@@ -302,7 +543,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ? file.previewUrl
         : (isImage ? file.fileUrl : '');
     return GestureDetector(
-      onTap: () => context.push('/files/${file.id}'),
+      onTap: () => _onFileTap(file),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(

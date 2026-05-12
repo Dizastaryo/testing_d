@@ -155,25 +155,52 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                       ),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: _showNewChatPicker,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: c.line,
-                          width: 0.5,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // C-1: история звонков. Tap → /chat/calls.
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.push('/chat/calls');
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: c.line, width: 0.5),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.phone,
+                            size: 18,
+                            color: c.ink,
+                          ),
                         ),
                       ),
-                      child: Icon(
-                        PhosphorIconsRegular.pencilSimple,
-                        size: 18,
-                        color: c.ink,
+                      GestureDetector(
+                        onTap: _showNewChatPicker,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: c.line,
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.pencilSimple,
+                            size: 18,
+                            color: c.ink,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -241,16 +268,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             // Chat list
             Expanded(
               child: chatState.isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: SeeUColors.accent,
-                        strokeWidth: 2.5,
-                      ),
-                    )
+                  ? const SeeUListSkeleton()
                   : chats.isEmpty
                       ? _buildEmptyState()
-                      : RefreshIndicator(
-                          color: SeeUColors.accent,
+                      : SeeURadarRefresh(
                           onRefresh: () =>
                               ref.read(chatListProvider.notifier).load(),
                           child: ListView.builder(

@@ -20,12 +20,21 @@ String userShareUrl(String username) => 'https://seeu.app/u/$username';
 ///
 /// `forwardablePostId` enables a «Переслать в SeeU» action that opens an
 /// inline chat picker and sends the post as an attachment.
+///
+/// `sharedPostMediaUrl` + `sharedPostMediaType` + `sharedPostAuthor` нужны
+/// для **CHAT-5** «Поделиться в сторис»: эта кнопка POST'ит на /stories
+/// клон media-поста + shared_post_id чтобы viewer на чужой сторис мог
+/// открыть оригинальный пост. Все три должны быть set'нуты — иначе tile
+/// просто не рендерится.
 Future<void> showShareSheet({
   required BuildContext context,
   required String url,
   required String title,
   String? subtitle,
   String? forwardablePostId,
+  String? sharedPostMediaUrl,
+  String? sharedPostMediaType,
+  String? sharedPostAuthor,
   List<Widget> extra = const [],
 }) async {
   await showModalBottomSheet<void>(
@@ -102,6 +111,29 @@ Future<void> showShareSheet({
                     _showChatPicker(context, postId: forwardablePostId);
                   },
                 ),
+              // CHAT-5: «Поделиться в сторис». Возможно только если у поста
+              // есть media (image/video). Текстовые посты skip'аем.
+              if (forwardablePostId != null &&
+                  forwardablePostId.isNotEmpty &&
+                  sharedPostMediaUrl != null &&
+                  sharedPostMediaUrl.isNotEmpty &&
+                  sharedPostMediaType != null &&
+                  sharedPostMediaType.isNotEmpty)
+                ListTile(
+                  leading: Icon(PhosphorIcons.plusCircle(),
+                      color: SeeUColors.accent),
+                  title: const Text('Поделиться в сторис'),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    await _shareToStory(
+                      context,
+                      mediaUrl: sharedPostMediaUrl,
+                      mediaType: sharedPostMediaType,
+                      author: sharedPostAuthor ?? '',
+                      postId: forwardablePostId,
+                    );
+                  },
+                ),
               ...extra,
             ],
           ),
@@ -109,6 +141,46 @@ Future<void> showShareSheet({
       );
     },
   );
+}
+
+/// CHAT-5: создаёт сторис с клонированным media + shared_post_id ссылкой
+/// на оригинальный пост. Вне Riverpod-scope — caller-y нужен только
+/// BuildContext; apiClientProvider читаем через ProviderScope.containerOf.
+Future<void> _shareToStory(
+  BuildContext context, {
+  required String mediaUrl,
+  required String mediaType,
+  required String author,
+  required String postId,
+}) async {
+  // Storage URL может прийти как `/uploads/...` — оставляем как есть, бэк
+  // ожидает path или absolute URL (см. story_service / media-handler).
+  // text_overlay = «@author» как нативное-Instagram превью.
+  HapticFeedback.mediumImpact();
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final api = container.read(apiClientProvider);
+    await api.post(
+      ApiEndpoints.stories,
+      data: {
+        'media_url': mediaUrl,
+        'media_type': mediaType,
+        'text_overlay': author.isNotEmpty ? '@$author' : '',
+        'shared_post_id': postId,
+      },
+    );
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Добавлено в вашу сторис'),
+    ));
+  } on DioException catch (e) {
+    messenger.showSnackBar(SnackBar(
+      content: Text('Не удалось: ${apiErrorMessage(e)}'),
+    ));
+  } catch (e) {
+    messenger.showSnackBar(
+        SnackBar(content: Text('Не удалось: $e')));
+  }
 }
 
 /// Shows a chat list as a bottom sheet with **multi-select**. Юзер выбирает

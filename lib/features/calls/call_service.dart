@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../../core/providers/realtime_provider.dart';
 
@@ -16,8 +18,14 @@ enum CallStatus {
   incomingRinging,  // нам позвонили, ждём решения юзера
   connecting,       // accept'нули, ICE-trickle идёт
   connected,        // оба stream'а connected
+  reconnecting,     // C-5: упала связь, пробуем ICE-restart
   ended,            // hangup
 }
+
+/// Тип звонка — video или voice (C-2 audio-only). Кладётся в WS payload и
+/// влияет на getUserMedia options (video false для voice) + UI rendering
+/// (без remote-renderer'а на стороне callee для voice).
+enum CallKind { video, voice }
 
 class CallSession {
   final String peerId;
@@ -25,6 +33,10 @@ class CallSession {
   final String peerAvatarUrl;
   final bool isOutgoing;
   final CallStatus status;
+  final CallKind kind;
+  /// Момент когда статус перешёл в `connected` — для отображения таймера
+  /// MM:SS в UI (C-4). null пока not-connected.
+  final DateTime? connectedAt;
 
   const CallSession({
     required this.peerId,
@@ -32,14 +44,23 @@ class CallSession {
     required this.peerAvatarUrl,
     required this.isOutgoing,
     required this.status,
+    this.kind = CallKind.video,
+    this.connectedAt,
   });
 
-  CallSession copyWith({CallStatus? status}) => CallSession(
+  CallSession copyWith({
+    CallStatus? status,
+    CallKind? kind,
+    DateTime? connectedAt,
+  }) =>
+      CallSession(
         peerId: peerId,
         peerUsername: peerUsername,
         peerAvatarUrl: peerAvatarUrl,
         isOutgoing: isOutgoing,
         status: status ?? this.status,
+        kind: kind ?? this.kind,
+        connectedAt: connectedAt ?? this.connectedAt,
       );
 }
 
@@ -58,15 +79,82 @@ class CallService {
   final ValueNotifier<MediaStream?> remoteStream = ValueNotifier(null);
   final ValueNotifier<bool> isMuted = ValueNotifier(false);
   final ValueNotifier<bool> isCameraOff = ValueNotifier(false);
+  /// C-6: PiP флаг. true = CallScreen свёрнут, CallListener рендерит
+  /// floating mini-bubble поверх всего app'а. Tap на mini → set false +
+  /// re-open full-screen. Сбрасывается на каждый новый звонок.
+  final ValueNotifier<bool> minimized = ValueNotifier(false);
 
   RTCPeerConnection? _pc;
   final List<RTCIceCandidate> _pendingIce = [];
+
+  // C-3 / C-3.1: ring-loop. Haptic + sine-wave WAV asset (programmatically
+  // synthesized via assets/sounds/generate_tones.py — CC0 by construction).
+  // На incoming/outgoing звучат разные тона + параллельно вибрация.
+  // Ring player отдельный от music-плеера — не мешает background-audio.
+  Timer? _ringTimer;
+  final AudioPlayer _ringPlayer = AudioPlayer();
+
+  // C-5: timer для ICE-restart fallback'а — даём 10 сек на восстановление.
+  Timer? _reconnectTimer;
 
   CallSender? _sender;
 
   /// Injected upstream-sender. CallListener вызывает раз на init.
   void setSender(CallSender s) {
     _sender = s;
+  }
+
+  /// C-3 / C-3.1: запускает ring-loop с haptic + sine-wave audio asset.
+  /// Incoming — telephone ringtone (800Hz dual-tone) + heavy vibration.
+  /// Outgoing — Russian ringback (425Hz, 1с+3с silence) + light vibration.
+  /// Идемпотент: cancel'ит previous timer перед стартом нового.
+  void _startRing(CallStatus status) {
+    _ringTimer?.cancel();
+    if (status == CallStatus.incomingRinging) {
+      HapticFeedback.heavyImpact();
+      _ringTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+        HapticFeedback.heavyImpact();
+      });
+      _playRingAsset('assets/sounds/ringtone.wav');
+    } else if (status == CallStatus.outgoingRinging) {
+      HapticFeedback.lightImpact();
+      _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        HapticFeedback.lightImpact();
+      });
+      _playRingAsset('assets/sounds/ringback.wav');
+    }
+  }
+
+  /// Loop play asset через _ringPlayer. Errors silent — если asset не
+  /// загрузился (broken build), haptic всё равно сработает.
+  Future<void> _playRingAsset(String assetPath) async {
+    try {
+      await _ringPlayer.stop();
+      await _ringPlayer.setAsset(assetPath);
+      await _ringPlayer.setLoopMode(LoopMode.one);
+      await _ringPlayer.setVolume(0.7);
+      await _ringPlayer.play();
+    } catch (_) {
+      // Silent fallback на haptic-only.
+    }
+  }
+
+  void _stopRing() {
+    _ringTimer?.cancel();
+    _ringTimer = null;
+    unawaited(_ringPlayer.stop());
+  }
+
+  /// One-shot endtone (descending chirp) при hangup. Играется до cleanup'а
+  /// audio session, поэтому ставим короткий 500ms.
+  Future<void> _playEndTone() async {
+    try {
+      await _ringPlayer.stop();
+      await _ringPlayer.setAsset('assets/sounds/endtone.wav');
+      await _ringPlayer.setLoopMode(LoopMode.off);
+      await _ringPlayer.setVolume(0.6);
+      await _ringPlayer.play();
+    } catch (_) {}
   }
 
   /// Caller (CallListener) ловит incoming realtime-events и форвардит сюда.
@@ -78,19 +166,26 @@ class CallService {
     required String peerId,
     required String peerUsername,
     required String peerAvatarUrl,
+    CallKind kind = CallKind.video,
   }) async {
     if (session.value != null && session.value!.status != CallStatus.ended) {
       return; // уже активен
     }
+    minimized.value = false; // C-6: новый звонок всегда полноэкранный.
     session.value = CallSession(
       peerId: peerId,
       peerUsername: peerUsername,
       peerAvatarUrl: peerAvatarUrl,
       isOutgoing: true,
       status: CallStatus.outgoingRinging,
+      kind: kind,
     );
+    _startRing(CallStatus.outgoingRinging);
     await _initLocalStream();
-    _send('call.invite', {'to_user_id': peerId, 'kind': 'video'});
+    _send('call.invite', {
+      'to_user_id': peerId,
+      'kind': kind == CallKind.voice ? 'voice' : 'video',
+    });
   }
 
   // ── Incoming call ──
@@ -187,14 +282,20 @@ class CallService {
 
   Future<void> _initLocalStream() async {
     if (localStream.value != null) return;
+    final s = session.value;
+    final isVoice = s != null && s.kind == CallKind.voice;
     try {
+      // C-2: voice-call → отключаем video в getUserMedia (экономит трафик
+      // + camera permission не нужен на callee если он принимает voice).
       final media = await navigator.mediaDevices.getUserMedia({
         'audio': true,
-        'video': {
-          'facingMode': 'user',
-          'width': 640,
-          'height': 480,
-        },
+        'video': isVoice
+            ? false
+            : {
+                'facingMode': 'user',
+                'width': 640,
+                'height': 480,
+              },
       });
       localStream.value = media;
     } catch (e) {
@@ -236,14 +337,28 @@ class CallService {
     };
     pc.onConnectionState = (state) {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        // C-3: ring выключается при transition в connected.
+        // C-5: success-reconnect — отменяем reconnect timer + статус
+        // обратно в connected (был reconnecting).
+        _stopRing();
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
         final s = session.value;
         if (s != null) {
-          session.value = s.copyWith(status: CallStatus.connected);
+          // C-4: фиксируем connect моmenт (только если ещё не fix'или —
+          // на reconnect сохраняем оригинальный connectedAt).
+          session.value = s.copyWith(
+            status: CallStatus.connected,
+            connectedAt: s.connectedAt ?? DateTime.now(),
+          );
         }
       } else if (state ==
+          RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        // C-5: temporary disconnect — пробуем восстановить через ICE-restart.
+        // Cleanup'имся только если reconnect не помог за 10 сек.
+        _tryReconnect();
+      } else if (state ==
               RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state ==
-              RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
         unawaited(_cleanup());
       }
@@ -257,9 +372,13 @@ class CallService {
     _pc = pc;
   }
 
-  Future<void> _createAndSendOffer() async {
+  Future<void> _createAndSendOffer({bool iceRestart = false}) async {
     if (_pc == null) return;
-    final offer = await _pc!.createOffer({});
+    // C-5: при reconnect передаём iceRestart=true → WebRTC сгенерирует
+    // новые ICE candidates, минуя кэш старой failed-сессии.
+    final offer = await _pc!.createOffer(
+      iceRestart ? {'iceRestart': true} : {},
+    );
     await _pc!.setLocalDescription(offer);
     final s = session.value;
     if (s == null) return;
@@ -267,6 +386,33 @@ class CallService {
       'to_user_id': s.peerId,
       'sdp': offer.sdp,
       'type': offer.type,
+    });
+  }
+
+  /// C-5: попытка ICE-restart. Только caller инициирует (callee получит
+  /// новый offer через WS и автоматически setRemoteDescription/answer).
+  /// Если за 10 сек не connected → cleanup.
+  void _tryReconnect() {
+    final s = session.value;
+    if (s == null || s.status == CallStatus.reconnecting) return;
+    if (_pc == null) {
+      unawaited(_cleanup());
+      return;
+    }
+    session.value = s.copyWith(status: CallStatus.reconnecting);
+
+    // Только caller тригерит ICE-restart. Callee пассивно ждёт новый offer.
+    if (s.isOutgoing) {
+      unawaited(_createAndSendOffer(iceRestart: true));
+    }
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 10), () {
+      // Если за 10 сек state не вернулся в connected — сдаёмся.
+      final cur = session.value;
+      if (cur != null && cur.status == CallStatus.reconnecting) {
+        unawaited(_cleanup());
+      }
     });
   }
 
@@ -278,13 +424,19 @@ class CallService {
     }
     final username = p['from_username']?.toString() ?? '';
     final avatar = p['from_avatar']?.toString() ?? '';
+    // C-2: caller's kind ('video'/'voice') приходит в payload.
+    final kindStr = p['kind']?.toString();
+    final kind = kindStr == 'voice' ? CallKind.voice : CallKind.video;
+    minimized.value = false;
     session.value = CallSession(
       peerId: from,
       peerUsername: username,
       peerAvatarUrl: avatar,
       isOutgoing: false,
       status: CallStatus.incomingRinging,
+      kind: kind,
     );
+    _startRing(CallStatus.incomingRinging);
   }
 
   Future<void> _handleAccept(Map<String, dynamic> p) async {
@@ -348,6 +500,15 @@ class CallService {
   }
 
   Future<void> _cleanup() async {
+    // C-3 / C-5: останавливаем ring + reconnect timer'ы при любом cleanup'е.
+    _stopRing();
+    // C-3.1: end-tone chirp если звонок был active (не на silent decline).
+    final s = session.value;
+    if (s != null && s.status != CallStatus.idle) {
+      unawaited(_playEndTone());
+    }
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     try {
       await _pc?.close();
     } catch (_) {}
@@ -368,12 +529,15 @@ class CallService {
     _pendingIce.clear();
     isMuted.value = false;
     isCameraOff.value = false;
-    final s = session.value;
-    if (s != null) {
-      session.value = s.copyWith(status: CallStatus.ended);
+    final endingSession = session.value;
+    if (endingSession != null) {
+      session.value = endingSession.copyWith(status: CallStatus.ended);
       Future.delayed(const Duration(seconds: 1), () {
         session.value = null;
+        minimized.value = false; // C-6: сбрасываем PiP на каждый cleanup.
       });
+    } else {
+      minimized.value = false;
     }
   }
 

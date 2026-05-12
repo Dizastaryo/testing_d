@@ -25,6 +25,7 @@ import 'features/profile/followers_screen.dart';
 import 'features/profile/following_screen.dart';
 import 'screens/scanner_screen.dart';
 import 'features/calls/call_listener.dart';
+import 'features/calls/call_history_screen.dart';
 import 'features/chat/chat_create_group_screen.dart';
 import 'features/chat/chat_list_screen.dart';
 import 'features/chat/chat_members_screen.dart';
@@ -37,12 +38,14 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/explore/publication_viewer.dart';
 import 'features/videos/video_detail_screen.dart';
+import 'features/videos/video_upload_screen.dart';
 import 'features/videos/watch_screen.dart';
 import 'features/library/file_detail_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/music/music_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
 import 'features/services/services_screen.dart';
+import 'features/stories/text_story_compose_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -157,6 +160,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                   ),
                 ),
                 GoRoute(
+                  path: 'calls',
+                  pageBuilder: (_, __) => const CupertinoPage(
+                    child: CallHistoryScreen(),
+                  ),
+                ),
+                GoRoute(
                   path: ':chatId',
                   pageBuilder: (context, state) => CupertinoPage(
                     child: ChatScreen(
@@ -220,6 +229,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               pageBuilder: (_, state) => CupertinoPage(
                 child: PlaylistDetailScreen(
                     playlistId: state.pathParameters['id']!),
+              ),
+            ),
+            GoRoute(
+              path: '/videos/upload',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: VideoUploadScreen(),
               ),
             ),
             GoRoute(
@@ -312,6 +327,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/story/create',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: _StoryCreateCameraWrapper(),
+              ),
+            ),
+            GoRoute(
+              path: '/story/create-text',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: TextStoryComposeScreen(),
               ),
             ),
             GoRoute(
