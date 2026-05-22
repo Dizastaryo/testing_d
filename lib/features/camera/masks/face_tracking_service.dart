@@ -253,16 +253,16 @@ class FaceTrackingService {
         return;
       }
 
-      // Convert to pixel-space. Use landmarksAsOffsets which handles
-      // rotation + mirror automatically.
+      // Convert to pixel-space. Rotation and mirror were already applied
+      // during inference (processNv21/process), so landmarks are in the
+      // correct orientation. Do NOT pass rotation/mirror again — that
+      // would double-rotate, flipping masks upside down.
       final previewSize = Size(
         mesh.imageWidth.toDouble(),
         mesh.imageHeight.toDouble(),
       );
       final offsets = mesh.landmarksAsOffsets(
         targetSize: previewSize,
-        rotationDegrees: rotDeg,
-        mirrorHorizontal: isFront,
       );
 
       _ctrl.add(TrackedFace(
