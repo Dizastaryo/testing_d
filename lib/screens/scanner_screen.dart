@@ -10,6 +10,8 @@ import '../core/design/design.dart';
 import '../models/ble_device_model.dart';
 import '../services/account_session.dart';
 import '../services/user_resolver.dart';
+import 'widgets/scanner_painters.dart';
+import 'widgets/scanner_person_sheet.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -22,7 +24,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final Map<String, BleDeviceModel> _devicesMap = {};
   final Map<String, bool> _likedMap = {};
-  List<_ResolvedEntry> _cachedSortedDevices = [];
+  List<ScannerResolvedEntry> _cachedSortedDevices = [];
   int _devicesMapVersion = 0;
   int _cachedVersion = -1;
   StreamSubscription<List<ScanResult>>? _scanSub;
@@ -117,9 +119,9 @@ class _ScannerScreenState extends State<ScannerScreen>
     super.dispose();
   }
 
-  List<_ResolvedEntry> get _sortedDevices {
+  List<ScannerResolvedEntry> get _sortedDevices {
     if (_cachedVersion == _devicesMapVersion) return _cachedSortedDevices;
-    final entries = <_ResolvedEntry>[];
+    final entries = <ScannerResolvedEntry>[];
     for (final d in _devicesMap.values) {
       final resolved = _resolver.resolve(d);
       if (resolved.relationship == Relationship.unknown &&
@@ -127,7 +129,7 @@ class _ScannerScreenState extends State<ScannerScreen>
           resolved.mode == 0xFF) {
         continue;
       }
-      entries.add(_ResolvedEntry(device: d, resolved: resolved));
+      entries.add(ScannerResolvedEntry(device: d, resolved: resolved));
     }
     entries.sort((a, b) {
       final orderCmp = _resolver.sortOrder(a.resolved.relationship)
@@ -366,7 +368,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   // ─── Radar view ────────────────────────────────────────────────────────
 
-  Widget _buildRadarView(List<_ResolvedEntry> entries) {
+  Widget _buildRadarView(List<ScannerResolvedEntry> entries) {
     final c = context.seeuColors;
     return Stack(
       children: [
@@ -379,7 +381,7 @@ class _ScannerScreenState extends State<ScannerScreen>
               animation: Listenable.merge([_sweepController, _pulseController, _floatController]),
               builder: (_, __) {
                 return CustomPaint(
-                  painter: _DesignRadarPainter(
+                  painter: ScannerRadarPainter(
                     sweepProgress: _sweepController.value,
                     pulseProgress: _pulseController.value,
                   ),
@@ -531,7 +533,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildRadarWithList(List<_ResolvedEntry> entries) {
+  Widget _buildRadarWithList(List<ScannerResolvedEntry> entries) {
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
     return RefreshIndicator(
       color: SeeUColors.accent,
@@ -556,7 +558,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 animation: Listenable.merge([_sweepController, _pulseController, _floatController]),
                 builder: (_, __) {
                   return CustomPaint(
-                    painter: _DesignRadarPainter(
+                    painter: ScannerRadarPainter(
                       sweepProgress: _sweepController.value,
                       pulseProgress: _pulseController.value,
                     ),
@@ -709,7 +711,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildDeviceDot(_ResolvedEntry entry, int index, int total) {
+  Widget _buildDeviceDot(ScannerResolvedEntry entry, int index, int total) {
     final angle = (entry.device.macAddress.hashCode * 51 + 30) * math.pi / 180;
     final dist = _rssiToMeters(entry.device.rssi);
     final r = (dist / 50).clamp(0.0, 1.0) * 110 + 28;
@@ -775,7 +777,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  void _showPersonSheet(_ResolvedEntry entry, String emoji) {
+  void _showPersonSheet(ScannerResolvedEntry entry, String emoji) {
     HapticFeedback.mediumImpact();
     final alias = (entry.resolved.user?.name ?? '').isNotEmpty ? (entry.resolved.user?.name ?? '') : 'unknown_${entry.device.macAddress.substring(0, 5)}';
     final dist = _fmtDist(entry.device.rssi);
@@ -789,7 +791,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (_) => _PersonSheet(
+      builder: (_) => ScannerPersonSheet(
         emoji: emoji,
         alias: alias,
         distance: dist,
@@ -840,7 +842,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   // ─── List view ─────────────────────────────────────────────────────────
 
   // ignore: unused_element
-  Widget _buildListView(List<_ResolvedEntry> entries) {
+  Widget _buildListView(List<ScannerResolvedEntry> entries) {
     if (entries.isEmpty) return _buildEmptyState();
 
     final emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
@@ -1036,7 +1038,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             child: AnimatedBuilder(
               animation: Listenable.merge([_sweepController, _pulseController]),
               builder: (_, __) => CustomPaint(
-                painter: _DesignRadarPainter(
+                painter: ScannerRadarPainter(
                   sweepProgress: _sweepController.value,
                   pulseProgress: _pulseController.value,
                 ),
@@ -1132,375 +1134,9 @@ class _ScannerScreenState extends State<ScannerScreen>
       ),
       child: CustomPaint(
         size: Size(size, size),
-        painter: _EyeMarkPainter(),
+        painter: ScannerEyeMarkPainter(),
       ),
     );
   }
 }
 
-// ─── Resolved entry ──────────────────────────────────────────────────────
-
-class _ResolvedEntry {
-  final BleDeviceModel device;
-  final ResolvedDevice resolved;
-  const _ResolvedEntry({required this.device, required this.resolved});
-}
-
-// ─── Person bottom sheet ─────────────────────────────────────────────────
-
-class _PersonSheet extends StatefulWidget {
-  final String emoji;
-  final String alias;
-  final String distance;
-  final bool isOnline;
-  final int rssi;
-  final bool initialLiked;
-  final void Function(bool liked)? onLikeChanged;
-  /// Optional: a callback that resolves the discovered chip's public ID into
-  /// a user and navigates to that profile. The Scanner builds it.
-  final Future<void> Function()? onOpenProfile;
-
-  const _PersonSheet({
-    required this.emoji,
-    required this.alias,
-    required this.distance,
-    required this.isOnline,
-    required this.rssi,
-    this.initialLiked = false,
-    this.onLikeChanged,
-    this.onOpenProfile,
-  });
-
-  @override
-  State<_PersonSheet> createState() => _PersonSheetState();
-}
-
-class _PersonSheetState extends State<_PersonSheet> {
-  late bool _liked;
-
-  @override
-  void initState() {
-    super.initState();
-    _liked = widget.initialLiked;
-  }
-
-  void _toggleLike() {
-    HapticFeedback.mediumImpact();
-    setState(() => _liked = !_liked);
-    widget.onLikeChanged?.call(_liked);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: SeeUColors.textQuaternary,
-              borderRadius: BorderRadius.circular(99),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-            child: Column(
-              children: [
-                // Avatar + alias
-                Container(
-                  width: 84,
-                  height: 84,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: SeeUColors.surface2,
-                    border: Border.all(color: SeeUColors.borderSubtle),
-                  ),
-                  child: Center(child: Text(widget.emoji, style: const TextStyle(fontSize: 44))),
-                ),
-                const SizedBox(height: 14),
-                Text(widget.alias, style: SeeUTypography.displayM),
-                const SizedBox(height: 4),
-                RichText(
-                  text: TextSpan(
-                    style: TextStyle(fontSize: 13, color: SeeUColors.textTertiary),
-                    children: [
-                      const TextSpan(text: 'виден только потому что '),
-                      TextSpan(
-                        text: 'рядом',
-                        style: TextStyle(
-                          color: SeeUColors.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Stats
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: SeeUColors.surface2,
-                    borderRadius: BorderRadius.circular(SeeURadii.medium),
-                  ),
-                  child: Row(
-                    children: [
-                      _stat('Дистанция', widget.distance),
-                      _stat('Сигнал', '${widget.rssi} dBm'),
-                      _stat('Статус', widget.isOnline ? 'онлайн' : 'офлайн'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Privacy notice
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: SeeUColors.accentSoft,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.shield_outlined, size: 18, color: SeeUColors.accent),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Это псевдоним. Настоящий аккаунт скрыт. Вы можете только лайкнуть — и если вам ответят взаимно, появится возможность написать.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: SeeUColors.textSecondary,
-                            height: 1.45,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                if (widget.onOpenProfile != null) ...[
-                  GestureDetector(
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await widget.onOpenProfile!.call();
-                    },
-                    child: Container(
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: SeeUColors.accent,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'Открыть профиль',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                // Actions
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: SeeUColors.surface2,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Center(
-                            child: Text(
-                              'Закрыть',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: SeeUColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: _toggleLike,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: _liked ? SeeUColors.like : SeeUColors.surface2,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: _liked
-                                ? [
-                                    BoxShadow(
-                                      color: SeeUColors.like.withValues(alpha: 0.3),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                size: 18,
-                                color: _liked ? Colors.white : SeeUColors.textSecondary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _liked ? 'Лайк поставлен' : 'Поставить лайк',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: _liked ? Colors.white : SeeUColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stat(String label, String value) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(value, style: SeeUTypography.displayS),
-          const SizedBox(height: 2),
-          Text(
-            label.toUpperCase(),
-            style: SeeUTypography.monoLabel.copyWith(fontSize: 10),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Radar painter (design version) ──────────────────────────────────────
-
-class _DesignRadarPainter extends CustomPainter {
-  final double sweepProgress;
-  final double pulseProgress;
-
-  _DesignRadarPainter({required this.sweepProgress, required this.pulseProgress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = size.width / 2;
-    const color = SeeUColors.accent;
-
-    // Static rings
-    for (var i = 1; i <= 3; i++) {
-      final radius = maxRadius * (i / 3.0) * 0.75 + maxRadius * 0.25;
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..color = color.withValues(alpha: 0.18)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.5,
-      );
-    }
-
-    // Pulse rings
-    for (var i = 0; i < 3; i++) {
-      final t = (pulseProgress + i * 0.33) % 1.0;
-      final radius = 30 + t * (maxRadius - 30);
-      final opacity = (1.0 - t) * 0.5;
-      canvas.drawCircle(
-        center,
-        radius,
-        Paint()
-          ..color = color.withValues(alpha: opacity)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5 * (1.0 - t) + 0.5,
-      );
-    }
-
-    // Sweep cone
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    final sweepAngle = sweepProgress * 2 * math.pi;
-    final sweepPaint = Paint()
-      ..shader = SweepGradient(
-        startAngle: sweepAngle - 1.4,
-        endAngle: sweepAngle,
-        colors: [
-          Colors.transparent,
-          color.withValues(alpha: 0.18),
-          color.withValues(alpha: 0.4),
-          color.withValues(alpha: 0.5),
-        ],
-        stops: const [0.0, 0.6, 0.95, 1.0],
-        tileMode: TileMode.clamp,
-      ).createShader(Rect.fromCircle(center: Offset.zero, radius: maxRadius));
-    canvas.drawCircle(Offset.zero, maxRadius, sweepPaint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _DesignRadarPainter old) => true;
-}
-
-// ─── EyeMark painter ─────────────────────────────────────────────────────
-
-class _EyeMarkPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.width;
-    final center = Offset(s / 2, s / 2);
-
-    final eyePath = Path();
-    eyePath.moveTo(s * 0.12, s / 2);
-    eyePath.quadraticBezierTo(s * 0.35, s * 0.2, s / 2, s * 0.2);
-    eyePath.quadraticBezierTo(s * 0.65, s * 0.2, s * 0.88, s / 2);
-    eyePath.quadraticBezierTo(s * 0.65, s * 0.8, s / 2, s * 0.8);
-    eyePath.quadraticBezierTo(s * 0.35, s * 0.8, s * 0.12, s / 2);
-    eyePath.close();
-    canvas.drawPath(eyePath, Paint()..color = const Color(0xFFFFF6F0));
-
-    final irisPaint = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(-0.2, -0.2),
-        colors: [const Color(0xFFFF6E50), const Color(0xFFC12A1A)],
-      ).createShader(Rect.fromCircle(center: center, radius: s * 0.18));
-    canvas.drawCircle(center, s * 0.18, irisPaint);
-
-    canvas.drawCircle(
-      Offset(s * 0.44, s * 0.44),
-      s * 0.04,
-      Paint()..color = Colors.white,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

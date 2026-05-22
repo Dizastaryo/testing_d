@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/services/logger.dart';
 import 'call_service.dart' show CallKind, CallSender;
 
 /// Состояние group-call'а (C-7).
@@ -19,10 +22,12 @@ enum GroupCallStatus {
 /// Один peer в group-call'е. Per-peer renderer + connection state.
 class GroupCallPeer {
   final String userId;
+  String username;
   final RTCVideoRenderer renderer = RTCVideoRenderer();
   RTCPeerConnection? pc;
   MediaStream? remoteStream;
-  GroupCallPeer(this.userId);
+  final List<RTCIceCandidate> pendingIce = [];
+  GroupCallPeer(this.userId, {this.username = ''});
 }
 
 class GroupCallSession {
@@ -238,7 +243,8 @@ class GroupCallService {
       session.value = s.copyWith(status: GroupCallStatus.active);
     }
     // Получаем (или создаём) peer + connection + отправляем offer.
-    final peer = await _ensurePeer(from);
+    final fromUsername = p['from_username']?.toString() ?? '';
+    final peer = await _ensurePeer(from, username: fromUsername);
     await _createAndSendOffer(peer);
   }
 
@@ -258,13 +264,18 @@ class GroupCallService {
       String type, Map<String, dynamic> p) async {
     final from = p['from_user_id']?.toString() ?? '';
     if (from.isEmpty) return;
-    final peer = await _ensurePeer(from);
+    final fromUsername = p['from_username']?.toString() ?? '';
+    final peer = await _ensurePeer(from, username: fromUsername);
     final pc = peer.pc;
     if (pc == null) return;
     if (type == 'call.offer') {
       final sdp = p['sdp']?.toString() ?? '';
       final t = p['type']?.toString() ?? 'offer';
       await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
+      for (final cand in peer.pendingIce) {
+        await pc.addCandidate(cand);
+      }
+      peer.pendingIce.clear();
       final answer = await pc.createAnswer({});
       await pc.setLocalDescription(answer);
       _send('call.answer', {
@@ -276,6 +287,10 @@ class GroupCallService {
       final sdp = p['sdp']?.toString() ?? '';
       final t = p['type']?.toString() ?? 'answer';
       await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
+      for (final cand in peer.pendingIce) {
+        await pc.addCandidate(cand);
+      }
+      peer.pendingIce.clear();
     } else if (type == 'call.ice') {
       final cand = RTCIceCandidate(
         p['candidate']?.toString() ?? '',
@@ -283,20 +298,29 @@ class GroupCallService {
         (p['sdp_m_line_index'] as num?)?.toInt(),
       );
       try {
+        if ((await pc.getRemoteDescription()) == null) {
+          peer.pendingIce.add(cand);
+          return;
+        }
         await pc.addCandidate(cand);
-      } catch (_) {}
+      } catch (e) {
+        appLog.warn('[GroupCall] addCandidate failed', e);
+      }
     }
   }
 
-  Future<GroupCallPeer> _ensurePeer(String userId) async {
+  Future<GroupCallPeer> _ensurePeer(String userId, {String username = ''}) async {
     final existing = peers.value[userId];
-    if (existing != null && existing.pc != null) return existing;
-    final peer = existing ?? GroupCallPeer(userId);
+    if (existing != null && existing.pc != null) {
+      if (username.isNotEmpty && existing.username.isEmpty) {
+        existing.username = username;
+      }
+      return existing;
+    }
+    final peer = existing ?? GroupCallPeer(userId, username: username);
     await peer.renderer.initialize();
     final pc = await createPeerConnection({
-      'iceServers': [
-        {'urls': ['stun:stun.l.google.com:19302']}
-      ],
+      'iceServers': AppConfig.iceServers,
       'sdpSemantics': 'unified-plan',
     });
     pc.onIceCandidate = (cand) {
@@ -349,11 +373,15 @@ class GroupCallService {
     if (peer == null) return;
     try {
       await peer.pc?.close();
-    } catch (_) {}
+    } catch (e) {
+      appLog.warn('[GroupCall] peer.pc.close failed', e);
+    }
     try {
       peer.renderer.srcObject = null;
       await peer.renderer.dispose();
-    } catch (_) {}
+    } catch (e) {
+      appLog.warn('[GroupCall] peer.renderer.dispose failed', e);
+    }
     final next = Map<String, GroupCallPeer>.from(peers.value);
     next.remove(userId);
     peers.value = next;
@@ -371,11 +399,8 @@ class GroupCallService {
             : {'facingMode': 'user', 'width': 640, 'height': 480},
       });
       localStream.value = media;
-    } catch (e) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[GroupCallService] getUserMedia failed: $e');
-      }
+    } catch (e, st) {
+      appLog.error('[GroupCallService] getUserMedia failed', e, st);
       await _cleanup();
     }
   }
@@ -398,14 +423,35 @@ class GroupCallService {
     _playRingAsset('assets/sounds/ringback.wav');
   }
 
+  Future<void> _ensureAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.duckOthers,
+        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions:
+            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+      ));
+    } catch (e) {
+      appLog.warn('[GroupCall] AudioSession configure failed', e);
+    }
+  }
+
   Future<void> _playRingAsset(String asset) async {
     try {
+      await _ensureAudioSession();
       await _ringPlayer.stop();
       await _ringPlayer.setAsset(asset);
       await _ringPlayer.setLoopMode(LoopMode.one);
       await _ringPlayer.setVolume(0.7);
       await _ringPlayer.play();
-    } catch (_) {}
+    } catch (e, st) {
+      appLog.error('[GroupCall] ring asset $asset failed', e, st);
+    }
   }
 
   void _stopRing() {
@@ -426,11 +472,15 @@ class GroupCallService {
       for (final t in ls.getTracks()) {
         try {
           await t.stop();
-        } catch (_) {}
+        } catch (e) {
+          appLog.warn('[GroupCall] track.stop failed', e);
+        }
       }
       try {
         await ls.dispose();
-      } catch (_) {}
+      } catch (e) {
+        appLog.warn('[GroupCall] localStream.dispose failed', e);
+      }
     }
     localStream.value = null;
     isMuted.value = false;

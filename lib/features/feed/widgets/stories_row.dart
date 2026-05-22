@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,8 @@ import '../../../core/design/design.dart';
 import '../../../core/models/audio_track.dart';
 import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
+import 'story_poll_overlay.dart';
+import 'story_viewers_sheet.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/story.dart';
 import '../../stories/text_story_compose_screen.dart';
@@ -71,13 +74,12 @@ class StoriesRow extends ConsumerWidget {
   void _openStoryViewer(
       BuildContext context, List<StoryGroup> groups, int groupIndex, String? currentUserId) {
     Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            StoryViewerRoute(groups: groups, initialGroupIndex: groupIndex, currentUserId: currentUserId),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 200),
+      CupertinoPageRoute(
+        builder: (_) => StoryViewerRoute(
+          groups: groups,
+          initialGroupIndex: groupIndex,
+          currentUserId: currentUserId,
+        ),
       ),
     );
   }
@@ -124,10 +126,13 @@ class StoryViewerRoute extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _InlineStoryViewer(
-      groups: groups,
-      initialGroupIndex: initialGroupIndex,
-      currentUserId: currentUserId,
+    return SwipeToDismiss(
+      downOnly: true,
+      child: _InlineStoryViewer(
+        groups: groups,
+        initialGroupIndex: initialGroupIndex,
+        currentUserId: currentUserId,
+      ),
     );
   }
 }
@@ -580,7 +585,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetCtx) => _ViewersSheet(storyId: story.id),
+      builder: (sheetCtx) => StoryViewersSheet(storyId: story.id),
     );
     if (mounted && !_isReplyOpen) {
       _progressController.forward();
@@ -976,7 +981,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                 return Positioned(
                   left: (p.x.clamp(0.0, 0.9)) * cs.maxWidth,
                   top: (p.y.clamp(0.0, 0.85)) * cs.maxHeight,
-                  child: _StoryPollOverlay(
+                  child: StoryPollOverlay(
                     storyId: story.id,
                     poll: p,
                     readOnly: isAuthor,
@@ -1332,441 +1337,3 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
 
 }
 
-// ---------------------------------------------------------------------------
-// Viewers bottom sheet (own story only)
-// ---------------------------------------------------------------------------
-
-class _ViewersSheet extends ConsumerStatefulWidget {
-  final String storyId;
-  const _ViewersSheet({required this.storyId});
-
-  @override
-  ConsumerState<_ViewersSheet> createState() => _ViewersSheetState();
-}
-
-class _ViewersSheetState extends ConsumerState<_ViewersSheet> {
-  static const int _pageSize = 50;
-
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _hasMore = true;
-  String? _error;
-  int _page = 1;
-  final List<Map<String, dynamic>> _viewers = [];
-  final ScrollController _scrollCtrl = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollCtrl.addListener(_onScroll);
-    _loadFirst();
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.removeListener(_onScroll);
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  /// Trigger next-page load when within 200px of the end. Single-instance
-  /// guard via `_loadingMore` so a fast scroll doesn't fire 3 in flight.
-  void _onScroll() {
-    if (_loadingMore || !_hasMore) return;
-    if (!_scrollCtrl.hasClients) return;
-    final pos = _scrollCtrl.position;
-    if (pos.pixels >= pos.maxScrollExtent - 200) {
-      _loadMore();
-    }
-  }
-
-  Future<void> _loadFirst() async {
-    final ok = await _fetch(page: 1, replace: true);
-    if (mounted) {
-      setState(() {
-        _loading = false;
-        if (!ok) _error = _error ?? 'Ошибка загрузки';
-      });
-    }
-  }
-
-  Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore) return;
-    setState(() => _loadingMore = true);
-    final next = _page + 1;
-    final ok = await _fetch(page: next, replace: false);
-    if (mounted) {
-      setState(() {
-        _loadingMore = false;
-        if (ok) _page = next;
-      });
-    }
-  }
-
-  /// Returns true on success. Appends or replaces `_viewers` based on
-  /// `replace`, and updates `_hasMore` from server meta.
-  Future<bool> _fetch({required int page, required bool replace}) async {
-    try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.get(
-        ApiEndpoints.storyViewers(widget.storyId),
-        queryParameters: {'page': '$page', 'limit': '$_pageSize'},
-      );
-      final body = r.data;
-      final data = body is Map && body.containsKey('data') ? body['data'] : body;
-      final list = data is List ? data.cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
-      // Server may return `meta.has_next_page`; if absent, fall back to
-      // "got a full page → maybe more" heuristic.
-      bool hasNext = list.length >= _pageSize;
-      if (body is Map && body['meta'] is Map) {
-        final meta = (body['meta'] as Map).cast<String, dynamic>();
-        if (meta.containsKey('has_next_page')) {
-          hasNext = meta['has_next_page'] == true;
-        }
-      }
-      if (mounted) {
-        setState(() {
-          if (replace) _viewers.clear();
-          _viewers.addAll(list);
-          _hasMore = hasNext;
-        });
-      }
-      return true;
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-      return false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.7,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  PhosphorIcon(PhosphorIcons.eye(), color: Colors.white),
-                  const SizedBox(width: 8),
-                  Text(
-                    _loading
-                        ? 'Загружаем…'
-                        : 'Просмотры (${_viewers.length})',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1, color: Colors.white12),
-            Expanded(child: _buildBody()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_loading) {
-      return const Center(
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    if (_error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Text('Ошибка: $_error',
-              style: const TextStyle(color: Colors.white70)),
-        ),
-      );
-    }
-    if (_viewers.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(40),
-          child: Text(
-            'Пока никто не посмотрел',
-            style: TextStyle(color: Colors.white60),
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      controller: _scrollCtrl,
-      // +1 row reserved for the "loading more" / "end" footer when we
-      // believe more pages exist.
-      itemCount: _viewers.length + (_hasMore ? 1 : 0),
-      itemBuilder: (_, i) {
-        if (i >= _viewers.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: _loadingMore
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white54,
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          );
-        }
-        final v = _viewers[i];
-        final user = (v['user'] as Map?)?.cast<String, dynamic>() ?? const {};
-        final username = user['username']?.toString() ?? '';
-        final fullName = user['full_name']?.toString() ?? '';
-        final avatar = user['avatar_url']?.toString() ?? '';
-        final viewedAt = DateTime.tryParse(v['viewed_at']?.toString() ?? '');
-        return ListTile(
-          leading: CircleAvatar(
-            radius: 22,
-            backgroundColor: Colors.white12,
-            backgroundImage:
-                avatar.isNotEmpty ? CachedNetworkImageProvider(avatar) : null,
-            child: avatar.isEmpty
-                ? PhosphorIcon(PhosphorIcons.user(),
-                    color: Colors.white54, size: 20)
-                : null,
-          ),
-          title: Text('@$username',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              )),
-          subtitle: fullName.isEmpty
-              ? null
-              : Text(fullName,
-                  style: const TextStyle(
-                      color: Colors.white60, fontSize: 12)),
-          trailing: viewedAt == null
-              ? null
-              : Text(formatRelativeTime(viewedAt),
-                  style: const TextStyle(
-                      color: Colors.white54, fontSize: 12)),
-        );
-      },
-    );
-  }
-}
-
-/// STORY-3: интерактивный poll-overlay в story-viewer. До голоса — две
-/// кнопки с вариантами; после — те же кнопки с процентами и выделенным
-/// my-vote'ом. `readOnly` = true для автора (он сам не голосует, видит
-/// только результаты).
-class _StoryPollOverlay extends ConsumerStatefulWidget {
-  final String storyId;
-  final StoryPoll poll;
-  final bool readOnly;
-  final void Function(StoryPoll updated) onVoted;
-
-  const _StoryPollOverlay({
-    required this.storyId,
-    required this.poll,
-    required this.readOnly,
-    required this.onVoted,
-  });
-
-  @override
-  ConsumerState<_StoryPollOverlay> createState() => _StoryPollOverlayState();
-}
-
-class _StoryPollOverlayState extends ConsumerState<_StoryPollOverlay> {
-  bool _voting = false;
-
-  Future<void> _vote(int optionIndex) async {
-    if (widget.readOnly || _voting) return;
-    setState(() => _voting = true);
-    try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.post(
-        ApiEndpoints.storyPollVote(widget.storyId),
-        data: {'option_index': optionIndex},
-      );
-      final pollJson = r.data is Map && r.data['data'] is Map
-          ? (r.data['data']['poll'] as Map<String, dynamic>?)
-          : null;
-      if (pollJson != null) {
-        widget.onVoted(StoryPoll.fromJson(pollJson));
-      }
-    } catch (_) {
-      // Soft-fail — без ошибочной snackbar'ки чтобы не ломать UX. Юзер
-      // увидит что счётчики не обновились и попробует ещё раз.
-    } finally {
-      if (mounted) setState(() => _voting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.poll;
-    final hasVoted = p.hasVoted || widget.readOnly;
-    return Container(
-      width: 240,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            p.question,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _PollButton(
-                  label: p.optionA,
-                  percent: hasVoted ? p.percentA : null,
-                  selected: p.myVote == 0,
-                  highlighted: !hasVoted,
-                  onTap: hasVoted ? null : () => _vote(0),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _PollButton(
-                  label: p.optionB,
-                  percent: hasVoted ? p.percentB : null,
-                  selected: p.myVote == 1,
-                  highlighted: false,
-                  onTap: hasVoted ? null : () => _vote(1),
-                ),
-              ),
-            ],
-          ),
-          if (hasVoted && p.totalVotes > 0) ...[
-            const SizedBox(height: 6),
-            Text(
-              '${p.totalVotes} ${_pluralize(p.totalVotes)}',
-              style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _pluralize(int n) {
-    final mod10 = n % 10;
-    final mod100 = n % 100;
-    if (mod10 == 1 && mod100 != 11) return 'голос';
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-      return 'голоса';
-    }
-    return 'голосов';
-  }
-}
-
-class _PollButton extends StatelessWidget {
-  final String label;
-  final double? percent;
-  final bool selected;
-  final bool highlighted;
-  final VoidCallback? onTap;
-  const _PollButton({
-    required this.label,
-    required this.percent,
-    required this.selected,
-    required this.highlighted,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? SeeUColors.accent.withValues(alpha: 0.22)
-              : (highlighted
-                  ? SeeUColors.accent.withValues(alpha: 0.10)
-                  : Colors.grey.shade200),
-          border: selected
-              ? Border.all(color: SeeUColors.accent, width: 1.5)
-              : null,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? SeeUColors.accent : Colors.black87,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (percent != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                '${percent!.toInt()}%',
-                style: TextStyle(
-                  color: selected ? SeeUColors.accent : Colors.black54,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}

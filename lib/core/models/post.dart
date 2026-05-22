@@ -145,20 +145,21 @@ class Post {
       caption: json['caption']?.toString(),
       location: json['location']?.toString(),
       thumbnailUrl: thumbnailUrl,
-      likesCount: (json['likes_count'] ?? json['likesCount'] ?? 0) as int,
-      commentsCount: (json['comments_count'] ?? json['commentsCount'] ?? 0) as int,
-      isLiked: (json['is_liked'] ?? json['isLiked'] ?? false) as bool,
-      isSaved: (json['is_saved'] ?? json['isSaved'] ?? false) as bool,
+      // BUG-20: num? для всех счётчиков защищает от типа double (BIGINT).
+      likesCount: ((json['likes_count'] ?? json['likesCount']) as num?)?.toInt() ?? 0,
+      commentsCount: ((json['comments_count'] ?? json['commentsCount']) as num?)?.toInt() ?? 0,
+      isLiked: ((json['is_liked'] ?? json['isLiked']) as bool?) ?? false,
+      isSaved: ((json['is_saved'] ?? json['isSaved']) as bool?) ?? false,
       likedByUsername: json['liked_by_username']?.toString(),
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      isWave: (json['is_wave'] ?? json['isWave'] ?? false) as bool,
-      waveColorValue: (json['wave_color_value'] ?? json['waveColorValue']) as int?,
+      isWave: ((json['is_wave'] ?? json['isWave']) as bool?) ?? false,
+      waveColorValue: ((json['wave_color_value'] ?? json['waveColorValue']) as num?)?.toInt(),
       reactions: json['reactions'] is Map
           ? Map<String, int>.from(
               (json['reactions'] as Map).map(
-                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+                (k, v) => MapEntry(k.toString(), (v is num) ? v.toInt() : 0),
               ),
             )
           : const {},

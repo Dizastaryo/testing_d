@@ -324,7 +324,7 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
                   child: Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
+                        icon: Icon(PhosphorIcons.x(), color: Colors.white),
                         onPressed: () => context.pop(),
                       ),
                       const Spacer(),
@@ -734,7 +734,7 @@ class _CommentTile extends StatelessWidget {
           ),
           if (canDelete)
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 18),
+              icon: Icon(PhosphorIcons.trash(), size: 18),
               color: c.ink3,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),

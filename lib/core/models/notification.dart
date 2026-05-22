@@ -103,11 +103,12 @@ class AppNotification {
       postId: json['post_id']?.toString(),
       postThumbnailUrl: json['post_thumbnail_url']?.toString(),
       commentText: json['comment_text']?.toString(),
-      isRead: (json['is_read'] ?? false) as bool,
+      isRead: (json['is_read'] as bool?) ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      othersCount: (json['others_count'] ?? 0) as int,
+      // BUG-20: num? для счётчиков, не int — защита от BIGINT/double.
+      othersCount: (json['others_count'] as num?)?.toInt() ?? 0,
       otherUsers: (json['other_users'] is List)
           ? (json['other_users'] as List)
               .whereType<Map<String, dynamic>>()

@@ -72,3 +72,11 @@ class LibraryActions {
 final libraryActionsProvider = Provider<LibraryActions>((ref) {
   return LibraryActions(ref.watch(libraryApiClientProvider));
 });
+
+/// Files uploaded by a specific user (profile tab).
+final userFilesProvider = FutureProvider.family<List<FileItem>, String>((ref, userId) async {
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.userFiles(userId));
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+});

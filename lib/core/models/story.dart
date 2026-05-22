@@ -76,8 +76,9 @@ class Story {
         _ => StoryMediaType.image,
       },
       textOverlay: json['text_overlay']?.toString(),
-      isSeen: (json['is_seen'] ?? json['isSeen'] ?? false) as bool,
-      viewsCount: (json['views_count'] ?? 0) as int,
+      isSeen: (json['is_seen'] ?? json['isSeen'] as bool?) ?? false,
+      // BUG-20: num? для счётчика.
+      viewsCount: (json['views_count'] as num?)?.toInt() ?? 0,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),

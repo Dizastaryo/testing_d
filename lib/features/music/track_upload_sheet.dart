@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
@@ -111,6 +112,18 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
       final audioResp = await api.post(ApiEndpoints.mediaUpload, data: audioForm);
       final audioUrl = audioResp.data['data']['url'] as String;
 
+      // Probe duration from uploaded file
+      int durationSeconds = 0;
+      try {
+        final probePlayer = AudioPlayer();
+        final absUrl = audioUrl.startsWith('/')
+            ? ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + audioUrl
+            : audioUrl;
+        final d = await probePlayer.setUrl(absUrl);
+        durationSeconds = d?.inSeconds ?? 0;
+        await probePlayer.dispose();
+      } catch (_) {}
+
       String coverUrl = '';
       if (_cover != null && _coverBytes != null) {
         final coverForm = FormData.fromMap({
@@ -129,7 +142,7 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
         'genre': _genre.text.trim(),
         'audio_url': audioUrl,
         'cover_url': coverUrl,
-        'duration_seconds': 0,
+        'duration_seconds': durationSeconds,
       });
 
       if (!mounted) return;

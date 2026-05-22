@@ -65,7 +65,7 @@ class _FilterSlidersBodyState extends State<_FilterSlidersBody> {
       builder: (_, scroll) {
         return Container(
           decoration: const BoxDecoration(
-            color: Color(0xF0181412),
+            color: SeeUColors.cameraDarkOverlay,
             borderRadius:
                 BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
           ),

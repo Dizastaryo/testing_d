@@ -453,7 +453,7 @@ class _ForwardChatPickerState extends ConsumerState<_ForwardChatPicker> {
                                     ),
                             ),
                             child: isSelected
-                                ? const Icon(Icons.check,
+                                ? Icon(PhosphorIcons.check(),
                                     color: Colors.white, size: 16)
                                 : null,
                           ),

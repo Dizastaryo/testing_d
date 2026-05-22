@@ -109,13 +109,24 @@ class _StoryCircleState extends State<StoryCircle>
                 ),
               // Outer ring container
               // L07: For own story, no ring so use size, not size + 4
-              // PROFILE-3: зелёный ring для CF-stories override'ит оранжевый.
+              // PROFILE-3 / BUG-26: зелёный ring для CF-stories override'ит
+              // оранжевый — теперь рисуется ДАЖЕ для own-story чтобы автор
+              // видел метку «эта сторис для close-friends». Толщина у own
+              // тоньше (2px вместо 4px) — не мешает «+»-бэйджу.
               Container(
-                width: widget.isOwn ? widget.size : widget.size + 4,
-                height: widget.isOwn ? widget.size : widget.size + 4,
+                width: widget.isOwn
+                    ? (widget.hasCloseFriendsStory
+                        ? widget.size + 4
+                        : widget.size)
+                    : widget.size + 4,
+                height: widget.isOwn
+                    ? (widget.hasCloseFriendsStory
+                        ? widget.size + 4
+                        : widget.size)
+                    : widget.size + 4,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: widget.hasCloseFriendsStory && !widget.isOwn
+                  color: widget.hasCloseFriendsStory
                       ? const Color(0xFF4CAF50)
                       : showGradientRing
                           ? SeeUColors.accent

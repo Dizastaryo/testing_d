@@ -27,6 +27,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // Invite code captured from the URL (?invite=...). Sent to backend on
   // verify-otp so the inviter gets credit when this user registers.
   String? _inviteCode;
+  final _privacyRecognizer = TapGestureRecognizer();
+  final _termsRecognizer = TapGestureRecognizer();
 
   @override
   void initState() {
@@ -47,12 +49,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     for (final f in _otpFocusNodes) {
       f.dispose();
     }
+    _privacyRecognizer.dispose();
+    _termsRecognizer.dispose();
     super.dispose();
   }
 
+  // TODO: добавить выбор страны (country picker) — пока захардкожен +7 (KZ/RU).
+  // При реализации: _countryCode как State-поле, dropdown перед полем ввода.
+  static const _countryCode = '+7';
+
   String get _rawPhone {
     final digits = _phoneCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
-    return '+7$digits';
+    return '$_countryCode$digits';
   }
 
   Future<void> _sendOtp() async {
@@ -239,7 +247,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
             child: Center(
               child: Text(
-                '+7',
+                _countryCode,
                 style: SeeUTypography.subtitle.copyWith(
                   fontWeight: FontWeight.w600,
                   fontSize: 18,
@@ -319,13 +327,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextSpan(
                     text: 'Политику конфиденциальности',
                     style: linkStyle,
-                    recognizer: TapGestureRecognizer()..onTap = () => _openLegal('/privacy'),
+                    recognizer: _privacyRecognizer..onTap = () => _openLegal('/privacy'),
                   ),
                   const TextSpan(text: ' и '),
                   TextSpan(
                     text: 'Условия использования',
                     style: linkStyle,
-                    recognizer: TapGestureRecognizer()..onTap = () => _openLegal('/terms'),
+                    recognizer: _termsRecognizer..onTap = () => _openLegal('/terms'),
                   ),
                 ],
               ),

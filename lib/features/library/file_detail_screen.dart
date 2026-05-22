@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/utils/format.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
@@ -214,7 +215,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   }
 
   Widget _typeIcon(FileItem file, {bool big = false}) {
-    final color = _colorForType(file.fileExtension);
+    final color = colorForFileType(file.fileExtension);
     return Center(
       child: Container(
         width: big ? 100 : 60,
@@ -238,24 +239,6 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
         ),
       ),
     );
-  }
-
-  Color _colorForType(String ext) {
-    switch (ext) {
-      case 'pdf':
-        return SeeUColors.accent;
-      case 'zip':
-      case 'rar':
-        return const Color(0xFFC04CFD);
-      case 'txt':
-      case 'md':
-        return const Color(0xFF2FA84F);
-      case 'mp3':
-      case 'wav':
-        return const Color(0xFF4A90E2);
-      default:
-        return Colors.amber;
-    }
   }
 
   Future<void> _download(FileItem file) async {

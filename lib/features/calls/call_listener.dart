@@ -246,8 +246,8 @@ class _MiniCallOverlay extends StatelessWidget {
                       CallService.instance.hangup();
                     },
                     child: Container(
-                      width: 32,
-                      height: 32,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
                         color: SeeUColors.error,
                         shape: BoxShape.circle,
@@ -262,7 +262,7 @@ class _MiniCallOverlay extends StatelessWidget {
                       child: const Icon(
                         PhosphorIconsFill.phoneSlash,
                         color: Colors.white,
-                        size: 16,
+                        size: 20,
                       ),
                     ),
                   ),

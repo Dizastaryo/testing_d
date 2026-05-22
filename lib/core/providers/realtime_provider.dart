@@ -116,9 +116,48 @@ class _RealtimeConnection {
       // Reset backoff once we got a connection. Real "connected" signal would
       // be a server-sent hello, but for now successful subscribe = good.
       _backoff = const Duration(seconds: 1);
+
+      // BUG-5: после connect / reconnect — догнать pending call.invite которые
+      // пришли пока WS был down. Backend хранит invitations в DB (60-сек window).
+      // Fire-and-forget, ошибка endpoint'а не должна влиять на WS-flow.
+      unawaited(_probePendingCalls());
     } catch (e) {
       debugPrint('[realtime] connect error: $e');
       _scheduleReconnect();
+    }
+  }
+
+  /// BUG-5: после reconnect'а спрашиваем backend — был ли пропущенный звонок.
+  /// Возвращённые pending invitations re-инжектим в events-stream как
+  /// синтетические `call.invite` события — CallService обработает их
+  /// идентично real-time. Если ничего нет — endpoint вернёт пустой массив.
+  Future<void> _probePendingCalls() async {
+    if (_disposed) return;
+    try {
+      final api = _ref.read(apiClientProvider);
+      final resp = await api.get('/users/me/calls/pending');
+      final data = resp.data;
+      List<dynamic> items = const [];
+      if (data is Map && data['data'] is List) {
+        items = data['data'] as List;
+      }
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        final from = raw['from_user_id']?.toString() ?? '';
+        if (from.isEmpty) continue;
+        final synthetic = <String, dynamic>{
+          'from_user_id': from,
+          'from_username': raw['peer_username'] ?? '',
+          'from_full_name': raw['peer_full_name'] ?? '',
+          'from_avatar': raw['peer_avatar_url'] ?? '',
+          'kind': raw['kind'] ?? 'video',
+        };
+        debugPrint('[realtime] replaying missed call.invite from=$from');
+        _events.add(RealtimeEvent('call.invite', synthetic));
+      }
+    } catch (e) {
+      // Не критично — звонок просто пропадёт. Логируем для debug'а.
+      debugPrint('[realtime] probe pending-calls failed: $e');
     }
   }
 

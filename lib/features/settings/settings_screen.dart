@@ -458,7 +458,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           decoration: BoxDecoration(
             color: c.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE74C3C).withValues(alpha: 0.3), width: 0.5),
+            border: Border.all(color: SeeUColors.error.withValues(alpha: 0.3), width: 0.5),
           ),
           clipBehavior: Clip.antiAlias,
           child: Tappable.faded(
@@ -471,19 +471,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     width: 30,
                     height: 30,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE74C3C).withValues(alpha: 0.12),
+                      color: SeeUColors.error.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.delete_forever, size: 18, color: Color(0xFFE74C3C)),
+                    child: Icon(PhosphorIcons.trash(), size: 18, color: SeeUColors.error),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       label,
-                      style: SeeUTypography.body.copyWith(color: const Color(0xFFE74C3C)),
+                      style: SeeUTypography.body.copyWith(color: SeeUColors.error),
                     ),
                   ),
-                  Icon(icon, size: 14, color: const Color(0xFFE74C3C)),
+                  Icon(icon, size: 14, color: SeeUColors.error),
                 ],
               ),
             ),
@@ -511,7 +511,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE74C3C)),
+            style: TextButton.styleFrom(foregroundColor: SeeUColors.error),
             child: const Text('Удалить'),
           ),
         ],

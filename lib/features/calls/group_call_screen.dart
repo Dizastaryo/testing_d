@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import 'call_buttons.dart';
 import 'call_service.dart' show CallKind;
 import 'group_call_service.dart';
 
@@ -243,9 +243,11 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                 borderRadius: BorderRadius.circular(99),
               ),
               child: Text(
-                peer.userId.length > 8
-                    ? peer.userId.substring(0, 8)
-                    : peer.userId,
+                peer.username.isNotEmpty
+                    ? peer.username
+                    : (peer.userId.length > 8
+                        ? peer.userId.substring(0, 8)
+                        : peer.userId),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 10,
@@ -300,12 +302,12 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _bigBtn(
+          CallBigButton(
             icon: PhosphorIconsFill.phoneSlash,
             color: SeeUColors.error,
             onTap: GroupCallService.instance.declineGroupCall,
           ),
-          _bigBtn(
+          CallBigButton(
             icon: PhosphorIconsFill.phone,
             color: const Color(0xFF2FA84F),
             onTap: GroupCallService.instance.acceptGroupCall,
@@ -322,7 +324,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _smallBtn(
+              CallSmallButton(
                 icon: muted
                     ? PhosphorIconsFill.microphoneSlash
                     : PhosphorIconsFill.microphone,
@@ -330,14 +332,14 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                 onTap: GroupCallService.instance.toggleMute,
               ),
               if (!isVoice)
-                _smallBtn(
+                CallSmallButton(
                   icon: cameraOff
                       ? PhosphorIconsFill.videoCameraSlash
                       : PhosphorIconsFill.videoCamera,
                   active: cameraOff,
                   onTap: GroupCallService.instance.toggleCamera,
                 ),
-              _bigBtn(
+              CallBigButton(
                 icon: PhosphorIconsFill.phoneSlash,
                 color: SeeUColors.error,
                 onTap: GroupCallService.instance.hangup,
@@ -349,56 +351,4 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
     );
   }
 
-  Widget _smallBtn(
-      {required IconData icon,
-      bool active = false,
-      required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: active ? Colors.white : Colors.white.withValues(alpha: 0.15),
-        ),
-        child: Icon(
-          icon,
-          color: active ? Colors.black : Colors.white,
-          size: 24,
-        ),
-      ),
-    );
-  }
-
-  Widget _bigBtn(
-      {required IconData icon,
-      required Color color,
-      required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        onTap();
-      },
-      child: Container(
-        width: 68,
-        height: 68,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.4),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Icon(icon, color: Colors.white, size: 30),
-      ),
-    );
-  }
 }

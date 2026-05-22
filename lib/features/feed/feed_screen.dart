@@ -229,6 +229,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                         ],
                                       ),
                                       const Spacer(),
+                                      // Reels button
+                                      _HeaderIconButton(
+                                        icon: PhosphorIcon(PhosphorIcons.filmStrip()),
+                                        onTap: () => context.push('/view/first?type=video'),
+                                      ),
+                                      const SizedBox(width: 10),
                                       // DM button with entrance animation
                                       AnimatedBuilder(
                                         animation: _headerIconsController,
@@ -397,8 +403,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   child: GestureDetector(
                     onTap: _scrollToTop,
                     child: Container(
-                      width: 40,
-                      height: 40,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: c.surface,
                         shape: BoxShape.circle,
@@ -572,8 +578,8 @@ class _HeaderIconButton extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: c.surface,
               borderRadius: BorderRadius.circular(SeeURadii.pill),

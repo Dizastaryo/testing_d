@@ -5,16 +5,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import '../../../core/utils/format.dart';
 import '../../../core/utils/time_format.dart';
-import 'package:video_player/video_player.dart';
-import 'package:visibility_detector/visibility_detector.dart';
-import '../../video/fullscreen_video_player.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
 import '../../../core/providers/blocks_provider.dart';
 import '../../../core/providers/feed_provider.dart';
 import '../../../widgets/report_sheet.dart';
 import '../../../widgets/share_sheet.dart';
+import 'post_card_widgets.dart';
 
 class PostCard extends ConsumerStatefulWidget {
   final Post post;
@@ -629,7 +628,7 @@ class _PostCardState extends ConsumerState<PostCard>
                 }
               },
               onLongPress: _showReactionPickerUI,
-              child: _ActionButtonRaw(
+              child: PostActionButtonRaw(
                 icon: PhosphorIcon(
                   post.isLiked
                       ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
@@ -649,17 +648,17 @@ class _PostCardState extends ConsumerState<PostCard>
                 ),
               ),
             const SizedBox(width: 8),
-            _ActionButton(
+            PostActionButton(
               icon: PhosphorIcon(PhosphorIcons.chatCircle()),
               onTap: () => context.push('/post/${post.id}/comments'),
             ),
             const SizedBox(width: 8),
-            _ActionButton(
+            PostActionButton(
               icon: PhosphorIcon(PhosphorIcons.shareFat()),
               onTap: _onShareTap,
             ),
             const Spacer(),
-            _ActionButton(
+            PostActionButton(
               icon: PhosphorIcon(post.isSaved
                   ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
                   : PhosphorIcons.bookmarkSimple()),
@@ -771,8 +770,9 @@ class _PostCardState extends ConsumerState<PostCard>
           ),
           GestureDetector(
             onTap: () => _showPostOptions(context, post),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
+            child: SizedBox(
+              width: 44,
+              height: 44,
               child: Icon(PhosphorIcons.dotsThreeOutline(),
                   size: 20, color: c.ink2),
             ),
@@ -801,7 +801,7 @@ class _PostCardState extends ConsumerState<PostCard>
         ),
       );
     }
-    final aspectRatio = post.media.first.aspectRatio ?? 1.0;
+    final aspectRatio = (post.media.first.aspectRatio ?? 1.0).clamp(0.1, 3.0);
     final hasMultiple = post.media.length > 1;
 
     return GestureDetector(
@@ -882,12 +882,13 @@ class _PostCardState extends ConsumerState<PostCard>
                       color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(SeeURadii.pill),
                     ),
+                    // BUG-16: micro-typography token + white override для
+                    // counter-badge поверх media. Раньше inline fontSize:12.
                     child: Text(
                       '${_currentPage + 1}/${post.media.length}',
-                      style: const TextStyle(
+                      style: SeeUTypography.micro.copyWith(
                         color: Colors.white,
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -902,7 +903,7 @@ class _PostCardState extends ConsumerState<PostCard>
   Widget _buildMediaItem(PostMedia media) {
     final c = context.seeuColors;
     if (media.type == MediaType.video) {
-      return _FeedVideoPlayer(url: media.url);
+      return FeedVideoPlayer(url: media.url);
     }
     return CachedNetworkImage(
       imageUrl: media.url,
@@ -960,7 +961,7 @@ class _PostCardState extends ConsumerState<PostCard>
                   Text(e.key, style: const TextStyle(fontSize: 14)),
                   const SizedBox(width: 4),
                   Text(
-                    _formatCount(e.value),
+                    formatCount(e.value),
                     style: SeeUTypography.caption.copyWith(
                       fontSize: 12,
                       color: mine ? SeeUColors.accent : c.ink2,
@@ -985,10 +986,10 @@ class _PostCardState extends ConsumerState<PostCard>
       if (post.likesCount == 1) {
         likesText = 'Нравится ${post.likedByUsername}';
       } else {
-        likesText = 'Нравится ${post.likedByUsername} и ещё ${_formatCount(post.likesCount - 1)}';
+        likesText = 'Нравится ${post.likedByUsername} и ещё ${formatCount(post.likesCount - 1)}';
       }
     } else {
-      likesText = '${_formatCount(post.likesCount)} отметок «Нравится»';
+      likesText = '${formatCount(post.likesCount)} отметок «Нравится»';
     }
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 2),
@@ -1008,7 +1009,7 @@ class _PostCardState extends ConsumerState<PostCard>
     }
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: _ExpandableCaption(
+      child: PostExpandableCaption(
         postId: post.id,
         username: post.author.username,
         caption: post.caption!,
@@ -1024,7 +1025,7 @@ class _PostCardState extends ConsumerState<PostCard>
       child: GestureDetector(
         onTap: () => context.push('/post/${post.id}/comments'),
         child: SeeUChip(
-          label: '${_formatCount(post.commentsCount)} комментариев',
+          label: '${formatCount(post.commentsCount)} комментариев',
           bgColor: c.accentSoft,
           fgColor: SeeUColors.accent,
         ),
@@ -1126,325 +1127,6 @@ class _PostCardState extends ConsumerState<PostCard>
     );
   }
 
-  String _formatCount(int count) {
-    if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
-    if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return count.toString();
-  }
 }
 
 // --- Action button (tappable) ------------------------------------------------
-
-class _ActionButton extends StatelessWidget {
-  final Widget icon;
-  final VoidCallback onTap;
-
-  const _ActionButton({
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Tappable.scaled(
-      onTap: onTap,
-      scaleFactor: 0.90,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: c.surface2,
-          borderRadius: BorderRadius.circular(SeeURadii.small),
-          boxShadow: SeeUShadows.sm,
-        ),
-        child: Center(
-          child: IconTheme(
-            data: IconThemeData(
-              size: 22,
-              color: c.ink,
-            ),
-            child: icon,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// --- Action button raw (no Tappable wrapper, used for custom gesture) --------
-
-class _ActionButtonRaw extends StatelessWidget {
-  final Widget icon;
-
-  const _ActionButtonRaw({
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: BorderRadius.circular(SeeURadii.small),
-        boxShadow: SeeUShadows.sm,
-      ),
-      child: Center(child: icon),
-    );
-  }
-}
-
-// --- Expandable caption ------------------------------------------------------
-
-class _ExpandableCaption extends StatefulWidget {
-  final String postId;
-  final String username;
-  final String caption;
-
-  const _ExpandableCaption({
-    required this.postId,
-    required this.username,
-    required this.caption,
-  });
-
-  @override
-  State<_ExpandableCaption> createState() => _ExpandableCaptionState();
-}
-
-class _ExpandableCaptionState extends State<_ExpandableCaption> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    const maxLength = 100;
-    final isLong = widget.caption.length > maxLength;
-
-    return RichText(
-      text: TextSpan(
-        children: [
-          TextSpan(
-            text: '${widget.username} ',
-            style: SeeUTypography.body
-                .copyWith(fontWeight: FontWeight.w700),
-          ),
-          TextSpan(
-            text: _expanded || !isLong
-                ? widget.caption
-                : '${widget.caption.substring(0, maxLength)}...',
-            style: SeeUTypography.body,
-          ),
-          if (isLong && !_expanded)
-            WidgetSpan(
-              child: GestureDetector(
-                onTap: () => setState(() => _expanded = true),
-                child: Text(
-                  ' ещё',
-                  style: SeeUTypography.body
-                      .copyWith(color: c.ink3),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Video player for feed posts ─────────────────────────────────────────
-
-class _FeedVideoPlayer extends StatefulWidget {
-  final String url;
-  const _FeedVideoPlayer({required this.url});
-
-  @override
-  State<_FeedVideoPlayer> createState() => _FeedVideoPlayerState();
-}
-
-/// Memory-aware feed video player.
-///
-/// Previously the widget used [AutomaticKeepAliveClientMixin] with
-/// `wantKeepAlive: true`, which kept every video controller alive across
-/// the entire feed scroll session. Scroll past 50 video posts → 50 live
-/// `VideoPlayerController`s with decoded buffers in RAM, ~30MB each on
-/// low-end Android = OOM crash within a minute.
-///
-/// New behaviour:
-/// - No keep-alive — widget gets disposed when SliverList recycles it,
-///   controller is freed immediately.
-/// - [VisibilityDetector] reports viewport coverage: < 50% visible → pause
-///   playback (frame decoder idles), > 50% visible → play. Cuts ambient
-///   CPU/battery use to ~zero when the post is not the focused one.
-/// - On returning to a post (re-scroll), the widget initialises a fresh
-///   controller — same as opening for the first time. Slight buffering
-///   flicker, but bounded memory usage.
-class _FeedVideoPlayerState extends State<_FeedVideoPlayer> {
-  VideoPlayerController? _controller;
-  bool _initialized = false;
-  bool _hasError = false;
-  bool _isMuted = true;
-  /// Once we paused for fullscreen we don't want visibility-driven autoplay
-  /// to fight the navigator transition. Resume is handled in [.then(...)].
-  bool _suspendedForFullscreen = false;
-
-  // Stable key for VisibilityDetector — must be unique per widget instance
-  // and survive rebuilds. Using URL is fine; if two posts share the same
-  // video URL, both will receive the same callbacks but each has its own
-  // state, so behaviour stays correct.
-  late final Key _visibilityKey =
-      Key('feed-video-${widget.url.hashCode}-${identityHashCode(this)}');
-
-  @override
-  void initState() {
-    super.initState();
-    _initController();
-  }
-
-  void _initController() {
-    _controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.url),
-      httpHeaders: const {'Connection': 'keep-alive'},
-    );
-    _controller!
-      ..setLooping(true)
-      ..setVolume(0)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _initialized = true);
-          // Don't auto-play here — the visibility detector will start
-          // playback if the widget is on-screen, and skip it otherwise.
-        }
-      }).catchError((e) {
-        debugPrint('Feed video error: $e');
-        if (mounted) setState(() => _hasError = true);
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _toggleMute() {
-    if (_controller == null) return;
-    setState(() => _isMuted = !_isMuted);
-    _controller!.setVolume(_isMuted ? 0 : 1);
-  }
-
-  void _onVisibilityChanged(VisibilityInfo info) {
-    if (!_initialized || _hasError || _suspendedForFullscreen) return;
-    final ctrl = _controller;
-    if (ctrl == null || !ctrl.value.isInitialized) return;
-    final visible = info.visibleFraction > 0.5;
-    if (visible && !ctrl.value.isPlaying) {
-      ctrl.play();
-    } else if (!visible && ctrl.value.isPlaying) {
-      ctrl.pause();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_hasError) {
-      return Container(
-        color: Colors.black,
-        child: Center(
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _hasError = false;
-                _initialized = false;
-              });
-              _controller?.dispose();
-              _initController();
-            },
-            child: const Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.refresh_rounded, color: Colors.white38, size: 40),
-                SizedBox(height: 8),
-                Text(
-                  'Нажмите для повтора',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-    if (!_initialized || _controller == null) {
-      return Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
-        ),
-      );
-    }
-    return VisibilityDetector(
-      key: _visibilityKey,
-      onVisibilityChanged: _onVisibilityChanged,
-      child: GestureDetector(
-        onTap: () {
-          // Pause feed player and open fullscreen.
-          _suspendedForFullscreen = true;
-          _controller?.pause();
-          Navigator.of(context).push(
-            PageRouteBuilder(
-              opaque: false,
-              pageBuilder: (_, __, ___) =>
-                  FullscreenVideoPlayer(url: widget.url),
-              transitionsBuilder: (_, anim, __, child) =>
-                  FadeTransition(opacity: anim, child: child),
-            ),
-          ).then((_) {
-            if (!mounted) return;
-            _suspendedForFullscreen = false;
-            // Visibility detector will resume playback if the widget is
-            // still on-screen after the fullscreen route is popped.
-          });
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _controller!.value.size.width,
-                height: _controller!.value.size.height,
-                child: VideoPlayer(_controller!),
-              ),
-            ),
-            // Mute toggle
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: GestureDetector(
-                onTap: _toggleMute,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    _isMuted
-                        ? Icons.volume_off_rounded
-                        : Icons.volume_up_rounded,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

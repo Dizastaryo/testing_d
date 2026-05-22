@@ -177,7 +177,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
 
   Widget _buildHeader(ThemeData theme, SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 12, 20, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,7 +318,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
             ),
             IconButton(
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               icon: Icon(PhosphorIcons.dotsThreeVertical(), color: c.ink2),
               onPressed: () => _showTrackActions(track),
               tooltip: 'Действия',
@@ -799,144 +799,6 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
         content: Text(ok
             ? 'Создан «${p.name}» и трек добавлен'
             : 'Плейлист создан, но трек не добавился'),
-      ),
-    );
-  }
-}
-
-class _MiniPlayer extends StatefulWidget {
-  final AudioTrack track;
-  final AudioPlayer player;
-  final VoidCallback onClose;
-  const _MiniPlayer({
-    required this.track,
-    required this.player,
-    required this.onClose,
-  });
-
-  @override
-  State<_MiniPlayer> createState() => _MiniPlayerState();
-}
-
-class _MiniPlayerState extends State<_MiniPlayer> {
-  Duration _pos = Duration.zero;
-  Duration _dur = Duration.zero;
-  bool _playing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.player.positionStream.listen((p) {
-      if (mounted) setState(() => _pos = p);
-    });
-    widget.player.durationStream.listen((d) {
-      if (mounted) setState(() => _dur = d ?? Duration.zero);
-    });
-    widget.player.playingStream.listen((p) {
-      if (mounted) setState(() => _playing = p);
-    });
-  }
-
-  String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final progress = _dur.inMilliseconds > 0
-        ? _pos.inMilliseconds / _dur.inMilliseconds
-        : 0.0;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border(top: BorderSide(color: c.line)),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 12,
-              offset: const Offset(0, -4)),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Progress bar
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              activeTrackColor: SeeUColors.accent,
-              inactiveTrackColor: c.line,
-              thumbColor: SeeUColors.accent,
-              overlayColor: SeeUColors.accent.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              min: 0,
-              max: 1,
-              value: progress.clamp(0.0, 1.0),
-              onChanged: (v) {
-                widget.player.seek(Duration(
-                    milliseconds: (v * _dur.inMilliseconds).round()));
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 8, 10),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: widget.track.coverUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: widget.track.coverUrl,
-                            fit: BoxFit.cover,
-                          )
-                        : Container(color: c.surface2),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.track.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      Text(
-                        '${widget.track.artist} · ${_fmt(_pos)} / ${_fmt(_dur)}',
-                        style: TextStyle(fontSize: 11, color: c.ink2),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _playing
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                    color: SeeUColors.accent,
-                    size: 36,
-                  ),
-                  onPressed: () =>
-                      _playing ? widget.player.pause() : widget.player.play(),
-                ),
-                IconButton(
-                  icon: Icon(PhosphorIcons.x(), size: 18, color: c.ink2),
-                  onPressed: widget.onClose,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

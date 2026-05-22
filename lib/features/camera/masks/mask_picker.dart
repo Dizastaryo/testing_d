@@ -145,7 +145,7 @@ class MaskPicker extends ConsumerWidget {
   void _showAIMaskMenu(BuildContext context, WidgetRef ref, AIMask m) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xF0181412),
+      backgroundColor: SeeUColors.cameraDarkOverlay,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,

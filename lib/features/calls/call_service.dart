@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/services/logger.dart';
 
 /// Сигнатура «отправить WS-сообщение». Injection-point вместо direct-привязки
 /// к Riverpod-типам (Ref vs WidgetRef).
@@ -110,32 +113,71 @@ class CallService {
   /// Идемпотент: cancel'ит previous timer перед стартом нового.
   void _startRing(CallStatus status) {
     _ringTimer?.cancel();
+    appLog('[CallService] startRing status=$status');
     if (status == CallStatus.incomingRinging) {
       HapticFeedback.heavyImpact();
       _ringTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
         HapticFeedback.heavyImpact();
       });
-      _playRingAsset('assets/sounds/ringtone.wav');
+      _playRingAsset('assets/sounds/ringtone.wav', loud: true);
     } else if (status == CallStatus.outgoingRinging) {
       HapticFeedback.lightImpact();
       _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
         HapticFeedback.lightImpact();
       });
-      _playRingAsset('assets/sounds/ringback.wav');
+      _playRingAsset('assets/sounds/ringback.wav', loud: false);
     }
   }
 
-  /// Loop play asset через _ringPlayer. Errors silent — если asset не
-  /// загрузился (broken build), haptic всё равно сработает.
-  Future<void> _playRingAsset(String assetPath) async {
+  /// BUG-2 (c): настраиваем AudioSession ПЕРЕД проигрыванием ringtone.
+  /// Без этого iOS режет звук во время silent-mode (mute-switch на боку),
+  /// Android иногда routes ring через earpiece вместо speaker. Категория
+  /// `playback + speech` гарантирует громкое воспроизведение через main
+  /// speaker даже при подключённых наушниках.
+  bool _audioSessionConfigured = false;
+  Future<void> _ensureAudioSession() async {
+    if (_audioSessionConfigured) return;
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.duckOthers,
+        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions:
+            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          flags: AndroidAudioFlags.audibilityEnforced,
+          usage: AndroidAudioUsage.notificationRingtone,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
+        androidWillPauseWhenDucked: true,
+      ));
+      await session.setActive(true);
+      _audioSessionConfigured = true;
+      appLog('[CallService] audio session configured for ringtone');
+    } catch (e, st) {
+      appLog.error('[CallService] audio session configure failed', e, st);
+    }
+  }
+
+  /// Loop play asset через _ringPlayer. BUG-2 (b): раньше silent catch
+  /// проглатывал любые ошибки — broken asset = тишина без объяснений.
+  /// Теперь логируем и пробрасываем в `_lastRingError` для display'а.
+  Future<void> _playRingAsset(String assetPath, {required bool loud}) async {
+    await _ensureAudioSession();
     try {
       await _ringPlayer.stop();
       await _ringPlayer.setAsset(assetPath);
       await _ringPlayer.setLoopMode(LoopMode.one);
-      await _ringPlayer.setVolume(0.7);
+      await _ringPlayer.setVolume(loud ? 1.0 : 0.7);
       await _ringPlayer.play();
-    } catch (_) {
-      // Silent fallback на haptic-only.
+      appLog('[CallService] ring playing $assetPath (loud=$loud)');
+    } catch (e, st) {
+      appLog.error('[CallService] ring asset play failed: $assetPath', e, st);
     }
   }
 
@@ -154,7 +196,9 @@ class CallService {
       await _ringPlayer.setLoopMode(LoopMode.off);
       await _ringPlayer.setVolume(0.6);
       await _ringPlayer.play();
-    } catch (_) {}
+    } catch (e) {
+      appLog.warn('[CallService] endtone play failed', e);
+    }
   }
 
   /// Caller (CallListener) ловит incoming realtime-events и форвардит сюда.
@@ -243,7 +287,9 @@ class CallService {
     if (tracks.isEmpty) return;
     try {
       await Helper.switchCamera(tracks.first);
-    } catch (_) {}
+    } catch (e) {
+      appLog.warn('[CallService] switchCamera failed', e);
+    }
   }
 
   // ── Internals ──
@@ -298,11 +344,8 @@ class CallService {
               },
       });
       localStream.value = media;
-    } catch (e) {
-      if (kDebugMode) {
-        // ignore: avoid_print
-        print('[CallService] getUserMedia failed: $e');
-      }
+    } catch (e, st) {
+      appLog.error('[CallService] getUserMedia failed', e, st);
       await _cleanup();
     }
   }
@@ -310,14 +353,7 @@ class CallService {
   Future<void> _ensurePeerConnection() async {
     if (_pc != null) return;
     final pc = await createPeerConnection({
-      'iceServers': [
-        {
-          'urls': [
-            'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
-          ],
-        },
-      ],
+      'iceServers': AppConfig.iceServers,
       'sdpSemantics': 'unified-plan',
     });
     pc.onIceCandidate = (cand) {
@@ -373,13 +409,24 @@ class CallService {
   }
 
   Future<void> _createAndSendOffer({bool iceRestart = false}) async {
-    if (_pc == null) return;
+    // BUG-9: race condition fix. Между проверкой `_pc == null` и `_pc!`
+    // вызовом другая async-операция (например hangup) могла обнулить _pc.
+    // Capture в local var один раз — все последующие .createOffer/.setLocal
+    // идут на тот же instance даже если поле уже обнулили.
+    final pc = _pc;
+    if (pc == null) return;
     // C-5: при reconnect передаём iceRestart=true → WebRTC сгенерирует
     // новые ICE candidates, минуя кэш старой failed-сессии.
-    final offer = await _pc!.createOffer(
-      iceRestart ? {'iceRestart': true} : {},
-    );
-    await _pc!.setLocalDescription(offer);
+    final RTCSessionDescription offer;
+    try {
+      offer = await pc.createOffer(
+        iceRestart ? {'iceRestart': true} : {},
+      );
+      await pc.setLocalDescription(offer);
+    } catch (e, st) {
+      appLog.error('[CallService] createOffer/setLocalDescription failed', e, st);
+      return;
+    }
     final s = session.value;
     if (s == null) return;
     _send('call.offer', {
@@ -418,15 +465,24 @@ class CallService {
 
   Future<void> _handleIncomingInvite(
       String from, Map<String, dynamic> p) async {
+    appLog('[CallService] incoming invite from=$from payload-keys=${p.keys.toList()}');
+    if (from.isEmpty) {
+      appLog.warn('[CallService] incoming invite ignored: empty from_user_id');
+      return;
+    }
     if (session.value != null && session.value!.status != CallStatus.ended) {
+      appLog('[CallService] busy — declining incoming from $from');
       _send('call.decline', {'to_user_id': from});
       return;
     }
+    // BUG-2 (a): backend теперь обогащает payload через relayCallEvent.
+    // Раньше эти поля могли быть пустые → blank UI на CallScreen.
     final username = p['from_username']?.toString() ?? '';
     final avatar = p['from_avatar']?.toString() ?? '';
     // C-2: caller's kind ('video'/'voice') приходит в payload.
     final kindStr = p['kind']?.toString();
     final kind = kindStr == 'voice' ? CallKind.voice : CallKind.video;
+    appLog('[CallService] establishing incoming session: peer=@$username kind=$kind');
     minimized.value = false;
     session.value = CallSession(
       peerId: from,
@@ -453,33 +509,50 @@ class CallService {
 
   Future<void> _handleOffer(Map<String, dynamic> p) async {
     await _ensurePeerConnection();
+    // BUG-9: тот же race-fix что и в _createAndSendOffer. _pc мог быть
+    // обнулён в _cleanup между await'ами — capture в local var.
+    final pc = _pc;
+    if (pc == null) {
+      appLog.warn('[CallService] _handleOffer: _pc null after ensure');
+      return;
+    }
     final sdp = p['sdp']?.toString() ?? '';
     final type = p['type']?.toString() ?? 'offer';
-    await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
-    for (final cand in _pendingIce) {
-      await _pc!.addCandidate(cand);
+    try {
+      await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
+      for (final cand in _pendingIce) {
+        await pc.addCandidate(cand);
+      }
+      _pendingIce.clear();
+      final answer = await pc.createAnswer({});
+      await pc.setLocalDescription(answer);
+      final s = session.value;
+      if (s == null) return;
+      _send('call.answer', {
+        'to_user_id': s.peerId,
+        'sdp': answer.sdp,
+        'type': answer.type,
+      });
+    } catch (e, st) {
+      appLog.error('[CallService] _handleOffer failed', e, st);
     }
-    _pendingIce.clear();
-    final answer = await _pc!.createAnswer({});
-    await _pc!.setLocalDescription(answer);
-    final s = session.value;
-    if (s == null) return;
-    _send('call.answer', {
-      'to_user_id': s.peerId,
-      'sdp': answer.sdp,
-      'type': answer.type,
-    });
   }
 
   Future<void> _handleAnswer(Map<String, dynamic> p) async {
-    if (_pc == null) return;
+    // BUG-9: local-var capture для NPE safety.
+    final pc = _pc;
+    if (pc == null) return;
     final sdp = p['sdp']?.toString() ?? '';
     final type = p['type']?.toString() ?? 'answer';
-    await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
-    for (final cand in _pendingIce) {
-      await _pc!.addCandidate(cand);
+    try {
+      await pc.setRemoteDescription(RTCSessionDescription(sdp, type));
+      for (final cand in _pendingIce) {
+        await pc.addCandidate(cand);
+      }
+      _pendingIce.clear();
+    } catch (e, st) {
+      appLog.error('[CallService] _handleAnswer failed', e, st);
     }
-    _pendingIce.clear();
   }
 
   Future<void> _handleIce(Map<String, dynamic> p) async {
@@ -488,11 +561,21 @@ class CallService {
       p['sdp_mid']?.toString(),
       (p['sdp_m_line_index'] as num?)?.toInt(),
     );
-    if (_pc == null || (await _pc!.getRemoteDescription()) == null) {
+    // BUG-9: local-var capture. _pc мог быть обнулён между check и addCandidate.
+    final pc = _pc;
+    if (pc == null) {
       _pendingIce.add(cand);
       return;
     }
-    await _pc!.addCandidate(cand);
+    try {
+      if ((await pc.getRemoteDescription()) == null) {
+        _pendingIce.add(cand);
+        return;
+      }
+      await pc.addCandidate(cand);
+    } catch (e) {
+      appLog.warn('[CallService] _handleIce addCandidate failed', e);
+    }
   }
 
   Future<void> _handleRemoteEnd(Map<String, dynamic> p) async {
@@ -511,18 +594,24 @@ class CallService {
     _reconnectTimer = null;
     try {
       await _pc?.close();
-    } catch (_) {}
+    } catch (e) {
+      appLog.warn('[CallService] pc.close failed', e);
+    }
     _pc = null;
     final ls = localStream.value;
     if (ls != null) {
       for (final t in ls.getTracks()) {
         try {
           await t.stop();
-        } catch (_) {}
+        } catch (e) {
+          appLog.warn('[CallService] track.stop failed', e);
+        }
       }
       try {
         await ls.dispose();
-      } catch (_) {}
+      } catch (e) {
+        appLog.warn('[CallService] localStream.dispose failed', e);
+      }
     }
     localStream.value = null;
     remoteStream.value = null;

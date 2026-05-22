@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
+import '../../../core/utils/format.dart';
 import '../../../core/providers/chat_provider.dart';
 
 /// Voice-message bubble — обёртка вокруг play/pause-кнопки + waveform-prerender'а.
@@ -230,12 +231,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     super.dispose();
   }
 
-  String _fmt(Duration d) {
-    final m = d.inMinutes.toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -255,8 +250,8 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
           GestureDetector(
             onTap: _toggle,
             child: Container(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: widget.isMine
@@ -265,7 +260,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
               ),
               child: _loading
                   ? Padding(
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(12),
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color:
@@ -278,7 +273,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                           : PhosphorIcons.play(PhosphorIconsStyle.fill),
                       color:
                           widget.isMine ? Colors.white : SeeUColors.accent,
-                      size: 16,
+                      size: 18,
                     ),
             ),
           ),
@@ -290,7 +285,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  height: 28,
+                  height: 36,
                   child: CustomPaint(
                     painter: _StaticWavePainter(
                       samples: widget.waveformSamples ?? const [],
@@ -309,10 +304,10 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                   children: [
                     Text(
                       _player.playing || _position > Duration.zero
-                          ? _fmt(_position)
-                          : _fmt(_duration),
+                          ? formatDuration(_position)
+                          : formatDuration(_duration),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: widget.isMine ? Colors.white70 : c.ink2,
                         fontFeatures: const [FontFeature.tabularFigures()],

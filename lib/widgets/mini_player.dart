@@ -39,7 +39,7 @@ class SeeUMiniPlayer extends ConsumerWidget {
         Widget option(String label, double speed) {
           final selected = (current - speed).abs() < 0.05;
           return ListTile(
-            leading: Icon(Icons.speed,
+            leading: Icon(PhosphorIcons.gauge(),
                 color: selected ? SeeUColors.accent : c.ink2),
             title: Text(label,
                 style: TextStyle(
@@ -48,7 +48,7 @@ class SeeUMiniPlayer extends ConsumerWidget {
                       selected ? FontWeight.w700 : FontWeight.w500,
                 )),
             trailing: selected
-                ? const Icon(Icons.check, color: SeeUColors.accent)
+                ? Icon(PhosphorIcons.check(), color: SeeUColors.accent)
                 : null,
             onTap: () async {
               Navigator.of(sheetCtx).pop();
@@ -65,7 +65,7 @@ class SeeUMiniPlayer extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.speed, color: SeeUColors.accent),
+                    Icon(PhosphorIcons.gauge(), color: SeeUColors.accent),
                     const SizedBox(width: 8),
                     Text('Скорость воспроизведения',
                         style: SeeUTypography.title),

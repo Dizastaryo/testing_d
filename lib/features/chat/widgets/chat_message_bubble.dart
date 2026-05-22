@@ -1,0 +1,817 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+
+import '../../../core/config/app_config.dart';
+import '../../../core/design/design.dart';
+import '../../../core/providers/chat_provider.dart';
+import 'voice_bubble.dart';
+
+// ---------------------------------------------------------------------------
+// Icebreaker chip
+// ---------------------------------------------------------------------------
+
+class ChatIcebreakerChip extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+
+  const ChatIcebreakerChip({super.key, required this.text, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: c.accentSoft,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(
+            color: SeeUColors.accent.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          text,
+          style: SeeUTypography.caption.copyWith(
+            color: SeeUColors.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Date separator
+// ---------------------------------------------------------------------------
+
+class ChatDateSeparator extends StatelessWidget {
+  final String label;
+  const ChatDateSeparator({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          Expanded(child: Container(height: 0.5, color: c.line)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              label,
+              style: SeeUTypography.micro.copyWith(color: c.ink3, fontSize: 11),
+            ),
+          ),
+          Expanded(child: Container(height: 0.5, color: c.line)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Message bubble with reactions and read receipts
+// ---------------------------------------------------------------------------
+
+class ChatMessageBubble extends StatelessWidget {
+  final ChatMessage message;
+  final bool isMine;
+  final bool showTail;
+  final String? reaction;
+  final Map<String, int> allReactions;
+  final bool showReactionPicker;
+  final VoidCallback onLongPress;
+  final VoidCallback? onDoubleTap;
+  final void Function(String emoji) onReactionSelected;
+  /// B7: avatar URL for the last message in a cluster (other user only).
+  final String? senderAvatarUrl;
+
+  const ChatMessageBubble({
+    super.key,
+    required this.message,
+    required this.isMine,
+    this.showTail = true,
+    this.reaction,
+    this.allReactions = const {},
+    this.showReactionPicker = false,
+    required this.onLongPress,
+    this.onDoubleTap,
+    required this.onReactionSelected,
+    this.senderAvatarUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final time =
+        '${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}';
+
+    // B6: grouping — 8px between different authors, 4px same author
+    return Padding(
+      padding: EdgeInsets.only(
+        top: showTail ? 8 : 4,
+        bottom: allReactions.isNotEmpty ? 14 : 0,
+        left: isMine ? 48 : 0,
+        right: isMine ? 0 : 48,
+      ),
+      child: Column(
+        crossAxisAlignment:
+            isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onLongPress: onLongPress,
+            onDoubleTap: onDoubleTap,
+            child: Row(
+              mainAxisAlignment:
+                  isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // B7: small avatar for last message in other user's cluster
+                if (!isMine)
+                  SizedBox(
+                    width: 28,
+                    child: showTail && senderAvatarUrl != null
+                        ? Padding(
+                            padding: const EdgeInsets.only(right: 6, bottom: 2),
+                            child: CircleAvatar(
+                              radius: 11,
+                              backgroundColor: c.surface2,
+                              backgroundImage: senderAvatarUrl!.isNotEmpty
+                                  ? CachedNetworkImageProvider(senderAvatarUrl!)
+                                  : null,
+                              child: senderAvatarUrl!.isEmpty
+                                  ? Icon(PhosphorIconsRegular.user,
+                                      size: 10, color: c.ink3)
+                                  : null,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                Flexible(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _buildBubbleContainer(message, isMine, c, time),
+                      if (showReactionPicker)
+                        Positioned(
+                          top: -44,
+                          left: isMine ? null : 0,
+                          right: isMine ? 0 : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: c.surface2,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: SeeUShadows.md,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: kQuickReactionEmojis.map((emoji) {
+                                final isSelected = reaction == emoji;
+                                return GestureDetector(
+                                  onTap: () => onReactionSelected(emoji),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: isSelected
+                                        ? BoxDecoration(
+                                            color: SeeUColors.accentSoft,
+                                            shape: BoxShape.circle,
+                                          )
+                                        : null,
+                                    child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      if (allReactions.isNotEmpty)
+                        Positioned(
+                          bottom: -14,
+                          right: isMine ? 8 : null,
+                          left: isMine ? null : 8,
+                          child: Wrap(
+                            spacing: 4,
+                            children: allReactions.entries
+                                .map((e) => GestureDetector(
+                                      onTap: () => onReactionSelected(e.key),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: e.key == reaction
+                                              ? SeeUColors.accentSoft
+                                              : c.surface,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          boxShadow: SeeUShadows.sm,
+                                          border: e.key == reaction
+                                              ? Border.all(
+                                                  color: SeeUColors.accent,
+                                                  width: 0.8)
+                                              : null,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(e.key,
+                                                style: const TextStyle(
+                                                    fontSize: 13)),
+                                            if (e.value > 1) ...[
+                                              const SizedBox(width: 3),
+                                              Text('${e.value}',
+                                                  style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: c.ink2,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // Time + receipts now inside bubble (B4)
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// F3: detect emoji-only messages (1-3 emoji, no other text)
+  static final _emojiOnlyRegex = RegExp(
+    r'^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F){1,3}$',
+    unicode: true,
+  );
+
+  bool _isEmojiOnly(ChatMessage msg) {
+    if (msg.kind != 'text' && msg.kind.isNotEmpty) return false;
+    if (msg.replyTo != null) return false;
+    final text = msg.text.trim();
+    return text.isNotEmpty && _emojiOnlyRegex.hasMatch(text);
+  }
+
+  // B1/B2/B3/B4/B5: Redesigned bubble container with gradient, inline time
+  Widget _buildBubbleContainer(
+      ChatMessage msg, bool mine, SeeUThemeColors c, String time) {
+    // F3: emoji-only → big emoji with subtle pill background
+    if (_isEmojiOnly(msg)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: (mine ? c.surface2 : c.surface2).withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(msg.text.trim(), style: const TextStyle(fontSize: 28, height: 1.2)),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(time, style: TextStyle(fontSize: 10, color: c.ink3)),
+                  if (mine) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      (msg.isRead || msg.isDelivered)
+                          ? PhosphorIconsBold.checks
+                          : PhosphorIconsRegular.check,
+                      size: 14,
+                      color: msg.isRead ? SeeUColors.accent : c.ink3,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final isVoice = msg.kind == 'voice' || msg.kind == 'audio';
+    final isMedia = (msg.kind == 'shared_post' && msg.attachedPost != null) ||
+        (msg.kind == 'image' && msg.attachedMediaUrl.isNotEmpty);
+
+    final bubblePadding = isMedia
+        ? const EdgeInsets.all(4)
+        : isVoice
+            ? EdgeInsets.zero
+            : const EdgeInsets.fromLTRB(12, 8, 12, 4); // B5: compact
+
+    final bubbleRadius = BorderRadius.only(
+      topLeft: const Radius.circular(20),
+      topRight: const Radius.circular(20),
+      bottomLeft: Radius.circular(mine ? 20 : 8), // B3: 4→8
+      bottomRight: Radius.circular(mine ? 8 : 20), // B3: 4→8
+    );
+
+    return Container(
+      padding: bubblePadding,
+      decoration: isVoice
+          ? null
+          : BoxDecoration(
+              // B1: gradient for own, B2: surface2 no border for other
+              gradient: mine
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
+                    )
+                  : null,
+              color: mine ? null : c.surface2,
+              borderRadius: bubbleRadius,
+            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (msg.replyTo != null) ...[
+            _buildReplyQuoted(msg.replyTo!, mine, c),
+            const SizedBox(height: 4),
+          ],
+          _buildBubbleContent(msg, mine, c),
+          // B4: inline time + receipts inside bubble
+          if (!isVoice)
+            Padding(
+              padding: isMedia
+                  ? const EdgeInsets.fromLTRB(8, 4, 4, 2)
+                  : const EdgeInsets.only(top: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (msg.expiresAt != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: ChatTtlCountdown(
+                        expiresAt: msg.expiresAt!,
+                        chatId: msg.chatId,
+                        messageId: msg.id,
+                      ),
+                    ),
+                  Text(time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: mine ? const Color(0xDDFFFFFF) : c.ink3,
+                      )),
+                  if (mine) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      (msg.isRead || msg.isDelivered)
+                          ? PhosphorIconsBold.checks
+                          : PhosphorIconsRegular.check,
+                      size: 14,
+                      color: msg.isRead ? Colors.white : const Color(0xBBFFFFFF),
+                    ),
+                    if (msg.recipientsCount > 1 &&
+                        msg.readCount > 0 &&
+                        msg.readCount < msg.recipientsCount)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 3),
+                        child: Text(
+                          '${msg.readCount}/${msg.recipientsCount}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xDDFFFFFF),
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyQuoted(
+      ReplyPreview reply, bool isMine, SeeUThemeColors c) {
+    final stripeColor = isMine ? Colors.white : SeeUColors.accent;
+    final titleColor = isMine ? Colors.white : SeeUColors.accent;
+    final textColor = isMine ? Colors.white70 : c.ink2;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isMine
+            ? Colors.white.withValues(alpha: 0.15)
+            : c.surface2,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 4, color: stripeColor),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('@${reply.senderUsername}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: titleColor)),
+                  const SizedBox(height: 1),
+                  Text(reply.shortLabel(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: textColor)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBubbleContent(
+      ChatMessage message, bool isMine, SeeUThemeColors c) {
+    if (message.kind == 'shared_post' && message.attachedPost != null) {
+      return ChatSharedPostPreview(
+        post: message.attachedPost!,
+        isMine: isMine,
+        trailingText: message.text,
+      );
+    }
+    if (message.kind == 'image' && message.attachedMediaUrl.isNotEmpty) {
+      return ChatImageAttachment(
+        url: message.attachedMediaUrl,
+        isMine: isMine,
+        trailingText: message.text,
+      );
+    }
+    if ((message.kind == 'voice' || message.kind == 'audio') &&
+        message.attachedMediaUrl.isNotEmpty) {
+      final url = message.attachedMediaUrl.startsWith('http')
+          ? message.attachedMediaUrl
+          : '${AppConfig.apiOrigin}${message.attachedMediaUrl}';
+      return VoiceBubble(
+        audioUrl: url,
+        durationSec: message.mediaDurationSeconds,
+        waveformSamples:
+            message.waveform.isNotEmpty ? message.waveform : null,
+        isMine: isMine,
+        chatId: message.chatId,
+        messageId: message.id,
+      );
+    }
+    return Text(
+      message.text,
+      style: SeeUTypography.body.copyWith(
+        fontSize: 14,
+        color: isMine ? Colors.white : c.ink,
+        height: 1.4,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Small avatar for app bar
+// ---------------------------------------------------------------------------
+
+class ChatSmallAvatar extends StatelessWidget {
+  final String? avatarUrl;
+  final bool isOnline;
+  final double size;
+  final bool isGroup;
+
+  const ChatSmallAvatar({
+    super.key,
+    this.avatarUrl,
+    this.isOnline = false,
+    this.size = 36,
+    this.isGroup = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final hasUrl = avatarUrl != null && avatarUrl!.isNotEmpty;
+    final placeholder = Container(
+      decoration: isGroup
+          ? const BoxDecoration(
+              shape: BoxShape.circle, gradient: SeeUGradients.heroOrange)
+          : BoxDecoration(shape: BoxShape.circle, color: c.surface2),
+      child: Icon(
+        isGroup ? PhosphorIconsBold.usersThree : PhosphorIconsRegular.user,
+        size: size * 0.45,
+        color: isGroup ? Colors.white : c.ink3,
+      ),
+    );
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: c.surface2),
+            clipBehavior: Clip.antiAlias,
+            child: hasUrl
+                ? CachedNetworkImage(
+                    imageUrl: avatarUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => placeholder,
+                    errorWidget: (_, __, ___) => placeholder,
+                  )
+                : placeholder,
+          ),
+          if (isOnline)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: size * 0.3,
+                height: size * 0.3,
+                decoration: BoxDecoration(
+                  color: SeeUColors.success,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: c.bg, width: 2),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared post preview rendered inside a chat bubble
+// ---------------------------------------------------------------------------
+
+class ChatSharedPostPreview extends StatelessWidget {
+  final AttachedPostShort post;
+  final bool isMine;
+  final String trailingText;
+  const ChatSharedPostPreview({
+    super.key,
+    required this.post,
+    required this.isMine,
+    required this.trailingText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final preview =
+        post.thumbnailUrl.isNotEmpty ? post.thumbnailUrl : post.mediaUrl;
+    final fg = isMine ? Colors.white : c.ink;
+    final fgSoft = isMine ? Colors.white.withValues(alpha: 0.85) : c.ink2;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => context.push('/post/${post.id}'),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isMine
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : c.surface2,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: preview.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: preview,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(color: c.line),
+                            errorWidget: (_, __, ___) =>
+                                Container(color: c.line),
+                          )
+                        : Container(color: c.line),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          post.authorUsername.isNotEmpty
+                              ? '@${post.authorUsername}'
+                              : 'SeeU',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SeeUTypography.body.copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: fg),
+                        ),
+                        if (post.caption.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(post.caption,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: SeeUTypography.body.copyWith(
+                                  fontSize: 11, color: fgSoft, height: 1.3)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (trailingText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: Text(trailingText,
+                  style: SeeUTypography.body.copyWith(
+                      fontSize: 14, color: fg, height: 1.4)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Image attachment rendered inside a chat bubble
+// ---------------------------------------------------------------------------
+
+class ChatImageAttachment extends StatelessWidget {
+  final String url;
+  final bool isMine;
+  final String trailingText;
+  const ChatImageAttachment({
+    super.key,
+    required this.url,
+    required this.isMine,
+    required this.trailingText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final fg = isMine ? Colors.white : c.ink;
+    final absUrl = url.startsWith('http')
+        ? url
+        : (url.startsWith('/') ? '${AppConfig.apiOrigin}$url' : url);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                  maxHeight: 320, minHeight: 120, minWidth: 180),
+              child: CachedNetworkImage(
+                imageUrl: absUrl,
+                fit: BoxFit.cover,
+                placeholder: (_, __) =>
+                    Container(color: c.line, height: 200, width: 180),
+                errorWidget: (_, __, ___) => Container(
+                  color: c.line,
+                  height: 120,
+                  width: 180,
+                  child: Icon(PhosphorIconsRegular.imageBroken,
+                      color: c.ink3, size: 32),
+                ),
+              ),
+            ),
+          ),
+          if (trailingText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: Text(trailingText,
+                  style: SeeUTypography.body.copyWith(
+                      fontSize: 14, color: fg, height: 1.4)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// CHAT-11: TTL countdown bubble
+// ===========================================================================
+
+class ChatTtlCountdown extends ConsumerStatefulWidget {
+  final DateTime expiresAt;
+  final String chatId;
+  final String messageId;
+
+  const ChatTtlCountdown({
+    super.key,
+    required this.expiresAt,
+    required this.chatId,
+    required this.messageId,
+  });
+
+  @override
+  ConsumerState<ChatTtlCountdown> createState() => _ChatTtlCountdownState();
+}
+
+class _ChatTtlCountdownState extends ConsumerState<ChatTtlCountdown> {
+  Timer? _ticker;
+  bool _removed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final remaining = widget.expiresAt.difference(DateTime.now());
+    final interval = remaining.inMinutes < 1
+        ? const Duration(seconds: 1)
+        : const Duration(seconds: 30);
+    _ticker = Timer.periodic(interval, (_) {
+      if (!mounted) return;
+      if (DateTime.now().isAfter(widget.expiresAt) && !_removed) {
+        _removed = true;
+        ref
+            .read(chatMessagesProvider(widget.chatId).notifier)
+            .removeMessageLocally(widget.messageId);
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    if (d.isNegative) return '0с';
+    if (d.inDays >= 1) return '${d.inDays}д';
+    if (d.inHours >= 1) {
+      final mins = d.inMinutes.remainder(60);
+      return mins == 0 ? '${d.inHours}ч' : '${d.inHours}ч $minsм';
+    }
+    if (d.inMinutes >= 1) return '${d.inMinutes}м';
+    return '${d.inSeconds}с';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = widget.expiresAt.difference(DateTime.now());
+    if (remaining.isNegative) return const SizedBox.shrink();
+    final c = context.seeuColors;
+    final urgent = remaining.inHours < 1;
+    final color = urgent ? SeeUColors.accent : c.ink3;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsFill.timer, size: 10, color: color),
+          const SizedBox(width: 2),
+          Text(
+            _format(remaining),
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

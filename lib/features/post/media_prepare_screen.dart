@@ -9,17 +9,16 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/design/design.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/models/story.dart';
 import '../../core/providers/feed_provider.dart';
 import '../../core/providers/post_compose_provider.dart';
-import '../../core/providers/user_provider.dart';
 import 'ai_caption_sheet.dart';
 import 'ai_stylize_sheet.dart';
 import '../stories/story_editor_screen.dart';
+import 'widgets/music_picker_sheet.dart';
 
 /// Intermediate screen shown after camera capture or gallery pick.
 /// Allows user to:
@@ -717,7 +716,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                         ),
                         // Fake waveform bars
                         child: CustomPaint(
-                          painter: _WaveformPainter(
+                          painter: MusicWaveformPainter(
                             color: c.ink3.withValues(alpha: 0.3),
                             barCount: 60,
                           ),
@@ -741,7 +740,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                           ),
                           // Active waveform
                           child: CustomPaint(
-                            painter: _WaveformPainter(
+                            painter: MusicWaveformPainter(
                               color: SeeUColors.accent.withValues(alpha: 0.6),
                               barCount: (60 * widthFrac).round().clamp(5, 60),
                             ),
@@ -787,7 +786,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _MusicPickerSheet(
+      builder: (_) => MusicPickerSheet(
         onSelect: (track) {
           setState(() {
             _selectedTrack = track;
@@ -967,260 +966,3 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 }
 
 // ── Music picker bottom sheet ──────────────────────────────────────────────
-
-class _MusicPickerSheet extends ConsumerStatefulWidget {
-  final ValueChanged<AudioTrack> onSelect;
-  const _MusicPickerSheet({required this.onSelect});
-
-  @override
-  ConsumerState<_MusicPickerSheet> createState() => _MusicPickerSheetState();
-}
-
-class _MusicPickerSheetState extends ConsumerState<_MusicPickerSheet> {
-  final _searchCtrl = TextEditingController();
-  List<AudioTrack>? _filtered;
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  String _fmtDuration(int s) {
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '$m:${sec.toString().padLeft(2, '0')}';
-  }
-
-  String _fmtUses(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}М';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}К';
-    return '$n';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final tracksAsync = ref.watch(audioTracksProvider);
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        children: [
-          // Handle
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: c.line,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Text('Выберите музыку', style: SeeUTypography.subtitle),
-          const SizedBox(height: 10),
-
-          // Search
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: c.surface2,
-                borderRadius: BorderRadius.circular(SeeURadii.pill),
-              ),
-              child: Row(
-                children: [
-                  Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      style: SeeUTypography.body.copyWith(fontSize: 13),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Найти трек...',
-                        hintStyle: SeeUTypography.body.copyWith(
-                          fontSize: 13, color: c.ink3,
-                        ),
-                        contentPadding: EdgeInsets.zero,
-                        isDense: true,
-                      ),
-                      onChanged: (q) {
-                        final tracks = tracksAsync.valueOrNull ?? [];
-                        if (q.trim().isEmpty) {
-                          setState(() => _filtered = null);
-                        } else {
-                          final lq = q.toLowerCase();
-                          setState(() {
-                            _filtered = tracks
-                                .where((t) =>
-                                    t.title.toLowerCase().contains(lq) ||
-                                    t.artist.toLowerCase().contains(lq))
-                                .toList();
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Track list
-          Expanded(
-            child: tracksAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: SeeUColors.accent),
-              ),
-              error: (_, __) => Center(
-                child: Text('Ошибка загрузки',
-                    style: SeeUTypography.body.copyWith(color: c.ink3)),
-              ),
-              data: (allTracks) {
-                final tracks = _filtered ?? allTracks;
-                if (tracks.isEmpty) {
-                  return Center(
-                    child: Text('Ничего не найдено',
-                        style: SeeUTypography.body.copyWith(color: c.ink3)),
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: tracks.length,
-                  itemBuilder: (_, i) => _buildTrackTile(tracks[i], c),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrackTile(AudioTrack track, SeeUThemeColors c) {
-    return GestureDetector(
-      onTap: () => widget.onSelect(track),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: BorderRadius.circular(SeeURadii.medium),
-          ),
-          child: Row(
-            children: [
-              // Cover
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 46, height: 46,
-                  child: track.coverUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: track.coverUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            color: c.line,
-                            child: Icon(PhosphorIcons.musicNotes(),
-                                color: c.ink3, size: 20),
-                          ),
-                          errorWidget: (_, __, ___) => Container(
-                            color: c.line,
-                            child: Icon(PhosphorIcons.musicNotes(),
-                                color: c.ink3, size: 20),
-                          ),
-                        )
-                      : Container(
-                          color: c.line,
-                          child: Icon(PhosphorIcons.musicNotes(),
-                              color: c.ink3, size: 20),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      track.title,
-                      style: SeeUTypography.subtitle.copyWith(
-                        fontWeight: FontWeight.w600, fontSize: 14,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${track.artist}  ·  ${_fmtDuration(track.durationSeconds)}',
-                      style: SeeUTypography.caption.copyWith(
-                        color: c.ink3, fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Uses count
-              Column(
-                children: [
-                  Icon(PhosphorIcons.play(PhosphorIconsStyle.fill),
-                      size: 12, color: c.ink3),
-                  const SizedBox(height: 2),
-                  Text(
-                    _fmtUses(track.usesCount),
-                    style: SeeUTypography.micro.copyWith(
-                      color: c.ink3, fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Waveform painter (decorative bars) ─────────────────────────────────────
-
-class _WaveformPainter extends CustomPainter {
-  final Color color;
-  final int barCount;
-
-  _WaveformPainter({required this.color, this.barCount = 60});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeCap = StrokeCap.round;
-    final barW = 2.0;
-    final gap = (size.width - barCount * barW) / (barCount + 1);
-    // Deterministic pseudo-random heights
-    for (int i = 0; i < barCount; i++) {
-      final seed = (i * 7 + 3) % 13;
-      final h = size.height * (0.2 + 0.6 * (seed / 13.0));
-      final x = gap + i * (barW + gap) + barW / 2;
-      final top = (size.height - h) / 2;
-      paint.strokeWidth = barW;
-      canvas.drawLine(Offset(x, top), Offset(x, top + h), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _WaveformPainter old) =>
-      old.color != color || old.barCount != barCount;
-}

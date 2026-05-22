@@ -173,7 +173,7 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
                     TextButton(
                       onPressed: _busy ? null : _unbind,
                       style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFE74C3C),
+                        foregroundColor: SeeUColors.error,
                       ),
                       child: const Text('Отвязать'),
                     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 
 class FullscreenVideoPlayer extends StatefulWidget {
@@ -125,14 +126,14 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
                     ),
                   )
                 else if (_hasError)
-                  const Center(
+                  Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.error_outline_rounded,
+                        Icon(PhosphorIcons.warningCircle(),
                             color: Colors.white38, size: 48),
-                        SizedBox(height: 12),
-                        Text('Не удалось загрузить видео',
+                        const SizedBox(height: 12),
+                        const Text('Не удалось загрузить видео',
                             style: TextStyle(color: Colors.white38, fontSize: 14)),
                       ],
                     ),
@@ -156,7 +157,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
                         color: Colors.black.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.close_rounded,
+                      child: Icon(PhosphorIcons.x(),
                           color: Colors.white, size: 20),
                     ),
                   ),

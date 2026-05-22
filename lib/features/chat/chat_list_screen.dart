@@ -13,7 +13,9 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
+import 'widgets/typing_dots.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -131,7 +133,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
           children: [
             // Header: serif "Чаты" + compose button
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 58, 18, 12),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -268,7 +270,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             // Chat list
             Expanded(
               child: chatState.isLoading
-                  ? const SeeUListSkeleton()
+                  ? const SeeUChatSkeleton()
                   : chats.isEmpty
                       ? _buildEmptyState()
                       : SeeURadarRefresh(
@@ -446,29 +448,37 @@ class _ChatTile extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    isTyping
-                        ? 'печатает...'
-                        : lastMsgWithPrefix.isNotEmpty
-                            ? lastMsgWithPrefix
-                            : 'Начните общение',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isTyping
-                          ? SeeUColors.accent
-                          : hasUnread
-                              ? c.ink
-                              : c.ink3,
-                      fontWeight: (hasUnread || isTyping)
-                          ? FontWeight.w500
-                          : FontWeight.w400,
-                      fontStyle: isTyping
-                          ? FontStyle.italic
-                          : FontStyle.normal,
+                  if (isTyping)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'печатает',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: SeeUColors.accent,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const TypingDots(color: SeeUColors.accent, size: 4),
+                      ],
+                    )
+                  else
+                    Text(
+                      lastMsgWithPrefix.isNotEmpty
+                          ? lastMsgWithPrefix
+                          : 'Начните общение',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: hasUnread ? c.ink : c.ink3,
+                        fontWeight: hasUnread
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             ),
@@ -627,35 +637,15 @@ class _NewChatBottomSheetState extends ConsumerState<_NewChatBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _loadFollowing();
+    _loadInitial();
   }
 
-  /// Default state when picker opens — fetch the people I follow. Most
-  /// likely chat target is someone I already interact with. Falls back
-  /// to an empty list with a hint if I'm not following anyone yet.
-  Future<void> _loadFollowing() async {
-    final me = ref.read(authProvider).user;
-    if (me == null) return;
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _loadInitial() async {
     try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.get(ApiEndpoints.userFollowing(me.username),
-          queryParameters: {'limit': 50});
-      final data = r.data is Map && (r.data as Map).containsKey('data')
-          ? r.data['data']
-          : r.data;
-      final list = data is List
-          ? data
-              .map((e) => User.fromJson(e as Map<String, dynamic>))
-              .where((u) => u.id != me.id)
-              .toList()
-          : <User>[];
+      final result = await ref.read(followingCandidatesProvider.future);
       if (mounted) {
         setState(() {
-          _results = list;
+          _results = result;
           _isLoading = false;
         });
       }
@@ -676,7 +666,7 @@ class _NewChatBottomSheetState extends ConsumerState<_NewChatBottomSheet> {
     _debounce?.cancel();
     final q = query.trim();
     if (q.isEmpty) {
-      _loadFollowing();
+      _loadInitial();
       return;
     }
     setState(() {

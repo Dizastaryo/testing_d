@@ -38,6 +38,16 @@ class AppTheme {
         outlineVariant: SeeUColors.borderSubtle,
       ),
       scaffoldBackgroundColor: SeeUColors.background,
+      // Swipe-back gesture на всех платформах (iOS-style).
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: SeeUColors.background,
         foregroundColor: SeeUColors.textPrimary,
@@ -131,6 +141,15 @@ class AppTheme {
         outlineVariant: SeeUColors.darkLine,
       ),
       scaffoldBackgroundColor: SeeUColors.darkBg,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: SeeUColors.darkBg,
         foregroundColor: SeeUColors.darkInk,

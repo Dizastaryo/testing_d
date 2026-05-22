@@ -16,6 +16,8 @@ import '../../models/ble_device_model.dart';
 /// `.length` для count или весь map для деталей. Stale-чистка по
 /// `removeIfGone` от FlutterBluePlus (5с).
 class NearbyDevicesNotifier extends StateNotifier<Map<String, BleDeviceModel>> {
+  // BUG-7: exposed `_sub` (через extension below) чтобы ref.onDispose имел
+  // к нему доступ извне. StateNotifier.dispose тоже cancel'ит, дублируем.
   StreamSubscription<List<ScanResult>>? _sub;
 
   NearbyDevicesNotifier() : super(const {}) {
@@ -52,7 +54,13 @@ class NearbyDevicesNotifier extends StateNotifier<Map<String, BleDeviceModel>> {
 
 final nearbyDevicesProvider = StateNotifierProvider<NearbyDevicesNotifier,
     Map<String, BleDeviceModel>>((ref) {
-  return NearbyDevicesNotifier();
+  final notifier = NearbyDevicesNotifier();
+  // BUG-7 defense-in-depth: помимо StateNotifier.dispose (где _sub.cancel)
+  // явный ref.onDispose гарантирует cancel при любом сценарии invalidation
+  // провайдера (logout / hot-reload / test cleanup). Двойной cancel
+  // идемпотент — Future-based StreamSubscription это безопасно.
+  ref.onDispose(() => notifier._sub?.cancel());
+  return notifier;
 });
 
 /// Convenience-провайдер для UI: число найденных устройств. Перерендеривает

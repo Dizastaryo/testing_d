@@ -1,9 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/playlist.dart';
+import '../services/logger.dart';
 
 /// All playlists owned by the current user.
 final myPlaylistsProvider =
@@ -31,7 +31,7 @@ class MyPlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
           : <Playlist>[];
       state = AsyncValue.data(list);
     } catch (e, st) {
-      debugPrint('[MyPlaylistsNotifier] load error: $e');
+      appLog.error('[MyPlaylistsNotifier] load error', e, st);
       state = AsyncValue.error(e, st);
     }
   }
@@ -44,8 +44,8 @@ class MyPlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
       final current = state.value ?? const <Playlist>[];
       state = AsyncValue.data([p, ...current]);
       return p;
-    } catch (e) {
-      debugPrint('[MyPlaylistsNotifier] create error: $e');
+    } catch (e, st) {
+      appLog.error('[MyPlaylistsNotifier] create error', e, st);
       return null;
     }
   }
@@ -66,8 +66,8 @@ class MyPlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
               : p)
           .toList());
       return true;
-    } catch (e) {
-      debugPrint('[MyPlaylistsNotifier] rename error: $e');
+    } catch (e, st) {
+      appLog.error('[MyPlaylistsNotifier] rename error', e, st);
       return false;
     }
   }
@@ -78,8 +78,8 @@ class MyPlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
       final current = state.value ?? const <Playlist>[];
       state = AsyncValue.data(current.where((p) => p.id != id).toList());
       return true;
-    } catch (e) {
-      debugPrint('[MyPlaylistsNotifier] delete error: $e');
+    } catch (e, st) {
+      appLog.error('[MyPlaylistsNotifier] delete error', e, st);
       return false;
     }
   }
@@ -91,8 +91,8 @@ class MyPlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
           data: {'track_id': trackId});
       await load();
       return true;
-    } catch (e) {
-      debugPrint('[MyPlaylistsNotifier] addTrack error: $e');
+    } catch (e, st) {
+      appLog.error('[MyPlaylistsNotifier] addTrack error', e, st);
       return false;
     }
   }
@@ -120,7 +120,7 @@ class PlaylistDetailNotifier extends StateNotifier<AsyncValue<PlaylistDetail>> {
           PlaylistDetail.fromJson(r.data['data'] as Map<String, dynamic>);
       state = AsyncValue.data(detail);
     } catch (e, st) {
-      debugPrint('[PlaylistDetailNotifier] load error: $e');
+      appLog.error('[PlaylistDetailNotifier] load error', e, st);
       state = AsyncValue.error(e, st);
     }
   }
@@ -131,8 +131,8 @@ class PlaylistDetailNotifier extends StateNotifier<AsyncValue<PlaylistDetail>> {
           .delete(ApiEndpoints.playlistTrackById(_playlistId, trackId));
       await load();
       return true;
-    } catch (e) {
-      debugPrint('[PlaylistDetailNotifier] removeTrack error: $e');
+    } catch (e, st) {
+      appLog.error('[PlaylistDetailNotifier] removeTrack error', e, st);
       return false;
     }
   }

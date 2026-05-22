@@ -12,6 +12,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/following_candidates_provider.dart';
 
 /// Создание group-чата. Multi-select picker (минимум 1 кроме creator'а),
 /// поле title, опциональный quick-выбор cover'а из набора. После create
@@ -52,7 +53,7 @@ class _ChatCreateGroupScreenState
   @override
   void initState() {
     super.initState();
-    _loadFollowing();
+    _loadInitial();
   }
 
   @override
@@ -63,39 +64,13 @@ class _ChatCreateGroupScreenState
     super.dispose();
   }
 
-  Future<void> _loadFollowing() async {
-    final me = ref.read(authProvider).user;
-    if (me == null) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.get(ApiEndpoints.userFollowing(me.username),
-          queryParameters: {'limit': 100});
-      final data = r.data is Map && (r.data as Map).containsKey('data')
-          ? r.data['data']
-          : r.data;
-      final list = data is List
-          ? data
-              .map((e) => User.fromJson(e as Map<String, dynamic>))
-              .where((u) => u.id != me.id)
-              .toList()
-          : <User>[];
-      if (mounted) {
-        setState(() {
-          _candidates = list;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = e.toString();
-        });
-      }
+  Future<void> _loadInitial() async {
+    final result = await ref.read(followingCandidatesProvider.future);
+    if (mounted) {
+      setState(() {
+        _candidates = result;
+        _loading = false;
+      });
     }
   }
 
@@ -104,7 +79,7 @@ class _ChatCreateGroupScreenState
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       final query = q.trim();
       if (query.isEmpty) {
-        _loadFollowing();
+        _loadInitial();
         return;
       }
       if (!mounted) return;

@@ -33,10 +33,31 @@ class SeeUColors {
   static const Color darkSurface2 = Color(0xFF221E1A);
   static const Color darkInk = Color(0xFFF5F2ED);
   static const Color darkInk2 = Color(0xFFB6AFA5);
-  static const Color darkInk3 = Color(0xFF7A736A);
-  static const Color darkInk4 = Color(0xFF4A443E);
+  static const Color darkInk3 = Color(0xFF8F877D);
+  static const Color darkInk4 = Color(0xFF6B6560);
   static const Color darkLine = Color(0xFF2A2520);
   static const Color darkCoralSoft = Color(0xFF3A201A);
+
+  // ── Overlays / scrims ──
+  // BUG-15: централизованные tokens для glass/scrim-эффектов. Раньше эти
+  // hex-значения дублировались в 5+ файлах (camera, post_card, mask_catalog,
+  // feed, admin_users). Теперь один source-of-truth — изменение opacity
+  // через design-review = 1 место.
+  //
+  // glassOverlay — тёмное стекло поверх camera-controls / video / images.
+  static const Color glassOverlay = Color(0x73000000); // rgba(0,0,0,0.45)
+  // darkScrim — лёгкая тень снизу для readable-текста поверх media.
+  static const Color darkScrim = Color(0xB3000000); // rgba(0,0,0,0.70)
+  // mediumScrim — средняя тень (50% opacity). Часто для action-buttons.
+  static const Color mediumScrim = Color(0x80000000); // rgba(0,0,0,0.50)
+  // lightScrim — slight darkening для hover/pressed states.
+  static const Color lightScrim = Color(0x66000000); // rgba(0,0,0,0.40)
+  // softScrim — minimal — для subtle elevation hints.
+  static const Color softScrim = Color(0x99000000); // rgba(0,0,0,0.60)
+  // cameraDarkOverlay — near-opaque dark glass for camera/mask overlays.
+  static const Color cameraDarkOverlay = Color(0xF0181412); // rgba(24,20,18,0.94)
+  // transparentBlack — отправная точка для gradient'ов scrim → transparent.
+  static const Color transparentBlack = Color(0x00000000);
 
   // Story ring gradient
   static const List<Color> storyRingColors = [
@@ -193,6 +214,27 @@ class SeeUSpacing {
 }
 
 // ─── Radii ────────────────────────────────────────────────────────────────
+
+// ─── Avatar Sizes ────────────────────────────────────────────────────────
+
+class SeeUAvatarSizes {
+  SeeUAvatarSizes._();
+  static const double xl = 64;   // empty chat, profile header
+  static const double lg = 52;   // chat list tile
+  static const double md = 44;   // chat header, inline
+  static const double sm = 36;   // small header avatar
+  static const double xs = 28;   // chat bubble sender
+  static const double xxs = 22;  // member list, compact
+}
+
+// ─── Touch Targets ──────────────────────────────────────────────────────
+
+class SeeUTouchTargets {
+  SeeUTouchTargets._();
+  static const double button = 44;      // Apple HIG minimum
+  static const double iconButton = 44;
+  static const double searchBarHeight = 44;
+}
 
 class SeeURadii {
   SeeURadii._();

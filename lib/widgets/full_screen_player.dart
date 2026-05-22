@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../core/audio/audio_player_service.dart';
 import '../core/design/design.dart';
+import '../core/utils/format.dart';
 
 /// Full-screen player. Раскрывается при тапе на mini-player'е через
 /// `Navigator.push(showFullScreenPlayer(...))`. Большая обложка (с лёгкой
@@ -66,11 +67,6 @@ class _FullScreenPlayerSheetState
     super.dispose();
   }
 
-  String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString();
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +90,9 @@ class _FullScreenPlayerSheetState
     final shownDuration =
         Duration(milliseconds: shownMs.round().clamp(0, dur.inMilliseconds));
 
-    return Scaffold(
+    return SwipeToDismiss(
+      downOnly: true,
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
@@ -266,10 +264,10 @@ class _FullScreenPlayerSheetState
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(_fmt(shownDuration),
+                        Text(formatDuration(shownDuration),
                             style: SeeUTypography.caption.copyWith(
                                 color: Colors.white70, fontSize: 12)),
-                        Text('-${_fmt(dur - shownDuration)}',
+                        Text(dur.inMilliseconds > 0 ? '-${formatDuration(dur - shownDuration)}' : '0:00',
                             style: SeeUTypography.caption.copyWith(
                                 color: Colors.white70, fontSize: 12)),
                       ],
@@ -282,7 +280,7 @@ class _FullScreenPlayerSheetState
                     children: [
                       _IconBtn(
                         icon: PhosphorIcons.skipBack(PhosphorIconsStyle.fill),
-                        onTap: null, // queue нет — отложено
+                        onTap: () => notifier.seek(pos - const Duration(seconds: 10)),
                       ),
                       GestureDetector(
                         onTap: notifier.toggle,
@@ -317,7 +315,7 @@ class _FullScreenPlayerSheetState
                       _IconBtn(
                         icon: PhosphorIcons
                             .skipForward(PhosphorIconsStyle.fill),
-                        onTap: null,
+                        onTap: () => notifier.seek(pos + const Duration(seconds: 10)),
                       ),
                     ],
                   ),
@@ -348,6 +346,7 @@ class _FullScreenPlayerSheetState
           ),
         ],
       ),
+    ),
     );
   }
 }

@@ -12,3 +12,4 @@ export 'seeu_states.dart';
 export 'seeu_radar_refresh.dart';
 export 'seeu_heart_burst.dart';
 export 'seeu_bento.dart';
+export 'swipe_to_dismiss.dart';

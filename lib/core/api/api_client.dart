@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +23,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 class ApiClient {
   late final Dio _dio;
   final FlutterSecureStorage storage;
-  bool _isRefreshing = false;
+  Completer<bool>? _refreshCompleter;
 
   ApiClient({required this.storage}) {
     _dio = Dio(
@@ -43,6 +45,9 @@ class ApiClient {
         onError: _onError,
       ),
     );
+
+    // Retry interceptor for transient failures (5xx, timeout, connection reset).
+    _dio.interceptors.add(_RetryInterceptor(_dio));
 
     if (kDebugMode) {
       _dio.interceptors.add(
@@ -85,7 +90,7 @@ class ApiClient {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode == 401 && !_isRefreshing) {
+    if (err.response?.statusCode == 401 && _refreshCompleter == null) {
       final refreshed = await refreshTokens();
       if (refreshed) {
         final retryOptions = err.requestOptions;
@@ -110,16 +115,11 @@ class ApiClient {
   /// they detect their own auth-related failure. Returns true on success.
   /// Concurrent callers are debounced via `_isRefreshing`.
   Future<bool> refreshTokens() async {
-    if (_isRefreshing) {
-      // Another caller is mid-refresh — wait for them to finish, then report
-      // whether storage has a fresh access token.
-      while (_isRefreshing) {
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-      final tok = await storage.read(key: _accessTokenKey);
-      return tok != null && tok.isNotEmpty;
+    if (_refreshCompleter != null) {
+      // Another caller is mid-refresh — await the same future.
+      return _refreshCompleter!.future;
     }
-    _isRefreshing = true;
+    _refreshCompleter = Completer<bool>();
     try {
       final refreshToken = await storage.read(key: _refreshTokenKey);
       if (refreshToken == null || refreshToken.isEmpty) {
@@ -143,20 +143,25 @@ class ApiClient {
       final inner = (body is Map && body['data'] is Map) ? body['data'] : body;
       final newAccessToken = inner is Map ? inner['access_token'] as String? : null;
       final newRefreshToken = inner is Map ? inner['refresh_token'] as String? : null;
-      if (newAccessToken == null) return false;
+      if (newAccessToken == null) {
+        _refreshCompleter!.complete(false);
+        return false;
+      }
       await storage.write(key: _accessTokenKey, value: newAccessToken);
       if (newRefreshToken != null) {
         await storage.write(key: _refreshTokenKey, value: newRefreshToken);
       }
+      _refreshCompleter!.complete(true);
       return true;
     } catch (_) {
       // Refresh-token itself rejected — wipe credentials so the app drops to
       // login-screen on next gated screen instead of looping.
       await storage.delete(key: _accessTokenKey);
       await storage.delete(key: _refreshTokenKey);
+      _refreshCompleter!.complete(false);
       return false;
     } finally {
-      _isRefreshing = false;
+      _refreshCompleter = null;
     }
   }
 
@@ -225,6 +230,44 @@ class ApiClient {
   }
 
   Future<String?> getAccessToken() => storage.read(key: _accessTokenKey);
+}
+
+/// Retries transient errors (5xx, timeout, connection reset) up to [maxRetries]
+/// times with exponential backoff.
+class _RetryInterceptor extends Interceptor {
+  final Dio _dio;
+  static const maxRetries = 2;
+  static const _retryableStatuses = {500, 502, 503, 504};
+
+  _RetryInterceptor(this._dio);
+
+  bool _shouldRetry(DioException err) {
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.receiveTimeout ||
+        err.type == DioExceptionType.connectionError) {
+      return true;
+    }
+    final status = err.response?.statusCode;
+    return status != null && _retryableStatuses.contains(status);
+  }
+
+  @override
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    final attempt = (err.requestOptions.extra['_retryAttempt'] as int?) ?? 0;
+    if (!_shouldRetry(err) || attempt >= maxRetries) {
+      return handler.next(err);
+    }
+    // Exponential backoff: 500ms, 1500ms
+    await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    final options = err.requestOptions;
+    options.extra['_retryAttempt'] = attempt + 1;
+    try {
+      final response = await _dio.fetch(options);
+      handler.resolve(response);
+    } on DioException catch (e) {
+      handler.next(e);
+    }
+  }
 }
 
 String apiErrorMessage(DioException e) {

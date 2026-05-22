@@ -1,8 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:dio/dio.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/api/api_client.dart';
@@ -21,7 +23,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final TextEditingController _usernameCtrl;
   late final TextEditingController _bioCtrl;
   late final TextEditingController _websiteCtrl;
-  bool _avatarChanged = false;
+  XFile? _pickedFile;
+  Uint8List? _pickedBytes;
+  bool _avatarRemoved = false;
   bool _isSaving = false;
   final _formKey = GlobalKey<FormState>();
 
@@ -42,6 +46,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _bioCtrl.dispose();
     _websiteCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickFromSource(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source, maxWidth: 800);
+    if (picked != null && mounted) {
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _pickedFile = picked;
+        _pickedBytes = bytes;
+        _avatarRemoved = false;
+      });
+    }
   }
 
   void _pickAvatar() {
@@ -72,44 +88,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 leading: Icon(PhosphorIcons.camera(PhosphorIconsStyle.fill),
                     color: SeeUColors.accent),
                 title: Text('Сделать фото', style: SeeUTypography.body),
-                onTap: () async {
+                onTap: () {
                   Navigator.of(ctx).pop();
-                  final picked = await ImagePicker().pickImage(source: ImageSource.camera);
-                  if (picked != null && mounted) {
-                    setState(() => _avatarChanged = true);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Фото обновлено',
-                            style: SeeUTypography.body.copyWith(color: Colors.white)),
-                        backgroundColor: SeeUColors.success,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(SeeURadii.small)),
-                      ),
-                    );
-                  }
+                  _pickFromSource(ImageSource.camera);
                 },
               ),
               ListTile(
                 leading: Icon(PhosphorIcons.image(PhosphorIconsStyle.fill),
                     color: SeeUColors.accent),
                 title: Text('Выбрать из галереи', style: SeeUTypography.body),
-                onTap: () async {
+                onTap: () {
                   Navigator.of(ctx).pop();
-                  final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-                  if (picked != null && mounted) {
-                    setState(() => _avatarChanged = true);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Фото обновлено',
-                            style: SeeUTypography.body.copyWith(color: Colors.white)),
-                        backgroundColor: SeeUColors.success,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(SeeURadii.small)),
-                      ),
-                    );
-                  }
+                  _pickFromSource(ImageSource.gallery);
                 },
               ),
               ListTile(
@@ -119,17 +109,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     style: SeeUTypography.body.copyWith(color: SeeUColors.error)),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  setState(() => _avatarChanged = true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Фото удалено',
-                          style: SeeUTypography.body.copyWith(color: Colors.white)),
-                      backgroundColor: SeeUColors.textSecondary,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(SeeURadii.small)),
-                    ),
-                  );
+                  setState(() {
+                    _pickedFile = null;
+                    _pickedBytes = null;
+                    _avatarRemoved = true;
+                  });
                 },
               ),
             ],
@@ -143,12 +127,31 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _isSaving = true);
     try {
-      final resp = await ref.read(apiClientProvider).put(ApiEndpoints.me, data: {
+      final api = ref.read(apiClientProvider);
+
+      // Upload avatar if a new file was picked
+      String? avatarUrl;
+      if (_pickedFile != null && _pickedBytes != null) {
+        final form = FormData.fromMap({
+          'file': MultipartFile.fromBytes(_pickedBytes!, filename: _pickedFile!.name),
+        });
+        final uploadResp = await api.post(ApiEndpoints.mediaUpload, data: form);
+        avatarUrl = uploadResp.data['url'] as String?;
+      } else if (_avatarRemoved) {
+        avatarUrl = '';
+      }
+
+      final body = <String, dynamic>{
         'full_name': _fullNameCtrl.text.trim(),
         'username': _usernameCtrl.text.trim(),
         'bio': _bioCtrl.text.trim(),
         'website': _websiteCtrl.text.trim(),
-      });
+      };
+      if (avatarUrl != null) {
+        body['avatar_url'] = avatarUrl;
+      }
+
+      final resp = await api.put(ApiEndpoints.me, data: body);
       final data = resp.data;
       final userData = data is Map && data.containsKey('data') ? data['data'] : data;
       final updated = User.fromJson(userData as Map<String, dynamic>);
@@ -238,10 +241,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     CircleAvatar(
                       radius: 48,
                       backgroundColor: SeeUColors.surfaceElevated,
-                      backgroundImage: user?.avatarUrl != null
-                          ? NetworkImage(user!.avatarUrl!)
-                          : null,
-                      child: user?.avatarUrl == null
+                      backgroundImage: _pickedBytes != null
+                          ? MemoryImage(_pickedBytes!)
+                          : (_avatarRemoved || user?.avatarUrl == null
+                              ? null
+                              : NetworkImage(user!.avatarUrl!)) as ImageProvider?,
+                      child: (_pickedBytes == null && (_avatarRemoved || user?.avatarUrl == null))
                           ? Text(
                               user?.username.substring(0, 1).toUpperCase() ??
                                   'U',
@@ -258,7 +263,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: _avatarChanged
+                          color: (_pickedFile != null || _avatarRemoved)
                               ? SeeUColors.success
                               : SeeUColors.accent,
                           shape: BoxShape.circle,
@@ -268,7 +273,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           ),
                         ),
                         child: Icon(
-                          _avatarChanged
+                          (_pickedFile != null || _avatarRemoved)
                               ? PhosphorIcons.check(PhosphorIconsStyle.bold)
                               : PhosphorIcons.camera(PhosphorIconsStyle.fill),
                           color: Colors.white,

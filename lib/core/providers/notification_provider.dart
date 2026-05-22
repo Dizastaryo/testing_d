@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/notification.dart';
+import '../services/logger.dart';
 import 'realtime_provider.dart';
 
 class NotificationState {
@@ -60,7 +61,12 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
               notifications: [n, ...state.notifications],
               unreadCount: state.unreadCount + (n.isRead ? 0 : 1),
             );
-          } catch (_) {/* malformed payload — ignore */}
+          } catch (e, st) {
+            // BUG-12 quality: раньше silent catch скрывал malformed payloads.
+            // Теперь логируем — если бэк начнёт отправлять плохой shape, мы
+            // увидим это в console и сможем починить fromJson.
+            appLog.error('[NotificationNotifier] failed to parse push', e, st);
+          }
         });
       },
     );
@@ -96,16 +102,25 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   Future<void> markAllRead() async {
     if (state.unreadCount == 0) return; // ничего не помечать, API не дёргать
+    // Optimistic update: рисуем 0 локально мгновенно, потом синкаем DB.
+    final prevState = state;
     final updated = state.notifications
         .map((n) => n.copyWith(isRead: true))
         .toList();
     state = state.copyWith(notifications: updated, unreadCount: 0);
     try {
       await _api.put(ApiEndpoints.markAllRead);
-    } catch (_) {}
+    } catch (e, st) {
+      // BUG-12 quality: при API-fail откатываем optimistic UI чтобы badge
+      // отражал реальное состояние DB. Раньше silent catch оставлял UI в
+      // мнимом «всё прочитано» состоянии, на след. reload badge возвращался.
+      appLog.error('[NotificationNotifier] markAllRead API failed', e, st);
+      state = prevState;
+    }
   }
 
   Future<void> markRead(String id) async {
+    final prevState = state;
     final updated = state.notifications.map((n) {
       if (n.id == id) return n.copyWith(isRead: true);
       return n;
@@ -114,7 +129,10 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     state = state.copyWith(notifications: updated, unreadCount: unread);
     try {
       await _api.put(ApiEndpoints.markRead(id));
-    } catch (_) {}
+    } catch (e, st) {
+      appLog.error('[NotificationNotifier] markRead API failed', e, st);
+      state = prevState;
+    }
   }
 }
 

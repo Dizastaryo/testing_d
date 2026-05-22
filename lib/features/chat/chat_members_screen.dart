@@ -8,8 +8,10 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/utils/format.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/realtime_provider.dart';
 
@@ -97,7 +99,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
       }
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Не удалось: $e')),
+        SnackBar(content: Text('Не удалось: ${friendlyError(e)}')),
       );
     }
   }
@@ -126,7 +128,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
       _load();
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Не удалось добавить: $e')),
+        SnackBar(content: Text('Не удалось добавить: ${friendlyError(e)}')),
       );
     }
   }
@@ -171,7 +173,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                 dirty && titleCtrl.text.trim().isNotEmpty && !submitting;
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(innerCtx).viewInsets.bottom,
+                bottom: MediaQuery.of(innerCtx).viewInsets.bottom + 16,
               ),
               child: Container(
                 decoration: BoxDecoration(
@@ -180,6 +182,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       top: Radius.circular(SeeURadii.sheet)),
                 ),
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,6 +340,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                     ),
                   ],
                 ),
+                ),
               ),
             );
           }),
@@ -418,7 +422,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text('Ошибка: $_error',
+                    child: Text(_error != null ? friendlyError(_error!) : '',
                         style: TextStyle(color: c.ink2)),
                   ),
                 )
@@ -509,7 +513,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
+                                    horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   gradient: SeeUGradients.heroOrange,
                                   borderRadius: BorderRadius.circular(99),
@@ -517,7 +521,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                                 child: const Text(
                                   'admin',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 10,
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 0.5,
@@ -776,33 +780,17 @@ class _PickUserToAddScreenState extends ConsumerState<_PickUserToAddScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFollowing();
+    _loadInitial();
   }
 
-  Future<void> _loadFollowing() async {
-    final me = ref.read(authProvider).user;
-    if (me == null) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadInitial() async {
     try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.get(ApiEndpoints.userFollowing(me.username),
-          queryParameters: {'limit': 100});
-      final data = r.data is Map && (r.data as Map).containsKey('data')
-          ? r.data['data']
-          : r.data;
-      final list = data is List
-          ? data
-              .map((e) => User.fromJson(e as Map<String, dynamic>))
-              .where((u) =>
-                  u.id != me.id && !widget.existingIds.contains(u.id))
-              .toList()
-          : <User>[];
+      final result = await ref.read(followingCandidatesProvider.future);
       if (mounted) {
         setState(() {
-          _candidates = list;
+          _candidates = result
+              .where((u) => !widget.existingIds.contains(u.id))
+              .toList();
           _loading = false;
         });
       }

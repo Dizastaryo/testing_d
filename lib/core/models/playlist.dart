@@ -29,7 +29,7 @@ class Playlist {
         userId: j['user_id']?.toString() ?? '',
         name: j['name']?.toString() ?? '',
         coverUrl: _absUrl(j['cover_url']?.toString()),
-        tracksCount: (j['tracks_count'] ?? 0) as int,
+        tracksCount: (j['tracks_count'] as num?)?.toInt() ?? 0,
       );
 }
 

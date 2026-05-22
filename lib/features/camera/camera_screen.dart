@@ -23,12 +23,17 @@ import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
 import 'masks/mask_overlay.dart';
 import 'masks/mask_picker.dart';
+import 'widgets/camera_buttons.dart';
+import 'widgets/camera_painters.dart';
+import 'widgets/camera_record_button.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
 const double _kMaxDuration = 60.0; // seconds
 const Color _kAccent = SeeUColors.accent; // #FF5A3C
-const Color _kGlassBg = Color(0x73000000); // rgba(0,0,0,0.45)
+// BUG-15: alias на SeeUColors.glassOverlay — централизованный token.
+// Сохраняем local-имя чтобы не лопатить десятки сайтов в этом файле.
+const Color _kGlassBg = SeeUColors.glassOverlay;
 
 // ─── CameraScreen ─────────────────────────────────────────────────────────
 
@@ -593,7 +598,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           if (_showGrid)
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(painter: _GridPainter()),
+                child: CustomPaint(painter: CameraGridPainter()),
               ),
             ),
 
@@ -923,11 +928,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               stops: [0.0, 0.30, 0.60, 1.0],
+              // BUG-15: scrim-tokens вместо inline-hex.
               colors: [
-                Color(0x80000000),
-                Color(0x00000000),
-                Color(0x00000000),
-                Color(0xB3000000),
+                SeeUColors.mediumScrim,
+                SeeUColors.transparentBlack,
+                SeeUColors.transparentBlack,
+                SeeUColors.darkScrim,
               ],
             ),
           ),
@@ -966,7 +972,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     return SizedBox(
       height: 4,
       child: CustomPaint(
-        painter: _SegmentBarPainter(
+        painter: CameraSegmentBarPainter(
           segments: _segments,
           currentSegDur: _currentSegDur,
           maxDuration: _kMaxDuration,
@@ -983,7 +989,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     return Row(
       children: [
         // Close
-        _GlassButton(
+        CameraGlassButton(
           onTap: widget.onClose ?? () => Navigator.maybePop(context),
           child: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
         ),
@@ -1009,7 +1015,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               children: [
                 const Icon(Icons.music_note_rounded, color: Colors.white, size: 14),
                 const SizedBox(width: 6),
-                _WaveformWidget(),
+                CameraWaveform(),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -1037,7 +1043,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             angle: _switchRotation.value * math.pi,
             child: child,
           ),
-          child: _GlassButton(
+          child: CameraGlassButton(
             onTap: _switchCamera,
             child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
           ),
@@ -1069,7 +1075,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                     0.15 * Curves.easeOut.transform(_flashPulseController.value);
                 return Transform.scale(scale: scale, child: child);
               },
-              child: _ToolButton(
+              child: CameraToolButton(
                 icon: Icon(
                   _flashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
                   color: _flashOn ? SeeUColors.textPrimary : Colors.white,
@@ -1082,7 +1088,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
             const SizedBox(height: 12),
             // Timer
-            _ToolButton(
+            CameraToolButton(
               icon: Icon(Icons.timer_rounded,
                   color: _timerSetting > 0 ? SeeUColors.textPrimary : Colors.white,
                   size: 20),
@@ -1100,7 +1106,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
             const SizedBox(height: 12),
             // Grid
-            _ToolButton(
+            CameraToolButton(
               icon: const Icon(Icons.grid_on_rounded, color: Colors.white, size: 20),
               label: 'сетка',
               active: _showGrid,
@@ -1108,7 +1114,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
             const SizedBox(height: 12),
             // AR Masks
-            _ToolButton(
+            CameraToolButton(
               icon: Icon(
                 Icons.face_retouching_natural,
                 color: _selectedMask != null || _showMaskPicker
@@ -1125,7 +1131,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
             const SizedBox(height: 12),
             // AI / color filters
-            _ToolButton(
+            CameraToolButton(
               icon: Icon(
                 Icons.auto_awesome,
                 color: !_filter.isIdentity || _showFilterPicker
@@ -1188,7 +1194,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           const SizedBox(width: 32),
 
           // Big record button
-          _RecordButton(
+          CameraRecordButton(
             isRecording: _isRecording,
             totalPct: _totalPct,
             isPhotoMode: _tab == 'photo',
@@ -1372,7 +1378,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         child: ColoredBox(
           color: Colors.black.withValues(alpha: 0.3),
           child: Center(
-            child: _CountdownNumber(value: _countdown),
+            child: CameraCountdownNumber(value: _countdown),
           ),
         ),
       ),
@@ -1380,565 +1386,3 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 }
 
-// ─── Grid painter ──────────────────────────────────────────────────────────
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.3)
-      ..strokeWidth = 0.5;
-    // Vertical lines (rule of thirds)
-    canvas.drawLine(Offset(size.width / 3, 0), Offset(size.width / 3, size.height), paint);
-    canvas.drawLine(Offset(2 * size.width / 3, 0), Offset(2 * size.width / 3, size.height), paint);
-    // Horizontal lines
-    canvas.drawLine(Offset(0, size.height / 3), Offset(size.width, size.height / 3), paint);
-    canvas.drawLine(Offset(0, 2 * size.height / 3), Offset(size.width, 2 * size.height / 3), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ─── Segment bar painter ───────────────────────────────────────────────────
-
-class _SegmentBarPainter extends CustomPainter {
-  final List<double> segments;
-  final double currentSegDur;
-  final double maxDuration;
-  final bool isRecording;
-  final Color accentColor;
-
-  const _SegmentBarPainter({
-    required this.segments,
-    required this.currentSegDur,
-    required this.maxDuration,
-    required this.isRecording,
-    required this.accentColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final trackPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.18)
-      ..style = PaintingStyle.fill;
-
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      const Radius.circular(3),
-    );
-    canvas.drawRRect(rrect, trackPaint);
-
-    double offsetX = 0;
-    const gap = 2.0;
-
-    // Draw completed (white) segments
-    final whitePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-
-    for (int i = 0; i < segments.length; i++) {
-      final w = (segments[i] / maxDuration) * size.width;
-      final r = RRect.fromRectAndRadius(
-        Rect.fromLTWH(offsetX, 0, w - gap, size.height),
-        const Radius.circular(2),
-      );
-      canvas.drawRRect(r, whitePaint);
-      offsetX += w;
-    }
-
-    // Draw current (red) segment
-    if (isRecording && currentSegDur > 0) {
-      final w = (currentSegDur / maxDuration) * size.width;
-      final redPaint = Paint()
-        ..color = accentColor
-        ..style = PaintingStyle.fill
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      final redPaintSolid = Paint()
-        ..color = accentColor
-        ..style = PaintingStyle.fill;
-
-      final r = RRect.fromRectAndRadius(
-        Rect.fromLTWH(offsetX, 0, w, size.height),
-        const Radius.circular(2),
-      );
-      canvas.drawRRect(r, redPaint);
-      canvas.drawRRect(r, redPaintSolid);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_SegmentBarPainter old) =>
-      old.segments != segments ||
-      old.currentSegDur != currentSegDur ||
-      old.isRecording != isRecording;
-}
-
-// ─── Record button ─────────────────────────────────────────────────────────
-
-class _RecordButton extends StatefulWidget {
-  final bool isRecording;
-  final double totalPct; // 0.0 – 1.0
-  final bool isPhotoMode;
-  final VoidCallback onPress;
-
-  const _RecordButton({
-    required this.isRecording,
-    required this.totalPct,
-    required this.isPhotoMode,
-    required this.onPress,
-  });
-
-  @override
-  State<_RecordButton> createState() => _RecordButtonState();
-}
-
-class _RecordButtonState extends State<_RecordButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _pulseAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    if (widget.isRecording) {
-      _pulseController.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(_RecordButton old) {
-    super.didUpdateWidget(old);
-    if (widget.isRecording && !old.isRecording) {
-      _pulseController.repeat(reverse: true);
-    } else if (!widget.isRecording && old.isRecording) {
-      _pulseController.stop();
-      _pulseController.animateTo(0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const double btnSize = 96;
-    const double whiteRingSize = 78;
-    const double innerPhotoSize = 64;
-    const double innerRecordSize = 30;
-
-    final isRecording = widget.isRecording && !widget.isPhotoMode;
-    final innerSize = isRecording ? innerRecordSize : innerPhotoSize;
-    final innerRadius = isRecording ? 8.0 : innerPhotoSize / 2;
-
-    return GestureDetector(
-      onTap: widget.onPress,
-      child: SizedBox(
-        width: btnSize,
-        height: btnSize,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Outer pulsing glow ring when recording
-            if (isRecording)
-              AnimatedBuilder(
-                animation: _pulseAnim,
-                builder: (_, __) => Transform.scale(
-                  scale: _pulseAnim.value,
-                  child: Container(
-                    width: btnSize,
-                    height: btnSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          const Color(0xFFFF8060).withValues(alpha: 0.30),
-                          const Color(0xFFFF5A3C).withValues(alpha: 0.12),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.6, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-            // Progress ring + tick marks via CustomPaint
-            CustomPaint(
-              size: const Size(btnSize, btnSize),
-              painter: _RingPainterV3(
-                totalPct: widget.isPhotoMode ? 0.0 : widget.totalPct,
-                ringRadius: 46.0,
-                isRecording: isRecording,
-              ),
-            ),
-
-            // White border ring (3px, 78x78)
-            Container(
-              width: whiteRingSize,
-              height: whiteRingSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-              ),
-            ),
-
-            // Inner gradient shape — morphs circle ↔ rounded-square
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 320),
-              curve: const Cubic(0.34, 1.56, 0.64, 1.0), // spring-like
-              width: innerSize,
-              height: innerSize,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFF8060),
-                    Color(0xFFFF5A3C),
-                    Color(0xFFFF3B6B),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(innerRadius),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF5A3C).withValues(alpha: 0.55),
-                    blurRadius: 22,
-                    spreadRadius: 0,
-                  ),
-                ],
-              ),
-              child: Align(
-                alignment: const Alignment(-0.3, -0.55),
-                child: Container(
-                  width: innerSize * 0.38,
-                  height: innerSize * 0.14,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.28),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RingPainterV3 extends CustomPainter {
-  final double totalPct;
-  final double ringRadius;
-  final bool isRecording;
-
-  const _RingPainterV3({
-    required this.totalPct,
-    required this.ringRadius,
-    required this.isRecording,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Track ring (faint white)
-    final trackPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.22)
-      ..strokeWidth = 3.5
-      ..style = PaintingStyle.stroke;
-    canvas.drawCircle(center, ringRadius, trackPaint);
-
-    // 60 tick marks around the ring
-    const int tickCount = 60;
-    for (int i = 0; i < tickCount; i++) {
-      final angle = (i / tickCount) * 2 * math.pi - math.pi / 2;
-      final isMajor = i % 5 == 0;
-      final tickLen = isMajor ? 6.0 : 3.5;
-      final tickWidth = isMajor ? 1.8 : 1.0;
-      final tickOpacity = isMajor ? 0.55 : 0.28;
-
-      final outerR = ringRadius + 6;
-      final innerR = outerR - tickLen;
-      final cosA = math.cos(angle);
-      final sinA = math.sin(angle);
-
-      final tickPaint = Paint()
-        ..color = Colors.white.withValues(alpha: tickOpacity)
-        ..strokeWidth = tickWidth
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
-
-      canvas.drawLine(
-        Offset(center.dx + innerR * cosA, center.dy + innerR * sinA),
-        Offset(center.dx + outerR * cosA, center.dy + outerR * sinA),
-        tickPaint,
-      );
-    }
-
-    if (totalPct <= 0) return;
-
-    // Gradient progress arc
-    const startAngle = -math.pi / 2;
-    final sweepAngle = 2 * math.pi * totalPct;
-    final rect = Rect.fromCircle(center: center, radius: ringRadius);
-
-    final gradientColors = const [
-      Color(0xFFFFB547), // amber
-      Color(0xFFFF5A3C), // coral
-      Color(0xFFFF3B6B), // rose
-    ];
-    final sweepGradient = SweepGradient(
-      startAngle: startAngle,
-      endAngle: startAngle + sweepAngle,
-      colors: gradientColors,
-      tileMode: TileMode.clamp,
-    );
-
-    final progressPaint = Paint()
-      ..shader = sweepGradient.createShader(rect)
-      ..strokeWidth = 3.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    // Glow pass
-    final glowPaint = Paint()
-      ..shader = sweepGradient.createShader(rect)
-      ..strokeWidth = 6
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-
-    canvas.drawArc(rect, startAngle, sweepAngle, false, glowPaint);
-    canvas.drawArc(rect, startAngle, sweepAngle, false, progressPaint);
-  }
-
-  @override
-  bool shouldRepaint(_RingPainterV3 old) =>
-      old.totalPct != totalPct || old.isRecording != isRecording;
-}
-
-// ─── Countdown number ──────────────────────────────────────────────────────
-
-class _CountdownNumber extends StatefulWidget {
-  final int value;
-  const _CountdownNumber({required this.value});
-
-  @override
-  State<_CountdownNumber> createState() => _CountdownNumberState();
-}
-
-class _CountdownNumberState extends State<_CountdownNumber>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-  late Animation<double> _scale;
-  late Animation<double> _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
-    _scale = Tween<double>(begin: 0.6, end: 1.0)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
-    _opacity = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
-    _ac.forward();
-  }
-
-  @override
-  void didUpdateWidget(_CountdownNumber old) {
-    super.didUpdateWidget(old);
-    if (old.value != widget.value) _ac.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ac,
-      builder: (_, __) => Opacity(
-        opacity: _opacity.value,
-        child: Transform.scale(
-          scale: _scale.value,
-          child: Text(
-            '${widget.value}',
-            style: const TextStyle(
-              fontFamily: 'Fraunces',
-              fontSize: 140,
-              color: Colors.white,
-              fontWeight: FontWeight.w400,
-              shadows: [
-                Shadow(
-                  color: Color(0x80000000),
-                  blurRadius: 32,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Waveform widget ───────────────────────────────────────────────────────
-
-class _WaveformWidget extends StatefulWidget {
-  @override
-  State<_WaveformWidget> createState() => _WaveformWidgetState();
-}
-
-class _WaveformWidgetState extends State<_WaveformWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ac;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ac,
-      builder: (_, __) {
-        final t = _ac.value;
-        final heights = [
-          4.0 + 6.0 * math.sin(t * math.pi),
-          4.0 + 6.0 * math.sin(t * math.pi + 1.2),
-          4.0 + 6.0 * math.sin(t * math.pi + 2.4),
-        ];
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: List.generate(3, (i) {
-            return Container(
-              width: 2,
-              height: heights[i],
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            );
-          }),
-        );
-      },
-    );
-  }
-}
-
-// ─── Tool button ───────────────────────────────────────────────────────────
-
-class _ToolButton extends StatelessWidget {
-  final Widget icon;
-  final String label;
-  final bool active;
-  final VoidCallback? onTap;
-
-  const _ToolButton({
-    required this.icon,
-    required this.label,
-    this.active = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: active ? Colors.white : const Color(0x66000000),
-              borderRadius: BorderRadius.circular(SeeURadii.small),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-                width: 1,
-              ),
-            ),
-            child: Center(child: icon),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-              shadows: [
-                Shadow(
-                  color: Color(0x99000000),
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Glass button ──────────────────────────────────────────────────────────
-
-class _GlassButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final Widget child;
-
-  const _GlassButton({
-    required this.onTap,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.15),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.2),
-            width: 0.5,
-          ),
-        ),
-        child: Center(child: child),
-      ),
-    );
-  }
-}

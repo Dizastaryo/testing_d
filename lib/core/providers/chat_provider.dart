@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/user.dart';
+import '../services/logger.dart';
 import 'realtime_provider.dart';
 
 // Chat models (kept inline since they were previously in mock_service).
@@ -268,7 +268,7 @@ class ChatMessage {
           (json['media_duration_seconds'] as num?)?.toInt() ?? 0,
       waveform: json['waveform'] is List
           ? (json['waveform'] as List)
-              .map((e) => (e as num).toDouble())
+              .map((e) => (e is num) ? e.toDouble() : 0.0)
               .toList()
           : const [],
       replyTo: json['reply_to'] is Map<String, dynamic>
@@ -277,7 +277,7 @@ class ChatMessage {
       reactions: json['reactions'] is Map
           ? Map<String, int>.from(
               (json['reactions'] as Map).map(
-                (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+                (k, v) => MapEntry(k.toString(), (v is num) ? v.toInt() : 0),
               ),
             )
           : const {},
@@ -402,8 +402,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       } else {
         state = const ChatListState(chats: []);
       }
-    } catch (e) {
-      debugPrint('[ChatListNotifier] load error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] load error', e, st);
       state = const ChatListState(chats: []);
     }
   }
@@ -419,8 +419,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       // Reload chat list after creating
       await load();
       return id;
-    } catch (e) {
-      debugPrint('[ChatListNotifier] getOrCreateChat error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] getOrCreateChat error', e, st);
       return null;
     }
   }
@@ -467,8 +467,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
               // pushChatMessage (only peers get the WS event), but defensive.
               if (state.messages.any((m) => m.id == msg.id)) return;
               state = state.copyWith(messages: [...state.messages, msg]);
-            } catch (e) {
-              debugPrint('[ChatMessagesNotifier] parse ws msg: $e');
+            } catch (e, st) {
+              appLog.error('[ChatMessagesNotifier] parse ws msg', e, st);
             }
             return;
           }
@@ -479,7 +479,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             final raw = p['reactions'];
             final newCounts = raw is Map
                 ? Map<String, int>.from(raw.map(
-                    (k, v) => MapEntry(k.toString(), (v as num).toInt())))
+                    (k, v) => MapEntry(k.toString(), (v is num) ? v.toInt() : 0)))
                 : <String, int>{};
             state = state.copyWith(
               messages: state.messages.map((m) {
@@ -595,8 +595,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       } else {
         state = const ChatMessagesState(messages: []);
       }
-    } catch (e) {
-      debugPrint('[ChatMessagesNotifier] load error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] load error', e, st);
       state = const ChatMessagesState(messages: []);
     }
   }
@@ -667,16 +667,16 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       );
       // Reload to get the real message with server ID and post preview.
       await load();
-    } catch (e) {
-      debugPrint('[ChatMessagesNotifier] sendMessage error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] sendMessage error', e, st);
     }
   }
 
   Future<void> markRead() async {
     try {
       await _api.put(ApiEndpoints.chatRead(chatId));
-    } catch (e) {
-      debugPrint('[ChatMessagesNotifier] markRead error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] markRead error', e, st);
     }
   }
 
@@ -731,8 +731,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         await _api.post(ApiEndpoints.chatMessageReact(messageId),
             data: {'emoji': emoji});
       }
-    } catch (e) {
-      debugPrint('[ChatMessagesNotifier] toggleReaction error: $e');
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] toggleReaction error', e, st);
       // Roll back to previous shape on error.
       final i = state.messages.indexWhere((m) => m.id == messageId);
       if (i >= 0) {

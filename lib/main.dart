@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'core/design/tokens.dart';
@@ -36,6 +37,7 @@ import 'features/settings/follow_requests_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/notifications/notifications_screen.dart';
+import 'core/providers/reels_provider.dart';
 import 'features/explore/publication_viewer.dart';
 import 'features/videos/video_detail_screen.dart';
 import 'features/videos/video_upload_screen.dart';
@@ -44,7 +46,7 @@ import 'features/library/file_detail_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/music/music_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
-import 'features/services/services_screen.dart';
+// services_screen removed — Music/Video/Library accessed via Explore tabs
 import 'features/stories/text_story_compose_screen.dart';
 
 void main() async {
@@ -86,6 +88,28 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
     super.initState();
     _router = GoRouter(
       initialLocation: '/splash',
+      errorBuilder: (context, state) => Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIcons.warning(), size: 56, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('Страница не найдена',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(state.uri.toString(),
+                  style: const TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 24),
+              TextButton(
+                onPressed: () => context.go('/feed'),
+                child: const Text('На главную'),
+              ),
+            ],
+          ),
+        ),
+      ),
       redirect: (context, state) {
         final authState = ref.read(authProvider);
         // While initial token check is in progress, don't redirect
@@ -149,8 +173,9 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
             GoRoute(
               path: '/chat',
-              pageBuilder: (_, __) => const CupertinoPage(
-                child: ChatListScreen(),
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ChatListScreen(),
+                transitionsBuilder: _fadeTransition,
               ),
               routes: [
                 GoRoute(
@@ -197,19 +222,20 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             // a «рилс» in this product, so one viewer covers all of them.
             GoRoute(
               path: '/view/:postId',
-              pageBuilder: (_, state) => CupertinoPage(
-                child: PublicationViewer(
-                  initialPostId: state.pathParameters['postId']!,
-                ),
-              ),
+              pageBuilder: (_, state) {
+                final typeParam = state.uri.queryParameters['type'] ?? 'all';
+                final ct = typeParam == 'video' ? ContentType.video
+                    : typeParam == 'photo' ? ContentType.photo
+                    : ContentType.all;
+                return CupertinoPage(
+                  child: PublicationViewer(
+                    initialPostId: state.pathParameters['postId']!,
+                    contentType: ct,
+                  ),
+                );
+              },
             ),
-            GoRoute(
-              path: '/services',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ServicesScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
-            ),
+            // /services removed — content accessed via Explore tabs
             GoRoute(
               path: '/watch',
               pageBuilder: (_, __) => CustomTransitionPage(

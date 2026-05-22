@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/post.dart';
+import '../services/logger.dart';
 import 'realtime_provider.dart';
 
 /// FEED-2: режим сортировки feed. По умолчанию chrono — стабильная cursor-
@@ -303,7 +304,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
         page: state.page + 1,
         nextCursor: _extractNextCursor(data),
       );
-    } catch (_) {
+    } catch (e, st) {
+      appLog.error('[FeedNotifier] loadMore error', e, st);
       state = state.copyWith(isLoadingMore: false);
     }
   }

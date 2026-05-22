@@ -17,20 +17,15 @@ class MainScaffold extends StatelessWidget {
   int _locationToIndex(String location) {
     if (location.startsWith('/feed')) return 0;
     if (location.startsWith('/explore')) return 1;
-    // index 2 is services button
-    if (location.startsWith('/services')) return 2;
-    if (location.startsWith('/scanner')) return 3;
+    if (location.startsWith('/scanner')) return 2;
+    if (location.startsWith('/chat')) return 3;
     if (location.startsWith('/profile')) return 4;
     return 0;
   }
 
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
-    const routes = ['/feed', '/explore', '/services', '/scanner', '/profile'];
-    if (index == 2) {
-      context.go('/services');
-      return;
-    }
+    const routes = ['/feed', '/explore', '/scanner', '/chat', '/profile'];
     context.go(routes[index]);
   }
 
@@ -124,18 +119,18 @@ class MainScaffold extends StatelessWidget {
                           _NavItem(
                             icon: _buildNavIcon('search', false),
                             activeIcon: _buildNavIcon('search', true),
-                            label: 'Интересное',
+                            label: 'Поиск',
                             isSelected: currentIndex == 1,
                             onTap: () => _onTap(context, 1),
                           ),
-                          _ServicesPill(
+                          _ScannerPill(
                             isSelected: currentIndex == 2,
                             onTap: () => _onTap(context, 2),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('radar', false),
-                            activeIcon: _buildNavIcon('radar', true),
-                            label: 'Сканер',
+                            icon: _buildNavIcon('chat', false),
+                            activeIcon: _buildNavIcon('chat', true),
+                            label: 'Чаты',
                             isSelected: currentIndex == 3,
                             onTap: () => _onTap(context, 3),
                           ),
@@ -167,13 +162,13 @@ class MainScaffold extends StatelessWidget {
   }
 }
 
-// ─── Services pill (center tab) ──────────────────────────────────────────
+// ─── Scanner pill (center tab — USP) ─────────────────────────────────────
 
-class _ServicesPill extends StatelessWidget {
+class _ScannerPill extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _ServicesPill({required this.isSelected, required this.onTap});
+  const _ScannerPill({required this.isSelected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -181,27 +176,27 @@ class _ServicesPill extends StatelessWidget {
       onTap: onTap,
       scaleFactor: 0.88,
       child: Container(
-        width: 46,
-        height: 34,
+        width: 50,
+        height: 50,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          shape: BoxShape.circle,
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [Color(0xFFFF8060), Color(0xFFFF5A3C)],
           ),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: Color(0x66FF5A3C),
-              blurRadius: 16,
-              offset: Offset(0, 6),
+              color: const Color(0xFFFF5A3C).withValues(alpha: isSelected ? 0.55 : 0.35),
+              blurRadius: isSelected ? 20 : 14,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: const Center(
+        child: Center(
           child: CustomPaint(
-            size: Size(20, 20),
-            painter: _GridIconPainter(),
+            size: const Size(24, 24),
+            painter: _ScannerCenterIcon(active: isSelected),
           ),
         ),
       ),
@@ -209,45 +204,44 @@ class _ServicesPill extends StatelessWidget {
   }
 }
 
-// ─── Grid icon painter (for services button) ─────────────────────────────
-
-class _GridIconPainter extends CustomPainter {
-  const _GridIconPainter();
+class _ScannerCenterIcon extends CustomPainter {
+  final bool active;
+  const _ScannerCenterIcon({required this.active});
 
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.width;
+    final center = Offset(s / 2, s / 2);
     final paint = Paint()
       ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    final r = s * 0.14;
-    final gap = s * 0.08;
-    // 2x2 grid of rounded squares
-    final cellSize = (s - gap) / 2;
-    // Top-left
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, cellSize, cellSize), Radius.circular(r)),
-      paint,
-    );
-    // Top-right
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(cellSize + gap, 0, cellSize, cellSize), Radius.circular(r)),
-      paint,
-    );
-    // Bottom-left
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, cellSize + gap, cellSize, cellSize), Radius.circular(r)),
-      paint,
-    );
-    // Bottom-right
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(cellSize + gap, cellSize + gap, cellSize, cellSize), Radius.circular(r)),
-      paint,
-    );
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = active ? 2.0 : 1.6
+      ..strokeCap = StrokeCap.round;
+
+    // Two radar arcs
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: s * 0.38),
+      -2.4, 4.8, false, paint);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: s * 0.22),
+      -2.4, 4.8, false, paint);
+
+    // Center dot
+    canvas.drawCircle(center, s * 0.08,
+      Paint()..color = Colors.white..style = PaintingStyle.fill);
+
+    // Sweep line
+    final endX = center.dx + s * 0.38 * 0.62;
+    final endY = center.dy - s * 0.38 * 0.78;
+    canvas.drawLine(center, Offset(endX, endY),
+      Paint()
+        ..color = Colors.white
+        ..strokeWidth = active ? 2.0 : 1.6
+        ..strokeCap = StrokeCap.round);
   }
 
   @override
-  bool shouldRepaint(covariant _GridIconPainter old) => false;
+  bool shouldRepaint(_ScannerCenterIcon old) => old.active != active;
 }
 
 // ─── Nav item ────────────────────────────────────────────────────────────
@@ -547,6 +541,30 @@ class _NavIconPainter extends CustomPainter {
               ..color = Colors.white
               ..style = PaintingStyle.fill,
           );
+        }
+        break;
+
+      // ── Chat icon (speech bubble) ──────────────────────────────────────
+      case 'chat':
+        final bubblePath = Path();
+        bubblePath.addRRect(RRect.fromRectAndRadius(
+          Rect.fromLTWH(s * 0.1, s * 0.12, s * 0.8, s * 0.6),
+          Radius.circular(s * 0.18),
+        ));
+        // Tail
+        bubblePath.moveTo(s * 0.25, s * 0.72);
+        bubblePath.lineTo(s * 0.18, s * 0.88);
+        bubblePath.lineTo(s * 0.42, s * 0.72);
+        paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
+        paint.strokeWidth = filled ? 2.0 : 1.7;
+        canvas.drawPath(bubblePath, paint);
+        if (!filled) {
+          // Three dots inside
+          final dotY = s * 0.42;
+          final dotPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+          canvas.drawCircle(Offset(s * 0.35, dotY), s * 0.04, dotPaint);
+          canvas.drawCircle(Offset(s * 0.50, dotY), s * 0.04, dotPaint);
+          canvas.drawCircle(Offset(s * 0.65, dotY), s * 0.04, dotPaint);
         }
         break;
 

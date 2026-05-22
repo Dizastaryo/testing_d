@@ -88,7 +88,7 @@ class _PromptSheetBodyState extends ConsumerState<_PromptSheetBody> {
       builder: (_, scroll) {
         return Container(
           decoration: const BoxDecoration(
-            color: Color(0xF0181412),
+            color: SeeUColors.cameraDarkOverlay,
             borderRadius:
                 BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
           ),

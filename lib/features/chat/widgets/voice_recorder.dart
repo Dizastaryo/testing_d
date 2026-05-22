@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:record/record.dart';
 
@@ -64,8 +66,11 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
       _fail('нет разрешения на микрофон');
       return;
     }
-    final dir = await _tempDir();
-    final filePath = '$dir/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    // BUG-FIX: раньше `_tempDir()` возвращал пустую строку → filePath
+    // получался '/voice_NNN.m4a' (absolute root, не writeable). Теперь
+    // используем path_provider.getTemporaryDirectory() для real temp-dir.
+    // Web: record сам создаёт blob, path игнорируется.
+    final filePath = await _buildFilePath();
     try {
       await _recorder.start(
         const RecordConfig(
@@ -92,12 +97,15 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     }
   }
 
-  Future<String> _tempDir() async {
-    // Avoid path_provider import — record даёт filename относительный к
-    // его temp-dir на mobile. Для web это просто blob path.
-    // На iOS/Android record принимает любой writeable путь; пустая строка
-    // также работает — внутри он сам создаст в documents-dir.
-    return ''; // record-package сам определит
+  Future<String> _buildFilePath() async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    if (kIsWeb) {
+      // Web — record создаёт blob, path-параметр игнорируется. Возвращаем
+      // что-нибудь чтобы start() не падал на null-arg.
+      return 'voice_$ts.webm';
+    }
+    final dir = await getTemporaryDirectory();
+    return '${dir.path}/voice_$ts.m4a';
   }
 
   void _onAmp(Amplitude a) {
@@ -195,57 +203,67 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            // Cancel
-            IconButton(
-              onPressed: _cancel,
-              icon: Icon(PhosphorIcons.x(), color: SeeUColors.error),
-              tooltip: 'Отменить',
-            ),
-            // Pulsing red dot + timer
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: SeeUColors.error,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              _fmtDuration(_elapsed),
-              style: TextStyle(
-                fontFeatures: const [FontFeature.tabularFigures()],
-                fontWeight: FontWeight.w600,
-                color: c.ink,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Live waveform
-            Expanded(
-              child: SizedBox(
-                height: 36,
-                child: CustomPaint(
-                  painter: _LiveWavePainter(_liveWindow),
+        child: GestureDetector(
+          // Slide left to cancel (WhatsApp-style)
+          onHorizontalDragEnd: (details) {
+            if ((details.primaryVelocity ?? 0) < -200) _cancel();
+          },
+          child: Row(
+            children: [
+              // Cancel — text button for clarity
+              GestureDetector(
+                onTap: _cancel,
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Отмена',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: SeeUColors.error,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // Submit
-            GestureDetector(
-              onTap: _submit,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: SeeUGradients.heroOrange,
+              // Pulsing red dot + timer
+              const _PulsingDot(),
+              const SizedBox(width: 6),
+              Text(
+                _fmtDuration(_elapsed),
+                style: TextStyle(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w600,
+                  color: c.ink,
                 ),
-                child: const Icon(Icons.check, color: Colors.white, size: 22),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              // Live waveform
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: CustomPaint(
+                    painter: _LiveWavePainter(_liveWindow),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Submit
+              GestureDetector(
+                onTap: _submit,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: SeeUGradients.heroOrange,
+                  ),
+                  child: Icon(PhosphorIconsBold.arrowUp, color: Colors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -288,4 +306,48 @@ class _LiveWavePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _LiveWavePainter old) =>
       old.samples.length != samples.length;
+}
+
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween(begin: 0.25, end: 1.0).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: SeeUColors.error,
+        ),
+      ),
+    );
+  }
 }

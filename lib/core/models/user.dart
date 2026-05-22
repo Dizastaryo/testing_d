@@ -108,20 +108,21 @@ class User {
       dateOfBirth: json['date_of_birth']?.toString(),
       devicePublicId: json['device_public_id']?.toString(),
       devicePrivateId: json['device_private_id']?.toString(),
-      postsCount: (json['posts_count'] ?? json['postsCount'] ?? 0) as int,
-      followersCount: (json['followers_count'] ?? json['followersCount'] ?? 0) as int,
-      followingCount: (json['following_count'] ?? json['followingCount'] ?? 0) as int,
-      isFollowing: (json['is_following'] ?? json['isFollowing'] ?? false) as bool,
-      isFollowedBy: (json['is_followed_by'] ?? json['isFollowedBy'] ?? false) as bool,
-      isPrivate: (json['is_private'] ?? json['isPrivate'] ?? false) as bool,
-      isVerified: (json['is_verified'] ?? json['isVerified'] ?? false) as bool,
+      // BUG-20: num? для счётчиков (защита от BIGINT → double).
+      postsCount: (json['posts_count'] ?? json['postsCount'] as num?)?.toInt() ?? 0,
+      followersCount: (json['followers_count'] ?? json['followersCount'] as num?)?.toInt() ?? 0,
+      followingCount: (json['following_count'] ?? json['followingCount'] as num?)?.toInt() ?? 0,
+      isFollowing: (json['is_following'] ?? json['isFollowing'] as bool?) ?? false,
+      isFollowedBy: (json['is_followed_by'] ?? json['isFollowedBy'] as bool?) ?? false,
+      isPrivate: (json['is_private'] ?? json['isPrivate'] as bool?) ?? false,
+      isVerified: (json['is_verified'] ?? json['isVerified'] as bool?) ?? false,
       hasPendingFollowRequest:
-          (json['has_pending_follow_request'] ?? false) as bool,
-      isOnline: (json['is_online'] ?? false) as bool,
+          (json['has_pending_follow_request'] as bool?) ?? false,
+      isOnline: (json['is_online'] as bool?) ?? false,
       lastSeenAt: json['last_seen_at'] != null
           ? DateTime.tryParse(json['last_seen_at'].toString())
           : null,
-      hideLastSeen: (json['hide_last_seen'] ?? false) as bool,
+      hideLastSeen: (json['hide_last_seen'] as bool?) ?? false,
       channelAbout: json['channel_about']?.toString() ?? '',
       channelBannerUrl: _absUrl(json['channel_banner_url']?.toString()),
       createdAt: json['created_at'] != null

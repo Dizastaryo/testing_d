@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/tokens.dart';
 import '../../core/models/video.dart';
 import '../../core/providers/video_provider.dart';
@@ -103,7 +104,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         autofocus: true,
         decoration: InputDecoration(
           hintText: 'Поиск по видео…',
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: Icon(PhosphorIcons.magnifyingGlass()),
           isDense: true,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -115,7 +116,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   Widget _buildHeader(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 12, 20, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -151,7 +152,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 tooltip: 'Загрузить видео',
                 onPressed: () => context.push('/videos/upload'),
                 icon: Icon(
-                  Icons.add_circle_outline,
+                  PhosphorIcons.plusCircle(),
                   color: SeeUColors.accent,
                 ),
               ),
@@ -164,7 +165,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   }
                 }),
                 icon: Icon(
-                  _searchOpen ? Icons.close : Icons.search,
+                  _searchOpen ? PhosphorIcons.x() : PhosphorIcons.magnifyingGlass(),
                   color: theme.colorScheme.onSurface,
                 ),
               ),
@@ -253,7 +254,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                   color: SeeUColors.accent,
                   boxShadow: [BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.6), blurRadius: 30)],
                 ),
-                child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+                child: Icon(PhosphorIcons.play(PhosphorIconsStyle.fill), color: Colors.white, size: 28),
               ),
             ),
             if (video.isLive)

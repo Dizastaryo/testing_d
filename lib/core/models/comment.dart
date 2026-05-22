@@ -36,11 +36,13 @@ class Comment {
       postId: json['post_id']?.toString() ?? '',
       author: User.fromJson(json['author'] as Map<String, dynamic>? ?? {}),
       text: json['text']?.toString() ?? '',
-      likesCount: (json['likes_count'] ?? 0) as int,
-      isLiked: (json['is_liked'] ?? false) as bool,
+      // BUG-20: safe-cast через num? — backend BIGINT может прийти как
+      // double если значение big enough; `as int` бы крашнул.
+      likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
+      isLiked: (json['is_liked'] as bool?) ?? false,
       parentId: json['parent_id']?.toString(),
       replies: repliesList,
-      repliesCount: (json['replies_count'] ?? repliesList.length) as int,
+      repliesCount: (json['replies_count'] as num?)?.toInt() ?? repliesList.length,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),

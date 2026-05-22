@@ -53,5 +53,13 @@ final videosProvider = FutureProvider.family<List<Video>, String?>((ref, categor
   return data.map((e) => Video.fromJson(e)).toList();
 });
 
+/// Videos uploaded by a specific user (profile tab).
+final userVideosProvider = FutureProvider.family<List<Video>, String>((ref, userId) async {
+  final dio = ref.watch(videoApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.userVideos(userId));
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => Video.fromJson(e)).toList();
+});
+
 // Reels providers removed — every publication is now a unified post served
 // by the api service. Use exploreProvider / feedProvider instead.

@@ -1,9 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/providers/playlist_provider.dart';
@@ -18,35 +18,13 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  final _player = AudioPlayer();
-  AudioTrack? _current;
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
   Future<void> _toggleTrack(AudioTrack track) async {
-    try {
-      if (_current?.id == track.id) {
-        if (_player.playing) {
-          await _player.pause();
-        } else {
-          await _player.play();
-        }
-        setState(() {});
-        return;
-      }
-      setState(() => _current = track);
-      await _player.setUrl(track.audioUrl);
-      await _player.play();
-      setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось проиграть: $e')),
-      );
+    final notifier = ref.read(miniPlayerProvider.notifier);
+    final current = ref.read(miniPlayerProvider).track;
+    if (current?.id == track.id) {
+      await notifier.toggle();
+    } else {
+      await notifier.play(track);
     }
   }
 
@@ -260,8 +238,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 
   Widget _trackTile(AudioTrack track, SeeUThemeColors c) {
-    final isCurrent = _current?.id == track.id;
-    final isPlaying = isCurrent && _player.playing;
+    final playerState = ref.watch(miniPlayerProvider);
+    final isCurrent = playerState.track?.id == track.id;
+    final isPlaying = isCurrent && playerState.playing;
     return InkWell(
       onTap: () => _toggleTrack(track),
       child: Padding(

@@ -6,6 +6,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import 'call_buttons.dart';
 import 'call_service.dart';
 
 /// Full-screen view активного звонка. Renderers заводятся под текущие streams,
@@ -129,13 +130,14 @@ class _CallScreenState extends State<CallScreen> {
               // Remote — full screen video или fallback с аватаром.
               Positioned.fill(child: _buildRemote(session)),
 
-              // Local — pip 100×130 в правом верхнем углу. Скрываем для voice.
+              // Local — pip в правом верхнем углу. Скрываем для voice.
+              // Aspect ratio 3:4 (portrait camera) вместо hardcoded 100x130.
               if (!isVoice)
                 Positioned(
                   top: 50,
                   right: 20,
-                  width: 100,
-                  height: 130,
+                  width: 110,
+                  height: 147,
                   child: _buildLocalPip(),
                 ),
 
@@ -149,7 +151,7 @@ class _CallScreenState extends State<CallScreen> {
               ),
               // C-6: «свернуть» кнопка top-right (минимизирует в PiP).
               Positioned(
-                top: 50,
+                top: 10,
                 right: 20,
                 child: SafeArea(
                   child: GestureDetector(
@@ -164,10 +166,10 @@ class _CallScreenState extends State<CallScreen> {
                         color: Colors.black.withValues(alpha: 0.45),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.expand_more,
+                      child: Icon(
+                        PhosphorIconsRegular.arrowsInSimple,
                         color: Colors.white,
-                        size: 22,
+                        size: 20,
                       ),
                     ),
                   ),
@@ -357,12 +359,12 @@ class _CallScreenState extends State<CallScreen> {
             return Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _bigButton(
+                CallBigButton(
                   icon: PhosphorIconsFill.phoneSlash,
                   color: SeeUColors.error,
                   onTap: CallService.instance.declineIncoming,
                 ),
-                _bigButton(
+                CallBigButton(
                   icon: PhosphorIconsFill.phone,
                   color: const Color(0xFF2FA84F),
                   onTap: CallService.instance.acceptIncoming,
@@ -377,7 +379,7 @@ class _CallScreenState extends State<CallScreen> {
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _smallButton(
+              CallSmallButton(
                 icon: muted
                     ? PhosphorIconsFill.microphoneSlash
                     : PhosphorIconsFill.microphone,
@@ -385,19 +387,19 @@ class _CallScreenState extends State<CallScreen> {
                 onTap: CallService.instance.toggleMute,
               ),
               if (!isVoice) ...[
-                _smallButton(
+                CallSmallButton(
                   icon: cameraOff
                       ? PhosphorIconsFill.videoCameraSlash
                       : PhosphorIconsFill.videoCamera,
                   active: cameraOff,
                   onTap: CallService.instance.toggleCamera,
                 ),
-                _smallButton(
+                CallSmallButton(
                   icon: PhosphorIconsRegular.arrowsClockwise,
                   onTap: CallService.instance.switchCamera,
                 ),
               ],
-              _bigButton(
+              CallBigButton(
                 icon: PhosphorIconsFill.phoneSlash,
                 color: SeeUColors.error,
                 onTap: CallService.instance.hangup,
@@ -405,57 +407,6 @@ class _CallScreenState extends State<CallScreen> {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _smallButton({
-    required IconData icon,
-    bool active = false,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 54,
-        height: 54,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: active
-              ? Colors.white
-              : Colors.white.withValues(alpha: 0.15),
-        ),
-        child: Icon(
-          icon,
-          color: active ? Colors.black : Colors.white,
-          size: 24,
-        ),
-      ),
-    );
-  }
-
-  Widget _bigButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 68,
-        height: 68,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.4),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Icon(icon, color: Colors.white, size: 30),
       ),
     );
   }

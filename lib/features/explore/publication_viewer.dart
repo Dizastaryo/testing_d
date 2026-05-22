@@ -7,12 +7,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/config/app_config.dart';
+import '../../core/utils/format.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
+import '../../core/providers/reels_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../widgets/share_sheet.dart';
 import '../post/comments_screen.dart';
+import '../reels/widgets/reel_overlay.dart';
+import '../reels/widgets/reel_video_player.dart';
 
 /// Vertical-swipe viewer for any publication. Replaces the old ReelsScreen
 /// since the product model treats every post (photo, photo collection, or
@@ -27,7 +32,13 @@ import '../post/comments_screen.dart';
 /// page 0 and the user can scroll to load more.
 class PublicationViewer extends ConsumerStatefulWidget {
   final String initialPostId;
-  const PublicationViewer({super.key, required this.initialPostId});
+  /// Content filter: video = TikTok UI, photo = photo feed, all = mixed.
+  final ContentType contentType;
+  const PublicationViewer({
+    super.key,
+    required this.initialPostId,
+    this.contentType = ContentType.all,
+  });
 
   @override
   ConsumerState<PublicationViewer> createState() =>
@@ -38,6 +49,7 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
   late final PageController _pageCtrl;
   int _currentIndex = 0;
   bool _initialised = false;
+  double _overscrollAccum = 0;
 
   @override
   void initState() {
@@ -55,6 +67,11 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
 
   void _seekToInitial(List<Post> posts) {
     if (_initialised) return;
+    // "first" = start from page 0 (used when opening reels without a specific post)
+    if (widget.initialPostId == 'first') {
+      _initialised = true;
+      return;
+    }
     final idx = posts.indexWhere((p) => p.id == widget.initialPostId);
     if (idx < 0) {
       _initialised = true;
@@ -75,21 +92,69 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
     });
   }
 
-  // REELS-1: infinite scroll работает через exploreProvider.loadMore при
-  // подходе к концу списка (idx >= posts.length - 3). Smart-ranking
-  // (interest-based persona) — отдельная EXP-1 задача в Explore-секции.
+  bool get _hasOwnProvider => widget.contentType != ContentType.all;
+
   void _onPageChanged(int idx, List<Post> posts) {
     setState(() => _currentIndex = idx);
-    // Eager pagination: when within 3 of the end, ask for more.
     if (idx >= posts.length - 3) {
-      ref.read(exploreProvider.notifier).loadMore();
+      if (_hasOwnProvider) {
+        ref.read(contentFeedProvider(widget.contentType).notifier).loadMore();
+      } else {
+        ref.read(exploreProvider.notifier).loadMore();
+      }
     }
+  }
+
+  String _videoUrl(Post post) {
+    final videoMedia = post.media.firstWhere(
+      (m) => m.type == MediaType.video,
+      orElse: () => post.media.first,
+    );
+    final url = videoMedia.url;
+    if (url.startsWith('http')) return url;
+    return '${AppConfig.apiOrigin}$url';
+  }
+
+  void _openCommentsSheet(Post post) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (_, __) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: CommentsScreen(postId: post.id),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(exploreProvider);
-    final posts = state.posts;
+    final ct = widget.contentType;
+    final bool isVideoMode = ct == ContentType.video;
+
+    // Pick provider based on mode
+    final List<Post> posts;
+    final bool isLoading;
+    final bool isLoadingMore;
+    if (_hasOwnProvider) {
+      final cs = ref.watch(contentFeedProvider(ct));
+      posts = cs.posts;
+      isLoading = cs.isLoading;
+      isLoadingMore = cs.isLoadingMore;
+    } else {
+      final es = ref.watch(exploreProvider);
+      posts = es.posts;
+      isLoading = es.isLoading;
+      isLoadingMore = es.isLoadingMore;
+    }
 
     if (posts.isEmpty) {
       return Scaffold(
@@ -98,7 +163,7 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
           child: Stack(
             children: [
               Center(
-                child: state.isLoading
+                child: isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                         'Контент не найден',
@@ -116,41 +181,86 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageCtrl,
-            scrollDirection: Axis.vertical,
-            itemCount: posts.length,
-            // REELS-2: allowImplicitScrolling=true говорит PageView кэшировать
-            // одну страницу впереди и сзади (default behavior, но явно).
-            // _PublicationPage в `initState` вызывает _ensureVideoFor(0)
-            // → video controller инициализируется СРАЗУ для соседних постов
-            // (isCurrent=false, паузой). Swipe = мгновенный play, не
-            // «чёрный экран → 500ms → видео».
-            allowImplicitScrolling: true,
-            onPageChanged: (i) => _onPageChanged(i, posts),
-            itemBuilder: (_, i) {
-              final isCurrent = i == _currentIndex;
-              return _PublicationPage(
-                post: posts[i],
-                isCurrent: isCurrent,
-              );
-            },
-          ),
-          if (state.isLoadingMore)
-            const Positioned(
-              top: 60,
-              right: 16,
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white70),
+      body: NotificationListener<OverscrollNotification>(
+        onNotification: (n) {
+          if (_currentIndex == 0 && n.overscroll < 0) {
+            _overscrollAccum += n.overscroll.abs();
+            if (_overscrollAccum > 80) {
+              _overscrollAccum = 0;
+              context.pop();
+            }
+            return true;
+          }
+          return false;
+        },
+        child: NotificationListener<ScrollEndNotification>(
+          onNotification: (_) {
+            _overscrollAccum = 0;
+            return false;
+          },
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageCtrl,
+                scrollDirection: Axis.vertical,
+                itemCount: posts.length,
+                allowImplicitScrolling: true,
+                onPageChanged: (i) => _onPageChanged(i, posts),
+                itemBuilder: (_, i) {
+                  final post = posts[i];
+                  final isCurrent = i == _currentIndex;
+                  if (_hasOwnProvider) {
+                    final notifier = ref.read(contentFeedProvider(ct).notifier);
+                    if (isVideoMode) {
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ReelVideoPlayer(
+                            key: ValueKey('reel-${post.id}'),
+                            url: _videoUrl(post),
+                            isActive: isCurrent,
+                          ),
+                          ReelOverlay(
+                            post: post,
+                            isLiked: post.isLiked,
+                            isSaved: post.isSaved,
+                            onLike: () => notifier.toggleLike(post.id),
+                            onComment: () => _openCommentsSheet(post),
+                            onShare: () => showShareSheet(
+                              context: context,
+                              url: 'https://seeu.app/post/${post.id}',
+                              title: post.caption ?? '',
+                              forwardablePostId: post.id,
+                            ),
+                            onSave: () => notifier.toggleSave(post.id),
+                            onAvatarTap: () => context.push('/profile/${post.author.username}'),
+                          ),
+                        ],
+                      );
+                    }
+                    // Photo mode — reuse existing _PublicationPage but with own provider actions
+                    return _PublicationPage(post: post, isCurrent: isCurrent);
+                  }
+                  return _PublicationPage(
+                    post: post,
+                    isCurrent: isCurrent,
+                  );
+                },
               ),
-            ),
-          SafeArea(child: _BackButton(onTap: () => context.pop())),
-        ],
+              if (isLoadingMore)
+                const Positioned(
+                  top: 60,
+                  right: 16,
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white70),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -499,12 +609,6 @@ class _ActionColumn extends ConsumerWidget {
   final Post post;
   const _ActionColumn({required this.post});
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}М';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}К';
-    return '$n';
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Column(
@@ -514,7 +618,7 @@ class _ActionColumn extends ConsumerWidget {
           icon: post.isLiked
               ? PhosphorIconsFill.heart
               : PhosphorIconsRegular.heart,
-          label: _fmt(post.likesCount),
+          label: formatCount(post.likesCount),
           color: post.isLiked ? SeeUColors.accent : Colors.white,
           onTap: () {
             HapticFeedback.lightImpact();
@@ -526,7 +630,7 @@ class _ActionColumn extends ConsumerWidget {
         const SizedBox(height: 18),
         _ActionButton(
           icon: PhosphorIconsRegular.chatCircle,
-          label: _fmt(post.commentsCount),
+          label: formatCount(post.commentsCount),
           color: Colors.white,
           onTap: () {
             HapticFeedback.lightImpact();
@@ -614,20 +718,27 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 30),
-          if (showLabel && label.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                )),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 44,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon, color: color, size: 28),
+            ),
+            if (showLabel && label.isNotEmpty) ...[
+              Text(label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  )),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -804,7 +915,7 @@ class _ReactionStrip extends ConsumerWidget {
                 Text(e.key, style: const TextStyle(fontSize: 14)),
                 const SizedBox(width: 4),
                 Text(
-                  _formatStripCount(e.value),
+                  formatCount(e.value),
                   style: TextStyle(
                     fontSize: 12,
                     color: mine ? Colors.white : Colors.white70,
@@ -819,9 +930,4 @@ class _ReactionStrip extends ConsumerWidget {
     );
   }
 
-  static String _formatStripCount(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}М';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}К';
-    return '$n';
-  }
 }

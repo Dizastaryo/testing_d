@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
+import '../../core/utils/format.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
@@ -128,7 +129,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Widget _buildHeader(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 12, 20, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,7 +403,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
    }
 
    Widget _buildTrendingCard(FileItem file, ThemeData theme) {
-     final color = _colorForType(file.fileExtension);
+     final color = colorForFileType(file.fileExtension);
      return GestureDetector(
        onTap: () => _onFileTap(file),
        child: Container(
@@ -537,7 +538,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Widget _buildFileCard(FileItem file, ThemeData theme) {
-    final color = _colorForType(file.fileExtension);
+    final color = colorForFileType(file.fileExtension);
     final isImage = file.mimeType.startsWith('image/');
     final previewUrl = file.previewUrl.isNotEmpty
         ? file.previewUrl
@@ -658,17 +659,4 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  Color _colorForType(String ext) {
-    switch (ext) {
-      case 'pdf':
-        return SeeUColors.accent;
-      case 'zip':
-      case 'rar':
-        return const Color(0xFFC04CFD);
-      case 'txt':
-        return const Color(0xFF2FA84F);
-      default:
-        return Colors.amber;
-    }
-  }
 }
