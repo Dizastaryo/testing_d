@@ -51,11 +51,6 @@ dependencies:
   # из-за несовпадения сигнатур.
   record: ^6.0.0
 
-  # On-device face detection для AR-масок — open-source ML Kit пакет от
-  # Google. Считается локально на устройстве, в бэк не лезет.
-  # iOS-deployment поднят до 15.5 в Podfile + Runner.pbxproj.
-  google_mlkit_face_detection: ^0.13.1
-
   # WebRTC для video/voice calls 1-1. Signaling через наш WS hub
   # (call.invite/offer/answer/ice/end), STUN — публичный Google.
   flutter_webrtc: ^1.4.1
@@ -86,6 +81,7 @@ dependencies:
   # Temp-dir для cache PDF перед PDFView.fromPath. Уже транзитивно есть у
   # многих пакетов, но указываем явно чтобы import был чистый.
   path_provider: ^2.1.4
+  mediapipe_face_mesh: ^1.6.0
 
 dev_dependencies:
   flutter_test:
