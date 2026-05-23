@@ -1503,16 +1503,17 @@ class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
   @override
   Widget build(BuildContext context) {
     final a = _adj;
+    final pad = MediaQuery.of(context).padding.top;
     return Positioned(
       left: 0,
       right: 0,
-      bottom: 160,
+      top: pad + 50,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        margin: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(10),
+          color: Colors.black.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1522,13 +1523,15 @@ class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
               'dy=${a.dy.toStringAsFixed(2)} s=${a.scale.toStringAsFixed(2)}',
               style: const TextStyle(
                 color: Colors.greenAccent,
-                fontSize: 12,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
                 fontFamily: 'monospace',
               ),
             ),
+            const SizedBox(height: 4),
             _slider('dx', a.dx, -2.0, 2.0, (v) => _update((a) => a.dx = v)),
             _slider('dy', a.dy, -3.0, 1.0, (v) => _update((a) => a.dy = v)),
-            _slider('s', a.scale, 0.3, 3.0, (v) => _update((a) => a.scale = v)),
+            _slider('s ', a.scale, 0.3, 3.0, (v) => _update((a) => a.scale = v)),
           ],
         ),
       ),
@@ -1537,32 +1540,35 @@ class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
 
   Widget _slider(String label, double value, double min, double max,
       ValueChanged<double> onChanged) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 20,
-          child: Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 10)),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              activeTrackColor: SeeUColors.accent,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.white,
-            ),
-            child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              onChanged: onChanged,
+    return SizedBox(
+      height: 36,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            child: Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderThemeData(
+                trackHeight: 4,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+                activeTrackColor: SeeUColors.accent,
+                inactiveTrackColor: Colors.white30,
+                thumbColor: Colors.white,
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -51,6 +51,9 @@ class CalibrationPainter extends CustomPainter {
 
     final f = FaceFrame.fromTracked(face, size);
 
+    canvas.save();
+    f.applyRotation(canvas);
+
     // Use cover-mapping consistent with FaceFrame.fromTracked
     final imageW = face.imageWidth.toDouble();
     final imageH = face.imageHeight.toDouble();
@@ -106,7 +109,9 @@ class CalibrationPainter extends CustomPainter {
     final center = map(MeshIdx.noseTip);
     canvas.drawCircle(center, 5, Paint()..color = const Color(0xFFFFFF00).withValues(alpha: 0.6));
 
-    // ── 5. Z diagnostics + angles — text block bottom-right ──
+    canvas.restore();
+
+    // ── 5. Z diagnostics + angles — text block (outside rotation) ──
     _drawZDiagnostics(canvas, size, face, f);
   }
 

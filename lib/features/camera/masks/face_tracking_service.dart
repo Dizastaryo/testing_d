@@ -154,7 +154,6 @@ class FaceTrackingService {
   CameraController? _camera;
   bool _busy = false;
   bool _running = false;
-  int _frameSkip = 0;
 
   /// Last rotation degrees passed to MediaPipe (debug).
   int debugRotDeg = 0;
@@ -188,7 +187,6 @@ class FaceTrackingService {
     );
 
     _smoother.reset();
-    _frameSkip = 0;
 
     try {
       await controller.startImageStream(_handleFrame);
@@ -222,10 +220,8 @@ class FaceTrackingService {
   Future<void> _handleFrame(CameraImage image) async {
     if (_busy || _pipeline == null || _camera == null) return;
 
-    // Throttle: every 2nd frame → ~15 FPS inference from 30 FPS camera
-    _frameSkip++;
-    if (_frameSkip % 2 != 0) return;
-
+    // Process every frame for minimum latency. _busy flag prevents
+    // double-processing if inference takes longer than one frame.
     _busy = true;
     try {
       final rotDeg = _rotationDegrees(_camera!);
