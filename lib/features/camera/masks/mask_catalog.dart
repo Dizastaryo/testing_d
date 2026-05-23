@@ -177,7 +177,7 @@ class CatEarsPainter extends CustomPainter {
 
     for (final side in [-1, 1]) {
       final eye = side < 0 ? f.leftEye : f.rightEye;
-      final base = Offset(eye.dx, f.topOfHead.dy);
+      final base = Offset(eye.dx, f.forehead.dy - f.faceHeight * 0.1);
       final tip = Offset(base.dx + side * earW * 0.3, base.dy - earH);
       final p1 = Offset(base.dx - side * earW * 0.4, base.dy);
       final p2 = Offset(base.dx + side * earW * 0.5, base.dy);
@@ -276,7 +276,7 @@ class CrownPainter extends CustomPainter {
 
     final crownW = f.eyeDistance * 2.2;
     final crownH = f.eyeDistance * 0.9;
-    final baseY = f.topOfHead.dy;
+    final baseY = f.forehead.dy - f.faceHeight * 0.15;
     final tipY = baseY - crownH;
     final cx = f.center.dx;
 
