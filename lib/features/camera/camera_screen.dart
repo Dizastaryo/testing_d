@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -598,7 +598,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           MaskOverlay(descriptor: _selectedMask),
 
           // ── DEBUG: face tracking overlay (remove after debugging) ──
-          if (_selectedMask != null) const _FaceTrackDebugOverlay(),
+          if (kMaskTuning && _selectedMask != null) const _FaceTrackDebugOverlay(),
 
           // ── Grid overlay ──
           if (_showGrid)
@@ -669,7 +669,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             ),
 
           // ── DEBUG: mask adjustment sliders ──
-          if (kDebugMode && _selectedMask != null)
+          if (kMaskTuning && _selectedMask != null)
             _MaskDebugSliders(maskId: _selectedMask!.id),
 
           // ── Record button row ──

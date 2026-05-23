@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import 'face_tracking_service.dart';
@@ -42,7 +41,7 @@ class _MaskOverlayState extends State<MaskOverlay> {
     if (widget.descriptor == null) return const SizedBox.shrink();
     final innerPainter = widget.descriptor!.painter();
 
-    if (!kDebugMode) {
+    if (!kMaskTuning) {
       return Positioned.fill(
         child: IgnorePointer(
           child: CustomPaint(painter: innerPainter),
