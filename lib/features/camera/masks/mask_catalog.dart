@@ -118,10 +118,26 @@ class FaceFrame {
     );
   }
 
+  static int _fromSizeLogCounter = 0;
   factory FaceFrame.fromSize(Size s) {
     final face = maskCurrentTrackedFace;
     if (face != null && face.points.length >= 468) {
-      return FaceFrame.fromTracked(face, s);
+      final ff = FaceFrame.fromTracked(face, s);
+      if (++_fromSizeLogCounter % 120 == 1) {
+        debugPrint(
+          '[FaceFrame.fromSize] TRACKED canvas=${s.width.toInt()}x${s.height.toInt()} '
+          'leftEye=${ff.leftEye} rightEye=${ff.rightEye} '
+          'center=${ff.center} eyeDist=${ff.eyeDistance.toStringAsFixed(1)} '
+          'rollRad=${ff.rollRad.toStringAsFixed(3)}',
+        );
+      }
+      return ff;
+    }
+    if (++_fromSizeLogCounter % 120 == 1) {
+      debugPrint(
+        '[FaceFrame.fromSize] FALLBACK canvas=${s.width.toInt()}x${s.height.toInt()} '
+        'face=${face == null ? "null" : "pts=${face.points.length}"}',
+      );
     }
     return FaceFrame.fallback(s);
   }

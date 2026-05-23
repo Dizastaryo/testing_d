@@ -596,6 +596,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           // ── AR mask overlay ──
           MaskOverlay(descriptor: _selectedMask),
 
+          // ── DEBUG: face tracking overlay (remove after debugging) ──
+          if (_selectedMask != null) const _FaceTrackDebugOverlay(),
+
           // ── Grid overlay ──
           if (_showGrid)
             Positioned.fill(
@@ -1388,3 +1391,78 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 }
 
+// ─── DEBUG: on-screen face tracking values (remove after debugging) ───────
+
+class _FaceTrackDebugOverlay extends StatefulWidget {
+  const _FaceTrackDebugOverlay();
+
+  @override
+  State<_FaceTrackDebugOverlay> createState() => _FaceTrackDebugOverlayState();
+}
+
+class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
+  late final _sub = FaceTrackingService.instance.stream.listen((_) {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _sub;
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 4,
+      left: 4,
+      child: IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Use the full screen size as canvas (same as Positioned.fill in MaskOverlay)
+            final screen = MediaQuery.of(context).size;
+            final face = maskCurrentTrackedFace;
+            String text;
+            if (face == null || face.points.length < 468) {
+              text = 'FALLBACK\nface=${face == null ? "null" : "pts=${face.points.length}"}';
+            } else {
+              final ff = FaceFrame.fromTracked(face, screen);
+              text = 'TRACKED\n'
+                  'canvas=${screen.width.toInt()}x${screen.height.toInt()}\n'
+                  'mesh=${face.imageWidth}x${face.imageHeight}\n'
+                  'L eye=(${ff.leftEye.dx.toInt()},${ff.leftEye.dy.toInt()})\n'
+                  'R eye=(${ff.rightEye.dx.toInt()},${ff.rightEye.dy.toInt()})\n'
+                  'center=(${ff.center.dx.toInt()},${ff.center.dy.toInt()})\n'
+                  'eyeDist=${ff.eyeDistance.toInt()}\n'
+                  'faceW=${ff.faceWidth.toInt()} faceH=${ff.faceHeight.toInt()}\n'
+                  'roll=${ff.rollRad.toStringAsFixed(2)}\n'
+                  'yaw=${ff.yawRad.toStringAsFixed(2)}';
+            }
+            return Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  height: 1.3,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
