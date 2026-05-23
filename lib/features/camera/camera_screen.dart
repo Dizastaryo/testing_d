@@ -198,9 +198,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     try {
       await controller.initialize();
+      final ps = controller.value.previewSize;
       debugPrint(
         '_setupCamera: initialized ${camera.lensDirection.name} camera '
-        'previewSize=${controller.value.previewSize} '
+        'previewSize=$ps '
+        '(swapped for portrait: ${ps != null ? "${ps.height}x${ps.width}" : "null"}) '
         'aspectRatio=${controller.value.aspectRatio}',
       );
 

@@ -51,13 +51,25 @@ class FaceFrame {
   });
 
   /// Build from tracked face. [canvasSize] is the preview widget size.
-  /// Points in TrackedFace are in image-space; we scale to canvas.
+  /// Points in TrackedFace are in image-space; we map to canvas using the
+  /// same geometry as BoxFit.cover: single uniform scale + centering offset.
+  static int _logCounter = 0;
   factory FaceFrame.fromTracked(TrackedFace face, Size canvasSize) {
-    final sx = canvasSize.width / face.imageWidth;
-    final sy = canvasSize.height / face.imageHeight;
+    final imageW = face.imageWidth.toDouble();
+    final imageH = face.imageHeight.toDouble();
+    final scale = math.max(canvasSize.width / imageW, canvasSize.height / imageH);
+    final dx = (canvasSize.width - imageW * scale) / 2;
+    final dy = (canvasSize.height - imageH * scale) / 2;
+    if (++_logCounter % 120 == 1) {
+      debugPrint(
+        '[FaceFrame] canvas=${canvasSize.width.toInt()}x${canvasSize.height.toInt()} '
+        'image=${face.imageWidth}x${face.imageHeight} '
+        'scale=${scale.toStringAsFixed(3)} dx=${dx.toStringAsFixed(1)} dy=${dy.toStringAsFixed(1)}',
+      );
+    }
     Offset pt(int idx) {
       final p = face.pt(idx);
-      return Offset(p.dx * sx, p.dy * sy);
+      return Offset(p.dx * scale + dx, p.dy * scale + dy);
     }
 
     final le = pt(MeshIdx.leftEyeOuter);

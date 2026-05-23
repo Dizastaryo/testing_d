@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -264,6 +263,23 @@ class FaceTrackingService {
       final offsets = mesh.landmarksAsOffsets(
         targetSize: previewSize,
       );
+
+      // ── DEBUG: log mesh dimensions + raw input + landmarks ──
+      if (_frameSkip % 60 == 0) {
+        final tracked = TrackedFace(
+          points: offsets,
+          imageWidth: mesh.imageWidth,
+          imageHeight: mesh.imageHeight,
+        );
+        debugPrint(
+          '[FaceTrack] input=${image.width}x${image.height} '
+          'rotDeg=$rotDeg isFront=$isFront '
+          'mesh=${mesh.imageWidth}x${mesh.imageHeight} '
+          'rollRad=${tracked.rollRad.toStringAsFixed(3)} '
+          'yawRad=${tracked.yawRad.toStringAsFixed(3)} '
+          'eyeCenter=${tracked.eyeCenter}',
+        );
+      }
 
       _ctrl.add(TrackedFace(
         points: offsets,
