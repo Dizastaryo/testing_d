@@ -280,6 +280,13 @@ class FaceTrackingService {
         mirrorHorizontal: isFront,
       );
 
+      // Fix Y-inversion: _mapLandmark rotation 90° gives y=landmark.x,
+      // but correct portrait mapping is y=1-landmark.x (sensor-right=top
+      // of phone, not bottom). Flip Y to put forehead at top, chin at bottom.
+      final corrected = offsets
+          .map((o) => Offset(o.dx, outH - o.dy))
+          .toList(growable: false);
+
       // Extract raw Z values from landmarks
       final zValues = mesh.landmarks.map((lm) => lm.z).toList(growable: false);
 
@@ -287,7 +294,7 @@ class FaceTrackingService {
       final outHeight = outH.toInt();
 
       _ctrl.add(TrackedFace(
-        points: offsets,
+        points: corrected,
         pointsZ: zValues,
         imageWidth: outWidth,
         imageHeight: outHeight,
