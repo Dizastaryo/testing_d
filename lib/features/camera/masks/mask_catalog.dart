@@ -37,6 +37,13 @@ class FaceFrame {
   final double faceWidth;
   final double faceHeight;
 
+  /// Estimated top of head — extrapolated above forehead by ~45% of faceHeight.
+  /// Adapts to each person's face proportions (longer face → higher top).
+  late final Offset topOfHead = Offset(
+    forehead.dx,
+    forehead.dy - faceHeight * 0.45,
+  );
+
   FaceFrame._({
     required this.leftEye,
     required this.rightEye,
@@ -170,7 +177,7 @@ class CatEarsPainter extends CustomPainter {
 
     for (final side in [-1, 1]) {
       final eye = side < 0 ? f.leftEye : f.rightEye;
-      final base = Offset(eye.dx, eye.dy - earH * 0.3);
+      final base = Offset(eye.dx, f.topOfHead.dy);
       final tip = Offset(base.dx + side * earW * 0.3, base.dy - earH);
       final p1 = Offset(base.dx - side * earW * 0.4, base.dy);
       final p2 = Offset(base.dx + side * earW * 0.5, base.dy);
@@ -269,7 +276,7 @@ class CrownPainter extends CustomPainter {
 
     final crownW = f.eyeDistance * 2.2;
     final crownH = f.eyeDistance * 0.9;
-    final baseY = f.forehead.dy;
+    final baseY = f.topOfHead.dy;
     final tipY = baseY - crownH;
     final cx = f.center.dx;
 
@@ -381,7 +388,7 @@ class HaloPainter extends CustomPainter {
     canvas.save();
     f.applyRotation(canvas);
 
-    final c = Offset(f.center.dx, f.forehead.dy - f.eyeDistance * 0.4);
+    final c = Offset(f.center.dx, f.topOfHead.dy - f.eyeDistance * 0.2);
     final r = f.eyeDistance * 0.8;
     canvas.drawCircle(c, r + 8,
         Paint()..color = const Color(0xFFFFE36B).withValues(alpha: 0.35)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14));
@@ -450,7 +457,7 @@ class BunnyEarsPainter extends CustomPainter {
     for (final side in [-1, 1]) {
       final eye = side < 0 ? f.leftEye : f.rightEye;
       final cx = eye.dx;
-      final cy = f.forehead.dy - earH * 0.45;
+      final cy = f.topOfHead.dy - earH * 0.3;
       canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: earW, height: earH), white);
       canvas.drawOval(
           Rect.fromCenter(center: Offset(cx, cy + earH * 0.05), width: earW * 0.55, height: earH * 0.78), pink);
