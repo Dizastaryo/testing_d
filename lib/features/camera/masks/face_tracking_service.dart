@@ -99,16 +99,24 @@ class TransformSmoother {
 class TrackedFace {
   /// 468 landmarks as pixel-space Offsets (mapped to preview size).
   final List<Offset> points;
+
+  /// Raw Z (depth) per landmark — nullable for backwards compat.
+  final List<double>? pointsZ;
+
   final int imageWidth;
   final int imageHeight;
 
   const TrackedFace({
     required this.points,
+    this.pointsZ,
     required this.imageWidth,
     required this.imageHeight,
   });
 
   Offset pt(int idx) => points[idx];
+
+  /// Z-depth for landmark [idx]. Returns 0 if Z data unavailable.
+  double z(int idx) => pointsZ != null && idx < pointsZ!.length ? pointsZ![idx] : 0.0;
 
   double get eyeDistance => (pt(MeshIdx.rightEyeOuter) - pt(MeshIdx.leftEyeOuter)).distance;
 
@@ -276,29 +284,15 @@ class FaceTrackingService {
         mirrorHorizontal: isFront,
       );
 
+      // Extract raw Z values from landmarks
+      final zValues = mesh.landmarks.map((lm) => lm.z).toList(growable: false);
+
       final outWidth = outW.toInt();
       final outHeight = outH.toInt();
 
-      // ── DEBUG: log mesh dimensions + raw input + landmarks ──
-      if (_frameSkip % 60 == 0) {
-        final tracked = TrackedFace(
-          points: offsets,
-          imageWidth: outWidth,
-          imageHeight: outHeight,
-        );
-        debugPrint(
-          '[FaceTrack] input=${image.width}x${image.height} '
-          'rotDeg=$rotDeg isFront=$isFront '
-          'meshRaw=${mesh.imageWidth}x${mesh.imageHeight} '
-          'meshOut=${outWidth}x$outHeight '
-          'rollRad=${tracked.rollRad.toStringAsFixed(3)} '
-          'yawRad=${tracked.yawRad.toStringAsFixed(3)} '
-          'eyeCenter=${tracked.eyeCenter}',
-        );
-      }
-
       _ctrl.add(TrackedFace(
         points: offsets,
+        pointsZ: zValues,
         imageWidth: outWidth,
         imageHeight: outHeight,
       ));

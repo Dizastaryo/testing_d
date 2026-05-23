@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'calibration_painter.dart';
 import 'face_tracking_service.dart';
 
 class MaskDescriptor {
@@ -475,5 +476,6 @@ class MaskCatalog {
     MaskDescriptor(id: 'halo', label: 'Ангел', previewIcon: Icons.auto_awesome, painter: () => HaloPainter()),
     MaskDescriptor(id: 'hearts', label: 'Любовь', previewIcon: Icons.favorite_border, painter: () => FloatingHeartsPainter()),
     MaskDescriptor(id: 'bunny', label: 'Зайчик', previewIcon: Icons.cruelty_free, painter: () => BunnyEarsPainter()),
+    MaskDescriptor(id: 'calibration', label: 'Калибровка', previewIcon: Icons.grid_on, painter: () => CalibrationPainter()),
   ];
 }
