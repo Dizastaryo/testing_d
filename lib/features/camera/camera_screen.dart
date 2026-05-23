@@ -1429,11 +1429,13 @@ class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
             final screen = MediaQuery.of(context).size;
             final face = maskCurrentTrackedFace;
             String text;
+            final rotDeg = FaceTrackingService.instance.debugRotDeg;
             if (face == null || face.points.length < 468) {
-              text = 'FALLBACK\nface=${face == null ? "null" : "pts=${face.points.length}"}';
+              text = 'FALLBACK rotDeg=$rotDeg\n'
+                  'face=${face == null ? "null" : "pts=${face.points.length}"}';
             } else {
               final ff = FaceFrame.fromTracked(face, screen);
-              text = 'TRACKED\n'
+              text = 'TRACKED rotDeg=$rotDeg\n'
                   'canvas=${screen.width.toInt()}x${screen.height.toInt()}\n'
                   'mesh=${face.imageWidth}x${face.imageHeight}\n'
                   'L eye=(${ff.leftEye.dx.toInt()},${ff.leftEye.dy.toInt()})\n'

@@ -148,6 +148,9 @@ class FaceTrackingService {
   bool _running = false;
   int _frameSkip = 0;
 
+  /// Last rotation degrees passed to MediaPipe (debug).
+  int debugRotDeg = 0;
+
   final _smoother = TransformSmoother();
 
   final StreamController<TrackedFace?> _ctrl =
@@ -218,6 +221,7 @@ class FaceTrackingService {
     _busy = true;
     try {
       final rotDeg = _rotationDegrees(_camera!);
+      debugRotDeg = rotDeg;
       final isFront =
           _camera!.description.lensDirection == CameraLensDirection.front;
 
@@ -252,29 +256,40 @@ class FaceTrackingService {
         return;
       }
 
-      // Convert to pixel-space. Rotation and mirror were already applied
-      // during inference (processNv21/process), so landmarks are in the
-      // correct orientation. Do NOT pass rotation/mirror again — that
-      // would double-rotate, flipping masks upside down.
-      final previewSize = Size(
-        mesh.imageWidth.toDouble(),
-        mesh.imageHeight.toDouble(),
-      );
+      // Landmarks from MediaPipe are normalized (0..1) in the SENSOR's
+      // native coordinate system (landscape). rotationDegrees was passed
+      // to the detector/mesh for correct face DETECTION, but the output
+      // landmarks remain in the original orientation.
+      //
+      // landmarksAsOffsets accepts rotationDegrees + mirrorHorizontal to
+      // remap the normalized coords into the portrait preview space.
+      // After rotation by 90°/270° the effective image dimensions swap.
+      final bool swapped = (rotDeg == 90 || rotDeg == 270);
+      final double outW = swapped ? mesh.imageHeight.toDouble() : mesh.imageWidth.toDouble();
+      final double outH = swapped ? mesh.imageWidth.toDouble() : mesh.imageHeight.toDouble();
+      final portraitSize = Size(outW, outH);
+
       final offsets = mesh.landmarksAsOffsets(
-        targetSize: previewSize,
+        targetSize: portraitSize,
+        rotationDegrees: rotDeg,
+        mirrorHorizontal: isFront,
       );
+
+      final outWidth = outW.toInt();
+      final outHeight = outH.toInt();
 
       // ── DEBUG: log mesh dimensions + raw input + landmarks ──
       if (_frameSkip % 60 == 0) {
         final tracked = TrackedFace(
           points: offsets,
-          imageWidth: mesh.imageWidth,
-          imageHeight: mesh.imageHeight,
+          imageWidth: outWidth,
+          imageHeight: outHeight,
         );
         debugPrint(
           '[FaceTrack] input=${image.width}x${image.height} '
           'rotDeg=$rotDeg isFront=$isFront '
-          'mesh=${mesh.imageWidth}x${mesh.imageHeight} '
+          'meshRaw=${mesh.imageWidth}x${mesh.imageHeight} '
+          'meshOut=${outWidth}x$outHeight '
           'rollRad=${tracked.rollRad.toStringAsFixed(3)} '
           'yawRad=${tracked.yawRad.toStringAsFixed(3)} '
           'eyeCenter=${tracked.eyeCenter}',
@@ -283,8 +298,8 @@ class FaceTrackingService {
 
       _ctrl.add(TrackedFace(
         points: offsets,
-        imageWidth: mesh.imageWidth,
-        imageHeight: mesh.imageHeight,
+        imageWidth: outWidth,
+        imageHeight: outHeight,
       ));
     } catch (_) {
       // Drop frame on error — next one arrives in ~33ms
