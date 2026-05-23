@@ -235,7 +235,6 @@ class FaceTrackingService {
         result = _pipeline!.processNv21(
           nv21,
           rotationDegrees: rotDeg,
-          mirrorHorizontal: isFront,
         );
       } else {
         // iOS: BGRA
@@ -246,7 +245,6 @@ class FaceTrackingService {
         result = _pipeline!.process(
           rgba,
           rotationDegrees: rotDeg,
-          mirrorHorizontal: isFront,
         );
       }
 
@@ -269,6 +267,9 @@ class FaceTrackingService {
       final double outH = swapped ? mesh.imageWidth.toDouble() : mesh.imageHeight.toDouble();
       final portraitSize = Size(outW, outH);
 
+      // Mirror is applied HERE (visible Dart code, after rotation) — not
+      // in native processNv21/process (black box). This is the ONLY mirror
+      // on landmark coordinates, matching the mirrored iOS CameraPreview.
       final offsets = mesh.landmarksAsOffsets(
         targetSize: portraitSize,
         rotationDegrees: rotDeg,
