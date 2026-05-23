@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +21,7 @@ import 'filters/filter_sliders_sheet.dart';
 import 'filters/filter_state.dart';
 import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
+import 'masks/mask_debug_config.dart';
 import 'masks/mask_overlay.dart';
 import 'masks/mask_picker.dart';
 import 'widgets/camera_buttons.dart';
@@ -666,6 +667,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 },
               ),
             ),
+
+          // ── DEBUG: mask adjustment sliders ──
+          if (kDebugMode && _selectedMask != null)
+            _MaskDebugSliders(maskId: _selectedMask!.id),
 
           // ── Record button row ──
           _buildRecordRow(),
@@ -1465,6 +1470,99 @@ class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
           },
         ),
       ),
+    );
+  }
+}
+
+// ─── DEBUG: per-mask adjustment sliders (remove after tuning) ─────────────
+
+class _MaskDebugSliders extends StatefulWidget {
+  final String maskId;
+  const _MaskDebugSliders({required this.maskId});
+
+  @override
+  State<_MaskDebugSliders> createState() => _MaskDebugSlidersState();
+}
+
+class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
+  MaskAdjust get _adj => MaskDebugConfig.get(widget.maskId);
+
+  void _update(void Function(MaskAdjust a) fn) {
+    setState(() {
+      fn(_adj);
+      MaskDebugConfig.notify();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_MaskDebugSliders old) {
+    super.didUpdateWidget(old);
+    if (old.maskId != widget.maskId) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = _adj;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 160,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${widget.maskId}: dx=${a.dx.toStringAsFixed(2)} '
+              'dy=${a.dy.toStringAsFixed(2)} s=${a.scale.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+            _slider('dx', a.dx, -2.0, 2.0, (v) => _update((a) => a.dx = v)),
+            _slider('dy', a.dy, -3.0, 1.0, (v) => _update((a) => a.dy = v)),
+            _slider('s', a.scale, 0.3, 3.0, (v) => _update((a) => a.scale = v)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _slider(String label, double value, double min, double max,
+      ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 10)),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              activeTrackColor: SeeUColors.accent,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: Colors.white,
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
