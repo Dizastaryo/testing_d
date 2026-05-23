@@ -46,7 +46,7 @@ import 'features/library/file_detail_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/music/music_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
-// services_screen removed — Music/Video/Library accessed via Explore tabs
+import 'features/services/services_screen.dart';
 import 'features/stories/text_story_compose_screen.dart';
 
 void main() async {
@@ -154,6 +154,70 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             transitionsBuilder: _fadeTransition,
           ),
         ),
+        // ── Top-level fullscreen routes (no bottom nav) ──
+        GoRoute(
+          path: '/chat',
+          pageBuilder: (_, __) => const CupertinoPage(child: ChatListScreen()),
+          routes: [
+            GoRoute(
+              path: 'new-group',
+              pageBuilder: (_, __) => const CupertinoPage(child: ChatCreateGroupScreen()),
+            ),
+            GoRoute(
+              path: 'calls',
+              pageBuilder: (_, __) => const CupertinoPage(child: CallHistoryScreen()),
+            ),
+            GoRoute(
+              path: ':chatId',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: ChatScreen(chatId: state.pathParameters['chatId']!),
+              ),
+              routes: [
+                GoRoute(
+                  path: 'members',
+                  pageBuilder: (_, state) => CupertinoPage(
+                    child: ChatMembersScreen(chatId: state.pathParameters['chatId']!),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        GoRoute(
+          path: '/watch',
+          pageBuilder: (_, __) => const CupertinoPage(child: WatchScreen()),
+        ),
+        GoRoute(
+          path: '/music',
+          pageBuilder: (_, __) => const CupertinoPage(child: MusicScreen()),
+        ),
+        GoRoute(
+          path: '/playlist/:id',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: PlaylistDetailScreen(playlistId: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
+          path: '/videos/upload',
+          pageBuilder: (_, __) => const CupertinoPage(child: VideoUploadScreen()),
+        ),
+        GoRoute(
+          path: '/videos/:id',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: VideoDetailScreen(id: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
+          path: '/files',
+          pageBuilder: (_, __) => const CupertinoPage(child: LibraryScreen()),
+        ),
+        GoRoute(
+          path: '/files/:id',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: FileDetailScreen(id: state.pathParameters['id']!),
+          ),
+        ),
+        // ── ShellRoute with bottom nav ──
         ShellRoute(
           builder: (context, state, child) => MainScaffold(child: child),
           routes: [
@@ -170,45 +234,6 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 child: const ExploreScreen(),
                 transitionsBuilder: _fadeTransition,
               ),
-            ),
-            GoRoute(
-              path: '/chat',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ChatListScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
-              routes: [
-                GoRoute(
-                  path: 'new-group',
-                  pageBuilder: (_, __) => const CupertinoPage(
-                    child: ChatCreateGroupScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: 'calls',
-                  pageBuilder: (_, __) => const CupertinoPage(
-                    child: CallHistoryScreen(),
-                  ),
-                ),
-                GoRoute(
-                  path: ':chatId',
-                  pageBuilder: (context, state) => CupertinoPage(
-                    child: ChatScreen(
-                      chatId: state.pathParameters['chatId']!,
-                    ),
-                  ),
-                  routes: [
-                    GoRoute(
-                      path: 'members',
-                      pageBuilder: (context, state) => CupertinoPage(
-                        child: ChatMembersScreen(
-                          chatId: state.pathParameters['chatId']!,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ),
             GoRoute(
               path: '/scanner',
@@ -235,51 +260,11 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 );
               },
             ),
-            // /services removed — content accessed via Explore tabs
             GoRoute(
-              path: '/watch',
+              path: '/services',
               pageBuilder: (_, __) => CustomTransitionPage(
-                child: const WatchScreen(),
+                child: const ServicesScreen(),
                 transitionsBuilder: _fadeTransition,
-              ),
-            ),
-            GoRoute(
-              path: '/music',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const MusicScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
-            ),
-            GoRoute(
-              path: '/playlist/:id',
-              pageBuilder: (_, state) => CupertinoPage(
-                child: PlaylistDetailScreen(
-                    playlistId: state.pathParameters['id']!),
-              ),
-            ),
-            GoRoute(
-              path: '/videos/upload',
-              pageBuilder: (_, __) => const CupertinoPage(
-                child: VideoUploadScreen(),
-              ),
-            ),
-            GoRoute(
-              path: '/videos/:id',
-              pageBuilder: (_, state) => CupertinoPage(
-                child: VideoDetailScreen(id: state.pathParameters['id']!),
-              ),
-            ),
-            GoRoute(
-              path: '/files',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const LibraryScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
-            ),
-            GoRoute(
-              path: '/files/:id',
-              pageBuilder: (_, state) => CupertinoPage(
-                child: FileDetailScreen(id: state.pathParameters['id']!),
               ),
             ),
             GoRoute(

@@ -6,11 +6,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/models/user.dart';
-import '../../core/providers/library_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/utils/format.dart';
 
@@ -95,11 +93,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   ? _buildSearchResults(searchState)
                   : _browseTab == 0
                       ? _buildMixedGrid()
-                      : _browseTab == 1
-                          ? _buildVideoGrid()
-                          : _browseTab == 2
-                              ? _buildMusicList()
-                              : _buildFilesList(),
+                      : _buildVideoGrid(),
             ),
           ],
         ),
@@ -113,7 +107,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   // Browse mode tab (no search query)
   int _browseTab = 0;
-  static const List<String> _browseTabs = ['Все', 'Видео', 'Музыка', 'Файлы'];
+  static const List<String> _browseTabs = ['Все', 'Видео'];
 
   // Search mode tab (search query active)
   int _selectedTab = 0;
@@ -360,147 +354,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-
-  // =========================================================================
-  // Music list (browse tab 2)
-  // =========================================================================
-
-  Widget _buildMusicList() {
-    final c = context.seeuColors;
-    final tracksAsync = ref.watch(audioTracksProvider);
-
-    return tracksAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
-      error: (_, __) => SeeUErrorState(onRetry: () => ref.refresh(audioTracksProvider)),
-      data: (tracks) {
-        if (tracks.isEmpty) {
-          return const SeeUEmptyState(
-            icon: PhosphorIconsRegular.musicNotes,
-            title: 'Нет треков',
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          itemCount: tracks.length,
-          itemBuilder: (_, i) {
-            final track = tracks[i];
-            final playerState = ref.watch(miniPlayerProvider);
-            final isPlaying = playerState.track?.id == track.id && playerState.playing;
-            return GestureDetector(
-              onTap: () {
-                final notifier = ref.read(miniPlayerProvider.notifier);
-                if (playerState.track?.id == track.id) {
-                  notifier.toggle();
-                } else {
-                  notifier.play(track);
-                }
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isPlaying ? SeeUColors.accent.withValues(alpha: 0.08) : c.surface2,
-                  borderRadius: BorderRadius.circular(SeeURadii.medium),
-                  border: isPlaying ? Border.all(color: SeeUColors.accent.withValues(alpha: 0.3)) : null,
-                ),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: SizedBox(
-                        width: 48, height: 48,
-                        child: track.coverUrl.isNotEmpty
-                            ? CachedNetworkImage(imageUrl: track.coverUrl, fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(color: c.line),
-                                errorWidget: (_, __, ___) => Container(color: c.line))
-                            : Container(color: c.line,
-                                child: Icon(PhosphorIcons.musicNotes(), color: c.ink3, size: 20)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: SeeUTypography.subtitle.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: isPlaying ? SeeUColors.accent : c.ink)),
-                          const SizedBox(height: 2),
-                          Text('${track.artist} · ${formatDuration(Duration(seconds: track.durationSeconds))}',
-                              style: SeeUTypography.caption.copyWith(color: c.ink3, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      isPlaying
-                          ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.play(PhosphorIconsStyle.fill),
-                      color: isPlaying ? SeeUColors.accent : c.ink2,
-                      size: 24,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // =========================================================================
-  // Files list (browse tab 3)
-  // =========================================================================
-
-  Widget _buildFilesList() {
-    final c = context.seeuColors;
-    final filesAsync = ref.watch(filesProvider(null));
-
-    return filesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
-      error: (_, __) => SeeUErrorState(onRetry: () => ref.refresh(filesProvider(null))),
-      data: (files) {
-        if (files.isEmpty) {
-          return const SeeUEmptyState(
-            icon: PhosphorIconsRegular.folderSimple,
-            title: 'Нет файлов',
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          itemCount: files.length,
-          itemBuilder: (_, i) {
-            final f = files[i];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              child: ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(SeeURadii.medium)),
-                tileColor: c.surface2,
-                leading: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: colorForFileType(f.fileExtension).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(child: Text(
-                    f.fileExtension.toUpperCase(),
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
-                        color: colorForFileType(f.fileExtension)),
-                  )),
-                ),
-                title: Text(f.filename, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: SeeUTypography.body.copyWith(fontWeight: FontWeight.w600)),
-                subtitle: Text(f.user?.username ?? '', style: SeeUTypography.caption.copyWith(color: c.ink3)),
-                trailing: Icon(PhosphorIcons.arrowRight(), size: 16, color: c.ink3),
-                onTap: () => context.push('/files/${f.id}'),
-              ),
-            );
-          },
         );
       },
     );

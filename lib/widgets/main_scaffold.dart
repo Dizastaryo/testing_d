@@ -18,21 +18,15 @@ class MainScaffold extends StatelessWidget {
     if (location.startsWith('/feed')) return 0;
     if (location.startsWith('/explore')) return 1;
     if (location.startsWith('/scanner')) return 2;
-    if (location.startsWith('/chat')) return 3;
+    if (location.startsWith('/services')) return 3;
     if (location.startsWith('/profile')) return 4;
     return 0;
   }
 
   void _onTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
-    const routes = ['/feed', '/explore', '/scanner', '/chat', '/profile'];
+    const routes = ['/feed', '/explore', '/scanner', '/services', '/profile'];
     context.go(routes[index]);
-  }
-
-  /// Routes where the bottom nav should be hidden (fullscreen experiences).
-  bool _shouldHideNav(String location) {
-    if (location.startsWith('/chat/') && location != '/chat') return true;
-    return false;
   }
 
   @override
@@ -41,12 +35,11 @@ class MainScaffold extends StatelessWidget {
     final currentIndex = _locationToIndex(location);
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
-    final hideNavByRoute = _shouldHideNav(location);
 
     return ValueListenableBuilder<bool>(
       valueListenable: bottomNavHiddenNotifier,
       builder: (context, hiddenByScreen, _) {
-        final hideNav = hideNavByRoute || hiddenByScreen;
+        final hideNav = hiddenByScreen;
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           // UX-7: tab-swipe transitions. AnimatedSwitcher с fade+small slide
@@ -128,9 +121,9 @@ class MainScaffold extends StatelessWidget {
                             onTap: () => _onTap(context, 2),
                           ),
                           _NavItem(
-                            icon: _buildNavIcon('chat', false),
-                            activeIcon: _buildNavIcon('chat', true),
-                            label: 'Чаты',
+                            icon: _buildNavIcon('services', false),
+                            activeIcon: _buildNavIcon('services', true),
+                            label: 'Сервисы',
                             isSelected: currentIndex == 3,
                             onTap: () => _onTap(context, 3),
                           ),
@@ -544,28 +537,23 @@ class _NavIconPainter extends CustomPainter {
         }
         break;
 
-      // ── Chat icon (speech bubble) ──────────────────────────────────────
-      case 'chat':
-        final bubblePath = Path();
-        bubblePath.addRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(s * 0.1, s * 0.12, s * 0.8, s * 0.6),
-          Radius.circular(s * 0.18),
-        ));
-        // Tail
-        bubblePath.moveTo(s * 0.25, s * 0.72);
-        bubblePath.lineTo(s * 0.18, s * 0.88);
-        bubblePath.lineTo(s * 0.42, s * 0.72);
+      // ── Services icon (4 squares grid) ───────────────────────────────
+      case 'services':
+        final gap = s * 0.08;
+        final cellSize = (s * 0.8 - gap) / 2;
+        final left = s * 0.1;
+        final top2 = s * 0.1;
+        final r = Radius.circular(s * 0.08);
         paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
-        paint.strokeWidth = filled ? 2.0 : 1.7;
-        canvas.drawPath(bubblePath, paint);
-        if (!filled) {
-          // Three dots inside
-          final dotY = s * 0.42;
-          final dotPaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-          canvas.drawCircle(Offset(s * 0.35, dotY), s * 0.04, dotPaint);
-          canvas.drawCircle(Offset(s * 0.50, dotY), s * 0.04, dotPaint);
-          canvas.drawCircle(Offset(s * 0.65, dotY), s * 0.04, dotPaint);
-        }
+        paint.strokeWidth = filled ? 1.8 : 1.7;
+        canvas.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(left, top2, cellSize, cellSize), r), paint);
+        canvas.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(left + cellSize + gap, top2, cellSize, cellSize), r), paint);
+        canvas.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(left, top2 + cellSize + gap, cellSize, cellSize), r), paint);
+        canvas.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(left + cellSize + gap, top2 + cellSize + gap, cellSize, cellSize), r), paint);
         break;
 
       // ── User icon ─────────────────────────────────────────────────────
