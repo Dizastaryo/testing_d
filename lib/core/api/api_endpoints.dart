@@ -140,6 +140,13 @@ class ApiEndpoints {
   // Reels
   // Reels endpoints removed (migration 23 unified them with posts).
 
+  // Сборы
+  static const String sbory = '/sbory';
+  static const String mySbory = '/sbory/me';
+  static String sborById(String id) => '/sbory/$id';
+  static String joinSbor(String id) => '/sbory/$id/join';
+  static String leaveSbor(String id) => '/sbory/$id/join';
+
   // === Library Service endpoints ===
   static const String files = '/files';
   static const String filesCategories = '/files/categories';

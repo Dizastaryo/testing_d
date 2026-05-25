@@ -1,13 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'filter_state.dart';
 
 /// Обёртка вокруг preview. Применяет ColorMatrix (brightness/contrast/
 /// saturation/warmth) через ColorFiltered, поверх — vignette gradient и
-/// grain noise.
-class FilterOverlay extends StatelessWidget {
+/// анимированный grain noise (~18 fps смена seed).
+class FilterOverlay extends StatefulWidget {
   final FilterState state;
   final Widget child;
 
@@ -18,11 +19,63 @@ class FilterOverlay extends StatelessWidget {
   });
 
   @override
+  State<FilterOverlay> createState() => _FilterOverlayState();
+}
+
+class _FilterOverlayState extends State<FilterOverlay>
+    with SingleTickerProviderStateMixin {
+  Ticker? _ticker;
+  int _grainSeed = 0;
+  Duration _lastUpdate = Duration.zero;
+
+  // Обновляем seed ~18 раз в секунду — достаточно для плёночного ощущения,
+  // не грузит CPU как 60 fps.
+  static const _kGrainInterval = Duration(milliseconds: 56);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.state.grain > 0) _startTicker();
+  }
+
+  @override
+  void didUpdateWidget(FilterOverlay old) {
+    super.didUpdateWidget(old);
+    final wasActive = old.state.grain > 0;
+    final isActive = widget.state.grain > 0;
+    if (!wasActive && isActive) _startTicker();
+    if (wasActive && !isActive) _stopTicker();
+  }
+
+  void _startTicker() {
+    if (_ticker != null) return;
+    _ticker = createTicker((elapsed) {
+      if (elapsed - _lastUpdate >= _kGrainInterval) {
+        _lastUpdate = elapsed;
+        setState(() => _grainSeed++);
+      }
+    })..start();
+  }
+
+  void _stopTicker() {
+    _ticker?.stop();
+    _ticker?.dispose();
+    _ticker = null;
+  }
+
+  @override
+  void dispose() {
+    _stopTicker();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    Widget filtered = child;
-    if (!state.isIdentity) {
+    final s = widget.state;
+    Widget filtered = widget.child;
+    if (!s.isIdentity) {
       filtered = ColorFiltered(
-        colorFilter: ColorFilter.matrix(state.toMatrix()),
+        colorFilter: ColorFilter.matrix(s.toMatrix()),
         child: filtered,
       );
     }
@@ -30,7 +83,7 @@ class FilterOverlay extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         filtered,
-        if (state.vignette > 0)
+        if (s.vignette > 0)
           IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -38,46 +91,98 @@ class FilterOverlay extends StatelessWidget {
                   radius: 0.9,
                   colors: [
                     Colors.black.withValues(alpha: 0),
-                    Colors.black.withValues(alpha: state.vignette * 0.75),
+                    Colors.black.withValues(alpha: s.vignette * 0.75),
                   ],
                   stops: const [0.55, 1.0],
                 ),
               ),
             ),
           ),
-        if (state.grain > 0)
+        // RepaintBoundary изолирует grain от ColorFiltered —
+        // при смене seed перерисовывается только grain-слой.
+        if (s.grain > 0)
           IgnorePointer(
-            child: CustomPaint(painter: _GrainPainter(state.grain)),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _GrainPainter(s.grain, _grainSeed),
+              ),
+            ),
+          ),
+        // Halation: тёплый ореол плёнки вокруг ярких зон (screen blend).
+        if (s.halation > 0)
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _HalationPainter(s.halation),
+            ),
           ),
       ],
     );
   }
 }
 
-/// Простой grain — псевдо-рандомные точки в seed'е по интенсивности.
-/// Не animated (статичный noise) — для preview-overlay'я этого достаточно.
+/// Анимированный grain — seed меняется каждые ~56ms, Random(seed) даёт
+/// новое распределение точек. Два размера зерна (0.6 / 1.4px) имитируют
+/// смесь мелкого и крупного зерна плёнки.
 class _GrainPainter extends CustomPainter {
   final double intensity; // 0..1
-  _GrainPainter(this.intensity);
+  final int seed;
+
+  _GrainPainter(this.intensity, this.seed);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final n = (intensity * 4000).round().clamp(0, 8000);
-    final rng = math.Random(42);
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: intensity * 0.05);
-    final paintD = Paint()
-      ..color = Colors.black.withValues(alpha: intensity * 0.08);
-    for (var i = 0; i < n; i++) {
+    final count = (intensity * 6000).round().clamp(0, 14000);
+    final rng = math.Random(seed);
+    final bright = Paint()
+      ..color = Colors.white.withValues(alpha: intensity * 0.06);
+    final dark = Paint()
+      ..color = Colors.black.withValues(alpha: intensity * 0.10);
+    for (var i = 0; i < count; i++) {
       final x = rng.nextDouble() * size.width;
       final y = rng.nextDouble() * size.height;
-      final r = rng.nextDouble() < 0.5 ? 0.5 : 1.0;
-      canvas.drawCircle(Offset(x, y), r,
-          rng.nextDouble() < 0.5 ? paint : paintD);
+      // ~60% мелкое зерно, ~40% крупное
+      final r = rng.nextDouble() < 0.6 ? 0.6 : 1.4;
+      canvas.drawCircle(
+        Offset(x, y),
+        r,
+        rng.nextDouble() < 0.5 ? bright : dark,
+      );
     }
   }
 
   @override
   bool shouldRepaint(covariant _GrainPainter old) =>
+      old.intensity != intensity || old.seed != seed;
+}
+
+/// Halation — тёплый ореол, имитирующий свечение вокруг ярких зон плёнки.
+/// Рисует мягкий радиальный градиент (центр→края) в режиме BlendMode.screen,
+/// что создаёт эффект «засветки» без пересветки тёмных участков.
+class _HalationPainter extends CustomPainter {
+  final double intensity; // 0..1
+
+  _HalationPainter(this.intensity);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..blendMode = BlendMode.screen
+        ..shader = RadialGradient(
+          center: Alignment.center,
+          radius: 0.92,
+          colors: [
+            Colors.transparent,
+            const Color(0xFFFF6B35).withValues(alpha: intensity * 0.28),
+          ],
+          stops: const [0.35, 1.0],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HalationPainter old) =>
       old.intensity != intensity;
 }

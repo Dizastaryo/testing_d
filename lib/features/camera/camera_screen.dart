@@ -19,6 +19,8 @@ import 'filters/filter_overlay.dart';
 import 'filters/filter_picker.dart';
 import 'filters/filter_sliders_sheet.dart';
 import 'filters/filter_state.dart';
+import 'filters/frame_effect.dart';
+import 'filters/overlay_effect.dart';
 import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
 import 'masks/mask_debug_config.dart';
@@ -75,6 +77,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   FilterState _filter = FilterState.identity; // color/grain/vignette state
   String? _filterPresetId;
   bool _showFilterPicker = false;
+  OverlayEffect? _overlayEffect; // dust/scratches, light leak, etc.
+  FrameEffect? _frameEffect;    // polaroid, film strip, etc.
   double _currentSegDur = 0.0; // live elapsed seconds for active segment
 
   // ── Timer state ──
@@ -417,7 +421,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   /// Web: File I/O недоступен в браузере — для Chrome-dev возвращаем raw как
   /// есть (см. CLAUDE.md — Chrome это dev-preview, mobile это shipping).
   Future<XFile> _composeCapture(XFile raw) async {
-    if (_filter.isIdentity && _selectedMask == null) return raw;
+    if (_filter.isIdentity &&
+        _selectedMask == null &&
+        _overlayEffect == null &&
+        _frameEffect == null) {
+      return raw;
+    }
     if (kIsWeb) return raw; // web: dart:io недоступен — отдаём raw
 
     final bytes = await raw.readAsBytes();
@@ -464,7 +473,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     // на 4k-фотке выглядит сильнее чем в preview). Если нужно — отдельный
     // toggle «зерно в финале».
 
-    // 4. Mask painter — рисуется в pixel-space фотографии, _FaceFrame
+    // 4. Overlay effect (dust, light leak) — запекается с фиксированным
+    // animValue = 0.6 (средняя точка анимации) через OverlayEffect.bake().
+    _overlayEffect?.bake(canvas, size);
+
+    // 5. Frame effect (polaroid, film strip…) — поверх overlay, под маской.
+    _frameEffect?.bake(canvas, size);
+
+    // 6. Mask painter — рисуется в pixel-space фотографии, _FaceFrame
     // автоматически масштабируется по size.
     if (_selectedMask != null) {
       _selectedMask!.painter().paint(canvas, size);
@@ -597,6 +613,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           // ── AR mask overlay ──
           MaskOverlay(descriptor: _selectedMask),
 
+          // ── Overlay effect (dust, light leak…) ──
+          if (_overlayEffect != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: EffectOverlay(effect: _overlayEffect!),
+              ),
+            ),
+
+          // ── Frame effect (polaroid, film strip…) ──
+          if (_frameEffect != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: FrameOverlay(effect: _frameEffect!),
+              ),
+            ),
+
           // ── DEBUG: face tracking overlay (remove after debugging) ──
           if (kMaskTuning && _selectedMask != null) const _FaceTrackDebugOverlay(),
 
@@ -641,6 +673,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               child: FilterPicker(
                 selectedPresetId: _filterPresetId,
                 state: _filter,
+                selectedOverlay: _overlayEffect,
+                onOverlaySelected: (o) => setState(() => _overlayEffect = o),
+                selectedFrame: _frameEffect,
+                onFrameSelected: (f) => setState(() => _frameEffect = f),
                 onPresetSelected: (preset) {
                   setState(() {
                     _filter = preset?.state ?? FilterState.identity;
@@ -654,7 +690,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                     onChange: (s) {
                       setState(() {
                         _filter = s;
-                        _filterPresetId = null; // ручная настройка
+                        _filterPresetId = null;
                       });
                     },
                     onReset: () {

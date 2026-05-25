@@ -155,6 +155,30 @@ class _FilterSlidersBodyState extends State<_FilterSlidersBody> {
                       max: 1,
                       onChanged: (v) => _update(_state.copyWith(grain: v)),
                     ),
+                    _SliderRow(
+                      label: 'Поднять тени',
+                      value: _state.liftBlacks,
+                      min: 0,
+                      max: 1,
+                      onChanged: (v) =>
+                          _update(_state.copyWith(liftBlacks: v)),
+                    ),
+                    _SliderRow(
+                      label: 'Притушить светлые',
+                      value: _state.fadeHighlights,
+                      min: 0,
+                      max: 1,
+                      onChanged: (v) =>
+                          _update(_state.copyWith(fadeHighlights: v)),
+                    ),
+                    _SliderRow(
+                      label: 'Галация',
+                      value: _state.halation,
+                      min: 0,
+                      max: 1,
+                      onChanged: (v) =>
+                          _update(_state.copyWith(halation: v)),
+                    ),
                     const SizedBox(height: 16),
                   ],
                 ),

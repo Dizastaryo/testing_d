@@ -142,8 +142,11 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized) return;
     final visible = info.visibleFraction > 0.5;
-    if (visible && !ctrl.value.isPlaying) ctrl.play();
-    else if (!visible && ctrl.value.isPlaying) ctrl.pause();
+    if (visible && !ctrl.value.isPlaying) {
+      ctrl.play();
+    } else if (!visible && ctrl.value.isPlaying) {
+      ctrl.pause();
+    }
   }
 
   @override

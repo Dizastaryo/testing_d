@@ -124,16 +124,22 @@ class _ReportSheetState extends State<_ReportSheet> {
               style: SeeUTypography.caption.copyWith(color: c.ink2),
             ),
             const SizedBox(height: 16),
-            for (final r in _reasons)
-              RadioListTile<String>(
-                title: Text(r.label),
-                value: r.value,
-                groupValue: _selected,
-                onChanged: (v) => setState(() => _selected = v),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                activeColor: SeeUColors.accent,
+            RadioGroup<String?>(
+              groupValue: _selected,
+              onChanged: (v) => setState(() => _selected = v),
+              child: Column(
+                children: [
+                  for (final r in _reasons)
+                    RadioListTile<String>(
+                      title: Text(r.label),
+                      value: r.value,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      activeColor: SeeUColors.accent,
+                    ),
+                ],
               ),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _detailsCtrl,

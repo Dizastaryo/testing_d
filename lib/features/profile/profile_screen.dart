@@ -198,11 +198,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 onTap: () { Navigator.pop(context); context.push('/post/create'); },
               ),
               ListTile(
-                leading: Icon(PhosphorIcons.filmStrip(), color: SeeUColors.accent),
-                title: const Text('Создать рилс'),
-                onTap: () { Navigator.pop(context); context.push('/story/create'); },
-              ),
-              ListTile(
                 leading: Icon(PhosphorIcons.plusCircle(), color: SeeUColors.accent),
                 title: const Text('Создать историю'),
                 onTap: () { Navigator.pop(context); context.push('/story/create'); },
@@ -563,38 +558,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 user.fullName.isNotEmpty ? user.fullName : user.username,
                 style: SeeUTypography.displayS,
               ),
-              // PROFILE-6: presence — «в сети» зелёным или «был X мин назад».
-              // Пустая строка означает hidden or unknown → ничего не рендерим.
-              if (user.presenceLabel().isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (user.isOnline) ...[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF4CAF50),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      user.presenceLabel(),
-                      style: SeeUTypography.caption.copyWith(
-                        color: user.isOnline
-                            ? const Color(0xFF4CAF50)
-                            : c.ink2,
-                        fontSize: 12,
-                        fontWeight:
-                            user.isOnline ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
               if (user.bio != null && user.bio!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(

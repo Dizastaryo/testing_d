@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mediapipe_face_mesh/mediapipe_face_mesh.dart';
 

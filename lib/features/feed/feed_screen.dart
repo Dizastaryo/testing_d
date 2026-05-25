@@ -7,11 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:visibility_detector/visibility_detector.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/daily_prompt_provider.dart';
-import '../../core/providers/feed_provider.dart' show feedProvider, FeedSortMode;
+import '../../core/providers/feed_provider.dart' show feedProvider;
 import '../../core/providers/notification_provider.dart';
 import '../camera/camera_screen.dart';
 import '../../widgets/main_scaffold.dart' show bottomNavHiddenNotifier;
@@ -229,12 +228,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                         ],
                                       ),
                                       const Spacer(),
-                                      // Reels button
-                                      _HeaderIconButton(
-                                        icon: PhosphorIcon(PhosphorIcons.filmStrip()),
-                                        onTap: () => context.push('/view/first?type=video'),
-                                      ),
-                                      const SizedBox(width: 10),
                                       // DM button with entrance animation
                                       AnimatedBuilder(
                                         animation: _headerIconsController,
@@ -297,17 +290,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                               ),
                             ),
                             const SliverToBoxAdapter(child: StoriesRow()),
-                            // FEED-2: toggle между chronological и smart-ranking.
-                            SliverToBoxAdapter(
-                              child: _SortToggle(
-                                current: feedState.sortMode,
-                                onChange: (m) {
-                                  ref
-                                      .read(feedProvider.notifier)
-                                      .setSortMode(m);
-                                },
-                              ),
-                            ),
                             // FEED-3: banner новых постов от подписок.
                             if (feedState.pendingNewCount > 0)
                               SliverToBoxAdapter(
@@ -353,28 +335,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                                       curve: Curves.easeOutCubic,
                                       child: FadeInAnimation(
                                         curve: Curves.easeOutCubic,
-                                        child: _ViewMarker(
-                                          // FEED-5: после 5 сек в viewport'е
-                                          // → POST /posts/:id/view → feed
-                                          // больше не вернёт этот пост.
-                                          postId: feedState.posts[index].id,
-                                          onViewed: (id) => ref
-                                              .read(feedProvider.notifier)
-                                              .markPostViewed(id),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              if (feedState.recommendedIds
-                                                  .contains(feedState
-                                                      .posts[index].id))
-                                                const _RecommendedLabel(),
-                                              PostCard(
-                                                  post: feedState
-                                                      .posts[index]),
-                                            ],
-                                          ),
-                                        ),
+                                        child: PostCard(
+                                            post: feedState.posts[index]),
                                       ),
                                     ),
                                   );
@@ -922,155 +884,6 @@ class _DotPulseState extends State<_DotPulse>
 // FEED-3: banner «N новых постов ↑» — появляется когда WS post.created event
 // прилетел пока юзер в feed'е. Tap → refresh + scroll-to-top.
 // ===========================================================================
-
-// FEED-5: VisibilityDetector + 5s Timer → mark-as-viewed.
-class _ViewMarker extends StatefulWidget {
-  final String postId;
-  final void Function(String) onViewed;
-  final Widget child;
-
-  const _ViewMarker({
-    required this.postId,
-    required this.onViewed,
-    required this.child,
-  });
-
-  @override
-  State<_ViewMarker> createState() => _ViewMarkerState();
-}
-
-class _ViewMarkerState extends State<_ViewMarker> {
-  Timer? _timer;
-  bool _viewed = false;
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: Key('view-marker-${widget.postId}'),
-      onVisibilityChanged: (info) {
-        if (_viewed) return;
-        if (info.visibleFraction > 0.5) {
-          _timer?.cancel();
-          _timer = Timer(const Duration(seconds: 5), () {
-            if (!mounted || _viewed) return;
-            _viewed = true;
-            widget.onViewed(widget.postId);
-          });
-        } else {
-          _timer?.cancel();
-        }
-      },
-      child: widget.child,
-    );
-  }
-}
-
-// FEED-2: переключатель сортировки.
-class _SortToggle extends StatelessWidget {
-  final FeedSortMode current;
-  final ValueChanged<FeedSortMode> onChange;
-
-  const _SortToggle({required this.current, required this.onChange});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    Widget pill(String label, FeedSortMode mode, IconData icon) {
-      final active = current == mode;
-      return GestureDetector(
-        onTap: () => onChange(mode),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: active ? SeeUGradients.heroOrange : null,
-            color: active ? null : c.surface2,
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 14, color: active ? Colors.white : c.ink2),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: active ? Colors.white : c.ink2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: Row(
-        children: [
-          pill('По времени', FeedSortMode.chrono,
-              PhosphorIconsRegular.clock),
-          const SizedBox(width: 8),
-          pill('Умная лента', FeedSortMode.smart,
-              PhosphorIconsRegular.sparkle),
-        ],
-      ),
-    );
-  }
-}
-
-// FEED-7: маленькая accent-pill «Рекомендуем» над injected explore-постом.
-class _RecommendedLabel extends StatelessWidget {
-  const _RecommendedLabel();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: SeeUColors.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(
-                color: SeeUColors.accent.withValues(alpha: 0.30),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(PhosphorIconsFill.sparkle,
-                    size: 10, color: SeeUColors.accent),
-                const SizedBox(width: 4),
-                const Text(
-                  'Рекомендуем',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: SeeUColors.accent,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _NewPostsBanner extends StatelessWidget {
   final int count;

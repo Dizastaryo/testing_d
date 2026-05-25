@@ -9,12 +9,9 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/story.dart';
 
-/// Bottom sheet for creating a new Highlight from the user's currently
-/// active stories. Returns true if a highlight was successfully created.
-///
-/// Limitation: backend only exposes the user's *active* stories (not the
-/// 24h+ archive). When we ship a stories archive, this picker can swap to
-/// that endpoint without UI changes.
+/// Bottom sheet for creating a new Highlight.
+/// Flow: 1) select stories from full archive → 2) pick cover + enter title.
+/// Returns true if a highlight was successfully created.
 Future<bool> showCreateHighlightSheet({
   required BuildContext context,
   required String username,
@@ -45,10 +42,14 @@ class _CreateHighlightForm extends ConsumerStatefulWidget {
       _CreateHighlightFormState();
 }
 
-class _CreateHighlightFormState
-    extends ConsumerState<_CreateHighlightForm> {
+class _CreateHighlightFormState extends ConsumerState<_CreateHighlightForm> {
   final _title = TextEditingController();
-  final Set<String> _selected = {};
+  // Step 1: select stories. Step 2: pick cover + enter title.
+  int _step = 1;
+  // Ordered list of selected story ids (maintains selection order).
+  final List<String> _selectedIds = [];
+  // Cover is the story id the user picked. Defaults to first selected.
+  String? _coverId;
   List<Story> _stories = const [];
   bool _loading = true;
   bool _submitting = false;
@@ -69,7 +70,11 @@ class _CreateHighlightFormState
   Future<void> _loadStories() async {
     try {
       final api = ref.read(apiClientProvider);
-      final r = await api.get(ApiEndpoints.userStories(widget.username));
+      // include_expired=true loads the full archive (expired + active).
+      final r = await api.get(
+        ApiEndpoints.userStories(widget.username),
+        queryParameters: {'include_expired': 'true', 'limit': '200'},
+      );
       final data = r.data is Map && (r.data as Map).containsKey('data')
           ? r.data['data']
           : r.data;
@@ -78,6 +83,8 @@ class _CreateHighlightFormState
               .map((e) => Story.fromJson(e as Map<String, dynamic>))
               .toList()
           : <Story>[];
+      // Sort newest first.
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (mounted) {
         setState(() {
           _stories = list;
@@ -94,14 +101,35 @@ class _CreateHighlightFormState
     }
   }
 
+  void _toggleStory(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_coverId == id) {
+          _coverId = _selectedIds.isNotEmpty ? _selectedIds.first : null;
+        }
+      } else {
+        _selectedIds.add(id);
+        _coverId ??= id;
+      }
+    });
+  }
+
+  void _goToStep2() {
+    if (_selectedIds.isEmpty) {
+      setState(() => _error = 'Выберите хотя бы одну сторис');
+      return;
+    }
+    setState(() {
+      _error = null;
+      _step = 2;
+    });
+  }
+
   Future<void> _submit() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
       setState(() => _error = 'Введите название');
-      return;
-    }
-    if (_selected.isEmpty) {
-      setState(() => _error = 'Выберите хотя бы одну сторис');
       return;
     }
     setState(() {
@@ -109,16 +137,12 @@ class _CreateHighlightFormState
       _error = null;
     });
     try {
-      // Cover defaults to the first selected story's media. Backend validator
-      // requires a full URL when cover_url is non-empty — Story.fromJson
-      // already normalised media_url to absolute on parse.
-      final firstSelected =
-          _stories.firstWhere((s) => s.id == _selected.first);
+      final coverStory = _stories.firstWhere((s) => s.id == (_coverId ?? _selectedIds.first));
       final api = ref.read(apiClientProvider);
       await api.post(ApiEndpoints.highlights, data: {
         'title': title,
-        'cover_url': firstSelected.mediaUrl,
-        'story_ids': _selected.toList(),
+        'cover_url': coverStory.mediaUrl,
+        'story_ids': _selectedIds,
       });
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -141,7 +165,7 @@ class _CreateHighlightFormState
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.90,
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -149,70 +173,132 @@ class _CreateHighlightFormState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Header
               Row(
                 children: [
+                  if (_step == 2)
+                    GestureDetector(
+                      onTap: () => setState(() { _step = 1; _error = null; }),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Icon(PhosphorIcons.arrowLeft(), size: 20, color: c.ink),
+                      ),
+                    ),
                   Icon(PhosphorIcons.plusCircle(), color: SeeUColors.accent),
                   const SizedBox(width: 8),
-                  const Text('Новая коллекция',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _title,
-                enabled: !_submitting,
-                maxLength: 50,
-                decoration: const InputDecoration(
-                  labelText: 'Название',
-                  hintText: 'например: «Лето 2026»',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
                   Text(
-                    'Выберите сторис',
-                    style: SeeUTypography.body
-                        .copyWith(fontWeight: FontWeight.w600),
+                    _step == 1 ? 'Выберите сторис' : 'Оформление',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
-                  if (_selected.isNotEmpty)
-                    Text('${_selected.length} выбрано',
-                        style:
-                            TextStyle(color: SeeUColors.accent, fontSize: 13)),
+                  if (_step == 1 && _selectedIds.isNotEmpty)
+                    Text('${_selectedIds.length} выбрано',
+                        style: const TextStyle(color: SeeUColors.accent, fontSize: 13)),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(false),
+                    child: Icon(PhosphorIcons.x(), size: 22, color: c.ink2),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Expanded(child: _buildStoriesGrid(c)),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!,
-                    style: const TextStyle(color: Colors.red, fontSize: 13)),
-              ],
               const SizedBox(height: 12),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: SeeUColors.accent,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+
+              if (_step == 1) ...[
+                Expanded(child: _buildStoriesGrid(c)),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+                const SizedBox(height: 12),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SeeUColors.accent,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _selectedIds.isEmpty ? null : _goToStep2,
+                  child: const Text('Далее'),
                 ),
-                onPressed: (_submitting || _stories.isEmpty) ? null : _submit,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Icon(PhosphorIcons.plusCircle(), size: 18),
-                label: Text(_submitting ? 'Сохраняем…' : 'Создать коллекцию'),
-              ),
+              ] else ...[
+                // Cover picker
+                Text('Обложка хайлайта',
+                    style: SeeUTypography.body.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 90,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _selectedIds.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final id = _selectedIds[i];
+                      final story = _stories.firstWhere((s) => s.id == id);
+                      final isCover = _coverId == id;
+                      return GestureDetector(
+                        onTap: () => setState(() => _coverId = id),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: CachedNetworkImage(
+                                imageUrl: story.mediaUrl,
+                                width: 56,
+                                height: 90,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(width: 56, height: 90, color: c.surface2),
+                                errorWidget: (_, __, ___) => Container(width: 56, height: 90, color: c.surface2),
+                              ),
+                            ),
+                            if (isCover)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: SeeUColors.accent, width: 2.5),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.check_circle, color: SeeUColors.accent, size: 22),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Title field
+                TextField(
+                  controller: _title,
+                  enabled: !_submitting,
+                  maxLength: 50,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Название',
+                    hintText: 'например: «Лето 2026»',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SeeUColors.accent,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _submitting ? null : _submit,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Icon(PhosphorIcons.plusCircle(), size: 18),
+                  label: Text(_submitting ? 'Сохраняем…' : 'Создать хайлайт'),
+                ),
+              ],
             ],
           ),
         ),
@@ -222,14 +308,14 @@ class _CreateHighlightFormState
 
   Widget _buildStoriesGrid(SeeUThemeColors c) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: SeeUColors.accent));
     }
     if (_stories.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Нет активных сторис.\nСначала опубликуйте сторис, потом\nможно собрать коллекцию.',
+            'У вас пока нет сторис.\nОпубликуйте сторис — они появятся здесь.',
             textAlign: TextAlign.center,
             style: TextStyle(color: c.ink2),
           ),
@@ -239,24 +325,16 @@ class _CreateHighlightFormState
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
         childAspectRatio: 9 / 16,
       ),
       itemCount: _stories.length,
       itemBuilder: (_, i) {
         final s = _stories[i];
-        final isSelected = _selected.contains(s.id);
+        final isSelected = _selectedIds.contains(s.id);
         return GestureDetector(
-          onTap: () {
-            setState(() {
-              if (isSelected) {
-                _selected.remove(s.id);
-              } else {
-                _selected.add(s.id);
-              }
-            });
-          },
+          onTap: () => _toggleStory(s.id),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -273,27 +351,38 @@ class _CreateHighlightFormState
                 Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
-                    border:
-                        Border.all(color: SeeUColors.accent, width: 3),
+                    border: Border.all(color: SeeUColors.accent, width: 2.5),
                   ),
                 ),
               Positioned(
                 top: 6,
                 right: 6,
                 child: Container(
-                  width: 22,
-                  height: 22,
+                  width: 22, height: 22,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isSelected
-                        ? SeeUColors.accent
-                        : Colors.black.withValues(alpha: 0.4),
+                    color: isSelected ? SeeUColors.accent : Colors.black.withValues(alpha: 0.4),
                     border: Border.all(color: Colors.white, width: 1.5),
                   ),
                   child: isSelected
-                      ? const Icon(Icons.check,
-                          color: Colors.white, size: 14)
+                      ? const Icon(Icons.check, color: Colors.white, size: 14)
                       : null,
+                ),
+              ),
+              // Date label at bottom
+              Positioned(
+                left: 0, right: 0, bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                    color: Colors.black.withValues(alpha: 0.45),
+                  ),
+                  child: Text(
+                    _formatDate(s.createdAt),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w500),
+                  ),
                 ),
               ),
             ],
@@ -301,5 +390,11 @@ class _CreateHighlightFormState
         );
       },
     );
+  }
+
+  String _formatDate(DateTime dt) {
+    final months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн',
+                    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return '${dt.day} ${months[dt.month - 1]}';
   }
 }

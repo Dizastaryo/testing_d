@@ -48,6 +48,10 @@ import 'features/music/music_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
 import 'features/services/services_screen.dart';
 import 'features/stories/text_story_compose_screen.dart';
+import 'features/sbory/sbory_screen.dart';
+import 'features/sbory/sbor_detail_screen.dart';
+import 'features/sbory/sbor_create_screen.dart';
+import 'features/sbory/sbor_chat_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -215,6 +219,30 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           path: '/files/:id',
           pageBuilder: (_, state) => CupertinoPage(
             child: FileDetailScreen(id: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
+          path: '/sbory',
+          pageBuilder: (_, __) => const CupertinoPage(child: SboryScreen()),
+        ),
+        GoRoute(
+          path: '/sbory/create',
+          pageBuilder: (_, __) => const CupertinoPage(child: SborCreateScreen()),
+        ),
+        GoRoute(
+          path: '/sbory/:id',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: SborDetailScreen(sborId: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
+          path: '/sbory/:id/chat',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: SborChatScreen(
+              chatId: state.pathParameters['id']!,
+              sborTitle: state.uri.queryParameters['title'] ?? 'Сбор',
+              memberCount: int.tryParse(state.uri.queryParameters['members'] ?? '0') ?? 0,
+            ),
           ),
         ),
         // ── ShellRoute with bottom nav ──

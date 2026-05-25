@@ -258,7 +258,7 @@ class _VideoUploadScreenState extends ConsumerState<VideoUploadScreen> {
             // Category picker
             categoriesAsync.when(
               data: (cats) => DropdownButtonFormField<String?>(
-                value: _categoryId,
+                initialValue: _categoryId,
                 decoration: const InputDecoration(
                   labelText: 'Категория',
                   isDense: true,

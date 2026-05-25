@@ -84,16 +84,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             // -- Header + search bar + hint --
             _buildHeader(hasQuery),
 
-            // -- Browse tabs (when not searching) --
-            if (!hasQuery) _buildBrowseTabs(),
-
             // -- Content --
             Expanded(
               child: hasQuery
                   ? _buildSearchResults(searchState)
-                  : _browseTab == 0
-                      ? _buildMixedGrid()
-                      : _buildVideoGrid(),
+                  : _buildMixedGrid(),
             ),
           ],
         ),
@@ -104,10 +99,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // =========================================================================
   // Header: title + search bar + privacy hint
   // =========================================================================
-
-  // Browse mode tab (no search query)
-  int _browseTab = 0;
-  static const List<String> _browseTabs = ['Все', 'Видео'];
 
   // Search mode tab (search query active)
   int _selectedTab = 0;
@@ -253,114 +244,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Tags section removed - all content comes from backend search
 
   // =========================================================================
-  // Browse tabs row (Все / Видео / Музыка / Файлы)
-  // =========================================================================
-
-  Widget _buildBrowseTabs() {
-    final c = context.seeuColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-      child: SizedBox(
-        height: 36,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: _browseTabs.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (_, i) {
-            final isActive = _browseTab == i;
-            return GestureDetector(
-              onTap: () => setState(() => _browseTab = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive ? c.ink : c.surface2,
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                ),
-                child: Text(
-                  _browseTabs[i],
-                  style: SeeUTypography.caption.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isActive ? Colors.white : c.ink2,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  // =========================================================================
-  // Video-only grid (browse tab 1)
-  // =========================================================================
-
-  Widget _buildVideoGrid() {
-    final c = context.seeuColors;
-    final state = ref.watch(exploreProvider);
-    final videoPosts = state.posts
-        .where((p) => p.media.any((m) => m.type == MediaType.video))
-        .toList();
-
-    if (state.isLoading && videoPosts.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: SeeUColors.accent));
-    }
-    if (videoPosts.isEmpty) {
-      return const SeeUEmptyState(
-        icon: PhosphorIconsRegular.filmStrip,
-        title: 'Нет видео',
-      );
-    }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(4, 8, 4, 120),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-        childAspectRatio: 9 / 16,
-      ),
-      itemCount: videoPosts.length,
-      itemBuilder: (_, i) {
-        final post = videoPosts[i];
-        return GestureDetector(
-          onTap: () => context.push('/view/${post.id}?type=video'),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CachedNetworkImage(
-                  imageUrl: post.gridThumbnailUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(color: c.surface2),
-                  errorWidget: (_, __, ___) => Container(color: c.surface2),
-                ),
-                Positioned(
-                  bottom: 8, left: 8,
-                  child: Row(
-                    children: [
-                      Icon(PhosphorIcons.play(PhosphorIconsStyle.fill),
-                          color: Colors.white, size: 12),
-                      const SizedBox(width: 4),
-                      Text(formatCount(post.likesCount),
-                          style: const TextStyle(color: Colors.white, fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              shadows: [Shadow(color: Colors.black54, blurRadius: 3)])),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // =========================================================================
-  // Mixed grid (browse tab 0 — all posts)
+  // Mixed grid (all posts)
   // =========================================================================
 
   Widget _buildMixedGrid() {
