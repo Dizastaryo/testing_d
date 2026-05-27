@@ -189,6 +189,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// CHAT-3.1: тап на результат закрывает sheet, прокручивает chat к
   /// сообщению через ScrollablePositionedList + flash-highlight 2 сек.
   void _showChatMenu(SeeUThemeColors c) {
+    final chats = ref.read(chatListProvider).chats;
+    final chat = chats.where((ch) => ch.id == widget.chatId)
+        .cast<Chat?>().firstWhere((_) => true, orElse: () => null);
+    final isGroup = chat?.isGroup ?? false;
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -221,6 +226,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               title: const Text('Отключить уведомления'),
               onTap: () => Navigator.of(sheetCtx).pop(),
             ),
+            if (isGroup)
+              ListTile(
+                leading: const Icon(PhosphorIconsRegular.signOut, color: SeeUColors.error),
+                title: const Text('Выйти из группы', style: TextStyle(color: SeeUColors.error)),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _leaveGroup();
+                },
+              ),
             ListTile(
               leading: const Icon(PhosphorIconsRegular.trash, color: SeeUColors.error),
               title: const Text('Очистить чат', style: TextStyle(color: SeeUColors.error)),
@@ -231,6 +245,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _leaveGroup() async {
+    final c = context.seeuColors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Выйти из группы?', style: TextStyle(color: c.ink, fontSize: 17)),
+        content: Text('Ты покинешь этот групповой чат.', style: TextStyle(color: c.ink2, fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Нет', style: TextStyle(color: c.ink3))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
+      if (mounted) context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    }
   }
 
   void _showSearchSheet() {
@@ -1149,6 +1188,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildMessageList(List<ChatMessage> messages, String myId, dynamic otherUser) {
+    // Resolve current chat for group detection
+    final chatList = ref.read(chatListProvider).chats;
+    final currentChat = chatList.where((ch) => ch.id == widget.chatId)
+        .cast<Chat?>().firstWhere((_) => true, orElse: () => null);
+
     // Group by day
     final groups = <String, List<ChatMessage>>{};
     for (final msg in messages) {
@@ -1182,7 +1226,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             message: msg,
             isMine: isMine,
             showTail: showTail,
-            senderAvatarUrl: isMine ? null : otherUser?.avatarUrl,
+            isGroup: currentChat?.isGroup ?? false,
+            senderName: isMine ? null : msg.senderName.isNotEmpty ? msg.senderName : null,
+            senderAvatarUrl: isMine
+                ? null
+                : (currentChat?.isGroup == true
+                    ? (msg.senderAvatarUrl.isNotEmpty ? msg.senderAvatarUrl : null)
+                    : otherUser?.avatarUrl),
             reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
             allReactions: msg.reactions,
             showReactionPicker: _reactionPickerMessageId == msg.id,

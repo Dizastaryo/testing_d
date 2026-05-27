@@ -94,6 +94,9 @@ class ChatMessageBubble extends StatelessWidget {
   final void Function(String emoji) onReactionSelected;
   /// B7: avatar URL for the last message in a cluster (other user only).
   final String? senderAvatarUrl;
+  /// Group chat: имя отправителя (показывается над баблом для чужих сообщений).
+  final String? senderName;
+  final bool isGroup;
 
   const ChatMessageBubble({
     super.key,
@@ -107,6 +110,8 @@ class ChatMessageBubble extends StatelessWidget {
     this.onDoubleTap,
     required this.onReactionSelected,
     this.senderAvatarUrl,
+    this.senderName,
+    this.isGroup = false,
   });
 
   @override
@@ -127,6 +132,19 @@ class ChatMessageBubble extends StatelessWidget {
         crossAxisAlignment:
             isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
+          // Имя отправителя для group-чата (первое сообщение в кластере)
+          if (isGroup && !isMine && showTail && senderName != null && senderName!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 34, bottom: 2),
+              child: Text(
+                senderName!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _senderColor(senderName!),
+                ),
+              ),
+            ),
           GestureDetector(
             onLongPress: onLongPress,
             onDoubleTap: onDoubleTap,
@@ -488,6 +506,17 @@ class ChatMessageBubble extends StatelessWidget {
         height: 1.4,
       ),
     );
+  }
+
+  static const _nameColors = [
+    Color(0xFFE05C5C), Color(0xFF5C8BE0), Color(0xFF5CB87A),
+    Color(0xFFE09E5C), Color(0xFF9E5CE0), Color(0xFF5CCCE0),
+    Color(0xFFE05CA3), Color(0xFF7A9E5C),
+  ];
+
+  Color _senderColor(String name) {
+    final idx = (name.codeUnitAt(0) + name.length) % _nameColors.length;
+    return _nameColors[idx];
   }
 }
 

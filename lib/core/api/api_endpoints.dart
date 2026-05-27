@@ -147,6 +147,7 @@ class ApiEndpoints {
   static String joinSbor(String id) => '/sbory/$id/join';
   static String leaveSbor(String id) => '/sbory/$id/join';
   static String cancelSbor(String id) => '/sbory/$id';
+  static String leaveGroupChat(String id) => '/chats/$id/leave';
 
   // === Library Service endpoints ===
   static const String files = '/files';

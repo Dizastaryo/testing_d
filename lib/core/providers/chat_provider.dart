@@ -214,6 +214,10 @@ class ChatMessage {
   final Map<String, int> reactions;
   /// The emoji the *current user* placed on this message — empty when none.
   final String myReaction;
+  /// Sender info (for group chats)
+  final String senderName;
+  final String senderUsername;
+  final String senderAvatarUrl;
 
   const ChatMessage({
     required this.id,
@@ -237,6 +241,9 @@ class ChatMessage {
     this.replyTo,
     this.reactions = const {},
     this.myReaction = '',
+    this.senderName = '',
+    this.senderUsername = '',
+    this.senderAvatarUrl = '',
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -282,6 +289,9 @@ class ChatMessage {
             )
           : const {},
       myReaction: json['my_reaction']?.toString() ?? '',
+      senderName: json['sender_name']?.toString() ?? '',
+      senderUsername: json['sender_username']?.toString() ?? '',
+      senderAvatarUrl: json['sender_avatar_url']?.toString() ?? '',
     );
   }
 
