@@ -66,7 +66,6 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               SliverToBoxAdapter(child: _buildInfoGrid(c, s)),
               SliverToBoxAdapter(child: _buildDescription(c, s)),
               SliverToBoxAdapter(child: _buildParticipants(c, s)),
-              SliverToBoxAdapter(child: _buildChatPreview(c, s)),
               const SliverToBoxAdapter(child: SizedBox(height: 120)),
             ],
           ),
@@ -308,59 +307,9 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     );
   }
 
-  Widget _buildChatPreview(SeeUThemeColors c, Sbor s) {
-    if (s.chatId == null) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: GestureDetector(
-        onTap: () => context.push('/sbory/${widget.sborId}/chat'),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: c.line, width: 0.5),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: SeeUColors.accentSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  PhosphorIcons.chatsCircle(PhosphorIconsStyle.fill),
-                  size: 20, color: SeeUColors.accent,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Чат сбора',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      'Открыть →',
-                      style: TextStyle(fontSize: 12, color: c.ink3),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold), size: 14, color: c.ink3),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildStickyBottom(BuildContext context, SeeUThemeColors c, Sbor s) {
+    final isOrganizer = s.myRole == SborRole.organizer;
+
     return Positioned(
       left: 0, right: 0, bottom: 0,
       child: Container(
@@ -375,101 +324,96 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
         child: SafeArea(
           top: false,
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () => context.push(
-                  '/sbory/${widget.sborId}/chat',
-                  extra: {'title': s.title, 'members': s.joined},
-                ),
-                child: Container(
-                  width: 52, height: 52,
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: c.line),
-                  ),
-                  child: Icon(PhosphorIcons.chatCircleDots(), size: 20, color: c.ink),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: _joining || s.isJoined ? null : () => _join(s),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: s.isJoined
-                          ? SeeUColors.accentSoft
-                          : s.isFull
-                              ? c.surface2
-                              : SeeUColors.accent,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: s.isJoined || s.isFull
-                          ? null
-                          : [
-                              BoxShadow(
-                                color: SeeUColors.accent.withValues(alpha: 0.35),
-                                blurRadius: 24,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_joining)
-                          const SizedBox(
-                            width: 18, height: 18,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        else ...[
-                          Icon(
-                            s.isJoined
-                                ? PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)
-                                : s.isFull
-                                    ? PhosphorIcons.lockSimple()
-                                    : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
-                            size: 18,
-                            color: s.isJoined ? SeeUColors.accent : Colors.white,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            s.isJoined
-                                ? 'Я иду'
-                                : s.isFull
-                                    ? 'Мест нет'
-                                    : 'Участвую',
-                            style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600,
-                              color: s.isJoined ? SeeUColors.accent : Colors.white,
-                            ),
-                          ),
-                        ],
+          child: GestureDetector(
+            onTap: _joining || s.isFull && !s.isJoined
+                ? null
+                : () => _joinOrOpenChat(s),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 52,
+              decoration: BoxDecoration(
+                color: s.isJoined
+                    ? SeeUColors.accent
+                    : s.isFull
+                        ? c.surface2
+                        : SeeUColors.accent,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: s.isFull && !s.isJoined
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: SeeUColors.accent.withValues(alpha: 0.35),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
                       ],
-                    ),
-                  ),
-                ),
               ),
-            ],
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (_joining)
+                    const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  else ...[
+                    Icon(
+                      s.isJoined
+                          ? PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill)
+                          : s.isFull
+                              ? PhosphorIcons.lockSimple()
+                              : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      s.isJoined
+                          ? isOrganizer ? 'Открыть чат сбора' : 'Я иду · Открыть чат'
+                          : s.isFull
+                              ? 'Мест нет'
+                              : 'Я иду',
+                      style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Future<void> _join(Sbor s) async {
+  Future<void> _joinOrOpenChat(Sbor s) async {
     HapticFeedback.mediumImpact();
+
+    // Уже участник — просто открываем чат
+    if (s.isJoined && s.chatId != null) {
+      context.push('/chat/${s.chatId}');
+      return;
+    }
+
+    // Вступаем в сбор
     setState(() => _joining = true);
     try {
       final api = ref.read(apiClientProvider);
-      await api.post(ApiEndpoints.joinSbor(s.id));
+      final resp = await api.post(ApiEndpoints.joinSbor(s.id));
       if (!mounted) return;
+
+      // Получаем chat_id из ответа и сразу открываем чат
+      final data = resp.data is Map && resp.data.containsKey('data')
+          ? resp.data['data'] as Map<String, dynamic>
+          : resp.data as Map<String, dynamic>? ?? {};
+      final chatId = data['chat_id'] as String?;
+
       ref.invalidate(_sborDetailProvider(widget.sborId));
+
+      if (chatId != null && mounted) {
+        context.push('/chat/$chatId');
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
