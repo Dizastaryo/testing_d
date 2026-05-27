@@ -229,10 +229,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             if (isGroup)
               ListTile(
                 leading: const Icon(PhosphorIconsRegular.signOut, color: SeeUColors.error),
-                title: const Text('Выйти из группы', style: TextStyle(color: SeeUColors.error)),
+                title: Text(
+                  chat?.sborId != null ? 'Выйти из сбора' : 'Выйти из группы',
+                  style: const TextStyle(color: SeeUColors.error),
+                ),
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  _leaveGroup();
+                  _leaveGroup(sborId: chat?.sborId);
                 },
               ),
             ListTile(
@@ -247,14 +250,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Future<void> _leaveGroup() async {
+  Future<void> _leaveGroup({String? sborId}) async {
     final c = context.seeuColors;
+    final isSbor = sborId != null;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('Выйти из группы?', style: TextStyle(color: c.ink, fontSize: 17)),
-        content: Text('Ты покинешь этот групповой чат.', style: TextStyle(color: c.ink2, fontSize: 14)),
+        title: Text(
+          isSbor ? 'Выйти из сбора?' : 'Выйти из группы?',
+          style: TextStyle(color: c.ink, fontSize: 17),
+        ),
+        content: Text(
+          isSbor
+              ? 'Ты покинешь сбор и его групповой чат.'
+              : 'Ты покинешь этот групповой чат.',
+          style: TextStyle(color: c.ink2, fontSize: 14),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Нет', style: TextStyle(color: c.ink3))),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти', style: TextStyle(color: Colors.red))),
@@ -264,7 +276,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (confirmed != true || !mounted) return;
     try {
       final api = ref.read(apiClientProvider);
-      await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
+      if (isSbor) {
+        // Выйти из сбора → автоматически выйдет из чата (бэкенд делает оба действия)
+        await api.delete(ApiEndpoints.leaveSbor(sborId));
+      } else {
+        await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
+      }
       if (mounted) context.pop();
     } catch (e) {
       if (!mounted) return;

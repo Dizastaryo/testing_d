@@ -23,6 +23,8 @@ class Chat {
   final int unreadCount;
   /// Закреплённое сообщение (sticky-banner на topе чата). nil = ничего не закреплено.
   final ReplyPreview? pinnedMessage;
+  /// ID сбора, если этот group-чат является чатом сбора. null — обычный чат.
+  final String? sborId;
 
   const Chat({
     required this.id,
@@ -36,6 +38,7 @@ class Chat {
     required this.lastMessageAt,
     this.unreadCount = 0,
     this.pinnedMessage,
+    this.sborId,
   });
 
   bool get isGroup => kind == 'group';
@@ -56,6 +59,7 @@ class Chat {
     DateTime? lastMessageAt,
     int? unreadCount,
     ReplyPreview? pinnedMessage,
+    String? sborId,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -69,6 +73,7 @@ class Chat {
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       unreadCount: unreadCount ?? this.unreadCount,
       pinnedMessage: pinnedMessage ?? this.pinnedMessage,
+      sborId: sborId ?? this.sborId,
     );
   }
 
@@ -102,6 +107,7 @@ class Chat {
           ? ReplyPreview.fromJson(
               json['pinned_message'] as Map<String, dynamic>)
           : null,
+      sborId: json['sbor_id']?.toString(),
     );
   }
 }
