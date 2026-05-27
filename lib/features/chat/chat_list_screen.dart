@@ -287,7 +287,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                                 chat: chats[index],
                                 onTap: () {
                                   HapticFeedback.selectionClick();
-                                  context.go('/chat/${chats[index].id}');
+                                  context.push('/chat/${chats[index].id}');
                                 },
                               );
                             },

@@ -166,7 +166,7 @@ class _ChatCreateGroupScreenState
       if (!mounted) return;
       // Чат-лист не invalidatи'тся автоматически — refresh'нём вручную после
       // навигации (chat_screen и так загрузит messages).
-      context.go('/chat/$id');
+      context.pushReplacement('/chat/$id');
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);

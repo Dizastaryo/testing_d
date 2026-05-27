@@ -282,7 +282,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       } else {
         await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
       }
-      if (mounted) context.pop();
+      if (mounted) {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/chat');
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
@@ -821,7 +827,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          context.pop();
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/chat');
+                          }
                         },
                         child: Container(
                           width: 44,
