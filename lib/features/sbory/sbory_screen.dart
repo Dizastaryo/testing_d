@@ -36,6 +36,15 @@ class SboryScreen extends ConsumerStatefulWidget {
 class _SboryScreenState extends ConsumerState<SboryScreen> {
   String? _typeFilter; // null = all, 'offline', 'online'
   SborCategory? _catFilter;
+  bool _searchActive = false;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +57,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         child: Column(
           children: [
             _buildHeader(c),
-            _buildTypeToggle(c),
-            _buildCategoryChips(c),
+            if (_searchActive) _buildSearchBar(c),
+            if (!_searchActive) _buildTypeToggle(c),
+            if (!_searchActive) _buildCategoryChips(c),
             Expanded(
               child: async.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -70,9 +80,17 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                   ),
                 ),
                 data: (items) {
-                  final filtered = _catFilter == null
+                  var filtered = _catFilter == null
                       ? items
                       : items.where((s) => s.category == _catFilter).toList();
+                  if (_searchQuery.isNotEmpty) {
+                    final q = _searchQuery.toLowerCase();
+                    filtered = filtered
+                        .where((s) =>
+                            s.title.toLowerCase().contains(q) ||
+                            s.place.toLowerCase().contains(q))
+                        .toList();
+                  }
                   if (filtered.isEmpty) {
                     return _buildEmpty(c);
                   }
@@ -122,8 +140,19 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
           ),
           const Spacer(),
           _IconBtn(
-            icon: PhosphorIcons.magnifyingGlass(),
-            onTap: () {},
+            icon: _searchActive
+                ? PhosphorIcons.x(PhosphorIconsStyle.bold)
+                : PhosphorIcons.magnifyingGlass(),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _searchActive = !_searchActive;
+                if (!_searchActive) {
+                  _searchQuery = '';
+                  _searchController.clear();
+                }
+              });
+            },
             color: c.surface,
             iconColor: c.ink,
           ),
@@ -138,6 +167,42 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             iconColor: Colors.white,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(SeeUThemeColors c) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.line),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 10),
+            Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Поиск сборов...',
+                  hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                style: TextStyle(fontSize: 14, color: c.ink),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -276,7 +341,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add, color: Colors.white, size: 18),
+                  Icon(PhosphorIconsBold.plus, color: Colors.white, size: 18),
                   SizedBox(width: 8),
                   Text(
                     'Создать сбор',
@@ -409,7 +474,6 @@ class SborCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.all(compact ? 14 : 16),
         decoration: BoxDecoration(
           color: c.surface,
           borderRadius: BorderRadius.circular(22),
@@ -427,21 +491,15 @@ class SborCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            if (s.live)
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: Container(
-                  height: 3,
-                  decoration: const BoxDecoration(
-                    gradient: SeeUGradients.heroOrange,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-                  ),
-                ),
-              ),
-            // Top row
+            Padding(
+              padding: EdgeInsets.all(compact ? 14 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (s.live) const SizedBox(height: 3),
+                  // Top row
             Row(
               children: [
                 _CategoryBadge(meta: meta),
@@ -556,6 +614,20 @@ class SborCard extends StatelessWidget {
                 _JoinBtn(isFull: s.isFull, isJoined: s.isJoined, c: c),
               ],
             ),
+                ],
+              ),
+            ),
+            if (s.live)
+              Positioned(
+                top: 0, left: 0, right: 0,
+                child: Container(
+                  height: 3,
+                  decoration: const BoxDecoration(
+                    gradient: SeeUGradients.heroOrange,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

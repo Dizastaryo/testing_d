@@ -123,7 +123,37 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
       return c;
     }).toList();
     state = state.copyWith(comments: updated);
-    _api.post(ApiEndpoints.likeComment(commentId));
+    try {
+      await _api.post(ApiEndpoints.likeComment(commentId));
+    } catch (_) {
+      // Rollback optimistic update on failure
+      state = state.copyWith(comments: state.comments.map((c) {
+        if (c.id == commentId) {
+          return c.copyWith(
+            isLiked: !c.isLiked,
+            likesCount: c.isLiked
+                ? (c.likesCount > 0 ? c.likesCount - 1 : 0)
+                : c.likesCount + 1,
+          );
+        }
+        if (c.replies.any((r) => r.id == commentId)) {
+          return c.copyWith(
+            replies: c.replies.map((r) {
+              if (r.id == commentId) {
+                return r.copyWith(
+                  isLiked: !r.isLiked,
+                  likesCount: r.isLiked
+                      ? (r.likesCount > 0 ? r.likesCount - 1 : 0)
+                      : r.likesCount + 1,
+                );
+              }
+              return r;
+            }).toList(),
+          );
+        }
+        return c;
+      }).toList());
+    }
   }
 }
 

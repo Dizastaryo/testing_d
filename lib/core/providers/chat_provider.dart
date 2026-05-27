@@ -286,11 +286,17 @@ class ChatMessage {
   }
 
   ChatMessage copyWith({
+    String? text,
     bool? isRead,
     bool? isDelivered,
     int? deliveredCount,
     int? readCount,
     int? recipientsCount,
+    String? kind,
+    String? attachedMediaUrl,
+    String? attachedMediaType,
+    int? mediaDurationSeconds,
+    List<double>? waveform,
     Map<String, int>? reactions,
     String? myReaction,
   }) =>
@@ -298,7 +304,7 @@ class ChatMessage {
         id: id,
         chatId: chatId,
         senderId: senderId,
-        text: text,
+        text: text ?? this.text,
         createdAt: createdAt,
         isMe: isMe,
         isRead: isRead ?? this.isRead,
@@ -307,10 +313,13 @@ class ChatMessage {
         readCount: readCount ?? this.readCount,
         recipientsCount: recipientsCount ?? this.recipientsCount,
         expiresAt: expiresAt,
-        kind: kind,
+        kind: kind ?? this.kind,
         attachedPost: attachedPost,
-        attachedMediaUrl: attachedMediaUrl,
-        attachedMediaType: attachedMediaType,
+        attachedMediaUrl: attachedMediaUrl ?? this.attachedMediaUrl,
+        attachedMediaType: attachedMediaType ?? this.attachedMediaType,
+        mediaDurationSeconds: mediaDurationSeconds ?? this.mediaDurationSeconds,
+        waveform: waveform ?? this.waveform,
+        replyTo: replyTo,
         reactions: reactions ?? this.reactions,
         myReaction: myReaction ?? this.myReaction,
       );
@@ -429,12 +438,28 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 class ChatMessagesState {
   final List<ChatMessage> messages;
   final bool isLoading;
+  final bool isLoadingOlder;
+  final bool hasMore;
   final Chat? chat;
-  const ChatMessagesState({this.messages = const [], this.isLoading = false, this.chat});
-  ChatMessagesState copyWith({List<ChatMessage>? messages, bool? isLoading, Chat? chat}) =>
+  const ChatMessagesState({
+    this.messages = const [],
+    this.isLoading = false,
+    this.isLoadingOlder = false,
+    this.hasMore = true,
+    this.chat,
+  });
+  ChatMessagesState copyWith({
+    List<ChatMessage>? messages,
+    bool? isLoading,
+    bool? isLoadingOlder,
+    bool? hasMore,
+    Chat? chat,
+  }) =>
       ChatMessagesState(
         messages: messages ?? this.messages,
         isLoading: isLoading ?? this.isLoading,
+        isLoadingOlder: isLoadingOlder ?? this.isLoadingOlder,
+        hasMore: hasMore ?? this.hasMore,
         chat: chat ?? this.chat,
       );
 }
@@ -582,22 +607,60 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     super.dispose();
   }
 
+  static const _pageSize = 50;
+
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
     try {
-      final response = await _api.get(ApiEndpoints.chatMessages(chatId));
+      final response = await _api.get(
+        ApiEndpoints.chatMessages(chatId),
+        queryParameters: {'limit': _pageSize, 'offset': 0},
+      );
       final data = response.data['data'];
       if (data is List) {
         final messages = data
             .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
             .toList();
-        state = ChatMessagesState(messages: messages);
+        state = ChatMessagesState(
+          messages: messages,
+          hasMore: messages.length >= _pageSize,
+        );
       } else {
-        state = const ChatMessagesState(messages: []);
+        state = const ChatMessagesState(messages: [], hasMore: false);
       }
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] load error', e, st);
       state = const ChatMessagesState(messages: []);
+    }
+  }
+
+  Future<void> loadOlderMessages() async {
+    if (state.isLoadingOlder || !state.hasMore) return;
+    state = state.copyWith(isLoadingOlder: true);
+    try {
+      final response = await _api.get(
+        ApiEndpoints.chatMessages(chatId),
+        queryParameters: {
+          'limit': _pageSize,
+          'offset': state.messages.length,
+        },
+      );
+      final data = response.data['data'];
+      if (data is List) {
+        final older = data
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList();
+        state = state.copyWith(
+          messages: [...older, ...state.messages],
+          isLoadingOlder: false,
+          hasMore: older.length >= _pageSize,
+        );
+      } else {
+        state = state.copyWith(isLoadingOlder: false, hasMore: false);
+      }
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] loadOlderMessages error', e, st);
+      state = state.copyWith(isLoadingOlder: false);
     }
   }
 
@@ -669,6 +732,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       await load();
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] sendMessage error', e, st);
+      // Roll back optimistic message so it doesn't appear as sent forever.
+      state = state.copyWith(
+        messages: state.messages.where((m) => m.id != optimistic.id).toList(),
+      );
     }
   }
 

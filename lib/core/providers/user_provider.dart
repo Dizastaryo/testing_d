@@ -46,6 +46,7 @@ class UserProfileState {
     List<Highlight>? highlights,
     bool? isLoading,
     String? error,
+    bool clearError = false,
     bool? isLocked,
   }) {
     return UserProfileState(
@@ -55,7 +56,7 @@ class UserProfileState {
       taggedPosts: taggedPosts ?? this.taggedPosts,
       highlights: highlights ?? this.highlights,
       isLoading: isLoading ?? this.isLoading,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
       isLocked: isLocked ?? this.isLocked,
     );
   }
@@ -127,7 +128,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   }
 
   Future<void> loadProfile() async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       // User-эндпоинт обязательный — без него вообще профиль не рендерится.
       final userResp = await _api.get(ApiEndpoints.userProfile(username));
@@ -418,6 +419,7 @@ class ExploreState {
     bool? isLoadingMore,
     bool? hasMore,
     String? error,
+    bool clearError = false,
     int? page,
   }) {
     return ExploreState(
@@ -425,7 +427,7 @@ class ExploreState {
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
       page: page ?? this.page,
     );
   }
@@ -470,7 +472,7 @@ class ExploreNotifier extends StateNotifier<ExploreState> {
 
   Future<void> refresh() async {
     if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final r = await _api.get(ApiEndpoints.explore,
           queryParameters: {'page': '1', 'limit': '$_limit'});

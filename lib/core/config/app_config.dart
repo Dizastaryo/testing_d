@@ -41,7 +41,7 @@ class AppConfig {
   // Production: replace with your own coturn instance via --dart-define.
   static const String turnUrl = String.fromEnvironment(
     'TURN_URL',
-    defaultValue: 'turn:a.]relay.metered.ca:80',
+    defaultValue: 'turn:a.relay.metered.ca:80',
   );
   static const String turnUrlTls = String.fromEnvironment(
     'TURN_URL_TLS',

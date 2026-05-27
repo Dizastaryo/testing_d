@@ -48,6 +48,7 @@ class FeedState {
     bool? isLoadingMore,
     bool? hasMore,
     String? error,
+    bool clearError = false,
     int? page,
     String? nextCursor,
     int? pendingNewCount,
@@ -59,7 +60,7 @@ class FeedState {
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
       page: page ?? _page,
       nextCursor: nextCursor ?? this.nextCursor,
       pendingNewCount: pendingNewCount ?? this.pendingNewCount,
@@ -128,7 +129,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   /// FEED-7: параллельно фетчит explore-recommendations + interleave.
   Future<void> loadFeed() async {
     if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final params = <String, String>{'limit': '$_limit'};
       if (state.sortMode == FeedSortMode.smart) {
@@ -181,7 +182,8 @@ class FeedNotifier extends StateNotifier<FeedState> {
         sortMode: state.sortMode,
         recommendedIds: allRecommendedIds,
       );
-    } catch (e) {
+    } catch (e, st) {
+      appLog.error('[FeedNotifier] loadFeed error', e, st);
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }

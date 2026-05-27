@@ -88,10 +88,12 @@ class User {
     final ls = lastSeenAt;
     if (ls == null) return '';
     final diff = DateTime.now().difference(ls);
+    final wasFem = gender == 'female' || gender == 'f' || gender == 'женский';
+    final was = wasFem ? 'была' : 'был';
     if (diff.inMinutes < 1) return 'только что';
-    if (diff.inMinutes < 60) return 'был ${diff.inMinutes} мин назад';
-    if (diff.inHours < 24) return 'был ${diff.inHours} ч назад';
-    if (diff.inDays < 7) return 'был ${diff.inDays} д назад';
+    if (diff.inMinutes < 60) return '$was ${diff.inMinutes} мин назад';
+    if (diff.inHours < 24) return '$was ${diff.inHours} ч назад';
+    if (diff.inDays < 7) return '$was ${diff.inDays} д назад';
     return 'давно';
   }
 
@@ -108,14 +110,14 @@ class User {
       dateOfBirth: json['date_of_birth']?.toString(),
       devicePublicId: json['device_public_id']?.toString(),
       devicePrivateId: json['device_private_id']?.toString(),
-      // BUG-20: num? для счётчиков (защита от BIGINT → double).
-      postsCount: (json['posts_count'] ?? json['postsCount'] as num?)?.toInt() ?? 0,
-      followersCount: (json['followers_count'] ?? json['followersCount'] as num?)?.toInt() ?? 0,
-      followingCount: (json['following_count'] ?? json['followingCount'] as num?)?.toInt() ?? 0,
-      isFollowing: (json['is_following'] ?? json['isFollowing'] as bool?) ?? false,
-      isFollowedBy: (json['is_followed_by'] ?? json['isFollowedBy'] as bool?) ?? false,
-      isPrivate: (json['is_private'] ?? json['isPrivate'] as bool?) ?? false,
-      isVerified: (json['is_verified'] ?? json['isVerified'] as bool?) ?? false,
+      // num? для счётчиков (защита от BIGINT → double).
+      postsCount: ((json['posts_count'] ?? json['postsCount']) as num?)?.toInt() ?? 0,
+      followersCount: ((json['followers_count'] ?? json['followersCount']) as num?)?.toInt() ?? 0,
+      followingCount: ((json['following_count'] ?? json['followingCount']) as num?)?.toInt() ?? 0,
+      isFollowing: ((json['is_following'] ?? json['isFollowing']) as bool?) ?? false,
+      isFollowedBy: ((json['is_followed_by'] ?? json['isFollowedBy']) as bool?) ?? false,
+      isPrivate: ((json['is_private'] ?? json['isPrivate']) as bool?) ?? false,
+      isVerified: ((json['is_verified'] ?? json['isVerified']) as bool?) ?? false,
       hasPendingFollowRequest:
           (json['has_pending_follow_request'] as bool?) ?? false,
       isOnline: (json['is_online'] as bool?) ?? false,

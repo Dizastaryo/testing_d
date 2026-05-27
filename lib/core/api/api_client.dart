@@ -90,10 +90,12 @@ class ApiClient {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode == 401 && _refreshCompleter == null) {
+    final alreadyRetried = err.requestOptions.extra['_authRetried'] == true;
+    if (err.response?.statusCode == 401 && !alreadyRetried && _refreshCompleter == null) {
       final refreshed = await refreshTokens();
       if (refreshed) {
         final retryOptions = err.requestOptions;
+        retryOptions.extra['_authRetried'] = true;
         final newToken = await storage.read(key: _accessTokenKey);
         if (newToken != null) {
           retryOptions.headers['Authorization'] = 'Bearer $newToken';

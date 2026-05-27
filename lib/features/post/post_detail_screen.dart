@@ -37,6 +37,20 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusedCommentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.push(
+            '/post/${widget.postId}/comments?commentId=${widget.focusedCommentId}',
+          );
+        }
+      });
+    }
+  }
+
   void _onShare(Post post) {
     HapticFeedback.lightImpact();
     showShareSheet(
