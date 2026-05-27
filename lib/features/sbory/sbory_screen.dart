@@ -15,11 +15,15 @@ import 'sbory_widgets.dart';
 
 // ─── Provider ────────────────────────────────────────────────────
 
+/// Increment to force-refresh all sbory lists (after leave/cancel/create).
+final sborRefreshProvider = StateProvider<int>((ref) => 0);
+
 /// Параметр провайдера: тип-фильтр + город.
 typedef _SboryParams = ({String? type, String city});
 
 final _sboryProvider = FutureProvider.autoDispose
     .family<List<Sbor>, _SboryParams>((ref, p) async {
+  ref.watch(sborRefreshProvider);
   final api = ref.read(apiClientProvider);
   final params = <String, dynamic>{};
   if (p.type != null && p.type!.isNotEmpty) params['type'] = p.type;
@@ -32,6 +36,7 @@ final _sboryProvider = FutureProvider.autoDispose
 });
 
 final _mySboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
+  ref.watch(sborRefreshProvider);
   final api = ref.read(apiClientProvider);
   final r = await api.get(ApiEndpoints.mySbory);
   final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;

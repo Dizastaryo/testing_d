@@ -7,6 +7,14 @@ import '../models/user.dart';
 import '../services/logger.dart';
 import 'realtime_provider.dart';
 
+String _absUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  if (url.startsWith('/')) {
+    return ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + url;
+  }
+  return url;
+}
+
 // Chat models (kept inline since they were previously in mock_service).
 // kind == 'direct' → otherUser != null, title/coverUrl пустые.
 // kind == 'group'  → otherUser == null, заполнены title/coverUrl + participantsCount.
@@ -93,7 +101,7 @@ class Chat {
       id: json['id']?.toString() ?? '',
       kind: kind,
       title: json['title']?.toString() ?? '',
-      coverUrl: json['cover_url']?.toString() ?? '',
+      coverUrl: _absUrl(json['cover_url']?.toString()),
       otherUser: other,
       participantsCount: (json['participants_count'] ?? 0) as int,
       lastMessage: json['last_message']?.toString() ?? '',
@@ -302,7 +310,7 @@ class ChatMessage {
       myReaction: json['my_reaction']?.toString() ?? '',
       senderName: json['sender_name']?.toString() ?? '',
       senderUsername: json['sender_username']?.toString() ?? '',
-      senderAvatarUrl: json['sender_avatar_url']?.toString() ?? '',
+      senderAvatarUrl: _absUrl(json['sender_avatar_url']?.toString()),
       isDeletedForAll: (json['is_deleted_for_all'] ?? false) as bool,
     );
   }
@@ -437,6 +445,15 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       appLog.error('[ChatListNotifier] load error', e, st);
       state = const ChatListState(chats: []);
     }
+  }
+
+  /// Optimistically clears unread count for a chat (called when user opens it).
+  void markChatRead(String chatId) {
+    final updated = state.chats.map((c) {
+      if (c.id != chatId) return c;
+      return c.copyWith(unreadCount: 0);
+    }).toList();
+    state = state.copyWith(chats: updated);
   }
 
   /// Create or get a conversation with another user and return its ID.
@@ -762,6 +779,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   }
 
   Future<void> markRead() async {
+    _ref.read(chatListProvider.notifier).markChatRead(chatId);
     try {
       await _api.put(ApiEndpoints.chatRead(chatId));
     } catch (e, st) {

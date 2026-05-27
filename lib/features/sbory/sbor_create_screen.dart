@@ -13,6 +13,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import '../../core/providers/sbory_city_provider.dart';
+import 'sbory_screen.dart' show sborRefreshProvider;
 
 class SborCreateScreen extends ConsumerStatefulWidget {
   const SborCreateScreen({super.key});
@@ -797,6 +798,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       });
 
       if (!mounted) return;
+      ref.read(sborRefreshProvider.notifier).state++;
       context.pop();
     } catch (e) {
       if (!mounted) return;

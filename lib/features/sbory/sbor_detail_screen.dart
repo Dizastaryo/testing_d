@@ -8,6 +8,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import 'sbory_screen.dart' show sborRefreshProvider;
 
 // ─── Provider ────────────────────────────────────────────────────
 
@@ -189,8 +190,8 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       (
         PhosphorIcons.currencyRub(),
         'Стоимость',
-        'Бесплатно',
-        'своё снаряжение',
+        s.price == 0 ? 'Бесплатно' : '${s.price} ₸',
+        s.price == 0 ? 'своё снаряжение' : '',
       ),
     ];
 
@@ -488,7 +489,9 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     try {
       final api = ref.read(apiClientProvider);
       await api.delete(ApiEndpoints.leaveSbor(s.id));
-      if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+      if (!mounted) return;
+      ref.read(sborRefreshProvider.notifier).state++;
+      context.pop();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -524,7 +527,9 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     try {
       final api = ref.read(apiClientProvider);
       await api.delete(ApiEndpoints.cancelSbor(s.id));
-      if (mounted) context.pop();
+      if (!mounted) return;
+      ref.read(sborRefreshProvider.notifier).state++;
+      context.pop();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

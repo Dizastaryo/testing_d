@@ -68,6 +68,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _focusNode.addListener(() { if (mounted) setState(() {}); });
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionsChanged);
     _scrollToBottom(animate: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
+      }
+    });
   }
 
   @override
