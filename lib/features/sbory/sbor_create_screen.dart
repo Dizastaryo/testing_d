@@ -8,6 +8,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import '../../core/providers/sbory_city_provider.dart';
 
 class SborCreateScreen extends ConsumerStatefulWidget {
   const SborCreateScreen({super.key});
@@ -635,11 +636,13 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         );
       }
 
+      final city = ref.read(sboryCityProvider);
       await api.post(ApiEndpoints.sbory, data: {
         'title': _titleCtrl.text.trim(),
         'type': _type.name,
         'category': _category!.name,
         'place': _placeCtrl.text.trim(),
+        'city': city,
         'description': _descCtrl.text.trim(),
         'max_slots': _noLimit ? null : _slots,
         'flexible_time': _flexibleTime,

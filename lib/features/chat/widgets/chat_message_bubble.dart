@@ -117,8 +117,9 @@ class ChatMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
+    final localTime = message.createdAt.toLocal();
     final time =
-        '${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}';
+        '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
 
     // B6: grouping — 8px between different authors, 4px same author
     return Padding(

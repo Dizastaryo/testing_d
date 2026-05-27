@@ -86,13 +86,14 @@ class _ChatSearchSheetState extends ConsumerState<ChatSearchSheet> {
   }
 
   String _fmtTime(DateTime dt) {
+    final local = dt.toLocal();
     final now = DateTime.now();
     final sameDay =
-        now.year == dt.year && now.month == dt.month && now.day == dt.day;
+        now.year == local.year && now.month == local.month && now.day == local.day;
     if (sameDay) {
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
     }
-    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}';
+    return '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}';
   }
 
   @override

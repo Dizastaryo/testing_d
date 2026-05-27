@@ -13,11 +13,15 @@ import 'sbory_widgets.dart';
 
 // ─── Provider ────────────────────────────────────────────────────
 
+/// Параметр провайдера: тип-фильтр + город.
+typedef _SboryParams = ({String? type, String city});
+
 final _sboryProvider = FutureProvider.autoDispose
-    .family<List<Sbor>, String?>((ref, filter) async {
+    .family<List<Sbor>, _SboryParams>((ref, p) async {
   final api = ref.read(apiClientProvider);
   final params = <String, dynamic>{};
-  if (filter != null && filter.isNotEmpty) params['type'] = filter;
+  if (p.type != null && p.type!.isNotEmpty) params['type'] = p.type;
+  if (p.city.isNotEmpty) params['city'] = p.city;
   final r = await api.get(ApiEndpoints.sbory, queryParameters: params);
   final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
   return (data as List<dynamic>)
@@ -213,9 +217,10 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
+    final city = ref.watch(sboryCityProvider);
     final async = _showMine
         ? ref.watch(_mySboryProvider)
-        : ref.watch(_sboryProvider(_typeFilter));
+        : ref.watch(_sboryProvider((type: _typeFilter, city: city)));
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -243,7 +248,8 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                           if (_showMine) {
                             ref.invalidate(_mySboryProvider);
                           } else {
-                            ref.invalidate(_sboryProvider(_typeFilter));
+                            final c2 = ref.read(sboryCityProvider);
+                            ref.invalidate(_sboryProvider((type: _typeFilter, city: c2)));
                           }
                         },
                         child: const Text('Повторить'),

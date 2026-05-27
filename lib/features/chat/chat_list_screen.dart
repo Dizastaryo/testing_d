@@ -524,13 +524,14 @@ class _ChatTile extends ConsumerWidget {
   }
 
   String _formatTime(DateTime dt) {
+    final local = dt.toLocal();
     final now = DateTime.now();
-    final diff = now.difference(dt);
+    final diff = now.difference(local);
     if (diff.inMinutes < 1) return 'сейчас';
-    if (diff.inHours < 24 && dt.day == now.day) {
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    if (diff.inHours < 24 && local.day == now.day) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
     }
-    return timeago.format(dt, locale: 'ru');
+    return timeago.format(local, locale: 'ru');
   }
 }
 
