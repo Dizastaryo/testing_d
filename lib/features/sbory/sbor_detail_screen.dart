@@ -324,63 +324,83 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
         child: SafeArea(
           top: false,
-          child: GestureDetector(
-            onTap: _joining || s.isFull && !s.isJoined
-                ? null
-                : () => _joinOrOpenChat(s),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: 52,
-              decoration: BoxDecoration(
-                color: s.isJoined
-                    ? SeeUColors.accent
-                    : s.isFull
-                        ? c.surface2
-                        : SeeUColors.accent,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: s.isFull && !s.isJoined
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: _joining || s.isFull && !s.isJoined
                     ? null
-                    : [
-                        BoxShadow(
-                          color: SeeUColors.accent.withValues(alpha: 0.35),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
+                    : () => _joinOrOpenChat(s),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: s.isJoined
+                        ? SeeUColors.accent
+                        : s.isFull
+                            ? c.surface2
+                            : SeeUColors.accent,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: s.isFull && !s.isJoined
+                        ? null
+                        : [
+                            BoxShadow(
+                              color: SeeUColors.accent.withValues(alpha: 0.35),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_joining)
+                        const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      else ...[
+                        Icon(
+                          s.isJoined
+                              ? PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill)
+                              : s.isFull
+                                  ? PhosphorIcons.lockSimple()
+                                  : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          s.isJoined
+                              ? isOrganizer ? 'Открыть чат сбора' : 'Я иду · Открыть чат'
+                              : s.isFull
+                                  ? 'Мест нет'
+                                  : 'Я иду',
+                          style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
+                          ),
                         ),
                       ],
+                    ],
+                  ),
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (_joining)
-                    const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  else ...[
-                    Icon(
-                      s.isJoined
-                          ? PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill)
-                          : s.isFull
-                              ? PhosphorIcons.lockSimple()
-                              : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
-                      size: 18,
-                      color: Colors.white,
+              if (isOrganizer) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () => _cancelSbor(s),
+                  child: Text(
+                    'Отменить сбор',
+                    style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500,
+                      color: c.ink3,
+                      decoration: TextDecoration.underline,
+                      decorationColor: c.ink3,
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      s.isJoined
-                          ? isOrganizer ? 'Открыть чат сбора' : 'Я иду · Открыть чат'
-                          : s.isFull
-                              ? 'Мест нет'
-                              : 'Я иду',
-                      style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -428,6 +448,42 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       );
     } finally {
       if (mounted) setState(() => _joining = false);
+    }
+  }
+
+  Future<void> _cancelSbor(Sbor s) async {
+    final c = context.seeuColors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Отменить сбор?', style: TextStyle(color: c.ink, fontSize: 17)),
+        content: Text(
+          'Все участники будут уведомлены об отмене.',
+          style: TextStyle(color: c.ink2, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Нет', style: TextStyle(color: c.ink3)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Отменить', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.cancelSbor(s.id));
+      if (mounted) context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
     }
   }
 }

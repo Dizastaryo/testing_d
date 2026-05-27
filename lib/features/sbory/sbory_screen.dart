@@ -24,6 +24,15 @@ final _sboryProvider = FutureProvider.autoDispose
       .toList();
 });
 
+final _mySboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
+  final api = ref.read(apiClientProvider);
+  final r = await api.get(ApiEndpoints.mySbory);
+  final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+  return (data as List<dynamic>)
+      .map((e) => Sbor.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
 // ─── Screen ──────────────────────────────────────────────────────
 
 class SboryScreen extends ConsumerStatefulWidget {
@@ -35,6 +44,7 @@ class SboryScreen extends ConsumerStatefulWidget {
 
 class _SboryScreenState extends ConsumerState<SboryScreen> {
   String? _typeFilter; // null = all, 'offline', 'online'
+  bool _showMine = false;
   SborCategory? _catFilter;
   bool _searchActive = false;
   String _searchQuery = '';
@@ -49,7 +59,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final async = ref.watch(_sboryProvider(_typeFilter));
+    final async = _showMine
+        ? ref.watch(_mySboryProvider)
+        : ref.watch(_sboryProvider(_typeFilter));
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -73,7 +85,13 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                       Text('Не удалось загрузить', style: TextStyle(color: c.ink3)),
                       const SizedBox(height: 12),
                       TextButton(
-                        onPressed: () => ref.invalidate(_sboryProvider(_typeFilter)),
+                        onPressed: () {
+                          if (_showMine) {
+                            ref.invalidate(_mySboryProvider);
+                          } else {
+                            ref.invalidate(_sboryProvider(_typeFilter));
+                          }
+                        },
                         child: const Text('Повторить'),
                       ),
                     ],
@@ -215,25 +233,33 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
           _TypeBtn(
             label: 'Все',
             icon: null,
-            active: _typeFilter == null,
+            active: _typeFilter == null && !_showMine,
             color: c,
-            onTap: () => setState(() => _typeFilter = null),
+            onTap: () => setState(() { _typeFilter = null; _showMine = false; }),
           ),
           const SizedBox(width: 6),
           _TypeBtn(
             label: 'Оффлайн',
             icon: PhosphorIcons.mapPin(),
-            active: _typeFilter == 'offline',
+            active: _typeFilter == 'offline' && !_showMine,
             color: c,
-            onTap: () => setState(() => _typeFilter = 'offline'),
+            onTap: () => setState(() { _typeFilter = 'offline'; _showMine = false; }),
           ),
           const SizedBox(width: 6),
           _TypeBtn(
             label: 'Онлайн',
             icon: PhosphorIcons.globe(),
-            active: _typeFilter == 'online',
+            active: _typeFilter == 'online' && !_showMine,
             color: c,
-            onTap: () => setState(() => _typeFilter = 'online'),
+            onTap: () => setState(() { _typeFilter = 'online'; _showMine = false; }),
+          ),
+          const SizedBox(width: 6),
+          _TypeBtn(
+            label: 'Мои',
+            icon: PhosphorIcons.user(PhosphorIconsStyle.fill),
+            active: _showMine,
+            color: c,
+            onTap: () => setState(() { _showMine = true; _typeFilter = null; }),
           ),
         ],
       ),

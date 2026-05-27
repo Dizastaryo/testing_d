@@ -23,6 +23,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
 
   SborType _type = SborType.offline;
   SborCategory? _category;
+  String? _customCatLabel; // used when _category == SborCategory.other via "своё"
   int _slots = 8;
   bool _flexibleTime = false;
   bool _noLimit = false;
@@ -248,7 +249,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
               final meta = kSborCategories[cat]!;
               final active = _category == cat;
               return GestureDetector(
-                onTap: () => setState(() => _category = cat),
+                onTap: () => setState(() { _category = cat; _customCatLabel = null; }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
                   height: 34,
@@ -276,21 +277,29 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
               );
             }),
             GestureDetector(
-              onTap: () {},
-              child: Container(
+              onTap: () => _pickCustomCategory(c),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
                 height: 34,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: c.surface,
+                  color: _customCatLabel != null ? c.ink : c.surface,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: c.ink4, style: BorderStyle.solid, width: 1),
+                  border: _customCatLabel != null ? null : Border.all(color: c.ink4, width: 1),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 12, color: c.ink3),
+                    Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 12,
+                        color: _customCatLabel != null ? Colors.white : c.ink3),
                     const SizedBox(width: 6),
-                    Text('своё', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: c.ink3)),
+                    Text(
+                      _customCatLabel ?? 'своё',
+                      style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500,
+                        color: _customCatLabel != null ? Colors.white : c.ink3,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -553,6 +562,44 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickCustomCategory(SeeUThemeColors c) async {
+    final ctrl = TextEditingController(text: _customCatLabel);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Своя категория', style: TextStyle(color: c.ink, fontSize: 17)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: TextStyle(color: c.ink),
+          decoration: InputDecoration(
+            hintText: 'Например, Танцы, Волейбол...',
+            hintStyle: TextStyle(color: c.ink4),
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, ctrl.text.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Отмена', style: TextStyle(color: c.ink3)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Готово', style: TextStyle(color: SeeUColors.accent)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        _customCatLabel = result;
+        _category = SborCategory.other;
+      });
+    }
   }
 
   Future<void> _pickDate(BuildContext context) async {
