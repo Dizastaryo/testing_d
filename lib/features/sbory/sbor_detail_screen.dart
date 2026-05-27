@@ -273,32 +273,28 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              _SectionLabel('Идут', c),
-              const Spacer(),
-              Text(
-                'Все →',
-                style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: SeeUColors.accent,
-                ),
-              ),
-            ],
-          ),
+          _SectionLabel('Идут', c),
           const SizedBox(height: 10),
           SizedBox(
             height: 90,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: s.memberNames.length + (s.remaining > 0 ? 1 : 0),
+              itemCount: s.memberNames.length + (s.max != null && s.remaining > 0 ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
                 if (i == s.memberNames.length) {
                   return _EmptySlot(remaining: s.remaining, c: c);
                 }
                 final name = s.memberNames[i];
+                final username = i < s.memberUsernames.length ? s.memberUsernames[i] : null;
                 final isHost = i == 0;
-                return _ParticipantCell(name: name, isHost: isHost);
+                return _ParticipantCell(
+                  name: name,
+                  isHost: isHost,
+                  onTap: username != null && username.isNotEmpty
+                      ? () => context.push('/profile/$username')
+                      : null,
+                );
               },
             ),
           ),
@@ -399,6 +395,20 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                     ),
                   ),
                 ),
+              ] else if (s.isJoined) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () => _leaveSbor(s),
+                  child: Text(
+                    'Выйти из сбора',
+                    style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500,
+                      color: c.ink3,
+                      decoration: TextDecoration.underline,
+                      decorationColor: c.ink3,
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -448,6 +458,42 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       );
     } finally {
       if (mounted) setState(() => _joining = false);
+    }
+  }
+
+  Future<void> _leaveSbor(Sbor s) async {
+    final c = context.seeuColors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Выйти из сбора?', style: TextStyle(color: c.ink, fontSize: 17)),
+        content: Text(
+          'Ты покинешь сбор и групповой чат.',
+          style: TextStyle(color: c.ink2, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Нет', style: TextStyle(color: c.ink3)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Выйти', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.leaveSbor(s.id));
+      if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
     }
   }
 
@@ -533,8 +579,9 @@ class _SectionLabel extends StatelessWidget {
 class _ParticipantCell extends StatelessWidget {
   final String name;
   final bool isHost;
+  final VoidCallback? onTap;
 
-  const _ParticipantCell({required this.name, required this.isHost});
+  const _ParticipantCell({required this.name, required this.isHost, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -542,33 +589,39 @@ class _ParticipantCell extends StatelessWidget {
     final pal = SeeUColors.avatarPalettes[seed];
     final c = context.seeuColors;
 
-    return SizedBox(
-      width: 56,
-      child: Column(
-        children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: pal),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                name[0].toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20,
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 56,
+        child: Column(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: pal),
+                shape: BoxShape.circle,
+                border: onTap != null
+                    ? Border.all(color: SeeUColors.accent, width: 2)
+                    : null,
+              ),
+              child: Center(
+                child: Text(
+                  name[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.ink)),
-          if (isHost)
-            Text(
-              '★ ведёт',
-              style: TextStyle(fontSize: 10, color: SeeUColors.accent, fontWeight: FontWeight.w600),
-            ),
-        ],
+            const SizedBox(height: 6),
+            Text(name, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.ink), maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (isHost)
+              Text(
+                '★ ведёт',
+                style: TextStyle(fontSize: 10, color: SeeUColors.accent, fontWeight: FontWeight.w600),
+              ),
+          ],
+        ),
       ),
     );
   }

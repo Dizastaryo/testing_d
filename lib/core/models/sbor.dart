@@ -144,6 +144,7 @@ class Sbor {
   final int joined;
   final int? max; // null = no limit
   final List<String> memberNames;
+  final List<String> memberUsernames;
   final String? description;
   final SborRole myRole;
   final bool isJoined;
@@ -165,6 +166,7 @@ class Sbor {
     required this.joined,
     this.max,
     this.memberNames = const [],
+    this.memberUsernames = const [],
     this.description,
     this.myRole = SborRole.none,
     this.isJoined = false,
@@ -194,6 +196,10 @@ class Sbor {
       joined: j['joined'] as int? ?? 0,
       max: j['max'] as int?,
       memberNames: (j['member_names'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      memberUsernames: (j['member_usernames'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           [],
