@@ -1,9 +1,9 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
 import '../../core/models/story.dart';
@@ -402,7 +402,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                 children: [
                   IconButton(
                     onPressed: _exporting ? null : () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: const Icon(PhosphorIconsRegular.x, color: Colors.white),
                   ),
                   const Spacer(),
                   if (_exporting)
@@ -426,7 +426,7 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                       ),
                       onPressed: _exportAndPop,
                       icon:
-                          const Icon(Icons.check, size: 18, color: Colors.white),
+                          const Icon(PhosphorIconsBold.check, size: 18, color: Colors.white),
                       label: const Text('Готово',
                           style: TextStyle(color: Colors.white)),
                     ),

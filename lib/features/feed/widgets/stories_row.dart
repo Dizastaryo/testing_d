@@ -1029,7 +1029,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                   builder: (_, __) => Transform.scale(
                     scale: _likeScaleAnim!.value,
                     child: const Icon(
-                      Icons.favorite,
+                      PhosphorIconsFill.heart,
                       color: SeeUColors.like,
                       size: 100,
                     ),
@@ -1186,8 +1186,8 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                                 ),
                                 child: Icon(
                                   isLiked
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
+                                      ? PhosphorIconsFill.heart
+                                      : PhosphorIconsRegular.heart,
                                   color: isLiked
                                       ? SeeUColors.like
                                       : Colors.white
@@ -1296,7 +1296,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                                 ),
                                 child: const Center(
                                   child: Icon(
-                                    Icons.send_rounded,
+                                    PhosphorIconsRegular.paperPlaneTilt,
                                     color: Colors.white,
                                     size: 20,
                                   ),

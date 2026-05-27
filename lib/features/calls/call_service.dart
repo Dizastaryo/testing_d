@@ -255,7 +255,7 @@ class CallService {
 
   Future<void> hangup() async {
     final s = session.value;
-    if (s == null) return;
+    if (s == null || s.status == CallStatus.ended) return;
     _send('call.end', {'to_user_id': s.peerId});
     await _cleanup();
   }

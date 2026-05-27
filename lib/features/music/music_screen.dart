@@ -231,7 +231,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
                   }
                 }),
                 icon: Icon(
-                  _searchOpen ? Icons.close : Icons.search,
+                  _searchOpen ? PhosphorIconsRegular.x : PhosphorIconsRegular.magnifyingGlass,
                   color: theme.colorScheme.onSurface,
                 ),
               ),
@@ -250,7 +250,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
         autofocus: true,
         decoration: InputDecoration(
           hintText: 'Поиск по трекам, артистам, жанрам…',
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: const Icon(PhosphorIconsRegular.magnifyingGlass),
           isDense: true,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding:
@@ -312,7 +312,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
                     fontFamily: 'JetBrains Mono', fontSize: 11, color: c.ink3)),
             const SizedBox(width: 4),
             Icon(
-              isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+              isPlaying ? PhosphorIconsFill.pause : PhosphorIconsFill.play,
               color: isCurrent ? SeeUColors.accent : c.ink2,
               size: 32,
             ),
@@ -877,7 +877,7 @@ class _DailyMixCardState extends ConsumerState<_DailyMixCard> {
                   color: Colors.white.withValues(alpha: 0.20),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.wb_sunny_rounded,
+                child: const Icon(PhosphorIconsRegular.sun,
                     color: Colors.white, size: 28),
               ),
               const SizedBox(width: 14),
@@ -905,7 +905,7 @@ class _DailyMixCardState extends ConsumerState<_DailyMixCard> {
                   ],
                 ),
               ),
-              const Icon(Icons.play_arrow_rounded,
+              const Icon(PhosphorIconsRegular.play,
                   color: Colors.white, size: 32),
             ],
           ),
@@ -934,7 +934,7 @@ class _NowPlayingFriendsRow extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: Row(
               children: [
-                const Icon(Icons.music_note,
+                const Icon(PhosphorIconsRegular.musicNote,
                     color: SeeUColors.accent, size: 16),
                 const SizedBox(width: 6),
                 Text(
@@ -981,7 +981,7 @@ class _NowPlayingFriendsRow extends ConsumerWidget {
                               : null,
                         ),
                         child: n.coverUrl.isEmpty
-                            ? const Icon(Icons.music_note,
+                            ? const Icon(PhosphorIconsRegular.musicNote,
                                 color: Colors.white, size: 16)
                             : null,
                       ),

@@ -923,7 +923,7 @@ class _NewPostsBanner extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.arrow_upward,
+              const PhosphorIcon(PhosphorIconsRegular.arrowUp,
                   color: Colors.white, size: 16),
               const SizedBox(width: 8),
               Text(

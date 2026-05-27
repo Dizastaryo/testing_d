@@ -26,12 +26,12 @@ class _StylePreset {
 }
 
 const _stylePresets = <_StylePreset>[
-  _StylePreset('ghibli', 'Студия Гибли', Icons.forest_outlined),
-  _StylePreset('pixar', 'Pixar', Icons.movie_creation_outlined),
-  _StylePreset('anime', 'Аниме', Icons.bolt_outlined),
-  _StylePreset('watercolor', 'Акварель', Icons.water_drop_outlined),
-  _StylePreset('cyberpunk', 'Cyberpunk', Icons.electric_bolt_outlined),
-  _StylePreset('oilpainting', 'Масло', Icons.brush_outlined),
+  _StylePreset('ghibli', 'Студия Гибли', PhosphorIconsRegular.tree),
+  _StylePreset('pixar', 'Pixar', PhosphorIconsRegular.filmStrip),
+  _StylePreset('anime', 'Аниме', PhosphorIconsRegular.lightning),
+  _StylePreset('watercolor', 'Акварель', PhosphorIconsRegular.drop),
+  _StylePreset('cyberpunk', 'Cyberpunk', PhosphorIconsRegular.lightning),
+  _StylePreset('oilpainting', 'Масло', PhosphorIconsRegular.paintBrush),
 ];
 
 /// Bottom-sheet выбора стиля + custom prompt. Внутри сам грузит source-файл
@@ -199,7 +199,7 @@ class _StylizeSheetBodyState extends ConsumerState<_StylizeSheetBody> {
                       shape: BoxShape.circle,
                       gradient: SeeUGradients.heroOrange,
                     ),
-                    child: const Icon(Icons.auto_awesome,
+                    child: const Icon(PhosphorIconsFill.sparkle,
                         color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 12),
@@ -315,7 +315,7 @@ class _StylizeSheetBodyState extends ConsumerState<_StylizeSheetBody> {
                               ),
                       ),
                       child: _customMode
-                          ? const Icon(Icons.check,
+                          ? const Icon(PhosphorIconsBold.check,
                               color: Colors.white, size: 14)
                           : null,
                     ),

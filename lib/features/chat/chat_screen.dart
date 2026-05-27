@@ -59,21 +59,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   String? _reactionPickerMessageId;
 
   int _prevMessageCount = 0;
+  int _messageCount = 0;
 
   @override
   void initState() {
     super.initState();
     _textController.addListener(_onTextChanged);
     _focusNode.addListener(() { if (mounted) setState(() {}); });
+    _itemPositionsListener.itemPositions.addListener(_onScrollPositionsChanged);
     _scrollToBottom(animate: false);
   }
 
   @override
   void dispose() {
+    _itemPositionsListener.itemPositions.removeListener(_onScrollPositionsChanged);
     _flashTimer?.cancel();
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onScrollPositionsChanged() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty || _messageCount == 0) return;
+    final maxVisible = positions.map((p) => p.index).reduce((a, b) => a > b ? a : b);
+    if (maxVisible >= _messageCount - 2) {
+      ref.read(chatMessagesProvider(widget.chatId).notifier).loadOlderMessages();
+    }
   }
 
   /// Throttle typing pings: server can fan out at most once every 2s.
@@ -701,6 +713,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _scrollToBottom();
     }
     _prevMessageCount = msgState.messages.length;
+    _messageCount = msgState.messages.length;
 
     final c = context.seeuColors;
     return GestureDetector(
@@ -1053,7 +1066,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     )
                   : msgState.messages.isEmpty
                       ? _buildEmptyChat(otherUser)
-                      : _buildMessageList(msgState.messages, myId, otherUser),
+                      : Column(
+                          children: [
+                            if (msgState.isLoadingOlder)
+                              const LinearProgressIndicator(
+                                color: SeeUColors.accent,
+                                backgroundColor: Colors.transparent,
+                              ),
+                            Expanded(
+                              child: _buildMessageList(msgState.messages, myId, otherUser),
+                            ),
+                          ],
+                        ),
             ),
             // Input bar
             _buildInputBar(),

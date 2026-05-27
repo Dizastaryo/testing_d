@@ -1110,7 +1110,7 @@ class _PostCardState extends ConsumerState<PostCard>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.block, color: Color(0xFFE74C3C)),
+              leading: const PhosphorIcon(PhosphorIconsRegular.prohibit, color: Color(0xFFE74C3C)),
               title: Text('Заблокировать автора',
                   style: SeeUTypography.body
                       .copyWith(color: const Color(0xFFE74C3C))),

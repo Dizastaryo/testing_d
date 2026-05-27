@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -850,7 +851,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
-                  child: const Icon(Icons.close, color: Colors.white, size: 22),
+                  child: const Icon(PhosphorIconsRegular.x, color: Colors.white, size: 22),
                 ),
               ),
             ),
@@ -905,7 +906,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.camera_alt_outlined, color: Colors.white54, size: 56),
+            const Icon(PhosphorIconsRegular.camera, color: Colors.white54, size: 56),
             const SizedBox(height: 16),
             Text(
               message,
@@ -1037,7 +1038,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         // Close
         CameraGlassButton(
           onTap: widget.onClose ?? () => Navigator.maybePop(context),
-          child: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+          child: const Icon(PhosphorIconsRegular.x, color: Colors.white, size: 20),
         ),
 
         const Spacer(),
@@ -1059,7 +1060,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.music_note_rounded, color: Colors.white, size: 14),
+                const Icon(PhosphorIconsRegular.musicNote, color: Colors.white, size: 14),
                 const SizedBox(width: 6),
                 CameraWaveform(),
                 const SizedBox(width: 6),
@@ -1091,7 +1092,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           ),
           child: CameraGlassButton(
             onTap: _switchCamera,
-            child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
+            child: const Icon(PhosphorIconsRegular.cameraRotate, color: Colors.white, size: 20),
           ),
         ),
       ],
@@ -1123,7 +1124,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               },
               child: CameraToolButton(
                 icon: Icon(
-                  _flashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                  _flashOn ? PhosphorIconsFill.lightning : PhosphorIconsRegular.lightning,
                   color: _flashOn ? SeeUColors.textPrimary : Colors.white,
                   size: 20,
                 ),
@@ -1135,7 +1136,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             const SizedBox(height: 12),
             // Timer
             CameraToolButton(
-              icon: Icon(Icons.timer_rounded,
+              icon: Icon(PhosphorIconsRegular.timer,
                   color: _timerSetting > 0 ? SeeUColors.textPrimary : Colors.white,
                   size: 20),
               label: timerLabel,
@@ -1153,7 +1154,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             const SizedBox(height: 12),
             // Grid
             CameraToolButton(
-              icon: const Icon(Icons.grid_on_rounded, color: Colors.white, size: 20),
+              icon: const Icon(PhosphorIconsRegular.gridFour, color: Colors.white, size: 20),
               label: 'сетка',
               active: _showGrid,
               onTap: () => setState(() => _showGrid = !_showGrid),
@@ -1162,7 +1163,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             // AR Masks
             CameraToolButton(
               icon: Icon(
-                Icons.face_retouching_natural,
+                PhosphorIconsRegular.smiley,
                 color: _selectedMask != null || _showMaskPicker
                     ? SeeUColors.accent
                     : Colors.white,
@@ -1179,7 +1180,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             // AI / color filters
             CameraToolButton(
               icon: Icon(
-                Icons.auto_awesome,
+                PhosphorIconsFill.sparkle,
                 color: !_filter.isIdentity || _showFilterPicker
                     ? SeeUColors.accent
                     : Colors.white,
@@ -1267,7 +1268,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                   ),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(Icons.undo_rounded, color: Colors.white, size: 22),
+                child: const Icon(PhosphorIconsRegular.arrowCounterClockwise, color: Colors.white, size: 22),
               ),
             ),
           ),
@@ -1377,7 +1378,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 ),
               ),
               SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, color: Colors.white, size: 16),
+              const Icon(PhosphorIconsRegular.caretRight, color: Colors.white, size: 16),
             ],
           ),
         ),

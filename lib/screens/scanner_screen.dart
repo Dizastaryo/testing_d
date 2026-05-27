@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
@@ -483,7 +484,7 @@ class _ScannerScreenState extends State<ScannerScreen>
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.bluetooth_disabled_rounded, size: 16, color: SeeUColors.accent),
+                  const Icon(PhosphorIconsRegular.bluetoothSlash, size: 16, color: SeeUColors.accent),
                   const SizedBox(width: 8),
                   Text(
                     'Bluetooth выключен',

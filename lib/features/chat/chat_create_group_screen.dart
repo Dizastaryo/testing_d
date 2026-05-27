@@ -385,7 +385,7 @@ class _ChatCreateGroupScreenState
                                             ),
                                     ),
                                     child: selected
-                                        ? const Icon(Icons.check,
+                                        ? const Icon(PhosphorIconsBold.check,
                                             color: Colors.white, size: 16)
                                         : null,
                                   ),

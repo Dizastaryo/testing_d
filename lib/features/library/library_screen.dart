@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/audio/audio_player_service.dart';
@@ -169,7 +170,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               }
             }),
             icon: Icon(
-              _searchOpen ? Icons.close : Icons.search,
+              _searchOpen ? PhosphorIconsRegular.x : Icons.search,
               color: theme.colorScheme.onSurface,
             ),
           ),
@@ -211,7 +212,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       offset: const Offset(0, 8))
                 ],
               ),
-              child: const Icon(Icons.add, color: Colors.white, size: 22),
+              child: const Icon(PhosphorIconsBold.plus, color: Colors.white, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -455,7 +456,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
              const Spacer(),
              Row(
                children: [
-                 Icon(Icons.favorite,
+                 Icon(PhosphorIconsFill.heart,
                      size: 12,
                      color: SeeUColors.like.withValues(alpha: 0.7)),
                  const SizedBox(width: 3),
@@ -646,7 +647,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     : null,
               ),
               child: Icon(
-                file.isPreviewable ? Icons.play_arrow : Icons.download,
+                file.isPreviewable ? PhosphorIconsRegular.play : Icons.download,
                 color: file.isPreviewable
                     ? Colors.white
                     : theme.colorScheme.onSurface,

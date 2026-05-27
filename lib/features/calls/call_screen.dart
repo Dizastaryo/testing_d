@@ -311,7 +311,7 @@ class _CallScreenState extends State<CallScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.fiber_manual_record,
+            Icon(PhosphorIconsFill.circle,
                 color: Colors.greenAccent, size: 10),
             const SizedBox(width: 6),
             Text(

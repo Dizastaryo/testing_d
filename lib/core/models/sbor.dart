@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../design/tokens.dart';
 
@@ -39,13 +40,13 @@ const Map<SborCategory, SborCategoryMeta> kSborCategories = {
     name: 'Баскетбол',
     color: SeeUColors.accent,
     soft: SeeUColors.accentSoft,
-    icon: Icons.sports_basketball, // will use Phosphor in widgets
+    icon: PhosphorIconsRegular.gameController,
   ),
   SborCategory.hike: SborCategoryMeta(
     name: 'Хайкинг',
     color: SeeUColors.success,
     soft: Color(0xFFDDF1E1),
-    icon: Icons.terrain,
+    icon: PhosphorIconsRegular.mountains,
   ),
   SborCategory.games: SborCategoryMeta(
     name: 'CS2',
@@ -69,49 +70,49 @@ const Map<SborCategory, SborCategoryMeta> kSborCategories = {
     name: 'Настолки',
     color: SeeUColors.like,
     soft: Color(0xFFFFE1E9),
-    icon: Icons.casino,
+    icon: PhosphorIconsRegular.pokerChip,
   ),
   SborCategory.cinema: SborCategoryMeta(
     name: 'Кино',
     color: SeeUColors.like,
     soft: Color(0xFFFFE1E9),
-    icon: Icons.movie,
+    icon: PhosphorIconsRegular.filmStrip,
   ),
   SborCategory.run: SborCategoryMeta(
     name: 'Бег',
     color: SeeUColors.accent,
     soft: SeeUColors.accentSoft,
-    icon: Icons.directions_run,
+    icon: PhosphorIconsRegular.person,
   ),
   SborCategory.draw: SborCategoryMeta(
     name: 'Рисование',
     color: SeeUColors.amber,
     soft: Color(0xFFFFEFD2),
-    icon: Icons.brush,
+    icon: PhosphorIconsRegular.paintBrush,
   ),
   SborCategory.read: SborCategoryMeta(
     name: 'Книжный клуб',
     color: Color(0xFF5DB1FF),
     soft: Color(0xFFDEEEFE),
-    icon: Icons.menu_book,
+    icon: PhosphorIconsRegular.book,
   ),
   SborCategory.food: SborCategoryMeta(
     name: 'Готовим',
     color: SeeUColors.amber,
     soft: Color(0xFFFFEFD2),
-    icon: Icons.restaurant,
+    icon: PhosphorIconsRegular.forkKnife,
   ),
   SborCategory.music: SborCategoryMeta(
     name: 'Джем',
     color: SeeUColors.amber,
     soft: Color(0xFFFFEFD2),
-    icon: Icons.music_note,
+    icon: PhosphorIconsRegular.musicNote,
   ),
   SborCategory.other: SborCategoryMeta(
     name: 'Другое',
     color: SeeUColors.textSecondary,
     soft: SeeUColors.surface2,
-    icon: Icons.star,
+    icon: PhosphorIconsFill.star,
   ),
 };
 

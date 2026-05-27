@@ -256,7 +256,7 @@ class ChatMessageBubble extends StatelessWidget {
 
   /// F3: detect emoji-only messages (1-3 emoji, no other text)
   static final _emojiOnlyRegex = RegExp(
-    r'^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F){1,3}$',
+    r'^(\p{Emoji}){1,3}$',
     unicode: true,
   );
 

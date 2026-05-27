@@ -143,11 +143,13 @@ class _VideoUploadScreenState extends ConsumerState<VideoUploadScreen> {
     } on DioException catch (e) {
       setState(() {
         _uploading = false;
+        _progress = 0.0;
         _error = apiErrorMessage(e);
       });
     } catch (e) {
       setState(() {
         _uploading = false;
+        _progress = 0.0;
         _error = 'Ошибка: $e';
       });
     }
@@ -294,8 +296,18 @@ class _VideoUploadScreenState extends ConsumerState<VideoUploadScreen> {
             ],
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!,
-                  style: const TextStyle(color: Colors.redAccent)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(_error!,
+                        style: const TextStyle(color: Colors.redAccent)),
+                  ),
+                  TextButton(
+                    onPressed: _submit,
+                    child: const Text('Повторить'),
+                  ),
+                ],
+              ),
             ],
           ],
         ),

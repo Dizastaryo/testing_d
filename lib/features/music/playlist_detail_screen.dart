@@ -290,7 +290,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     fontFamily: 'JetBrains Mono', fontSize: 11, color: c.ink3)),
             const SizedBox(width: 4),
             Icon(
-              isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+              isPlaying ? PhosphorIconsFill.pauseCircle : PhosphorIconsFill.playCircle,
               color: isCurrent ? SeeUColors.accent : c.ink2,
               size: 32,
             ),

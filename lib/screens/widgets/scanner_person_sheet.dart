@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../models/ble_device_model.dart';
 import '../../services/user_resolver.dart';
@@ -108,7 +109,7 @@ class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.shield_outlined, size: 18, color: SeeUColors.accent),
+                      const Icon(PhosphorIconsRegular.shield, size: 18, color: SeeUColors.accent),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(

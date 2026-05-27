@@ -340,7 +340,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                   color: _flexibleTime ? SeeUColors.accent : Colors.transparent,
                 ),
                 child: _flexibleTime
-                    ? const Icon(Icons.check, size: 12, color: Colors.white)
+                    ? const Icon(PhosphorIconsBold.check, size: 12, color: Colors.white)
                     : null,
               ),
               const SizedBox(width: 6),

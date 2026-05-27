@@ -10,7 +10,6 @@ import '../../core/design/design.dart';
 import '../../core/models/post.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/user_provider.dart';
-import '../../core/utils/format.dart';
 
 // ===========================================================================
 // ExploreScreen widget

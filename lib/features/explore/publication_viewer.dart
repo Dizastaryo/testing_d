@@ -396,7 +396,7 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.visibility_off,
+              leading: const Icon(PhosphorIconsRegular.eyeSlash,
                   color: Colors.white70),
               title: const Text(
                 'Не интересно',
@@ -566,7 +566,7 @@ class _MediaSlide extends StatelessWidget {
       errorWidget: (_, __, ___) => Container(
         color: Colors.grey.shade900,
         child: const Center(
-          child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+          child: Icon(PhosphorIconsRegular.imageBroken, color: Colors.white54, size: 48),
         ),
       ),
     );
@@ -775,7 +775,7 @@ class _PublicationInfo extends ConsumerWidget {
                         ? CachedNetworkImageProvider(post.author.avatarUrl!)
                         : null,
                 child: (post.author.avatarUrl ?? '').isEmpty
-                    ? const Icon(Icons.person,
+                    ? const Icon(PhosphorIconsRegular.user,
                         color: Colors.white70, size: 18)
                     : null,
               ),
@@ -852,7 +852,7 @@ class _AudioPill extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.music_note, color: Colors.white, size: 14),
+            const Icon(PhosphorIconsRegular.musicNote, color: Colors.white, size: 14),
             const SizedBox(width: 6),
             const Text(
               'Использовать музыку',

@@ -145,7 +145,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                           child: Padding(
                             padding: const EdgeInsets.only(right: 12),
                             child: Icon(
-                              Icons.arrow_back_ios_rounded,
+                              PhosphorIconsRegular.caretLeft,
                               size: 22,
                               color: c.ink,
                             ),

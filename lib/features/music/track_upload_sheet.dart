@@ -184,7 +184,7 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
                         TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(PhosphorIconsRegular.x),
                   onPressed: () => Navigator.of(context).pop(false),
                 ),
               ],
@@ -305,7 +305,7 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
                 ],
               ),
             ),
-            if (done) Icon(Icons.check, color: SeeUColors.accent, size: 18),
+            if (done) Icon(PhosphorIconsBold.check, color: SeeUColors.accent, size: 18),
           ],
         ),
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -161,7 +162,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
             _initController();
           },
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.refresh_rounded, color: Colors.white38, size: 40),
+            Icon(PhosphorIconsRegular.arrowClockwise, color: Colors.white38, size: 40),
             const SizedBox(height: 8),
             Text('Нажмите для повтора', style: SeeUTypography.caption.copyWith(color: Colors.white38, fontSize: 12)),
           ]),
@@ -194,7 +195,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
             child: Container(
               width: 44, height: 44,
               decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle),
-              child: Icon(_isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: Colors.white, size: 18),
+              child: Icon(_isMuted ? PhosphorIconsRegular.speakerSlash : PhosphorIconsRegular.speakerHigh, color: Colors.white, size: 18),
             ),
           )),
         ]),

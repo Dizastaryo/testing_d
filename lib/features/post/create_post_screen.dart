@@ -411,7 +411,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                     const Positioned(
                       bottom: 4,
                       left: 4,
-                      child: Icon(Icons.play_circle_fill,
+                      child: Icon(PhosphorIconsFill.playCircle,
                           color: Colors.white, size: 20),
                     ),
                   Positioned(
@@ -426,7 +426,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           color: Colors.black.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.close,
+                        child: const Icon(PhosphorIconsRegular.x,
                             color: Colors.white, size: 14),
                       ),
                     ),
@@ -589,7 +589,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               color: SeeUColors.accent,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.add, color: Colors.white, size: 18),
+            child: const Icon(PhosphorIconsBold.plus, color: Colors.white, size: 18),
           ),
         ),
       ),

@@ -197,7 +197,7 @@ class _CaptionSheetBodyState extends ConsumerState<_CaptionSheetBody> {
                       shape: BoxShape.circle,
                       gradient: SeeUGradients.heroOrange,
                     ),
-                    child: const Icon(Icons.auto_awesome,
+                    child: const Icon(PhosphorIconsFill.sparkle,
                         color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 12),
@@ -300,7 +300,7 @@ class _CaptionSheetBodyState extends ConsumerState<_CaptionSheetBody> {
                               ),
                             ),
                             if (isSelected)
-                              const Icon(Icons.check_circle,
+                              const Icon(PhosphorIconsFill.checkCircle,
                                   color: SeeUColors.accent, size: 18),
                           ],
                         ),

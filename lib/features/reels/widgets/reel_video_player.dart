@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/design/tokens.dart';
@@ -103,7 +104,7 @@ class _ReelVideoPlayerState extends State<ReelVideoPlayer> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.refresh_rounded,
+                    Icon(PhosphorIconsRegular.arrowClockwise,
                         color: Colors.white38, size: 48),
                     const SizedBox(height: 8),
                     Text('Нажмите для повтора',
@@ -121,7 +122,7 @@ class _ReelVideoPlayerState extends State<ReelVideoPlayer> {
                     color: Colors.black.withValues(alpha: 0.4),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.play_arrow_rounded,
+                  child: Icon(PhosphorIconsRegular.play,
                       color: Colors.white, size: 44),
                 ),
               ),

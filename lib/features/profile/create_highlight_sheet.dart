@@ -256,7 +256,7 @@ class _CreateHighlightFormState extends ConsumerState<_CreateHighlightForm> {
                                     border: Border.all(color: SeeUColors.accent, width: 2.5),
                                   ),
                                   child: const Center(
-                                    child: Icon(Icons.check_circle, color: SeeUColors.accent, size: 22),
+                                    child: Icon(PhosphorIconsFill.checkCircle, color: SeeUColors.accent, size: 22),
                                   ),
                                 ),
                               ),

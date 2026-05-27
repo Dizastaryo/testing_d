@@ -908,7 +908,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                   children: _tags.map((t) {
                     return Chip(
                       label: Text('#$t', style: SeeUTypography.caption.copyWith(fontSize: 12)),
-                      deleteIcon: const Icon(Icons.close, size: 14),
+                      deleteIcon: const Icon(PhosphorIconsRegular.x, size: 14),
                       onDeleted: () => setState(() => _tags.remove(t)),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
