@@ -639,7 +639,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   }
 
   Widget _buildStickyBottom(BuildContext context, SeeUThemeColors c) {
-    final canCreate = _titleCtrl.text.trim().isNotEmpty &&
+    final canCreate = _titleCtrl.text.trim().length >= 3 &&
         _category != null &&
         (_flexibleTime || _scheduledDate != null) &&
         _placeCtrl.text.trim().isNotEmpty;
@@ -794,7 +794,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         'description': _descCtrl.text.trim(),
         'max_slots': _noLimit ? null : _slots,
         'flexible_time': _flexibleTime,
-        if (dt != null) 'scheduled_at': dt.toIso8601String(),
+        if (dt != null) 'scheduled_at': dt.toUtc().toIso8601String(),
       });
 
       if (!mounted) return;
@@ -802,8 +802,15 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       context.pop();
     } catch (e) {
       if (!mounted) return;
+      String msg = 'Ошибка: $e';
+      if (e is DioException && e.response != null) {
+        final d = e.response!.data;
+        final backendMsg = d is Map ? (d['error'] ?? d['message'] ?? d.toString()) : d?.toString();
+        final fields = d is Map && d['fields'] is Map ? ' (fields: ${d['fields']})' : '';
+        msg = 'Ошибка ${e.response!.statusCode}: $backendMsg$fields';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text(msg)),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
