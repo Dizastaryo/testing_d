@@ -157,20 +157,10 @@ class ChatMessageBubble extends StatelessWidget {
                 if (!isMine)
                   SizedBox(
                     width: 28,
-                    child: showTail && senderAvatarUrl != null
+                    child: showTail
                         ? Padding(
                             padding: const EdgeInsets.only(right: 6, bottom: 2),
-                            child: CircleAvatar(
-                              radius: 11,
-                              backgroundColor: c.surface2,
-                              backgroundImage: senderAvatarUrl!.isNotEmpty
-                                  ? CachedNetworkImageProvider(senderAvatarUrl!)
-                                  : null,
-                              child: senderAvatarUrl!.isEmpty
-                                  ? Icon(PhosphorIconsRegular.user,
-                                      size: 10, color: c.ink3)
-                                  : null,
-                            ),
+                            child: _buildSenderAvatar(c),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -279,6 +269,7 @@ class ChatMessageBubble extends StatelessWidget {
   );
 
   bool _isEmojiOnly(ChatMessage msg) {
+    if (msg.kind == 'deleted' || msg.isDeletedForAll) return false;
     if (msg.kind != 'text' && msg.kind.isNotEmpty) return false;
     if (msg.replyTo != null) return false;
     final text = msg.text.trim();
@@ -469,6 +460,28 @@ class ChatMessageBubble extends StatelessWidget {
 
   Widget _buildBubbleContent(
       ChatMessage message, bool isMine, SeeUThemeColors c) {
+    // Сообщение удалено для всех
+    if (message.kind == 'deleted' || message.isDeletedForAll) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIconsRegular.prohibit,
+            size: 14,
+            color: isMine ? Colors.white60 : c.ink3,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Сообщение удалено',
+            style: SeeUTypography.body.copyWith(
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+              color: isMine ? Colors.white60 : c.ink3,
+            ),
+          ),
+        ],
+      );
+    }
     if (message.kind == 'shared_post' && message.attachedPost != null) {
       return ChatSharedPostPreview(
         post: message.attachedPost!,
@@ -517,6 +530,34 @@ class ChatMessageBubble extends StatelessWidget {
   Color _senderColor(String name) {
     final idx = (name.codeUnitAt(0) + name.length) % _nameColors.length;
     return _nameColors[idx];
+  }
+
+  /// Строит аватарку отправителя: фото профиля или инициалы/иконка.
+  Widget _buildSenderAvatar(SeeUThemeColors c) {
+    final hasUrl = senderAvatarUrl != null && senderAvatarUrl!.isNotEmpty;
+    final name = senderName ?? '';
+    final initials = name.isNotEmpty
+        ? name.trim().split(' ').take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join()
+        : '';
+    final color = name.isNotEmpty ? _senderColor(name) : c.surface2;
+
+    return CircleAvatar(
+      radius: 11,
+      backgroundColor: hasUrl ? c.surface2 : color,
+      backgroundImage: hasUrl ? CachedNetworkImageProvider(senderAvatarUrl!) : null,
+      child: hasUrl
+          ? null
+          : initials.isNotEmpty
+              ? Text(
+                  initials,
+                  style: const TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(PhosphorIconsRegular.user, size: 10, color: Colors.white),
+    );
   }
 }
 

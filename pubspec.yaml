@@ -65,6 +65,9 @@ dependencies:
   phosphor_flutter: ^2.1.0
   flutter_staggered_animations: ^1.1.1
 
+  # Geolocation — определение города для экрана Сборов
+  geolocator: ^13.0.1
+
   # Utils
   uuid: ^4.4.0
   intl: ^0.20.2

@@ -731,20 +731,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     },
                   );
                 }),
-                // Удалить — только для собственных сообщений (бэк всё равно
-                // вернёт 403 если не автор, но фронт-фильтрация скрывает
-                // пункт от чужих).
-                if (m.isMe) ...[
+                // Удалить: у своих сообщений < 1ч → для всех; иначе (своё > 1ч
+                // или чужое) → только у себя. Удалённые сообщения нельзя удалить повторно.
+                if (!m.isDeletedForAll) ...[
                   Divider(height: 1, color: c.line),
-                  ListTile(
-                    leading: Icon(PhosphorIcons.trash(), color: Colors.red),
-                    title: const Text('Удалить',
-                        style: TextStyle(color: Colors.red)),
-                    onTap: () {
-                      Navigator.of(sheetCtx).pop();
-                      _confirmDeleteMessage(messageId);
-                    },
-                  ),
+                  Builder(builder: (_) {
+                    final canDeleteForAll = m.isMe &&
+                        DateTime.now().difference(m.createdAt) < const Duration(hours: 1);
+                    return ListTile(
+                      leading: Icon(PhosphorIcons.trash(), color: Colors.red),
+                      title: Text(
+                        canDeleteForAll ? 'Удалить для всех' : 'Удалить у себя',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        _confirmDeleteMessage(messageId, forAll: canDeleteForAll);
+                      },
+                    );
+                  }),
                 ],
               ],
             ),
@@ -1248,7 +1253,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             senderAvatarUrl: isMine
                 ? null
                 : (currentChat?.isGroup == true
-                    ? (msg.senderAvatarUrl.isNotEmpty ? msg.senderAvatarUrl : null)
+                    ? msg.senderAvatarUrl  // empty string → shows initials/icon fallback
                     : otherUser?.avatarUrl),
             reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
             allReactions: msg.reactions,
@@ -1575,13 +1580,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Future<void> _confirmDeleteMessage(String messageId) async {
+  Future<void> _confirmDeleteMessage(String messageId, {bool forAll = true}) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dlgCtx) => AlertDialog(
         title: const Text('Удалить сообщение?'),
-        content: const Text(
-            'Сообщение пропадёт у всех участников чата.'),
+        content: Text(
+          forAll
+              ? 'Сообщение будет видно как «Сообщение удалено» для всех участников.'
+              : 'Сообщение исчезнет только у вас.',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dlgCtx, false),
@@ -1597,16 +1605,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (ok != true) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    // Optimistic: убираем из state сразу, чтобы UI отзывался мгновенно.
-    final notifier =
-        ref.read(chatMessagesProvider(widget.chatId).notifier);
+    final notifier = ref.read(chatMessagesProvider(widget.chatId).notifier);
     final snapshot = ref.read(chatMessagesProvider(widget.chatId)).messages;
-    notifier.removeLocally(messageId);
+    // Optimistic update
+    if (forAll) {
+      notifier.markDeletedForAll(messageId);
+    } else {
+      notifier.removeLocally(messageId);
+    }
     try {
       final api = ref.read(apiClientProvider);
-      await api.delete(ApiEndpoints.chatMessageDelete(messageId));
+      final url = forAll
+          ? ApiEndpoints.chatMessageDelete(messageId)
+          : '${ApiEndpoints.chatMessageDelete(messageId)}?scope=self';
+      await api.delete(url);
     } on DioException catch (e) {
-      // Rollback: возвращаем snapshot.
       notifier.restoreMessages(snapshot);
       messenger.showSnackBar(SnackBar(
           content: Text('Не удалось удалить: ${apiErrorMessage(e)}')));

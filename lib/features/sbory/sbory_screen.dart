@@ -8,6 +8,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import '../../core/providers/sbory_city_provider.dart';
 import 'sbory_widgets.dart';
 
 // ─── Provider ────────────────────────────────────────────────────
@@ -51,9 +52,162 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   final _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Инициализируем город — только при первом заходе запрашивает геолокацию.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(sboryCityProvider.notifier).initialize();
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openCityPicker() async {
+    final c = context.seeuColors;
+    final current = ref.read(sboryCityProvider);
+    final controller = TextEditingController();
+    String query = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            final filtered = query.isEmpty
+                ? kKazakhstanCities
+                : kKazakhstanCities
+                    .where((city) =>
+                        city.name.toLowerCase().contains(query.toLowerCase()))
+                    .toList();
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: c.bg,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  // Handle
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 8),
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: c.line,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Title
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Выбери город',
+                          style: SeeUTypography.subtitle.copyWith(color: c.ink),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Icon(PhosphorIcons.x(), color: c.ink3, size: 20),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Search
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Container(
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: c.line),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(PhosphorIcons.magnifyingGlass(),
+                              size: 16, color: c.ink3),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              autofocus: false,
+                              decoration: InputDecoration(
+                                hintText: 'Поиск города...',
+                                hintStyle:
+                                    TextStyle(fontSize: 14, color: c.ink3),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              style: TextStyle(fontSize: 14, color: c.ink),
+                              onChanged: (v) => setSheet(() => query = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // City list
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final city = filtered[i];
+                        final isSelected = city.name == current;
+                        return ListTile(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            ref
+                                .read(sboryCityProvider.notifier)
+                                .selectCity(city.name);
+                            Navigator.pop(ctx);
+                          },
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          leading: Icon(
+                            PhosphorIcons.mapPin(),
+                            size: 18,
+                            color: isSelected ? SeeUColors.accent : c.ink3,
+                          ),
+                          title: Text(
+                            city.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                              color: isSelected ? SeeUColors.accent : c.ink,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? Icon(PhosphorIconsBold.checkCircle,
+                                  size: 18, color: SeeUColors.accent)
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
   }
 
   @override
@@ -123,38 +277,45 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   }
 
   Widget _buildHeader(SeeUThemeColors c) {
+    final city = ref.watch(sboryCityProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'СБОРЫ РЯДОМ',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.8,
-                  color: c.ink3,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                children: [
-                  Text(
-                    'Алматы',
-                    style: SeeUTypography.displayM.copyWith(
-                      color: c.ink,
-                      height: 1,
-                    ),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _openCityPicker();
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'СБОРЫ РЯДОМ',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: c.ink3,
                   ),
-                  const SizedBox(width: 4),
-                  Icon(PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                      size: 14, color: c.ink2),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      city,
+                      style: SeeUTypography.displayM.copyWith(
+                        color: c.ink,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+                        size: 14, color: c.ink2),
+                  ],
+                ),
+              ],
+            ),
           ),
           const Spacer(),
           _IconBtn(

@@ -50,6 +50,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SeeU использует геолокацию чтобы автоматически определить ваш город и показать ближайшие сборы.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SeeU использует камеру для создания фото и видео.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -225,6 +225,10 @@ class ChatMessage {
   final String senderUsername;
   final String senderAvatarUrl;
 
+  /// True если сообщение мягко удалено для всех (WhatsApp-стиль).
+  /// Фронт показывает «Сообщение удалено» вместо содержимого.
+  final bool isDeletedForAll;
+
   const ChatMessage({
     required this.id,
     required this.chatId,
@@ -250,6 +254,7 @@ class ChatMessage {
     this.senderName = '',
     this.senderUsername = '',
     this.senderAvatarUrl = '',
+    this.isDeletedForAll = false,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -298,6 +303,7 @@ class ChatMessage {
       senderName: json['sender_name']?.toString() ?? '',
       senderUsername: json['sender_username']?.toString() ?? '',
       senderAvatarUrl: json['sender_avatar_url']?.toString() ?? '',
+      isDeletedForAll: (json['is_deleted_for_all'] ?? false) as bool,
     );
   }
 
@@ -775,6 +781,34 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   /// Восстановить полный список (используется для rollback delete).
   void restoreMessages(List<ChatMessage> snapshot) {
     state = state.copyWith(messages: snapshot);
+  }
+
+  /// Оптимистично помечает сообщение как «удалённое для всех» (WhatsApp-стиль).
+  /// Сообщение остаётся в списке, но отображается как «Сообщение удалено».
+  void markDeletedForAll(String messageId) {
+    state = state.copyWith(
+      messages: state.messages.map((m) {
+        if (m.id != messageId) return m;
+        return ChatMessage(
+          id: m.id,
+          chatId: m.chatId,
+          senderId: m.senderId,
+          text: '',
+          createdAt: m.createdAt,
+          isMe: m.isMe,
+          isRead: m.isRead,
+          isDelivered: m.isDelivered,
+          deliveredCount: m.deliveredCount,
+          readCount: m.readCount,
+          recipientsCount: m.recipientsCount,
+          kind: 'deleted',
+          senderName: m.senderName,
+          senderUsername: m.senderUsername,
+          senderAvatarUrl: m.senderAvatarUrl,
+          isDeletedForAll: true,
+        );
+      }).toList(),
+    );
   }
 
   /// Toggle the current user's reaction on a message. If `emoji` matches the
