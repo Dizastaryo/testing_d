@@ -9,11 +9,8 @@ enum SborCategory {
   basketball,
   hike,
   games,
-  coop,
-  fifa,
   board,
   cinema,
-  run,
   draw,
   read,
   food,
@@ -54,18 +51,6 @@ const Map<SborCategory, SborCategoryMeta> kSborCategories = {
     soft: Color(0xFFF2E0FE),
     icon: PhosphorIconsRegular.gameController,
   ),
-  SborCategory.coop: SborCategoryMeta(
-    name: 'Кооператив',
-    color: SeeUColors.plum,
-    soft: Color(0xFFF2E0FE),
-    icon: PhosphorIconsRegular.gameController,
-  ),
-  SborCategory.fifa: SborCategoryMeta(
-    name: 'Спорт',
-    color: SeeUColors.accent,
-    soft: SeeUColors.accentSoft,
-    icon: PhosphorIconsRegular.basketball,
-  ),
   SborCategory.board: SborCategoryMeta(
     name: 'Настолки',
     color: SeeUColors.like,
@@ -77,12 +62,6 @@ const Map<SborCategory, SborCategoryMeta> kSborCategories = {
     color: SeeUColors.like,
     soft: Color(0xFFFFE1E9),
     icon: PhosphorIconsRegular.filmStrip,
-  ),
-  SborCategory.run: SborCategoryMeta(
-    name: 'Спорт',
-    color: SeeUColors.accent,
-    soft: SeeUColors.accentSoft,
-    icon: PhosphorIconsRegular.basketball,
   ),
   SborCategory.draw: SborCategoryMeta(
     name: 'Творчество',
@@ -145,6 +124,8 @@ class Sbor {
   final int? max; // null = no limit
   final List<String> memberNames;
   final List<String> memberUsernames;
+  final String? coverUrl;
+  final int price;
   final String? description;
   final SborRole myRole;
   final bool isJoined;
@@ -167,6 +148,8 @@ class Sbor {
     this.max,
     this.memberNames = const [],
     this.memberUsernames = const [],
+    this.coverUrl,
+    this.price = 0,
     this.description,
     this.myRole = SborRole.none,
     this.isJoined = false,
@@ -203,6 +186,8 @@ class Sbor {
               ?.map((e) => e as String)
               .toList() ??
           [],
+      coverUrl: j['cover_url'] as String?,
+      price: j['price'] as int? ?? 0,
       description: j['description'] as String?,
       myRole: _roleFromString(j['my_role'] as String?),
       isJoined: j['is_joined'] as bool? ?? false,

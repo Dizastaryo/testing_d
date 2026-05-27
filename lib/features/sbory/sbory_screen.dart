@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import '../../core/providers/sbory_city_provider.dart';
@@ -658,11 +660,19 @@ class SborCard extends StatelessWidget {
 
   const SborCard({super.key, required this.sbor, this.onTap, this.compact = false});
 
+  String? _resolvedCoverUrl(Sbor s) {
+    final url = s.coverUrl;
+    if (url == null || url.isEmpty) return null;
+    if (url.startsWith('http')) return url;
+    return '${AppConfig.apiOrigin}$url';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final s = sbor;
     final meta = s.categoryMeta;
+    final coverUrl = _resolvedCoverUrl(s);
 
     return GestureDetector(
       onTap: onTap,
@@ -684,131 +694,152 @@ class SborCard extends StatelessWidget {
             ),
           ],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.all(compact ? 14 : 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (s.live) const SizedBox(height: 3),
-                  // Top row
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _CategoryBadge(meta: meta),
-                const SizedBox(width: 6),
-                _TypeBadge(type: s.type, c: c),
-                const Spacer(),
-                if (s.live)
-                  Row(
-                    children: [
-                      Container(
-                        width: 6, height: 6,
-                        decoration: BoxDecoration(
-                          color: SeeUColors.accent,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: SeeUColors.accentSoft,
-                              blurRadius: 0,
-                              spreadRadius: 3,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'идёт сейчас',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: SeeUColors.accent,
-                        ),
-                      ),
-                    ],
-                  )
-                else if (s.distance != null)
-                  Text(s.distance!, style: TextStyle(fontSize: 12, color: c.ink3))
-                else
-                  Text(
-                    s.when.split(' · ').first,
-                    style: TextStyle(fontSize: 12, color: c.ink3),
+                // Cover image
+                if (coverUrl != null)
+                  SizedBox(
+                    height: 120,
+                    width: double.infinity,
+                    child: CachedNetworkImage(
+                      imageUrl: coverUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                    ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Title
-            Text(
-              s.title,
-              style: const TextStyle(
-                fontFamily: 'Fraunces',
-                fontSize: 19,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.2,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 6),
-            // Meta row
-            Row(
-              children: [
-                Icon(PhosphorIcons.calendarBlank(), size: 13, color: c.ink3),
-                const SizedBox(width: 4),
-                Text(s.when, style: TextStyle(fontSize: 13, color: c.ink2)),
-                const SizedBox(width: 8),
-                Container(width: 3, height: 3, decoration: BoxDecoration(color: c.ink4, shape: BoxShape.circle)),
-                const SizedBox(width: 8),
-                Icon(
-                  s.type == SborType.online
-                      ? PhosphorIcons.headphones()
-                      : PhosphorIcons.mapPinLine(),
-                  size: 13, color: c.ink3,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    s.place,
-                    style: TextStyle(fontSize: 13, color: c.ink2),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            // Footer
-            Row(
-              children: [
-                SboryAvatarStack(names: s.memberNames, size: 26),
-                const SizedBox(width: 10),
-                Expanded(
+                Padding(
+                  padding: EdgeInsets.all(compact ? 14 : 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        s.max != null ? '${s.joined} из ${s.max}' : '${s.joined} участников',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink),
+                      if (s.live && coverUrl == null) const SizedBox(height: 3),
+                      // Top row
+                      Row(
+                        children: [
+                          _CategoryBadge(meta: meta),
+                          const SizedBox(width: 6),
+                          _TypeBadge(type: s.type, c: c),
+                          if (s.price > 0) ...[
+                            const SizedBox(width: 6),
+                            _PriceBadge(price: s.price, c: c),
+                          ],
+                          const Spacer(),
+                          if (s.live)
+                            Row(
+                              children: [
+                                Container(
+                                  width: 6, height: 6,
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.accent,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: SeeUColors.accentSoft,
+                                        blurRadius: 0,
+                                        spreadRadius: 3,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'идёт сейчас',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: SeeUColors.accent,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else if (s.distance != null)
+                            Text(s.distance!, style: TextStyle(fontSize: 12, color: c.ink3))
+                          else
+                            Text(
+                              s.when.split(' · ').first,
+                              style: TextStyle(fontSize: 12, color: c.ink3),
+                            ),
+                        ],
                       ),
+                      const SizedBox(height: 8),
+                      // Title
                       Text(
-                        s.isFull
-                            ? 'заполнено'
-                            : s.max != null
-                                ? 'нужно ещё ${s.remaining}'
-                                : 'открытый сбор',
-                        style: TextStyle(
-                          fontSize: 11,
+                        s.title,
+                        style: const TextStyle(
+                          fontFamily: 'Fraunces',
+                          fontSize: 19,
                           fontWeight: FontWeight.w500,
-                          color: s.isFull ? c.ink3 : SeeUColors.accent,
+                          letterSpacing: -0.2,
+                          height: 1.2,
                         ),
+                      ),
+                      const SizedBox(height: 6),
+                      // Meta row
+                      Row(
+                        children: [
+                          Icon(PhosphorIcons.calendarBlank(), size: 13, color: c.ink3),
+                          const SizedBox(width: 4),
+                          Text(s.when, style: TextStyle(fontSize: 13, color: c.ink2)),
+                          const SizedBox(width: 8),
+                          Container(width: 3, height: 3, decoration: BoxDecoration(color: c.ink4, shape: BoxShape.circle)),
+                          const SizedBox(width: 8),
+                          Icon(
+                            s.type == SborType.online
+                                ? PhosphorIcons.headphones()
+                                : PhosphorIcons.mapPinLine(),
+                            size: 13, color: c.ink3,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              s.place.isNotEmpty ? s.place : 'Онлайн',
+                              style: TextStyle(fontSize: 13, color: c.ink2),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      // Footer
+                      Row(
+                        children: [
+                          SboryAvatarStack(names: s.memberNames, size: 26),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.max != null ? '${s.joined} из ${s.max}' : '${s.joined} участников',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink),
+                                ),
+                                Text(
+                                  s.isFull
+                                      ? 'заполнено'
+                                      : s.max != null
+                                          ? 'нужно ещё ${s.remaining}'
+                                          : 'открытый сбор',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: s.isFull ? c.ink3 : SeeUColors.accent,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          _JoinBtn(isFull: s.isFull, isJoined: s.isJoined, c: c),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                _JoinBtn(isFull: s.isFull, isJoined: s.isJoined, c: c),
               ],
-            ),
-                ],
-              ),
             ),
             if (s.live)
               Positioned(
@@ -1040,6 +1071,28 @@ class _TypeBadge extends StatelessWidget {
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.ink2),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PriceBadge extends StatelessWidget {
+  final int price;
+  final SeeUThemeColors c;
+  const _PriceBadge({required this.price, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: SeeUColors.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$price ₸',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: SeeUColors.accent),
       ),
     );
   }

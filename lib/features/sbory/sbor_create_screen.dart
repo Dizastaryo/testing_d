@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:dio/dio.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
@@ -21,6 +25,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   final _titleCtrl = TextEditingController();
   final _placeCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
 
   SborType _type = SborType.offline;
   SborCategory? _category;
@@ -29,6 +34,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   bool _flexibleTime = false;
   bool _noLimit = false;
   bool _submitting = false;
+  XFile? _coverImage;
 
   DateTime? _scheduledDate;
   TimeOfDay? _scheduledTime;
@@ -58,6 +64,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     _titleCtrl.dispose();
     _placeCtrl.dispose();
     _descCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -81,6 +88,8 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                       children: [
                         _buildTypeToggle(c),
                         const SizedBox(height: 18),
+                        _buildCoverPicker(c),
+                        const SizedBox(height: 18),
                         _buildTitleField(c),
                         const SizedBox(height: 18),
                         _buildCategoryPicker(c),
@@ -88,6 +97,8 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                         _buildWhenSection(c),
                         const SizedBox(height: 16),
                         _buildPlaceField(c),
+                        const SizedBox(height: 16),
+                        _buildPriceField(c),
                         const SizedBox(height: 16),
                         _buildSlotsSection(c),
                         const SizedBox(height: 16),
@@ -473,6 +484,124 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     );
   }
 
+  Widget _buildCoverPicker(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _label('Обложка сбора'),
+            const SizedBox(width: 6),
+            Text('необязательно', style: TextStyle(fontSize: 11, color: c.ink4)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _pickCoverImage,
+          child: Container(
+            height: 140,
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _coverImage != null ? SeeUColors.accent : c.line,
+                width: _coverImage != null ? 1.5 : 1,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _coverImage != null
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.file(File(_coverImage!.path), fit: BoxFit.cover),
+                      Positioned(
+                        top: 8, right: 8,
+                        child: GestureDetector(
+                          onTap: () => setState(() {
+                            _coverImage = null;
+                          }),
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(PhosphorIcons.image(PhosphorIconsStyle.duotone),
+                          size: 36, color: c.ink4),
+                      const SizedBox(height: 8),
+                      Text('Нажми чтобы добавить фото',
+                          style: TextStyle(fontSize: 13, color: c.ink3)),
+                      const SizedBox(height: 2),
+                      Text('Станет обложкой сбора и группы',
+                          style: TextStyle(fontSize: 11, color: c.ink4)),
+                    ],
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickCoverImage() async {
+    HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      setState(() => _coverImage = file);
+    }
+  }
+
+  Widget _buildPriceField(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _label('Взнос'),
+            const SizedBox(width: 6),
+            Text('0 = бесплатно', style: TextStyle(fontSize: 11, color: c.ink4)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.line),
+          ),
+          child: TextField(
+            controller: _priceCtrl,
+            keyboardType: TextInputType.number,
+            style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              prefixIcon: Icon(PhosphorIcons.currencyDollar(), size: 16, color: c.ink3),
+              hintText: '0',
+              hintStyle: TextStyle(fontSize: 15, color: c.ink4),
+              suffixText: '₸',
+              suffixStyle: TextStyle(fontSize: 15, color: c.ink3),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDescField(SeeUThemeColors c) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -627,6 +756,21 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     setState(() => _submitting = true);
     try {
       final api = ref.read(apiClientProvider);
+
+      // Upload cover if selected
+      String coverUrl = '';
+      if (_coverImage != null) {
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            _coverImage!.path,
+            filename: _coverImage!.name,
+          ),
+        });
+        final uploadRes = await api.post(ApiEndpoints.mediaUpload, data: formData);
+        final resData = uploadRes.data is Map ? uploadRes.data : {};
+        coverUrl = (resData['data']?['url'] ?? resData['url'] ?? '') as String;
+      }
+
       DateTime? dt;
       if (!_flexibleTime && _scheduledDate != null) {
         final t = _scheduledTime ?? const TimeOfDay(hour: 12, minute: 0);
@@ -637,12 +781,15 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       }
 
       final city = ref.read(sboryCityProvider);
+      final price = int.tryParse(_priceCtrl.text.trim()) ?? 0;
       await api.post(ApiEndpoints.sbory, data: {
         'title': _titleCtrl.text.trim(),
         'type': _type.name,
         'category': _category!.name,
         'place': _placeCtrl.text.trim(),
         'city': city,
+        'cover_url': coverUrl,
+        'price': price,
         'description': _descCtrl.text.trim(),
         'max_slots': _noLimit ? null : _slots,
         'flexible_time': _flexibleTime,
