@@ -390,10 +390,13 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   Future<void> _joinOrOpenChat(Sbor s) async {
     HapticFeedback.mediumImpact();
 
-    // Уже участник — просто открываем чат
-    if (s.isJoined && s.chatId != null) {
-      context.push('/chat/${s.chatId}');
-      return;
+    // Уже участник — открываем чат или запрашиваем свежие данные (chatId мог появиться)
+    if (s.isJoined) {
+      if (s.chatId != null) {
+        context.push('/chat/${s.chatId}');
+        return;
+      }
+      // chatId ещё нет (старый сбор) — дёргаем join idempotent, получаем chatId
     }
 
     // Вступаем в сбор
@@ -413,6 +416,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
 
       if (chatId != null && mounted) {
         context.push('/chat/$chatId');
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Вступил в сбор')),
+        );
       }
     } catch (e) {
       if (!mounted) return;

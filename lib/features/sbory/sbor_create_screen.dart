@@ -32,17 +32,24 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   TimeOfDay? _scheduledTime;
 
   static const _catOptions = [
-    (SborCategory.basketball, '🏀', 'Баскетбол'),
-    (SborCategory.run, '🏃', 'Бег'),
-    (SborCategory.hike, '🥾', 'Хайкинг'),
+    (SborCategory.basketball, '⚽', 'Спорт'),
     (SborCategory.games, '🎮', 'Игры'),
+    (SborCategory.hike, '🏕️', 'Природа'),
+    (SborCategory.draw, '🎨', 'Творчество'),
     (SborCategory.board, '🎲', 'Настолки'),
     (SborCategory.cinema, '🎬', 'Кино'),
-    (SborCategory.draw, '🎨', 'Творчество'),
     (SborCategory.music, '🎶', 'Музыка'),
     (SborCategory.food, '🍳', 'Готовим'),
-    (SborCategory.read, '📖', 'Книжный'),
+    (SborCategory.read, '📖', 'Книги'),
+    (SborCategory.other, '✨', 'Другое'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl.addListener(() => setState(() {}));
+    _placeCtrl.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
