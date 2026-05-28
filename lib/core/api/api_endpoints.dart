@@ -125,6 +125,8 @@ class ApiEndpoints {
   static String chatMemberRole(String chatId, String userId) =>
       '/chats/$chatId/members/$userId/role';
   static String chatPin(String chatId) => '/chats/$chatId/pin';
+  static String chatUserPin(String chatId) => '/chats/$chatId/user-pin';
+  static String chatHide(String chatId) => '/chats/$chatId';
   static const String myCalls = '/users/me/calls'; // C-1 история звонков
   static String viewPost(String id) => '/posts/$id/view'; // FEED-5
 

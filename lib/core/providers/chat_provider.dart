@@ -33,6 +33,8 @@ class Chat {
   final ReplyPreview? pinnedMessage;
   /// ID сбора, если этот group-чат является чатом сбора. null — обычный чат.
   final String? sborId;
+  /// Закреплён ли чат у текущего пользователя (хранится на сервере).
+  final bool isPinned;
 
   const Chat({
     required this.id,
@@ -47,6 +49,7 @@ class Chat {
     this.unreadCount = 0,
     this.pinnedMessage,
     this.sborId,
+    this.isPinned = false,
   });
 
   bool get isGroup => kind == 'group';
@@ -68,6 +71,7 @@ class Chat {
     int? unreadCount,
     ReplyPreview? pinnedMessage,
     String? sborId,
+    bool? isPinned,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -82,6 +86,7 @@ class Chat {
       unreadCount: unreadCount ?? this.unreadCount,
       pinnedMessage: pinnedMessage ?? this.pinnedMessage,
       sborId: sborId ?? this.sborId,
+      isPinned: isPinned ?? this.isPinned,
     );
   }
 
@@ -116,6 +121,7 @@ class Chat {
               json['pinned_message'] as Map<String, dynamic>)
           : null,
       sborId: json['sbor_id']?.toString(),
+      isPinned: (json['is_pinned'] ?? false) as bool,
     );
   }
 }
@@ -469,6 +475,60 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       return c.copyWith(unreadCount: 0);
     }).toList();
     state = state.copyWith(chats: updated);
+  }
+
+  /// Toggles pin-to-top for [chatId]. Optimistically updates local state
+  /// and syncs with server. Returns new isPinned value.
+  Future<bool> togglePin(String chatId) async {
+    final prev = state.chats.firstWhere((c) => c.id == chatId,
+        orElse: () => throw StateError('chat $chatId not found'));
+    final newPinned = !prev.isPinned;
+    // Optimistic update.
+    final updated = state.chats.map((c) {
+      if (c.id != chatId) return c;
+      return c.copyWith(isPinned: newPinned);
+    }).toList();
+    // Re-sort: pinned first.
+    updated.sort((a, b) {
+      if (a.isPinned == b.isPinned) {
+        return b.lastMessageAt.compareTo(a.lastMessageAt);
+      }
+      return a.isPinned ? -1 : 1;
+    });
+    state = state.copyWith(chats: updated);
+    try {
+      await _api.put(ApiEndpoints.chatUserPin(chatId));
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] togglePin error', e, st);
+      // Roll back.
+      final rolled = state.chats.map((c) {
+        if (c.id != chatId) return c;
+        return c.copyWith(isPinned: prev.isPinned);
+      }).toList();
+      state = state.copyWith(chats: rolled);
+      return prev.isPinned;
+    }
+    return newPinned;
+  }
+
+  /// Hides a chat from the list (delete for self for direct; leave for group).
+  /// Removes the chat from local state immediately.
+  Future<void> hideChat(String chatId, {bool isGroup = false}) async {
+    // Optimistic remove.
+    state = state.copyWith(
+      chats: state.chats.where((c) => c.id != chatId).toList(),
+    );
+    try {
+      if (isGroup) {
+        await _api.delete(ApiEndpoints.leaveGroupChat(chatId));
+      } else {
+        await _api.delete(ApiEndpoints.chatHide(chatId));
+      }
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] hideChat error', e, st);
+      // Reload to restore state on error.
+      await load();
+    }
   }
 
   /// Create or get a conversation with another user and return its ID.

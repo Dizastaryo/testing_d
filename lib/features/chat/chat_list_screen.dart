@@ -273,30 +273,102 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                   ? const SeeUChatSkeleton()
                   : chats.isEmpty
                       ? _buildEmptyState()
-                      : SeeURadarRefresh(
-                          onRefresh: () =>
-                              ref.read(chatListProvider.notifier).load(),
-                          child: ListView.builder(
-                            padding: const EdgeInsets.only(bottom: 100),
-                            physics: const AlwaysScrollableScrollPhysics(
-                              parent: BouncingScrollPhysics(),
-                            ),
-                            itemCount: chats.length,
-                            itemBuilder: (context, index) {
-                              return _ChatTile(
-                                chat: chats[index],
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  context.push('/chat/${chats[index].id}');
-                                },
-                              );
-                            },
-                          ),
-                        ),
+                      : _buildChatList(chats),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChatList(List<Chat> chats) {
+    final pinned = chats.where((c) => c.isPinned).toList();
+    final unpinned = chats.where((c) => !c.isPinned).toList();
+
+    final items = <Widget>[];
+
+    if (pinned.isNotEmpty) {
+      items.add(_SectionHeader(label: 'Закреплённые'));
+      for (final chat in pinned) {
+        items.add(_buildSwipableTile(chat));
+      }
+      if (unpinned.isNotEmpty) {
+        items.add(_SectionHeader(label: 'Все чаты'));
+      }
+    }
+    for (final chat in unpinned) {
+      items.add(_buildSwipableTile(chat));
+    }
+
+    return SeeURadarRefresh(
+      onRefresh: () => ref.read(chatListProvider.notifier).load(),
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 100),
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        children: items,
+      ),
+    );
+  }
+
+  Widget _buildSwipableTile(Chat chat) {
+    return _SwipableChatTile(
+      key: ValueKey(chat.id),
+      chat: chat,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        context.push('/chat/${chat.id}');
+      },
+      onTogglePin: () async {
+        HapticFeedback.mediumImpact();
+        await ref.read(chatListProvider.notifier).togglePin(chat.id);
+      },
+      onDelete: () => _confirmHideChat(chat),
+    );
+  }
+
+  void _confirmHideChat(Chat chat) {
+    final isGroup = chat.isGroup;
+    final label = isGroup ? 'Покинуть группу' : 'Удалить чат';
+    final message = isGroup
+        ? 'Вы покинете группу «${chat.title}» и потеряете доступ к истории.'
+        : 'Чат будет удалён только для вас. История собеседника сохранится.';
+
+    showSeeUBottomSheet(
+      context: context,
+      builder: (sheetCtx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(label, style: SeeUTypography.title),
+              const SizedBox(height: 8),
+              Text(message,
+                  style: SeeUTypography.body
+                      .copyWith(color: context.seeuColors.ink2)),
+              const SizedBox(height: 20),
+              _DestructiveButton(
+                label: label,
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  ref
+                      .read(chatListProvider.notifier)
+                      .hideChat(chat.id, isGroup: isGroup);
+                },
+              ),
+              const SizedBox(height: 8),
+              SeeUButton(
+                label: 'Отмена',
+                variant: SeeUButtonVariant.secondary,
+                onTap: () => Navigator.of(sheetCtx).pop(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -516,16 +588,29 @@ class _ChatTile extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Time + unread badge
+            // Time + unread badge + pin indicator
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  _formatTime(lastMsgTime),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: c.ink3,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (chat.isPinned) ...[
+                      Icon(
+                        PhosphorIconsFill.pushPin,
+                        size: 11,
+                        color: c.ink3,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      _formatTime(lastMsgTime),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: c.ink3,
+                      ),
+                    ),
+                  ],
                 ),
                 if (hasUnread) ...[
                   const SizedBox(height: 4),
@@ -565,6 +650,267 @@ class _ChatTile extends ConsumerWidget {
       return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
     }
     return timeago.format(local, locale: 'ru');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section header (Закреплённые / Все чаты)
+// ---------------------------------------------------------------------------
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+      child: Text(
+        label,
+        style: SeeUTypography.caption.copyWith(
+          color: c.ink3,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Swipable tile wrapper — swipe left to reveal action buttons
+// ---------------------------------------------------------------------------
+
+class _SwipableChatTile extends StatefulWidget {
+  final Chat chat;
+  final VoidCallback onTap;
+  final VoidCallback onTogglePin;
+  final VoidCallback onDelete;
+
+  const _SwipableChatTile({
+    super.key,
+    required this.chat,
+    required this.onTap,
+    required this.onTogglePin,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SwipableChatTile> createState() => _SwipableChatTileState();
+}
+
+class _SwipableChatTileState extends State<_SwipableChatTile>
+    with SingleTickerProviderStateMixin {
+  // Width of the revealed action panel (pin + delete buttons).
+  static const _actionPanelWidth = 144.0; // 2 × 72px buttons
+
+  late final AnimationController _ctrl;
+  late final Animation<double> _offset;
+
+  bool _isOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _offset = Tween<double>(begin: 0, end: -_actionPanelWidth)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    if (!_isOpen) {
+      setState(() => _isOpen = true);
+      _ctrl.forward();
+    }
+  }
+
+  void _close() {
+    if (_isOpen) {
+      _ctrl.reverse().then((_) {
+        if (mounted) setState(() => _isOpen = false);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final isGroup = widget.chat.isGroup;
+
+    return GestureDetector(
+      onHorizontalDragUpdate: (d) {
+        // Only handle leftward swipe.
+        if (d.delta.dx < -2) _open();
+        if (d.delta.dx > 2) _close();
+      },
+      onTap: _isOpen ? _close : null,
+      // Long-press → context menu for additional options.
+      onLongPress: () {
+        HapticFeedback.heavyImpact();
+        _showContextMenu();
+      },
+      child: Stack(
+        children: [
+          // Action buttons (revealed under the tile).
+          Positioned.fill(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Pin / Unpin button.
+                _ActionButton(
+                  icon: widget.chat.isPinned
+                      ? PhosphorIconsFill.pushPin
+                      : PhosphorIconsRegular.pushPin,
+                  label: widget.chat.isPinned ? 'Открепить' : 'Закрепить',
+                  color: c.surface2,
+                  iconColor: SeeUColors.accent,
+                  width: 72,
+                  onTap: () {
+                    _close();
+                    widget.onTogglePin();
+                  },
+                ),
+                // Delete / Leave button.
+                _ActionButton(
+                  icon: isGroup
+                      ? PhosphorIconsRegular.signOut
+                      : PhosphorIconsRegular.trash,
+                  label: isGroup ? 'Покинуть' : 'Удалить',
+                  color: const Color(0xFFFF3B30),
+                  iconColor: Colors.white,
+                  width: 72,
+                  onTap: () {
+                    _close();
+                    widget.onDelete();
+                  },
+                ),
+              ],
+            ),
+          ),
+          // Tile — slides left on top of action buttons.
+          AnimatedBuilder(
+            animation: _offset,
+            builder: (_, child) => Transform.translate(
+              offset: Offset(_offset.value, 0),
+              child: child,
+            ),
+            child: ColoredBox(
+              color: c.bg,
+              child: _ChatTile(chat: widget.chat, onTap: widget.onTap),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showContextMenu() {
+    _close();
+    showSeeUBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final c = context.seeuColors;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  widget.chat.isPinned
+                      ? PhosphorIconsFill.pushPin
+                      : PhosphorIconsRegular.pushPin,
+                  color: SeeUColors.accent,
+                ),
+                title: Text(
+                  widget.chat.isPinned ? 'Открепить' : 'Закрепить',
+                  style: SeeUTypography.body,
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  widget.onTogglePin();
+                },
+              ),
+              Divider(color: c.line, height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  widget.chat.isGroup
+                      ? PhosphorIconsRegular.signOut
+                      : PhosphorIconsRegular.trash,
+                  color: const Color(0xFFFF3B30),
+                ),
+                title: Text(
+                  widget.chat.isGroup ? 'Покинуть группу' : 'Удалить чат',
+                  style: SeeUTypography.body
+                      .copyWith(color: const Color(0xFFFF3B30)),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  widget.onDelete();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color iconColor;
+  final double width;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.iconColor,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        color: color,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: iconColor, size: 22),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: iconColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -907,6 +1253,36 @@ class _NewChatBottomSheetState extends ConsumerState<_NewChatBottomSheet> {
 // ---------------------------------------------------------------------------
 // Кнопка-карточка для выбора типа нового чата (direct / group).
 // ---------------------------------------------------------------------------
+
+class _DestructiveButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _DestructiveButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 52,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF3B30),
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _NewChatTypeOption extends StatelessWidget {
   final IconData icon;
