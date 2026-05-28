@@ -1,12 +1,17 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/utils/format.dart';
 import '../../core/models/user.dart';
@@ -136,12 +141,12 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
   /// Cover-пресеты для «Изменить группу». Дублируют пресеты из
   /// chat_create_group_screen — выносить в shared-файл пока нет смысла,
   /// набор крошечный и контекст разный.
-  static const _coverPresets = [
-    '/uploads/seed/highlights/h1.jpg',
-    '/uploads/seed/highlights/h2.jpg',
-    '/uploads/seed/highlights/h3.jpg',
-    '/uploads/seed/highlights/h4.jpg',
-    '/uploads/seed/highlights/h5.jpg',
+  static List<String> get _coverPresets => [
+    '${AppConfig.apiOrigin}/uploads/seed/highlights/h1.jpg',
+    '${AppConfig.apiOrigin}/uploads/seed/highlights/h2.jpg',
+    '${AppConfig.apiOrigin}/uploads/seed/highlights/h3.jpg',
+    '${AppConfig.apiOrigin}/uploads/seed/highlights/h4.jpg',
+    '${AppConfig.apiOrigin}/uploads/seed/highlights/h5.jpg',
   ];
 
   Future<void> _showEditGroupSheet() async {
@@ -154,6 +159,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
 
     final titleCtrl = TextEditingController(text: chat.title);
     String? coverUrl = chat.coverUrl.isEmpty ? null : chat.coverUrl;
+    XFile? pickedImage;
     bool submitting = false;
 
     await showModalBottomSheet<void>(
@@ -168,7 +174,8 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
             final initialCover =
                 chat.coverUrl.isEmpty ? null : chat.coverUrl;
             final dirty = titleCtrl.text.trim() != initialTitle ||
-                coverUrl != initialCover;
+                coverUrl != initialCover ||
+                pickedImage != null;
             final canSave =
                 dirty && titleCtrl.text.trim().isNotEmpty && !submitting;
             return Padding(
@@ -228,15 +235,18 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       height: 70,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: _coverPresets.length + 1,
+                        // +1 default, +1 gallery picker, +presets
+                        itemCount: _coverPresets.length + 2,
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
                         itemBuilder: (_, i) {
                           if (i == 0) {
-                            final isSelected = coverUrl == null;
+                            final isSelected = coverUrl == null && pickedImage == null;
                             return _CoverChoice(
                               isSelected: isSelected,
-                              onTap: () =>
-                                  setSheetState(() => coverUrl = null),
+                              onTap: () => setSheetState(() {
+                                coverUrl = null;
+                                pickedImage = null;
+                              }),
                               gradient: SeeUGradients.heroOrange,
                               child: Icon(
                                 PhosphorIcons.usersThree(
@@ -246,12 +256,51 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                               ),
                             );
                           }
-                          final url = _coverPresets[i - 1];
-                          final isSelected = coverUrl == url;
+                          if (i == 1) {
+                            // Gallery picker button
+                            final isSelected = pickedImage != null;
+                            return _CoverChoice(
+                              isSelected: isSelected,
+                              onTap: () async {
+                                final img = await ImagePicker().pickImage(
+                                  source: ImageSource.gallery,
+                                  imageQuality: 80,
+                                );
+                                if (img != null) {
+                                  setSheetState(() {
+                                    pickedImage = img;
+                                    coverUrl = null;
+                                  });
+                                }
+                              },
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF444444), Color(0xFF222222)],
+                              ),
+                              child: isSelected
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        File(pickedImage!.path),
+                                        fit: BoxFit.cover,
+                                        width: 60,
+                                        height: 60,
+                                      ),
+                                    )
+                                  : Icon(
+                                      PhosphorIcons.image(PhosphorIconsStyle.bold),
+                                      color: Colors.white,
+                                      size: 26,
+                                    ),
+                            );
+                          }
+                          final url = _coverPresets[i - 2];
+                          final isSelected = coverUrl == url && pickedImage == null;
                           return _CoverChoice(
                             isSelected: isSelected,
-                            onTap: () =>
-                                setSheetState(() => coverUrl = url),
+                            onTap: () => setSheetState(() {
+                              coverUrl = url;
+                              pickedImage = null;
+                            }),
                             child: CachedNetworkImage(
                               imageUrl: url,
                               fit: BoxFit.cover,
@@ -271,11 +320,29 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                               final messenger = ScaffoldMessenger.of(context);
                               try {
                                 final api = ref.read(apiClientProvider);
+                                // Upload gallery image if selected
+                                String finalCoverUrl = coverUrl ?? '';
+                                if (pickedImage != null) {
+                                  final formData = FormData.fromMap({
+                                    'file': await MultipartFile.fromFile(
+                                      pickedImage!.path,
+                                      filename: pickedImage!.name,
+                                    ),
+                                  });
+                                  final uploadRes = await api.post(
+                                      ApiEndpoints.mediaUpload, data: formData);
+                                  final d = uploadRes.data is Map
+                                      ? uploadRes.data
+                                      : {};
+                                  finalCoverUrl = (d['data']?['url'] ??
+                                          d['url'] ??
+                                          '') as String;
+                                }
                                 await api.put(
                                   ApiEndpoints.chatGroup(widget.chatId),
                                   data: {
                                     'title': titleCtrl.text.trim(),
-                                    'cover_url': coverUrl ?? '',
+                                    'cover_url': finalCoverUrl,
                                   },
                                 );
                                 // Refresh chat-list чтобы tile сразу показал

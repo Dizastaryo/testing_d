@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import 'sbory_screen.dart' show sborRefreshProvider;
@@ -77,9 +79,17 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   }
 
   Widget _buildHero(BuildContext context, Sbor s, SborCategoryMeta meta, SeeUThemeColors c) {
+    final resolvedCover = (s.coverUrl == null || s.coverUrl!.isEmpty)
+        ? null
+        : s.coverUrl!.startsWith('/')
+            ? AppConfig.apiOrigin + s.coverUrl!
+            : s.coverUrl!;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Container(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -92,10 +102,30 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         ),
         child: Stack(
           children: [
+            if (resolvedCover != null)
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  imageUrl: resolvedCover,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            if (resolvedCover != null)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.black.withValues(alpha: 0.45), Colors.transparent],
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               right: -30, bottom: -40,
               child: Opacity(
-                opacity: 0.2,
+                opacity: resolvedCover != null ? 0.0 : 0.2,
                 child: Icon(meta.icon, size: 200, color: Colors.white),
               ),
             ),
@@ -148,6 +178,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               ],
             ),
           ],
+        ),
         ),
       ),
     );

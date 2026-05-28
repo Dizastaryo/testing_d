@@ -12,6 +12,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import '../../core/providers/chat_provider.dart';
 import '../../core/providers/sbory_city_provider.dart';
 import 'sbory_screen.dart' show sborRefreshProvider;
 
@@ -799,6 +800,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
 
       if (!mounted) return;
       ref.read(sborRefreshProvider.notifier).state++;
+      ref.read(chatListProvider.notifier).load();
       context.pop();
     } catch (e) {
       if (!mounted) return;
