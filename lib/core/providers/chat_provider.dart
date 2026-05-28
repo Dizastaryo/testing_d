@@ -394,6 +394,21 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             load();
             return;
           }
+          // Обновление названия/обложки группы — мутируем локально без
+          // полного рефетча чтобы не прыгал список.
+          if (evt.type == 'chat.group.updated' && evt.payload is Map) {
+            final p = (evt.payload as Map).cast<String, dynamic>();
+            final chatId = p['chat_id']?.toString() ?? '';
+            final title = p['title']?.toString() ?? '';
+            final coverUrl = _absUrl(p['cover_url']?.toString());
+            if (chatId.isEmpty) return;
+            final updated = state.chats.map((c) {
+              if (c.id != chatId) return c;
+              return c.copyWith(title: title, coverUrl: coverUrl);
+            }).toList();
+            state = state.copyWith(chats: updated);
+            return;
+          }
           // user.presence — не рефетчим целиком, только мутируем
           // otherUser у direct-чатов где id совпадает.
           if (evt.type == 'user.presence' && evt.payload is Map) {

@@ -419,28 +419,61 @@ class _ChatTile extends ConsumerWidget {
                       ),
                       if (isGroup) ...[
                         const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: SeeUColors.accent.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(99),
-                            border: Border.all(
-                              color:
-                                  SeeUColors.accent.withValues(alpha: 0.25),
-                              width: 1,
+                        if (chat.sborId != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF5A3C).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                color: const Color(0xFFFF5A3C).withValues(alpha: 0.35),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.usersThree(PhosphorIconsStyle.fill),
+                                  size: 9,
+                                  color: SeeUColors.accent,
+                                ),
+                                const SizedBox(width: 3),
+                                const Text(
+                                  'сбор',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: SeeUColors.accent,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: SeeUColors.accent.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                color: SeeUColors.accent.withValues(alpha: 0.25),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              'группа · ${chat.participantsCount}',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: SeeUColors.accent,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
-                          child: Text(
-                            'группа · ${chat.participantsCount}',
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: SeeUColors.accent,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
                       ],
                       // Badge «взаимный» удалён 2026-05-11 (был фейк по
                       // hashCode). Реальный BLE-match вернётся когда сделаем
