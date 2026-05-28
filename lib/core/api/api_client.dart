@@ -275,11 +275,13 @@ class _RetryInterceptor extends Interceptor {
 String apiErrorMessage(DioException e) {
   if (e.type == DioExceptionType.connectionError ||
       e.type == DioExceptionType.unknown) {
-    return 'No internet connection. Please check your network.';
+    final uri = e.requestOptions.uri.toString();
+    final msg = e.message ?? e.error?.toString() ?? 'unknown';
+    return 'Нет соединения: $uri\n$msg';
   }
   if (e.type == DioExceptionType.connectionTimeout ||
       e.type == DioExceptionType.receiveTimeout) {
-    return 'Connection timed out. Please try again.';
+    return 'Timeout: ${e.requestOptions.uri}';
   }
   final statusCode = e.response?.statusCode;
   if (statusCode == 401) return 'Session expired. Please log in again.';
