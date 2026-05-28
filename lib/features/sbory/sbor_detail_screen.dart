@@ -10,6 +10,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import '../../core/providers/chat_provider.dart';
 import 'sbory_screen.dart' show sborRefreshProvider;
 
 // ─── Provider ────────────────────────────────────────────────────
@@ -522,6 +523,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       await api.delete(ApiEndpoints.leaveSbor(s.id));
       if (!mounted) return;
       ref.read(sborRefreshProvider.notifier).state++;
+      ref.read(chatListProvider.notifier).load();
       context.pop();
     } catch (e) {
       if (!mounted) return;
@@ -560,6 +562,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       await api.delete(ApiEndpoints.cancelSbor(s.id));
       if (!mounted) return;
       ref.read(sborRefreshProvider.notifier).state++;
+      ref.read(chatListProvider.notifier).load();
       context.pop();
     } catch (e) {
       if (!mounted) return;

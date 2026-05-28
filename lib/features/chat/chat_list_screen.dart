@@ -15,6 +15,7 @@ import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
+import '../sbory/sbory_screen.dart' show sborRefreshProvider;
 import 'widgets/typing_dots.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
@@ -330,10 +331,20 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   void _confirmHideChat(Chat chat) {
     final isGroup = chat.isGroup;
-    final label = isGroup ? 'Покинуть группу' : 'Удалить чат';
-    final message = isGroup
-        ? 'Вы покинете группу «${chat.title}» и потеряете доступ к истории.'
-        : 'Чат будет удалён только для вас. История собеседника сохранится.';
+    final isSbor = chat.sborId != null;
+
+    final String label;
+    final String message;
+    if (isSbor) {
+      label = 'Покинуть сбор';
+      message = 'Вы покинете сбор «${chat.title}» и его групповой чат. Вернуться можно будет через страницу сбора.';
+    } else if (isGroup) {
+      label = 'Покинуть группу';
+      message = 'Вы покинете группу «${chat.title}» и потеряете доступ к истории.';
+    } else {
+      label = 'Удалить чат';
+      message = 'Чат будет удалён только для вас. История собеседника сохранится.';
+    }
 
     showSeeUBottomSheet(
       context: context,
@@ -357,6 +368,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                   ref
                       .read(chatListProvider.notifier)
                       .hideChat(chat.id, isGroup: isGroup);
+                  // Если выходим из чата сбора — обновляем список сборов тоже.
+                  if (isSbor) {
+                    ref.read(sborRefreshProvider.notifier).state++;
+                  }
                 },
               ),
               const SizedBox(height: 8),
