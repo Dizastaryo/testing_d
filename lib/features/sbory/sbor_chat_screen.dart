@@ -4,9 +4,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/chat_provider.dart';
+import '../chat/widgets/chat_message_bubble.dart';
 import 'sbory_widgets.dart';
+
+// ─── Provider ────────────────────────────────────────────────────
+
+final _sborMemberCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, sborId) async {
+  final api = ref.read(apiClientProvider);
+  final r = await api.get(ApiEndpoints.sborById(sborId));
+  final data = r.data is Map && (r.data as Map).containsKey('data')
+      ? r.data['data']
+      : r.data;
+  return (data['joined'] as int?) ?? 0;
+});
 
 // ─── Voice participant model ──────────────────────────────────────
 
@@ -32,6 +49,7 @@ class VoiceParticipant {
 
 class SborChatScreen extends ConsumerStatefulWidget {
   final String chatId;
+  final String sborId;
   final String sborTitle;
   final SborCategory? category;
   final int memberCount;
@@ -39,6 +57,7 @@ class SborChatScreen extends ConsumerStatefulWidget {
   const SborChatScreen({
     super.key,
     required this.chatId,
+    required this.sborId,
     required this.sborTitle,
     this.category,
     this.memberCount = 0,
@@ -95,7 +114,6 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
                     voiceLive: _voiceLive,
                     voiceParticipants: _voiceParticipants,
                     onJoinVoice: () => _joinVoice(context),
-                    c: c,
                   ),
                   _VoiceTab(
                     voiceLive: _voiceLive,
@@ -110,8 +128,8 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
                     c: c,
                   ),
                   _MembersTab(
+                    chatId: widget.chatId,
                     voiceParticipants: _voiceParticipants,
-                    c: c,
                   ),
                 ],
               ),
@@ -171,7 +189,7 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'чат сбора · ${widget.memberCount} участников',
+                  'чат сбора · ${ref.watch(_sborMemberCountProvider(widget.sborId)).valueOrNull ?? widget.memberCount} участников',
                   style: TextStyle(fontSize: 11, color: c.ink3),
                 ),
               ],
@@ -274,10 +292,7 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
       _voiceLive = true;
       _youInVoice = true;
       _voiceParticipants = const [
-        VoiceParticipant(name: 'Костя', speaking: true),
-        VoiceParticipant(name: 'Маша', micState: VoiceMicState.muted),
-        VoiceParticipant(name: 'Алекс'),
-        VoiceParticipant(name: 'Ты', isYou: true),
+        VoiceParticipant(name: 'Ты', isYou: true, speaking: true),
       ];
     });
   }
@@ -286,60 +301,122 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
     HapticFeedback.lightImpact();
     setState(() {
       _youInVoice = false;
-      _voiceParticipants = const [
-        VoiceParticipant(name: 'Костя', speaking: true),
-        VoiceParticipant(name: 'Маша', micState: VoiceMicState.muted),
-        VoiceParticipant(name: 'Алекс'),
-      ];
+      _voiceLive = false;
+      _voiceParticipants = const [];
     });
   }
 }
 
 // ─── Messages tab ────────────────────────────────────────────────
 
-class _MessagesTab extends StatelessWidget {
+class _MessagesTab extends ConsumerStatefulWidget {
   final String chatId;
   final bool voiceLive;
   final List<VoiceParticipant> voiceParticipants;
   final VoidCallback onJoinVoice;
-  final SeeUThemeColors c;
 
   const _MessagesTab({
     required this.chatId,
     required this.voiceLive,
     required this.voiceParticipants,
     required this.onJoinVoice,
-    required this.c,
   });
 
   @override
+  ConsumerState<_MessagesTab> createState() => _MessagesTabState();
+}
+
+class _MessagesTabState extends ConsumerState<_MessagesTab> {
+  final _textController = TextEditingController();
+  final _scrollController = ScrollController();
+  bool _hasText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.addListener(() {
+      final has = _textController.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty) return;
+    HapticFeedback.lightImpact();
+    _textController.clear();
+    await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(text);
+    if (mounted && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final messagesState = ref.watch(chatMessagesProvider(widget.chatId));
+    final messages = messagesState.messages;
+    final myId = ref.watch(authProvider).user?.id ?? '';
+
     return Column(
       children: [
-        if (voiceLive) _buildVoiceStrip(context),
+        if (widget.voiceLive) _buildVoiceStrip(context, c),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-            children: const [
-              // In production this would use the existing ChatScreen message builder
-              // via the chat_provider. For Сбор chats, this tab is a wrapper.
-              _DaySeparator(label: 'Сегодня'),
-              SizedBox(height: 8),
-            ],
-          ),
+          child: messagesState.isLoading && messages.isEmpty
+              ? const Center(child: CircularProgressIndicator(color: SeeUColors.accent))
+              : messages.isEmpty
+                  ? Center(
+                      child: Text('Напишите первое сообщение', style: TextStyle(color: c.ink3, fontSize: 14)),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, i) {
+                        final msg = messages[i];
+                        final isMine = msg.isMe || msg.senderId == myId;
+                        final showTail = i == messages.length - 1 ||
+                            messages[i + 1].senderId != msg.senderId;
+                        return ChatMessageBubble(
+                          message: msg,
+                          isMine: isMine,
+                          showTail: showTail,
+                          onLongPress: () {},
+                          onReactionSelected: (_) {},
+                          isGroup: true,
+                          senderName: isMine ? null : msg.senderName,
+                        );
+                      },
+                    ),
         ),
         _buildInputBar(c),
       ],
     );
   }
 
-  Widget _buildVoiceStrip(BuildContext context) {
-    final names = voiceParticipants.map((p) => p.name).toList();
+  Widget _buildVoiceStrip(BuildContext context, SeeUThemeColors c) {
+    final names = widget.voiceParticipants.map((p) => p.name).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: GestureDetector(
-        onTap: onJoinVoice,
+        onTap: widget.onJoinVoice,
         child: Container(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           decoration: BoxDecoration(
@@ -355,7 +432,7 @@ class _MessagesTab extends StatelessWidget {
             children: [
               Container(
                 width: 32, height: 32,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: SeeUColors.accent,
                   shape: BoxShape.circle,
                 ),
@@ -376,7 +453,7 @@ class _MessagesTab extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${voiceParticipants.length} чел. · обсуждают',
+                      '${widget.voiceParticipants.length} чел. · обсуждают',
                       style: TextStyle(fontSize: 11, color: c.ink3),
                     ),
                   ],
@@ -436,23 +513,38 @@ class _MessagesTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: c.line),
               ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Написать в чат…',
-                  style: TextStyle(fontSize: 14, color: c.ink4),
+              child: TextField(
+                controller: _textController,
+                style: TextStyle(fontSize: 14, color: c.ink),
+                decoration: InputDecoration(
+                  hintText: 'Написать в чат…',
+                  hintStyle: TextStyle(fontSize: 14, color: c.ink4),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
+                onSubmitted: (_) => _sendMessage(),
               ),
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: SeeUColors.accent,
-              shape: BoxShape.circle,
+          GestureDetector(
+            onTap: _hasText ? _sendMessage : null,
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: _hasText ? SeeUColors.accent : c.surface,
+                shape: BoxShape.circle,
+                border: _hasText ? null : Border.all(color: c.line),
+              ),
+              child: Icon(
+                _hasText
+                    ? PhosphorIcons.paperPlaneTilt(PhosphorIconsStyle.fill)
+                    : PhosphorIcons.microphone(PhosphorIconsStyle.regular),
+                size: 18,
+                color: _hasText ? Colors.white : c.ink2,
+              ),
             ),
-            child: const Icon(Icons.mic, size: 18, color: Colors.white),
           ),
         ],
       ),
@@ -827,23 +919,86 @@ class _VoiceTab extends StatelessWidget {
 
 // ─── Members tab ─────────────────────────────────────────────────
 
-class _MembersTab extends StatelessWidget {
-  final List<VoiceParticipant> voiceParticipants;
-  final SeeUThemeColors c;
+class _ChatMember {
+  final String id;
+  final String username;
+  final String fullName;
+  final String avatarUrl;
+  final String role;
 
-  const _MembersTab({required this.voiceParticipants, required this.c});
+  const _ChatMember({
+    required this.id,
+    required this.username,
+    required this.fullName,
+    required this.avatarUrl,
+    required this.role,
+  });
+
+  factory _ChatMember.fromJson(Map<String, dynamic> j) {
+    final user = j['user'] as Map<String, dynamic>? ?? j;
+    return _ChatMember(
+      id: user['id']?.toString() ?? '',
+      username: user['username']?.toString() ?? '',
+      fullName: user['full_name']?.toString() ?? '',
+      avatarUrl: user['avatar_url']?.toString() ?? '',
+      role: j['role']?.toString() ?? 'member',
+    );
+  }
+}
+
+class _MembersTab extends ConsumerStatefulWidget {
+  final String chatId;
+  final List<VoiceParticipant> voiceParticipants;
+
+  const _MembersTab({required this.chatId, required this.voiceParticipants});
+
+  @override
+  ConsumerState<_MembersTab> createState() => _MembersTabState();
+}
+
+class _MembersTabState extends ConsumerState<_MembersTab> {
+  List<_ChatMember> _members = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMembers();
+  }
+
+  Future<void> _loadMembers() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final resp = await api.get(ApiEndpoints.chatMembers(widget.chatId));
+      final data = resp.data;
+      final list = data is Map && data['data'] is List
+          ? data['data'] as List
+          : data is List
+              ? data
+              : <dynamic>[];
+      setState(() {
+        _members = list
+            .map((e) => _ChatMember.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (voiceParticipants.isNotEmpty) ...[
+          if (widget.voiceParticipants.isNotEmpty) ...[
             _SectionLabel(
               'В голосовом канале',
-              right: '${voiceParticipants.length} в голосе',
+              right: '${widget.voiceParticipants.length} в голосе',
               c: c,
             ),
             const SizedBox(height: 8),
@@ -854,12 +1009,12 @@ class _MembersTab extends StatelessWidget {
                 border: Border.all(color: c.line, width: 0.5),
               ),
               child: Column(
-                children: voiceParticipants.asMap().entries.map((e) {
+                children: widget.voiceParticipants.asMap().entries.map((e) {
                   final i = e.key;
                   final p = e.value;
                   return _VoiceMemberRow(
                     participant: p,
-                    showBorder: i < voiceParticipants.length - 1,
+                    showBorder: i < widget.voiceParticipants.length - 1,
                     c: c,
                   );
                 }).toList(),
@@ -867,26 +1022,88 @@ class _MembersTab extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
-          _SectionLabel('В чате · не в голосе', c: c),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: c.ink4, style: BorderStyle.solid),
-            ),
-            child: Row(
-              children: [
-                Icon(PhosphorIcons.userPlus(), size: 16, color: SeeUColors.accent),
-                const SizedBox(width: 10),
-                Text(
-                  'Пригласить ещё людей',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: c.ink2),
-                ),
-              ],
-            ),
+          _SectionLabel(
+            'Участники',
+            right: _loading ? '' : '${_members.length}',
+            c: c,
           ),
+          const SizedBox(height: 8),
+          if (_loading)
+            const Center(child: CircularProgressIndicator(color: SeeUColors.accent))
+          else if (_members.isEmpty)
+            Center(child: Text('Нет участников', style: TextStyle(color: c.ink3, fontSize: 13)))
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: c.line, width: 0.5),
+              ),
+              child: Column(
+                children: _members.asMap().entries.map((e) {
+                  final i = e.key;
+                  final m = e.value;
+                  return GestureDetector(
+                    onTap: m.username.isNotEmpty
+                        ? () => context.push('/profile/${m.username}')
+                        : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        border: i < _members.length - 1
+                            ? Border(bottom: BorderSide(color: c.line, width: 0.5))
+                            : null,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: c.surface2,
+                            ),
+                            child: m.avatarUrl.isNotEmpty
+                                ? ClipOval(child: Image.network(m.avatarUrl, fit: BoxFit.cover))
+                                : Center(
+                                    child: Text(
+                                      m.fullName.isNotEmpty ? m.fullName[0].toUpperCase() : '?',
+                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink),
+                                    ),
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  m.fullName.isNotEmpty ? m.fullName : m.username,
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c.ink),
+                                ),
+                                if (m.username.isNotEmpty)
+                                  Text('@${m.username}', style: TextStyle(fontSize: 12, color: c.ink3)),
+                              ],
+                            ),
+                          ),
+                          if (m.role == 'admin')
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: SeeUColors.accentSoft,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'организатор',
+                                style: TextStyle(fontSize: 10, color: SeeUColors.accent, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
         ],
       ),
     );
@@ -1151,23 +1368,3 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _DaySeparator extends StatelessWidget {
-  final String label;
-  const _DaySeparator({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: c.surface2,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(label, style: TextStyle(fontSize: 11, color: c.ink3, fontWeight: FontWeight.w500)),
-      ),
-    );
-  }
-}

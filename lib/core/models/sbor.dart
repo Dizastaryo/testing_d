@@ -124,6 +124,7 @@ class Sbor {
   final int? max; // null = no limit
   final List<String> memberNames;
   final List<String> memberUsernames;
+  final List<String> memberIds;
   final String? coverUrl;
   final int price;
   final String? description;
@@ -148,6 +149,7 @@ class Sbor {
     this.max,
     this.memberNames = const [],
     this.memberUsernames = const [],
+    this.memberIds = const [],
     this.coverUrl,
     this.price = 0,
     this.description,
@@ -159,6 +161,7 @@ class Sbor {
 
   int get remaining => max == null ? 999 : max! - joined;
   bool get isFull => max != null && joined >= max!;
+  bool get isPast => scheduledAt != null && scheduledAt!.isBefore(DateTime.now());
 
   SborCategoryMeta get categoryMeta =>
       kSborCategories[category] ?? kSborCategories[SborCategory.other]!;
@@ -183,6 +186,10 @@ class Sbor {
               .toList() ??
           [],
       memberUsernames: (j['member_usernames'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      memberIds: (j['member_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           [],

@@ -229,24 +229,61 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ListTile(
               leading: Icon(PhosphorIconsRegular.bellSlash, color: c.ink),
               title: const Text('Отключить уведомления'),
-              onTap: () => Navigator.of(sheetCtx).pop(),
+              onTap: () {
+                Navigator.of(sheetCtx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Уведомления: скоро появится')),
+                );
+              },
             ),
             if (isGroup)
               ListTile(
                 leading: const Icon(PhosphorIconsRegular.signOut, color: SeeUColors.error),
                 title: Text(
-                  chat?.sborId != null ? 'Выйти из сбора' : 'Выйти из группы',
+                  chat?.isOrganizer == true
+                      ? 'Отменить сбор'
+                      : chat?.sborId != null
+                          ? 'Выйти из сбора'
+                          : 'Выйти из группы',
                   style: const TextStyle(color: SeeUColors.error),
                 ),
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  _leaveGroup(sborId: chat?.sborId);
+                  _leaveGroup(sborId: chat?.sborId, isOrganizer: chat?.isOrganizer == true);
                 },
               ),
             ListTile(
               leading: const Icon(PhosphorIconsRegular.trash, color: SeeUColors.error),
               title: const Text('Очистить чат', style: TextStyle(color: SeeUColors.error)),
-              onTap: () => Navigator.of(sheetCtx).pop(),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: c.surface,
+                    title: Text('Очистить историю?', style: TextStyle(color: c.ink, fontSize: 17)),
+                    content: Text(
+                      'Все сообщения будут удалены только у тебя.',
+                      style: TextStyle(color: c.ink2, fontSize: 14),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text('Отмена', style: TextStyle(color: c.ink3)),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Очистить', style: TextStyle(color: SeeUColors.error)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Очистка чата: скоро появится')),
+                  );
+                }
+              },
             ),
             const SizedBox(height: 8),
           ],
@@ -255,7 +292,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Future<void> _leaveGroup({String? sborId}) async {
+  Future<void> _leaveGroup({String? sborId, bool isOrganizer = false}) async {
     final c = context.seeuColors;
     final isSbor = sborId != null;
     final confirmed = await showDialog<bool>(
@@ -263,26 +300,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
         title: Text(
-          isSbor ? 'Выйти из сбора?' : 'Выйти из группы?',
+          isOrganizer ? 'Отменить сбор?' : isSbor ? 'Выйти из сбора?' : 'Выйти из группы?',
           style: TextStyle(color: c.ink, fontSize: 17),
         ),
         content: Text(
-          isSbor
-              ? 'Ты покинешь сбор и его групповой чат.'
-              : 'Ты покинешь этот групповой чат.',
+          isOrganizer
+              ? 'Сбор будет отменён для всех участников.'
+              : isSbor
+                  ? 'Ты покинешь сбор и его групповой чат.'
+                  : 'Ты покинешь этот групповой чат.',
           style: TextStyle(color: c.ink2, fontSize: 14),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Нет', style: TextStyle(color: c.ink3))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти', style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isOrganizer ? 'Отменить сбор' : 'Выйти', style: const TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
     try {
       final api = ref.read(apiClientProvider);
-      if (isSbor) {
-        // Выйти из сбора → автоматически выйдет из чата (бэкенд делает оба действия)
+      if (isOrganizer && sborId != null) {
+        // Организатор отменяет сбор → DELETE /sbory/:id
+        await api.delete(ApiEndpoints.cancelSbor(sborId));
+      } else if (isSbor) {
+        // Участник покидает сбор → DELETE /sbory/:id/join
         await api.delete(ApiEndpoints.leaveSbor(sborId));
       } else {
         await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));

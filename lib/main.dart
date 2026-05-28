@@ -51,6 +51,7 @@ import 'features/stories/text_story_compose_screen.dart';
 import 'features/sbory/sbory_screen.dart';
 import 'features/sbory/sbor_detail_screen.dart';
 import 'features/sbory/sbor_create_screen.dart';
+import 'features/sbory/sbor_edit_screen.dart';
 import 'features/sbory/sbor_chat_screen.dart';
 
 void main() async {
@@ -236,10 +237,17 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           ),
         ),
         GoRoute(
+          path: '/sbory/:id/edit',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: SborEditScreen(sborId: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
           path: '/sbory/:id/chat',
           pageBuilder: (_, state) => CupertinoPage(
             child: SborChatScreen(
-              chatId: state.pathParameters['id']!,
+              chatId: state.uri.queryParameters['chatId'] ?? state.pathParameters['id']!,
+              sborId: state.pathParameters['id']!,
               sborTitle: state.uri.queryParameters['title'] ?? 'Сбор',
               memberCount: int.tryParse(state.uri.queryParameters['members'] ?? '0') ?? 0,
             ),

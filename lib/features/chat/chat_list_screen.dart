@@ -332,10 +332,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   void _confirmHideChat(Chat chat) {
     final isGroup = chat.isGroup;
     final isSbor = chat.sborId != null;
+    final isOrganizer = chat.isOrganizer;
 
     final String label;
     final String message;
-    if (isSbor) {
+    if (isOrganizer && isSbor) {
+      label = 'Отменить сбор';
+      message = 'Сбор «${chat.title}» будет отменён для всех участников.';
+    } else if (isSbor) {
       label = 'Покинуть сбор';
       message = 'Вы покинете сбор «${chat.title}» и его групповой чат. Вернуться можно будет через страницу сбора.';
     } else if (isGroup) {
@@ -365,9 +369,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                 label: label,
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
-                  ref
-                      .read(chatListProvider.notifier)
-                      .hideChat(chat.id, isGroup: isGroup);
+                  ref.read(chatListProvider.notifier).hideChat(
+                    chat.id,
+                    isGroup: isGroup,
+                    sborId: chat.sborId,
+                    isOrganizer: isOrganizer,
+                  );
                   // Если выходим из чата сбора — обновляем список сборов тоже.
                   if (isSbor) {
                     ref.read(sborRefreshProvider.notifier).state++;

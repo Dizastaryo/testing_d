@@ -33,6 +33,8 @@ class Chat {
   final ReplyPreview? pinnedMessage;
   /// ID сбора, если этот group-чат является чатом сбора. null — обычный чат.
   final String? sborId;
+  /// true если текущий пользователь — организатор сбора этого чата.
+  final bool isOrganizer;
   /// Закреплён ли чат у текущего пользователя (хранится на сервере).
   final bool isPinned;
 
@@ -49,6 +51,7 @@ class Chat {
     this.unreadCount = 0,
     this.pinnedMessage,
     this.sborId,
+    this.isOrganizer = false,
     this.isPinned = false,
   });
 
@@ -71,6 +74,7 @@ class Chat {
     int? unreadCount,
     ReplyPreview? pinnedMessage,
     String? sborId,
+    bool? isOrganizer,
     bool? isPinned,
   }) {
     return Chat(
@@ -86,6 +90,7 @@ class Chat {
       unreadCount: unreadCount ?? this.unreadCount,
       pinnedMessage: pinnedMessage ?? this.pinnedMessage,
       sborId: sborId ?? this.sborId,
+      isOrganizer: isOrganizer ?? this.isOrganizer,
       isPinned: isPinned ?? this.isPinned,
     );
   }
@@ -121,6 +126,7 @@ class Chat {
               json['pinned_message'] as Map<String, dynamic>)
           : null,
       sborId: json['sbor_id']?.toString(),
+      isOrganizer: (json['is_organizer'] ?? false) as bool,
       isPinned: (json['is_pinned'] ?? false) as bool,
     );
   }
@@ -513,13 +519,24 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
   /// Hides a chat from the list (delete for self for direct; leave for group).
   /// Removes the chat from local state immediately.
-  Future<void> hideChat(String chatId, {bool isGroup = false}) async {
+  Future<void> hideChat(
+    String chatId, {
+    bool isGroup = false,
+    String? sborId,
+    bool isOrganizer = false,
+  }) async {
     // Optimistic remove.
     state = state.copyWith(
       chats: state.chats.where((c) => c.id != chatId).toList(),
     );
     try {
-      if (isGroup) {
+      if (isOrganizer && sborId != null) {
+        // Организатор отменяет сбор → DELETE /sbory/:id
+        await _api.delete(ApiEndpoints.cancelSbor(sborId));
+      } else if (sborId != null) {
+        // Участник покидает сбор → DELETE /sbory/:id/join
+        await _api.delete(ApiEndpoints.leaveSbor(sborId));
+      } else if (isGroup) {
         await _api.delete(ApiEndpoints.leaveGroupChat(chatId));
       } else {
         await _api.delete(ApiEndpoints.chatHide(chatId));

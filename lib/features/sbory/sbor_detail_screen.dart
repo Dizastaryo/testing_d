@@ -1,9 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
@@ -37,6 +39,7 @@ class SborDetailScreen extends ConsumerStatefulWidget {
 
 class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   bool _joining = false;
+  bool _bookmarked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -47,11 +50,25 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         backgroundColor: context.seeuColors.bg,
         body: const Center(child: CircularProgressIndicator()),
       ),
-      error: (e, _) => Scaffold(
-        backgroundColor: context.seeuColors.bg,
-        appBar: AppBar(backgroundColor: Colors.transparent),
-        body: Center(child: Text('Ошибка: $e')),
-      ),
+      error: (e, _) {
+        final isNotFound = e is DioException && e.response?.statusCode == 404;
+        return Scaffold(
+          backgroundColor: context.seeuColors.bg,
+          appBar: AppBar(backgroundColor: Colors.transparent),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                isNotFound
+                    ? 'Сбор не найден или был отменён'
+                    : 'Ошибка: $e',
+                style: TextStyle(color: context.seeuColors.ink2, fontSize: 15),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        );
+      },
       data: (sbor) => _buildScreen(context, sbor),
     );
   }
@@ -149,9 +166,25 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                       ),
                     ),
                     const Spacer(),
-                    _HeroAction(icon: PhosphorIcons.shareFat(), onTap: () {}),
+                    _HeroAction(
+                      icon: PhosphorIcons.shareFat(),
+                      onTap: () => Share.share(
+                        'Сбор «${s.title}» в приложении SeeU\n${s.place}',
+                      ),
+                    ),
                     const SizedBox(width: 6),
-                    _HeroAction(icon: PhosphorIcons.bookmarkSimple(), onTap: () {}),
+                    _HeroAction(
+                      icon: _bookmarked
+                          ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                          : PhosphorIcons.bookmarkSimple(),
+                      onTap: () {
+                        setState(() => _bookmarked = !_bookmarked);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(_bookmarked ? 'Сохранено' : 'Убрано из сохранённых'),
+                          duration: const Duration(seconds: 2),
+                        ));
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -312,21 +345,34 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             height: 90,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: s.memberNames.length + (s.max != null && s.remaining > 0 ? 1 : 0),
+              itemCount: s.memberNames.length
+                  + (s.joined > s.memberNames.length ? 1 : 0)
+                  + (s.max != null && s.remaining > 0 ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
-                if (i == s.memberNames.length) {
+                final hasMore = s.joined > s.memberNames.length;
+                final moreIdx = s.memberNames.length;
+                final emptySlotIdx = moreIdx + (hasMore ? 1 : 0);
+                if (i == moreIdx && hasMore) {
+                  return _MoreMembersSlot(count: s.joined - s.memberNames.length, c: c);
+                }
+                if (i == emptySlotIdx && s.max != null && s.remaining > 0) {
                   return _EmptySlot(remaining: s.remaining, c: c);
                 }
                 final name = s.memberNames[i];
                 final username = i < s.memberUsernames.length ? s.memberUsernames[i] : null;
-                final isHost = i == 0;
+                final memberId = i < s.memberIds.length ? s.memberIds[i] : null;
+                final isHost = memberId != null && memberId == s.hostId;
                 return _ParticipantCell(
                   name: name,
                   isHost: isHost,
                   onTap: username != null && username.isNotEmpty
                       ? () => context.push('/profile/$username')
-                      : null,
+                      : memberId != null
+                          ? () => ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Профиль недоступен')),
+                              )
+                          : null,
                 );
               },
             ),
@@ -357,7 +403,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               GestureDetector(
-                onTap: _joining || s.isFull && !s.isJoined
+                onTap: _joining || (s.isFull && !s.isJoined) || (s.isPast && !s.isJoined)
                     ? null
                     : () => _joinOrOpenChat(s),
                 child: AnimatedContainer(
@@ -366,11 +412,11 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                   decoration: BoxDecoration(
                     color: s.isJoined
                         ? SeeUColors.accent
-                        : s.isFull
+                        : (s.isFull || s.isPast)
                             ? c.surface2
                             : SeeUColors.accent,
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: s.isFull && !s.isJoined
+                    boxShadow: (s.isFull || s.isPast) && !s.isJoined
                         ? null
                         : [
                             BoxShadow(
@@ -392,21 +438,30 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                         Icon(
                           s.isJoined
                               ? PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill)
-                              : s.isFull
-                                  ? PhosphorIcons.lockSimple()
-                                  : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
+                              : s.isPast
+                                  ? PhosphorIcons.clockCountdown()
+                                  : s.isFull
+                                      ? PhosphorIcons.lockSimple()
+                                      : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
                           size: 18,
-                          color: Colors.white,
+                          color: s.isJoined || (!s.isPast && !s.isFull)
+                              ? Colors.white
+                              : c.ink3,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           s.isJoined
                               ? isOrganizer ? 'Открыть чат сбора' : 'Я иду · Открыть чат'
-                              : s.isFull
-                                  ? 'Мест нет'
-                                  : 'Я иду',
-                          style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
+                              : s.isPast
+                                  ? 'Сбор уже прошёл'
+                                  : s.isFull
+                                      ? 'Мест нет'
+                                      : 'Я иду',
+                          style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600,
+                            color: s.isJoined || (!s.isPast && !s.isFull)
+                                ? Colors.white
+                                : c.ink3,
                           ),
                         ),
                       ],
@@ -416,17 +471,38 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               ),
               if (isOrganizer) ...[
                 const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => _cancelSbor(s),
-                  child: Text(
-                    'Отменить сбор',
-                    style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w500,
-                      color: c.ink3,
-                      decoration: TextDecoration.underline,
-                      decorationColor: c.ink3,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () async {
+                        await context.push('/sbory/${s.id}/edit');
+                        if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+                      },
+                      child: Text(
+                        'Редактировать',
+                        style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500,
+                          color: c.ink3,
+                          decoration: TextDecoration.underline,
+                          decorationColor: c.ink3,
+                        ),
+                      ),
                     ),
-                  ),
+                    Text('  ·  ', style: TextStyle(color: c.ink4, fontSize: 13)),
+                    GestureDetector(
+                      onTap: () => _cancelSbor(s),
+                      child: const Text(
+                        'Отменить сбор',
+                        style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500,
+                          color: SeeUColors.error,
+                          decoration: TextDecoration.underline,
+                          decorationColor: SeeUColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ] else if (s.isJoined) ...[
                 const SizedBox(height: 10),
@@ -456,7 +532,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     // Уже участник — открываем чат или запрашиваем свежие данные (chatId мог появиться)
     if (s.isJoined) {
       if (s.chatId != null) {
-        context.push('/chat/${s.chatId}');
+        context.push('/sbory/${s.id}/chat?title=${Uri.encodeComponent(s.title)}&members=${s.joined}&chatId=${s.chatId}');
         return;
       }
       // chatId ещё нет (старый сбор) — дёргаем join idempotent, получаем chatId
@@ -478,7 +554,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       ref.invalidate(_sborDetailProvider(widget.sborId));
 
       if (chatId != null && mounted) {
-        context.push('/chat/$chatId');
+        context.push('/sbory/${s.id}/chat?title=${Uri.encodeComponent(s.title)}&members=${s.joined + 1}&chatId=$chatId');
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вступил в сбор')),
@@ -661,6 +737,40 @@ class _ParticipantCell extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MoreMembersSlot extends StatelessWidget {
+  final int count;
+  final SeeUThemeColors c;
+
+  const _MoreMembersSlot({required this.count, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 56,
+      child: Column(
+        children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: c.surface2,
+              border: Border.all(color: c.line, width: 1.5),
+            ),
+            child: Center(
+              child: Text(
+                '+$count',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.ink2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('ещё $count', style: TextStyle(fontSize: 10, color: c.ink3)),
+        ],
       ),
     );
   }
