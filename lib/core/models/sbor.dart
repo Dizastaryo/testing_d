@@ -130,6 +130,7 @@ class Sbor {
   final String? description;
   final SborRole myRole;
   final bool isJoined;
+  final bool isBookmarked;
   final String? chatId;
   final DateTime? scheduledAt;
 
@@ -155,6 +156,7 @@ class Sbor {
     this.description,
     this.myRole = SborRole.none,
     this.isJoined = false,
+    this.isBookmarked = false,
     this.chatId,
     this.scheduledAt,
   });
@@ -198,6 +200,7 @@ class Sbor {
       description: j['description'] as String?,
       myRole: _roleFromString(j['my_role'] as String?),
       isJoined: j['is_joined'] as bool? ?? false,
+      isBookmarked: j['is_bookmarked'] as bool? ?? false,
       chatId: j['chat_id'] as String?,
       scheduledAt: j['scheduled_at'] != null
           ? DateTime.tryParse(j['scheduled_at'] as String)

@@ -145,12 +145,22 @@ class ApiEndpoints {
   // Сборы
   static const String sbory = '/sbory';
   static const String mySbory = '/sbory/me';
+  static const String bookmarkedSbory = '/sbory/bookmarked';
   static String sborById(String id) => '/sbory/$id';
   // POST /sbory/:id/join → join; DELETE /sbory/:id/join → leave (same path, different method)
   static String joinSbor(String id) => '/sbory/$id/join';
   static String leaveSbor(String id) => '/sbory/$id/join';
   static String cancelSbor(String id) => '/sbory/$id';
+  static String bookmarkSbor(String id) => '/sbory/$id/bookmark';
   static String leaveGroupChat(String id) => '/chats/$id/leave';
+
+  // Rooms (voice + text channels)
+  static const String rooms = '/rooms';
+  static String roomById(String id) => '/rooms/$id';
+  static String joinRoom(String id) => '/rooms/$id/join';
+  static String leaveRoom(String id) => '/rooms/$id/join';
+  static String muteRoom(String id) => '/rooms/$id/mute';
+  static String roomMessages(String id) => '/rooms/$id/messages';
 
   // === Library Service endpoints ===
   static const String files = '/files';

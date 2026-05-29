@@ -45,6 +45,16 @@ final _mySboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
       .toList();
 });
 
+final _bookmarkedSboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
+  ref.watch(sborRefreshProvider);
+  final api = ref.read(apiClientProvider);
+  final r = await api.get(ApiEndpoints.bookmarkedSbory);
+  final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+  return (data as List<dynamic>)
+      .map((e) => Sbor.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
 // ─── Screen ──────────────────────────────────────────────────────
 
 class SboryScreen extends ConsumerStatefulWidget {
@@ -57,6 +67,7 @@ class SboryScreen extends ConsumerStatefulWidget {
 class _SboryScreenState extends ConsumerState<SboryScreen> {
   String? _typeFilter; // null = all, 'offline', 'online'
   bool _showMine = false;
+  bool _showBookmarked = false;
   SborCategory? _catFilter;
   bool _searchActive = false;
   String _searchQuery = '';
@@ -225,9 +236,11 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final city = ref.watch(sboryCityProvider);
-    final async = _showMine
-        ? ref.watch(_mySboryProvider)
-        : ref.watch(_sboryProvider((type: _typeFilter, city: city)));
+    final async = _showBookmarked
+        ? ref.watch(_bookmarkedSboryProvider)
+        : _showMine
+            ? ref.watch(_mySboryProvider)
+            : ref.watch(_sboryProvider((type: _typeFilter, city: city)));
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -252,7 +265,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: () {
-                          if (_showMine) {
+                          if (_showBookmarked) {
+                            ref.invalidate(_bookmarkedSboryProvider);
+                          } else if (_showMine) {
                             ref.invalidate(_mySboryProvider);
                           } else {
                             final c2 = ref.read(sboryCityProvider);
@@ -400,40 +415,53 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   }
 
   Widget _buildTypeToggle(SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Row(
+    final tabs = [
+      (null, 'Все', null as IconData?),
+      ('offline', 'Оффлайн', PhosphorIcons.mapPin()),
+      ('online', 'Онлайн', PhosphorIcons.globe()),
+    ];
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        scrollDirection: Axis.horizontal,
         children: [
-          _TypeBtn(
-            label: 'Все',
-            icon: null,
-            active: _typeFilter == null && !_showMine,
-            color: c,
-            onTap: () => setState(() { _typeFilter = null; _showMine = false; }),
-          ),
-          const SizedBox(width: 6),
-          _TypeBtn(
-            label: 'Оффлайн',
-            icon: PhosphorIcons.mapPin(),
-            active: _typeFilter == 'offline' && !_showMine,
-            color: c,
-            onTap: () => setState(() { _typeFilter = 'offline'; _showMine = false; }),
-          ),
-          const SizedBox(width: 6),
-          _TypeBtn(
-            label: 'Онлайн',
-            icon: PhosphorIcons.globe(),
-            active: _typeFilter == 'online' && !_showMine,
-            color: c,
-            onTap: () => setState(() { _typeFilter = 'online'; _showMine = false; }),
-          ),
-          const SizedBox(width: 6),
-          _TypeBtn(
+          for (final (type, label, icon) in tabs) ...[
+            _TypeChip(
+              label: label,
+              icon: icon,
+              active: _typeFilter == type && !_showMine && !_showBookmarked,
+              color: c,
+              onTap: () => setState(() {
+                _typeFilter = type;
+                _showMine = false;
+                _showBookmarked = false;
+              }),
+            ),
+            const SizedBox(width: 6),
+          ],
+          _TypeChip(
             label: 'Мои',
             icon: PhosphorIcons.user(PhosphorIconsStyle.fill),
-            active: _showMine,
+            active: _showMine && !_showBookmarked,
             color: c,
-            onTap: () => setState(() { _showMine = true; _typeFilter = null; }),
+            onTap: () => setState(() {
+              _showMine = true;
+              _showBookmarked = false;
+              _typeFilter = null;
+            }),
+          ),
+          const SizedBox(width: 6),
+          _TypeChip(
+            label: 'Сохранённые',
+            icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill),
+            active: _showBookmarked,
+            color: c,
+            onTap: () => setState(() {
+              _showBookmarked = true;
+              _showMine = false;
+              _typeFilter = null;
+            }),
           ),
         ],
       ),
@@ -566,16 +594,16 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   }
 }
 
-// ─── Type toggle button ───────────────────────────────────────────
+// ─── Type toggle chip (scrollable row) ───────────────────────────
 
-class _TypeBtn extends StatelessWidget {
+class _TypeChip extends StatelessWidget {
   final String label;
   final IconData? icon;
   final bool active;
   final SeeUThemeColors color;
   final VoidCallback onTap;
 
-  const _TypeBtn({
+  const _TypeChip({
     required this.label,
     required this.icon,
     required this.active,
@@ -585,34 +613,33 @@ class _TypeBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: 36,
-          decoration: BoxDecoration(
-            color: active ? color.ink : color.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: active ? null : Border.all(color: color.line),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 13, color: active ? Colors.white : color.ink2),
-                const SizedBox(width: 5),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: active ? Colors.white : color.ink2,
-                ),
-              ),
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: active ? color.ink : color.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: active ? null : Border.all(color: color.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: active ? Colors.white : color.ink2),
+              const SizedBox(width: 5),
             ],
-          ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                color: active ? Colors.white : color.ink2,
+              ),
+            ),
+          ],
         ),
       ),
     );

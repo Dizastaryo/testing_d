@@ -12,9 +12,11 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
+import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
+import '../../core/providers/room_provider.dart';
 import '../sbory/sbory_screen.dart' show sborRefreshProvider;
 import 'widgets/typing_dots.dart';
 
@@ -28,6 +30,7 @@ class ChatListScreen extends ConsumerStatefulWidget {
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _showRooms = false;
 
   @override
   void dispose() {
@@ -51,8 +54,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   void _showNewChatPicker() {
     HapticFeedback.mediumImpact();
-    // Сначала спрашиваем тип нового чата: direct (1-1) или group. Group →
-    // отдельный full-screen с picker'ом + title; direct — старый bottom-sheet.
     showSeeUBottomSheet(
       context: context,
       builder: (sheetCtx) {
@@ -94,6 +95,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     );
   }
 
+  void _showNewRoomPicker() {
+    HapticFeedback.mediumImpact();
+    context.push('/room/create');
+  }
+
   void _openDirectPicker() {
     showModalBottomSheet(
       context: context,
@@ -132,152 +138,221 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: serif "Чаты" + compose button
+            // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      if (Navigator.of(context).canPop())
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: Icon(
-                              PhosphorIconsRegular.caretLeft,
-                              size: 22,
-                              color: c.ink,
-                            ),
-                          ),
-                        ),
-                      Text(
-                        'Чаты',
-                        style: SeeUTypography.displayL,
+                  if (Navigator.of(context).canPop())
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Icon(PhosphorIconsRegular.caretLeft, size: 22, color: c.ink),
                       ),
-                    ],
+                    ),
+                  Text('Чаты', style: SeeUTypography.displayL),
+                  const Spacer(),
+                  if (!_showRooms) ...[
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        context.push('/chat/calls');
+                      },
+                      child: Container(
+                        width: 40, height: 40,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: c.surface, shape: BoxShape.circle,
+                          border: Border.all(color: c.line, width: 0.5),
+                        ),
+                        child: Icon(PhosphorIconsRegular.phone, size: 18, color: c.ink),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _showNewChatPicker,
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: c.surface, shape: BoxShape.circle,
+                          border: Border.all(color: c.line, width: 0.5),
+                        ),
+                        child: Icon(PhosphorIconsRegular.pencilSimple, size: 18, color: c.ink),
+                      ),
+                    ),
+                  ] else
+                    GestureDetector(
+                      onTap: _showNewRoomPicker,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: SeeUColors.accent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 14, color: Colors.white),
+                            const SizedBox(width: 5),
+                            const Text(
+                              'Создать',
+                              style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Tab switcher: Чаты / Комнаты
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+              child: Row(
+                children: [
+                  _TabChip(
+                    label: 'Чаты',
+                    icon: PhosphorIcons.chatCircle(PhosphorIconsStyle.fill),
+                    active: !_showRooms,
+                    c: c,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _showRooms = false);
+                    },
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // C-1: история звонков. Tap → /chat/calls.
-                      GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          context.push('/chat/calls');
-                        },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: c.line, width: 0.5),
-                          ),
-                          child: Icon(
-                            PhosphorIconsRegular.phone,
-                            size: 18,
-                            color: c.ink,
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: _showNewChatPicker,
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: c.line,
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Icon(
-                            PhosphorIconsRegular.pencilSimple,
-                            size: 18,
-                            color: c.ink,
-                          ),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  _TabChip(
+                    label: 'Комнаты',
+                    icon: PhosphorIcons.speakerHigh(PhosphorIconsStyle.fill),
+                    active: _showRooms,
+                    c: c,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _showRooms = true);
+                    },
                   ),
                 ],
               ),
             ),
-            // Search bar: height 40, surface2 bg, borderRadius 12
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-              child: Container(
-                height: 40,
-                decoration: BoxDecoration(
-                  color: c.surface2,
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                  style: SeeUTypography.body.copyWith(fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Поиск',
-                    hintStyle: SeeUTypography.body.copyWith(
-                      fontSize: 14,
-                      color: c.ink3,
-                    ),
-                    prefixIcon: Padding(
-                      padding: const EdgeInsets.only(left: 12, right: 8),
-                      child: Icon(
-                        PhosphorIconsRegular.magnifyingGlass,
-                        color: c.ink3,
-                        size: 16,
+            if (!_showRooms)
+              // Search bar (chats only)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                child: Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.small),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                    style: SeeUTypography.body.copyWith(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Поиск',
+                      hintStyle: SeeUTypography.body.copyWith(fontSize: 14, color: c.ink3),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(left: 12, right: 8),
+                        child: Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink3, size: 16),
                       ),
-                    ),
-                    prefixIconConstraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 40,
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: Icon(
-                                PhosphorIconsFill.xCircle,
-                                color: c.ink3,
-                                size: 16,
+                      prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? GestureDetector(
+                              onTap: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Icon(PhosphorIconsFill.xCircle, color: c.ink3, size: 16),
                               ),
-                            ),
-                          )
-                        : null,
-                    suffixIconConstraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 40,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                            )
+                          : null,
+                      suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
                   ),
                 ),
               ),
-            ),
-            // Chat list
+            // Content
             Expanded(
-              child: chatState.isLoading
-                  ? const SeeUChatSkeleton()
-                  : chats.isEmpty
-                      ? _buildEmptyState()
-                      : _buildChatList(chats),
+              child: _showRooms
+                  ? _buildRoomsTab(c)
+                  : chatState.isLoading
+                      ? const SeeUChatSkeleton()
+                      : chats.isEmpty
+                          ? _buildEmptyState()
+                          : _buildChatList(chats),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ─── Rooms tab ───────────────────────────────────────────────────
+
+  Widget _buildRoomsTab(SeeUThemeColors c) {
+    final roomState = ref.watch(roomListProvider);
+    if (roomState.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (roomState.rooms.isEmpty) {
+      return _buildRoomsEmpty(c);
+    }
+    return SeeURadarRefresh(
+      onRefresh: () => ref.read(roomListProvider.notifier).load(),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        itemCount: roomState.rooms.length,
+        itemBuilder: (_, i) => _RoomCard(
+          room: roomState.rooms[i],
+          onTap: () => context.push('/room/${roomState.rooms[i].id}'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoomsEmpty(SeeUThemeColors c) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIcons.speakerHigh(), size: 48, color: c.ink4),
+          const SizedBox(height: 12),
+          Text('Комнат пока нет', style: SeeUTypography.subtitle.copyWith(color: c.ink)),
+          const SizedBox(height: 6),
+          Text(
+            'Создайте первую — голосовую или текстовую',
+            style: TextStyle(fontSize: 13, color: c.ink3),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: _showNewRoomPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: SeeUColors.accent,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 16, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Создать комнату',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1359,6 +1434,227 @@ class _NewChatTypeOption extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Tab chip ─────────────────────────────────────────────────────
+
+class _TabChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final SeeUThemeColors c;
+  final VoidCallback onTap;
+
+  const _TabChip({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.c,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? c.ink : c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: active ? null : Border.all(color: c.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: active ? Colors.white : c.ink2),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                color: active ? Colors.white : c.ink2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Room card ────────────────────────────────────────────────────
+
+class _RoomCard extends StatelessWidget {
+  final Room room;
+  final VoidCallback onTap;
+
+  const _RoomCard({required this.room, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final isVoice = room.type == 'voice';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: c.line, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8, offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon container
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isVoice
+                      ? [SeeUColors.accent, SeeUColors.accentSecondary]
+                      : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                isVoice
+                    ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
+                    : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
+                size: 22, color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          room.name,
+                          style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600, color: c.ink,
+                          ),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Live badge for voice rooms with participants
+                      if (isVoice && room.participantCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 5, height: 5,
+                                decoration: const BoxDecoration(
+                                  color: SeeUColors.accent, shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${room.participantCount}',
+                                style: const TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.w700,
+                                  color: SeeUColors.accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Text(
+                          '${room.participantCount} чел.',
+                          style: TextStyle(fontSize: 12, color: c.ink3),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    room.lastMessage?.isNotEmpty == true
+                        ? room.lastMessage!
+                        : room.description?.isNotEmpty == true
+                            ? room.description!
+                            : isVoice ? 'Голосовая комната' : 'Текстовая комната',
+                    style: TextStyle(fontSize: 13, color: c.ink3),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                  if (room.participants.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    _AvatarStack(participants: room.participants, c: c),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarStack extends StatelessWidget {
+  final List<RoomParticipant> participants;
+  final SeeUThemeColors c;
+
+  const _AvatarStack({required this.participants, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 18.0;
+    const overlap = 10.0;
+    final shown = participants.take(5).toList();
+    final width = shown.length * (size - overlap) + overlap;
+
+    return SizedBox(
+      height: size,
+      width: width,
+      child: Stack(
+        children: [
+          for (int i = 0; i < shown.length; i++)
+            Positioned(
+              left: i * (size - overlap),
+              child: Container(
+                width: size, height: size,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: c.bg, width: 1),
+                ),
+                child: Center(
+                  child: Text(
+                    shown[i].fullName.isNotEmpty
+                        ? shown[i].fullName[0].toUpperCase()
+                        : '?',
+                    style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: c.ink2),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

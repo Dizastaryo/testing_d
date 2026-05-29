@@ -7,11 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/chat_provider.dart';
 import '../../core/providers/following_candidates_provider.dart';
 
 /// Создание group-чата. Multi-select picker (минимум 1 кроме creator'а),
@@ -31,8 +35,7 @@ class _ChatCreateGroupScreenState
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
-  // Карточки для выбора cover'а — переиспользуем seed highlights.
-  // На первом релизе достаточно 5 пресетов. Real-upload — отдельная задача.
+  // Карточки для выбора cover'а — 5 seed-пресетов + кнопка загрузки своего.
   static const _coverPresets = [
     '/uploads/seed/highlights/h1.jpg',
     '/uploads/seed/highlights/h2.jpg',
@@ -42,6 +45,7 @@ class _ChatCreateGroupScreenState
   ];
 
   String? _coverUrl;
+  bool _uploadingCover = false;
   final Set<String> _selectedIds = {};
   final Map<String, User> _selectedUsers = {};
 
@@ -138,6 +142,36 @@ class _ChatCreateGroupScreenState
     });
   }
 
+  Future<void> _pickAndUploadCover() async {
+    if (_uploadingCover) return;
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _uploadingCover = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = await picked.readAsBytes();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
+      });
+      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+      if (mounted) setState(() => _coverUrl = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось загрузить фото: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingCover = false);
+    }
+  }
+
   bool get _canSubmit =>
       _titleCtrl.text.trim().isNotEmpty && _selectedIds.isNotEmpty && !_submitting;
 
@@ -164,8 +198,9 @@ class _ChatCreateGroupScreenState
         throw Exception('сервер не вернул id чата');
       }
       if (!mounted) return;
-      // Чат-лист не invalidatи'тся автоматически — refresh'нём вручную после
-      // навигации (chat_screen и так загрузит messages).
+      // Обновляем чат-лист: WS chat.group.joined идёт только другим участникам,
+      // создатель не получает event — рефетчим явно.
+      ref.read(chatListProvider.notifier).load();
       context.pushReplacement('/chat/$id');
     } catch (e) {
       if (!mounted) return;
@@ -222,15 +257,17 @@ class _ChatCreateGroupScreenState
                 style: SeeUTypography.subtitle,
               ),
             ),
-            // Cover presets row
+            // Cover picker row: «нет обложки» + «своя фото» + 5 seed-пресетов
             SizedBox(
               height: 80,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: _coverPresets.length + 1, // +1 = «без обложки»
+                // +2 = «без обложки» + «загрузить своё»
+                itemCount: _coverPresets.length + 2,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, i) {
+                  // Слот 0: без обложки
                   if (i == 0) {
                     final isSelected = _coverUrl == null;
                     return _CoverChoice(
@@ -244,7 +281,42 @@ class _ChatCreateGroupScreenState
                       ),
                     );
                   }
-                  final url = _coverPresets[i - 1];
+                  // Слот 1: загрузить своё фото
+                  if (i == 1) {
+                    final isCustom = _coverUrl != null &&
+                        !_coverPresets.contains(_coverUrl);
+                    return _CoverChoice(
+                      isSelected: isCustom,
+                      onTap: _uploadingCover ? () {} : _pickAndUploadCover,
+                      child: isCustom
+                          ? CachedNetworkImage(
+                              imageUrl: _coverUrl!.startsWith('/')
+                                  ? ApiEndpoints.baseUrl
+                                          .replaceAll('/api/v1', '') +
+                                      _coverUrl!
+                                  : _coverUrl!,
+                              fit: BoxFit.cover,
+                              width: 64,
+                              height: 64,
+                            )
+                          : _uploadingCover
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: SeeUColors.accent,
+                                  ),
+                                )
+                              : Icon(
+                                  PhosphorIcons.camera(PhosphorIconsStyle.bold),
+                                  color: SeeUColors.accent,
+                                  size: 26,
+                                ),
+                    );
+                  }
+                  // Слоты 2+: seed-пресеты
+                  final url = _coverPresets[i - 2];
                   final isSelected = _coverUrl == url;
                   return _CoverChoice(
                     isSelected: isSelected,

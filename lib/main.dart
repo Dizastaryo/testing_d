@@ -53,6 +53,8 @@ import 'features/sbory/sbor_detail_screen.dart';
 import 'features/sbory/sbor_create_screen.dart';
 import 'features/sbory/sbor_edit_screen.dart';
 import 'features/sbory/sbor_chat_screen.dart';
+import 'features/chat/room_screen.dart';
+import 'features/chat/room_create_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -187,6 +189,16 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               ],
             ),
           ],
+        ),
+        GoRoute(
+          path: '/room/create',
+          pageBuilder: (_, __) => const CupertinoPage(child: RoomCreateScreen()),
+        ),
+        GoRoute(
+          path: '/room/:roomId',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: RoomScreen(roomId: state.pathParameters['roomId']!),
+          ),
         ),
         GoRoute(
           path: '/watch',

@@ -335,12 +335,18 @@ class ChatMessage {
     int? readCount,
     int? recipientsCount,
     String? kind,
+    AttachedPostShort? attachedPost,
     String? attachedMediaUrl,
     String? attachedMediaType,
     int? mediaDurationSeconds,
     List<double>? waveform,
+    ReplyPreview? replyTo,
     Map<String, int>? reactions,
     String? myReaction,
+    String? senderName,
+    String? senderUsername,
+    String? senderAvatarUrl,
+    bool? isDeletedForAll,
   }) =>
       ChatMessage(
         id: id,
@@ -356,14 +362,18 @@ class ChatMessage {
         recipientsCount: recipientsCount ?? this.recipientsCount,
         expiresAt: expiresAt,
         kind: kind ?? this.kind,
-        attachedPost: attachedPost,
+        attachedPost: attachedPost ?? this.attachedPost,
         attachedMediaUrl: attachedMediaUrl ?? this.attachedMediaUrl,
         attachedMediaType: attachedMediaType ?? this.attachedMediaType,
         mediaDurationSeconds: mediaDurationSeconds ?? this.mediaDurationSeconds,
         waveform: waveform ?? this.waveform,
-        replyTo: replyTo,
+        replyTo: replyTo ?? this.replyTo,
         reactions: reactions ?? this.reactions,
         myReaction: myReaction ?? this.myReaction,
+        senderName: senderName ?? this.senderName,
+        senderUsername: senderUsername ?? this.senderUsername,
+        senderAvatarUrl: senderAvatarUrl ?? this.senderAvatarUrl,
+        isDeletedForAll: isDeletedForAll ?? this.isDeletedForAll,
       );
 }
 
@@ -859,8 +869,11 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (expiresInSeconds > 0) 'expires_in_seconds': expiresInSeconds,
         },
       );
-      // Reload to get the real message with server ID and post preview.
+      // Reload messages to get real server ID + post preview.
       await load();
+      // Обновляем чат-лист у отправителя: поднимаем чат наверх + обновляем
+      // lastMessage. WS-event chat.message приходит только peer'ам, не нам.
+      _ref.read(chatListProvider.notifier).load();
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] sendMessage error', e, st);
       // Roll back optimistic message so it doesn't appear as sent forever.

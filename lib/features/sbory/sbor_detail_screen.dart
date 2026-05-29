@@ -39,7 +39,8 @@ class SborDetailScreen extends ConsumerStatefulWidget {
 
 class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   bool _joining = false;
-  bool _bookmarked = false;
+  bool? _bookmarked; // null = not yet initialised from server
+  bool _bookmarkLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +70,11 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           ),
         );
       },
-      data: (sbor) => _buildScreen(context, sbor),
+      data: (sbor) {
+        // Initialise bookmark state from server on first load.
+        _bookmarked ??= sbor.isBookmarked;
+        return _buildScreen(context, sbor);
+      },
     );
   }
 
@@ -168,23 +173,31 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                     const Spacer(),
                     _HeroAction(
                       icon: PhosphorIcons.shareFat(),
-                      onTap: () => Share.share(
-                        'Сбор «${s.title}» в приложении SeeU\n${s.place}',
-                      ),
+                      onTap: () => _showShareSheet(s),
                     ),
                     const SizedBox(width: 6),
-                    _HeroAction(
-                      icon: _bookmarked
-                          ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.bookmarkSimple(),
-                      onTap: () {
-                        setState(() => _bookmarked = !_bookmarked);
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(_bookmarked ? 'Сохранено' : 'Убрано из сохранённых'),
-                          duration: const Duration(seconds: 2),
-                        ));
-                      },
-                    ),
+                    _bookmarkLoading
+                        ? Container(
+                            width: 34, height: 34,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.16),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: SizedBox(
+                                width: 14, height: 14,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          )
+                        : _HeroAction(
+                            icon: (_bookmarked ?? false)
+                                ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.bookmarkSimple(),
+                            onTap: () => _toggleBookmark(s),
+                          ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -402,119 +415,201 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              GestureDetector(
-                onTap: _joining || (s.isFull && !s.isJoined) || (s.isPast && !s.isJoined)
-                    ? null
-                    : () => _joinOrOpenChat(s),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: s.isJoined
-                        ? SeeUColors.accent
-                        : (s.isFull || s.isPast)
-                            ? c.surface2
-                            : SeeUColors.accent,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: (s.isFull || s.isPast) && !s.isJoined
-                        ? null
-                        : [
-                            BoxShadow(
-                              color: SeeUColors.accent.withValues(alpha: 0.35),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_joining)
-                        const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                      else ...[
+              if (s.isJoined) ...[
+                // ── Joined: "Открыть чат" primary button ──
+                GestureDetector(
+                  onTap: () => _openChat(s),
+                  child: Container(
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: SeeUColors.accent,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: SeeUColors.accent.withValues(alpha: 0.35),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
                         Icon(
-                          s.isJoined
-                              ? PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill)
-                              : s.isPast
-                                  ? PhosphorIcons.clockCountdown()
-                                  : s.isFull
-                                      ? PhosphorIcons.lockSimple()
-                                      : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
-                          size: 18,
-                          color: s.isJoined || (!s.isPast && !s.isFull)
-                              ? Colors.white
-                              : c.ink3,
+                          PhosphorIcons.chatCircleDots(PhosphorIconsStyle.fill),
+                          size: 18, color: Colors.white,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          s.isJoined
-                              ? isOrganizer ? 'Открыть чат сбора' : 'Я иду · Открыть чат'
-                              : s.isPast
-                                  ? 'Сбор уже прошёл'
-                                  : s.isFull
-                                      ? 'Мест нет'
-                                      : 'Я иду',
+                        const Text(
+                          'Открыть чат',
                           style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600,
-                            color: s.isJoined || (!s.isPast && !s.isFull)
-                                ? Colors.white
-                                : c.ink3,
+                            color: Colors.white,
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              if (isOrganizer) ...[
                 const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    GestureDetector(
-                      onTap: () async {
-                        await context.push('/sbory/${s.id}/edit');
-                        if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
-                      },
-                      child: Text(
-                        'Редактировать',
-                        style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500,
-                          color: c.ink3,
-                          decoration: TextDecoration.underline,
-                          decorationColor: c.ink3,
+                // ── Joined: secondary action row ──
+                if (isOrganizer)
+                  Row(
+                    children: [
+                      // Редактировать
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await context.push('/sbory/${s.id}/edit');
+                            if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+                          },
+                          child: Container(
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: c.surface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: c.line),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(PhosphorIcons.pencilSimple(), size: 15, color: c.ink2),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Редактировать',
+                                  style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600, color: c.ink2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                    Text('  ·  ', style: TextStyle(color: c.ink4, fontSize: 13)),
-                    GestureDetector(
-                      onTap: () => _cancelSbor(s),
-                      child: const Text(
-                        'Отменить сбор',
-                        style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500,
-                          color: SeeUColors.error,
-                          decoration: TextDecoration.underline,
-                          decorationColor: SeeUColors.error,
+                      const SizedBox(width: 10),
+                      // Отменить сбор
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => _cancelSbor(s),
+                          child: Container(
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: SeeUColors.error.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: SeeUColors.error.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.prohibit(),
+                                  size: 15, color: SeeUColors.error,
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Отменить сбор',
+                                  style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600,
+                                    color: SeeUColors.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
+                    ],
+                  )
+                else
+                  // Participant: "Выйти из сбора" secondary button
+                  GestureDetector(
+                    onTap: () => _leaveSbor(s),
+                    child: Container(
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.error.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: SeeUColors.error.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            PhosphorIcons.signOut(),
+                            size: 15, color: SeeUColors.error,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Выйти из сбора',
+                            style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600,
+                              color: SeeUColors.error,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ] else if (s.isJoined) ...[
-                const SizedBox(height: 10),
+                  ),
+              ] else ...[
+                // ── Not joined: "Я иду" or disabled state ──
                 GestureDetector(
-                  onTap: () => _leaveSbor(s),
-                  child: Text(
-                    'Выйти из сбора',
-                    style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w500,
-                      color: c.ink3,
-                      decoration: TextDecoration.underline,
-                      decorationColor: c.ink3,
+                  onTap: _joining || s.isFull || s.isPast
+                      ? null
+                      : () => _join(s),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: s.isFull || s.isPast ? c.surface2 : SeeUColors.accent,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: s.isFull || s.isPast
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: SeeUColors.accent.withValues(alpha: 0.35),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (_joining)
+                          const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2,
+                            ),
+                          )
+                        else ...[
+                          Icon(
+                            s.isPast
+                                ? PhosphorIcons.clockCountdown()
+                                : s.isFull
+                                    ? PhosphorIcons.lockSimple()
+                                    : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
+                            size: 18,
+                            color: s.isFull || s.isPast ? c.ink3 : Colors.white,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            s.isPast
+                                ? 'Сбор уже прошёл'
+                                : s.isFull
+                                    ? 'Мест нет'
+                                    : 'Я иду',
+                            style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600,
+                              color: s.isFull || s.isPast ? c.ink3 : Colors.white,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -526,26 +621,204 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     );
   }
 
-  Future<void> _joinOrOpenChat(Sbor s) async {
-    HapticFeedback.mediumImpact();
-
-    // Уже участник — открываем чат или запрашиваем свежие данные (chatId мог появиться)
-    if (s.isJoined) {
-      if (s.chatId != null) {
-        context.push('/sbory/${s.id}/chat?title=${Uri.encodeComponent(s.title)}&members=${s.joined}&chatId=${s.chatId}');
-        return;
+  Future<void> _toggleBookmark(Sbor s) async {
+    if (_bookmarkLoading) return;
+    setState(() => _bookmarkLoading = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final resp = await api.post(ApiEndpoints.bookmarkSbor(s.id));
+      bool saved = !(_bookmarked ?? false);
+      if (resp.data is Map) {
+        final d = resp.data['data'];
+        if (d is Map<String, dynamic> && d['saved'] is bool) {
+          saved = d['saved'] as bool;
+        }
       }
-      // chatId ещё нет (старый сбор) — дёргаем join idempotent, получаем chatId
+      if (!mounted) return;
+      setState(() => _bookmarked = saved);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(saved ? 'Добавлено в сохранённые' : 'Убрано из сохранённых'),
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _bookmarkLoading = false);
     }
+  }
 
-    // Вступаем в сбор
+  Future<void> _showShareSheet(Sbor s) async {
+    final c = context.seeuColors;
+    final chats = ref.read(chatListProvider).chats;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.72,
+          ),
+          decoration: BoxDecoration(
+            color: c.bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 6),
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: c.line, borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+                child: Row(
+                  children: [
+                    Text(
+                      'Поделиться',
+                      style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Icon(PhosphorIcons.x(), size: 20, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
+              // Внешний шаринг
+              ListTile(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Share.share('Сбор «${s.title}» в приложении SeeU\n${s.place}');
+                },
+                leading: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: c.surface2, borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(PhosphorIcons.export(), size: 20, color: c.ink2),
+                ),
+                title: Text('Поделиться вовне', style: TextStyle(fontSize: 15, color: c.ink)),
+                subtitle: Text('Telegram, WhatsApp и другие', style: TextStyle(fontSize: 12, color: c.ink3)),
+              ),
+              const SizedBox(height: 6),
+              if (chats.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'ОТПРАВИТЬ В ЧАТ',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600,
+                        letterSpacing: 0.8, color: c.ink3,
+                      ),
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.only(bottom: 20),
+                    itemCount: chats.length,
+                    itemBuilder: (_, i) {
+                      final chat = chats[i];
+                      final name = chat.isGroup
+                          ? chat.title
+                          : chat.otherUser?.fullName ?? chat.otherUser?.username ?? '';
+                      return ListTile(
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await _sendSborToChat(chat.id, s);
+                        },
+                        leading: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: c.surface2,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w600,
+                                color: c.ink2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        title: Text(name, style: TextStyle(fontSize: 15, color: c.ink)),
+                        subtitle: chat.isGroup
+                            ? Text('${chat.participantsCount} участников', style: TextStyle(fontSize: 12, color: c.ink3))
+                            : chat.otherUser?.username != null
+                                ? Text('@${chat.otherUser!.username}', style: TextStyle(fontSize: 12, color: c.ink3))
+                                : null,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendSborToChat(String chatId, Sbor s) async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final text = '📍 Сбор «${s.title}»\n'
+          '${s.type == SborType.online ? "Онлайн" : s.place} · ${s.when}\n'
+          'seeu://sbory/${s.id}';
+      await api.post(
+        ApiEndpoints.chatMessages(chatId),
+        data: {'text': text},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сбор отправлен в чат')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
+    }
+  }
+
+  void _openChat(Sbor s) {
+    HapticFeedback.mediumImpact();
+    if (s.chatId != null) {
+      // Переходим в чат как часть стека /chat — назад ведёт в список чатов.
+      context.go('/chat/${s.chatId}');
+      return;
+    }
+    // Редкий случай: chatId ещё нет — вызываем join idempotent для получения chatId.
+    _join(s);
+  }
+
+  Future<void> _join(Sbor s) async {
+    HapticFeedback.mediumImpact();
     setState(() => _joining = true);
     try {
       final api = ref.read(apiClientProvider);
       final resp = await api.post(ApiEndpoints.joinSbor(s.id));
       if (!mounted) return;
 
-      // Получаем chat_id из ответа и сразу открываем чат
       final data = resp.data is Map && resp.data.containsKey('data')
           ? resp.data['data'] as Map<String, dynamic>
           : resp.data as Map<String, dynamic>? ?? {};
@@ -554,7 +827,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       ref.invalidate(_sborDetailProvider(widget.sborId));
 
       if (chatId != null && mounted) {
-        context.push('/sbory/${s.id}/chat?title=${Uri.encodeComponent(s.title)}&members=${s.joined + 1}&chatId=$chatId');
+        context.go('/chat/$chatId');
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Вступил в сбор')),
