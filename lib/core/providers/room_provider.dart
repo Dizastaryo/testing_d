@@ -48,7 +48,16 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        if (evt.type == 'room.joined' || evt.type == 'room.left' || evt.type == 'room.closed') {
+        const refreshEvents = {
+          'room.joined',
+          'room.left',
+          'room.closed',
+          'room.invited',    // added to a private room
+          'room.removed',    // removed from a private room
+          'room.member_added',
+          'room.member_removed',
+        };
+        if (refreshEvents.contains(evt.type)) {
           load();
         }
       });
@@ -273,5 +282,92 @@ final roomMessagesProvider =
   (ref, id) {
     final api = ref.watch(apiClientProvider);
     return RoomMessagesNotifier(id, api, ref);
+  },
+);
+
+// ─── Room members ─────────────────────────────────────────────────
+
+class RoomMembersState {
+  final List<RoomMember> members;
+  final bool isLoading;
+  final String? error;
+  const RoomMembersState({
+    this.members = const [],
+    this.isLoading = false,
+    this.error,
+  });
+  RoomMembersState copyWith({
+    List<RoomMember>? members,
+    bool? isLoading,
+    String? error,
+  }) =>
+      RoomMembersState(
+        members: members ?? this.members,
+        isLoading: isLoading ?? this.isLoading,
+        error: error,
+      );
+}
+
+class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
+  final String roomId;
+  final ApiClient _api;
+  final Ref _ref;
+  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+
+  RoomMembersNotifier(this.roomId, this._api, this._ref) : super(const RoomMembersState()) {
+    load();
+    _listenRealtime();
+  }
+
+  @override
+  void dispose() {
+    _wsSub?.close();
+    super.dispose();
+  }
+
+  Future<void> load() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final r = await _api.get(ApiEndpoints.roomMembers(roomId));
+      final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+      final members = (data as List<dynamic>)
+          .map((e) => RoomMember.fromJson(e as Map<String, dynamic>))
+          .toList();
+      state = RoomMembersState(members: members);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> invite(String userId) async {
+    await _api.post(ApiEndpoints.roomInvite(roomId), data: {'user_id': userId});
+    await load();
+  }
+
+  Future<void> remove(String userId) async {
+    await _api.delete(ApiEndpoints.roomMember(roomId, userId));
+    state = state.copyWith(
+      members: state.members.where((m) => m.userId != userId).toList(),
+    );
+  }
+
+  void _listenRealtime() {
+    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
+      next.whenData((evt) {
+        final payload = evt.payload as Map<String, dynamic>?;
+        if (payload?['room_id'] != roomId) return;
+        if (evt.type == 'room.member_added' || evt.type == 'room.member_removed') {
+          load();
+        }
+      });
+    });
+  }
+}
+
+final roomMembersProvider =
+    StateNotifierProvider.autoDispose.family<RoomMembersNotifier, RoomMembersState, String>(
+  (ref, id) {
+    final api = ref.watch(apiClientProvider);
+    return RoomMembersNotifier(id, api, ref);
   },
 );

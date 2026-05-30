@@ -10,6 +10,7 @@ import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/room_provider.dart';
+import 'room_members_screen.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -88,17 +89,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     } catch (_) {
       // Roll back on error
       ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, room.isMuted);
-    }
-  }
-
-  Future<void> _leaveRoom() async {
-    try {
-      await ref.read(apiClientProvider).delete(ApiEndpoints.leaveRoom(widget.roomId));
-      ref.read(roomListProvider.notifier).load();
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
@@ -197,31 +187,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             onPressed: () => Navigator.of(context).pop(),
             icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
           ),
-          // Type badge
+          // Lock badge — all rooms are private
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: room.isVoice
-                  ? SeeUColors.accent.withValues(alpha: 0.12)
-                  : c.surface2,
+              color: SeeUColors.accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  room.isVoice
-                      ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
-                  size: 12,
-                  color: room.isVoice ? SeeUColors.accent : c.ink3,
-                ),
+                Icon(PhosphorIcons.lock(PhosphorIconsStyle.fill),
+                    size: 11, color: SeeUColors.accent),
                 const SizedBox(width: 4),
                 Text(
-                  room.isVoice ? 'Голос' : 'Текст',
-                  style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600,
-                    color: room.isVoice ? SeeUColors.accent : c.ink3,
+                  'Приватная',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: SeeUColors.accent,
                   ),
                 ),
               ],
@@ -235,7 +219,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 Text(
                   room.name,
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.ink),
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   '${room.participantCount} участников',
@@ -244,17 +229,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ],
             ),
           ),
+          // Members button — navigates to RoomMembersScreen
+          IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RoomMembersScreen(
+                  roomId: room.id,
+                  creatorId: room.creatorId,
+                ),
+              ),
+            ),
+            icon: Icon(PhosphorIcons.users(), size: 20, color: c.ink),
+            tooltip: 'Участники',
+          ),
+          // Creator: close room; member: leave
           if (isCreator && room.isActive)
             IconButton(
               onPressed: _closeRoom,
-              icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill), size: 22, color: SeeUColors.error),
+              icon: Icon(
+                PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
+                size: 22,
+                color: SeeUColors.error,
+              ),
               tooltip: 'Закрыть комнату',
-            )
-          else if (room.isJoined && room.isActive)
-            IconButton(
-              onPressed: _leaveRoom,
-              icon: Icon(PhosphorIcons.signOut(), size: 20, color: c.ink3),
-              tooltip: 'Покинуть',
             ),
         ],
       ),

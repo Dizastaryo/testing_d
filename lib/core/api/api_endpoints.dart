@@ -154,13 +154,16 @@ class ApiEndpoints {
   static String bookmarkSbor(String id) => '/sbory/$id/bookmark';
   static String leaveGroupChat(String id) => '/chats/$id/leave';
 
-  // Rooms (voice + text channels)
+  // Rooms (private voice + text channels)
   static const String rooms = '/rooms';
   static String roomById(String id) => '/rooms/$id';
   static String joinRoom(String id) => '/rooms/$id/join';
   static String leaveRoom(String id) => '/rooms/$id/join';
   static String muteRoom(String id) => '/rooms/$id/mute';
   static String roomMessages(String id) => '/rooms/$id/messages';
+  static String roomMembers(String id) => '/rooms/$id/members';
+  static String roomInvite(String id) => '/rooms/$id/invite';
+  static String roomMember(String id, String userId) => '/rooms/$id/members/$userId';
 
   // === Library Service endpoints ===
   static const String files = '/files';

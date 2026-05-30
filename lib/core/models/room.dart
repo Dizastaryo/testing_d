@@ -1,3 +1,34 @@
+/// Full member record returned by GET /rooms/:id/members.
+class RoomMember {
+  final String userId;
+  final String fullName;
+  final String username;
+  final String? avatarUrl;
+  final bool isMuted;
+  final bool isCreator;
+  final DateTime joinedAt;
+
+  const RoomMember({
+    required this.userId,
+    required this.fullName,
+    required this.username,
+    this.avatarUrl,
+    this.isMuted = false,
+    this.isCreator = false,
+    required this.joinedAt,
+  });
+
+  factory RoomMember.fromJson(Map<String, dynamic> j) => RoomMember(
+        userId: j['user_id'] as String,
+        fullName: j['full_name'] as String? ?? '',
+        username: j['username'] as String? ?? '',
+        avatarUrl: j['avatar_url'] as String?,
+        isMuted: j['is_muted'] as bool? ?? false,
+        isCreator: j['is_creator'] as bool? ?? false,
+        joinedAt: DateTime.tryParse(j['joined_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 class RoomParticipant {
   final String userId;
   final String fullName;

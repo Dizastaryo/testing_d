@@ -154,7 +154,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                         child: Icon(PhosphorIconsRegular.caretLeft, size: 22, color: c.ink),
                       ),
                     ),
-                  Text('Чаты', style: SeeUTypography.displayL),
                   const Spacer(),
                   if (!_showRooms) ...[
                     GestureDetector(
@@ -384,7 +383,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
           Text('Комнат пока нет', style: SeeUTypography.subtitle.copyWith(color: c.ink)),
           const SizedBox(height: 6),
           Text(
-            'Создайте первую — голосовую или текстовую',
+            'Создайте комнату и пригласите участников',
             style: TextStyle(fontSize: 13, color: c.ink3),
           ),
           const SizedBox(height: 20),
