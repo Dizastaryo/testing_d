@@ -132,7 +132,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                       Expanded(
                         child: _TypeCard(
                           title: 'Голосовая',
-                          subtitle: 'Говорите голосом\nи пишите в чат',
+                          subtitle: 'Голосовой канал\n+ текстовый чат',
                           icon: PhosphorIcons.microphone(PhosphorIconsStyle.fill),
                           selected: _type == 'voice',
                           onTap: () {
@@ -146,7 +146,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                       Expanded(
                         child: _TypeCard(
                           title: 'Текстовая',
-                          subtitle: 'Открытый\nтекстовый чат',
+                          subtitle: 'Только\nтекстовый чат',
                           icon: PhosphorIcons.chatText(PhosphorIconsStyle.fill),
                           selected: _type == 'text',
                           onTap: () {

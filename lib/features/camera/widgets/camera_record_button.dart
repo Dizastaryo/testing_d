@@ -1,20 +1,28 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/design/tokens.dart';
 
 /// Record / shutter button with pulse animation and progress ring.
+///
+/// Tap (< 300 мс) → [onTap] (фото).
+/// Hold (≥ 300 мс) → [onHoldStart] (начать видео), release → [onHoldEnd].
 class CameraRecordButton extends StatefulWidget {
   final bool isRecording;
   final double totalPct;
   final bool isPhotoMode;
-  final VoidCallback onPress;
+  final VoidCallback onTap;
+  final VoidCallback onHoldStart;
+  final VoidCallback onHoldEnd;
 
   const CameraRecordButton({
     super.key,
     required this.isRecording,
     required this.totalPct,
     required this.isPhotoMode,
-    required this.onPress,
+    required this.onTap,
+    required this.onHoldStart,
+    required this.onHoldEnd,
   });
 
   @override
@@ -25,6 +33,8 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
+  Timer? _holdTimer;
+  bool _holdFired = false;
 
   @override
   void initState() {
@@ -52,8 +62,36 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
 
   @override
   void dispose() {
+    _holdTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) {
+    _holdFired = false;
+    _holdTimer = Timer(const Duration(milliseconds: 300), () {
+      _holdFired = true;
+      widget.onHoldStart();
+    });
+  }
+
+  void _onTapUp(TapUpDetails _) {
+    if (_holdTimer?.isActive ?? false) {
+      _holdTimer!.cancel();
+      widget.onTap(); // короткий тап = фото
+    } else if (_holdFired) {
+      widget.onHoldEnd(); // держал = остановить видео
+    }
+    _holdFired = false;
+  }
+
+  void _onTapCancel() {
+    if (_holdTimer?.isActive ?? false) {
+      _holdTimer!.cancel();
+    } else if (_holdFired) {
+      widget.onHoldEnd();
+    }
+    _holdFired = false;
   }
 
   @override
@@ -68,7 +106,9 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
     final innerRadius = isRecording ? 8.0 : innerPhotoSize / 2;
 
     return GestureDetector(
-      onTap: widget.onPress,
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
       child: SizedBox(
         width: btnSize,
         height: btnSize,

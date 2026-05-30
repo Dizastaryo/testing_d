@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/user.dart';
 import '../services/logger.dart';
+import 'auth_provider.dart';
 import 'realtime_provider.dart';
 
 String _absUrl(String? url) {
@@ -730,11 +731,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (evt.type == 'chat.message.deleted') {
             final messageId = p['message_id']?.toString() ?? '';
             if (messageId.isEmpty) return;
-            state = state.copyWith(
-              messages: state.messages
-                  .where((m) => m.id != messageId)
-                  .toList(),
-            );
+            // WhatsApp-style: show "Сообщение удалено" instead of disappearing.
+            // forSelf (scope=self) deletions from our own device arrive via
+            // removeLocally(); peer-side WS always means "deleted for all".
+            markDeletedForAll(messageId);
             return;
           }
         });
@@ -837,10 +837,11 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             : 'text';
 
     // Optimistic UI: add message locally (no preview yet — server fills it).
+    final myId = _ref.read(authProvider).user?.id ?? 'me';
     final optimistic = ChatMessage(
       id: 'local_${DateTime.now().millisecondsSinceEpoch}',
       chatId: chatId,
-      senderId: 'me',
+      senderId: myId,
       text: text,
       createdAt: DateTime.now(),
       isMe: true,
@@ -854,7 +855,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     state = state.copyWith(messages: [...state.messages, optimistic]);
 
     try {
-      await _api.post(
+      final resp = await _api.post(
         ApiEndpoints.chatMessages(chatId),
         data: {
           'text': text,
@@ -869,10 +870,21 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (expiresInSeconds > 0) 'expires_in_seconds': expiresInSeconds,
         },
       );
-      // Reload messages to get real server ID + post preview.
-      await load();
-      // Обновляем чат-лист у отправителя: поднимаем чат наверх + обновляем
-      // lastMessage. WS-event chat.message приходит только peer'ам, не нам.
+      // Replace the optimistic message with the real one from server
+      // (real ID, post preview, expiresAt, etc.) — no full reload needed.
+      final msgData = resp.data is Map && resp.data.containsKey('data')
+          ? resp.data['data']
+          : resp.data;
+      if (msgData is Map<String, dynamic>) {
+        final real = ChatMessage.fromJson(msgData);
+        state = state.copyWith(
+          messages: state.messages
+              .map((m) => m.id == optimistic.id ? real : m)
+              .toList(),
+        );
+      }
+      // Update chat-list preview (last_message, order).
+      // WS chat.message only fires for peers, so we refresh manually.
       _ref.read(chatListProvider.notifier).load();
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] sendMessage error', e, st);

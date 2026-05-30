@@ -29,12 +29,15 @@ class ChatListScreen extends ConsumerStatefulWidget {
 
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   final _searchController = TextEditingController();
+  final _roomSearchController = TextEditingController();
   String _searchQuery = '';
+  String _roomSearchQuery = '';
   bool _showRooms = false;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _roomSearchController.dispose();
     super.dispose();
   }
 
@@ -297,23 +300,77 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   Widget _buildRoomsTab(SeeUThemeColors c) {
     final roomState = ref.watch(roomListProvider);
-    if (roomState.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (roomState.rooms.isEmpty) {
-      return _buildRoomsEmpty(c);
-    }
-    return SeeURadarRefresh(
-      onRefresh: () => ref.read(roomListProvider.notifier).load(),
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        itemCount: roomState.rooms.length,
-        itemBuilder: (_, i) => _RoomCard(
-          room: roomState.rooms[i],
-          onTap: () => context.push('/room/${roomState.rooms[i].id}'),
+    final q = _roomSearchQuery.toLowerCase();
+    final rooms = q.isEmpty
+        ? roomState.rooms
+        : roomState.rooms
+            .where((r) =>
+                r.name.toLowerCase().contains(q) ||
+                (r.description?.toLowerCase().contains(q) ?? false))
+            .toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+          child: Container(
+            height: 40,
+            decoration: BoxDecoration(
+              color: c.surface2,
+              borderRadius: BorderRadius.circular(SeeURadii.small),
+            ),
+            child: TextField(
+              controller: _roomSearchController,
+              onChanged: (v) => setState(() => _roomSearchQuery = v),
+              style: SeeUTypography.body.copyWith(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Поиск комнат',
+                hintStyle: SeeUTypography.body.copyWith(fontSize: 14, color: c.ink3),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 8),
+                  child: Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink3, size: 16),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+                suffixIcon: _roomSearchQuery.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _roomSearchController.clear();
+                          setState(() => _roomSearchQuery = '');
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Icon(PhosphorIconsFill.xCircle, color: c.ink3, size: 16),
+                        ),
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ),
         ),
-      ),
+        Expanded(
+          child: roomState.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : rooms.isEmpty
+                  ? (_roomSearchQuery.isNotEmpty
+                      ? Center(child: Text('Ничего не найдено', style: TextStyle(color: c.ink3)))
+                      : _buildRoomsEmpty(c))
+                  : SeeURadarRefresh(
+                      onRefresh: () => ref.read(roomListProvider.notifier).load(),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        itemCount: rooms.length,
+                        itemBuilder: (_, i) => _RoomCard(
+                          room: rooms[i],
+                          onTap: () => context.push('/room/${rooms[i].id}'),
+                        ),
+                      ),
+                    ),
+        ),
+      ],
     );
   }
 

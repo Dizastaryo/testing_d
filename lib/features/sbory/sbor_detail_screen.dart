@@ -157,6 +157,11 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               children: [
                 Row(
                   children: [
+                    _HeroAction(
+                      icon: PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                      onTap: () => context.pop(),
+                    ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
@@ -266,10 +271,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         s.isFull ? 'мест нет' : s.max != null ? 'нужно ещё ${s.remaining}' : '',
       ),
       (
-        PhosphorIcons.currencyRub(),
+        PhosphorIcons.wallet(),
         'Стоимость',
         s.price == 0 ? 'Бесплатно' : '${s.price} ₸',
-        s.price == 0 ? 'своё снаряжение' : '',
+        s.price == 0 ? '' : 'взнос',
       ),
     ];
 

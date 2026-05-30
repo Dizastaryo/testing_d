@@ -35,6 +35,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   int _slots = 8;
   bool _flexibleTime = false;
   bool _noLimit = false;
+  bool _isPaid = false;
   bool _submitting = false;
   XFile? _coverImage;
 
@@ -571,36 +572,90 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            _label('Взнос'),
-            const SizedBox(width: 6),
-            Text('0 = бесплатно', style: TextStyle(fontSize: 11, color: c.ink4)),
-          ],
-        ),
+        _label('Взнос'),
         const SizedBox(height: 8),
+        // Toggle: Бесплатно / Платный
         Container(
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: c.surface,
+            color: c.surface2,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: c.line),
           ),
-          child: TextField(
-            controller: _priceCtrl,
-            keyboardType: TextInputType.number,
-            style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
-            decoration: InputDecoration(
-              prefixIcon: Icon(PhosphorIcons.currencyDollar(), size: 16, color: c.ink3),
-              hintText: '0',
-              hintStyle: TextStyle(fontSize: 15, color: c.ink4),
-              suffixText: '₸',
-              suffixStyle: TextStyle(fontSize: 15, color: c.ink3),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
+          child: Row(
+            children: [
+              _priceTab(false, PhosphorIcons.gift(), 'Бесплатно', c),
+              _priceTab(true, PhosphorIcons.wallet(), 'Платный', c),
+            ],
+          ),
+        ),
+        if (_isPaid) ...[
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: c.line),
+            ),
+            child: TextField(
+              controller: _priceCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 8),
+                  child: Text(
+                    '₸',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.ink3),
+                  ),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                hintText: 'Сумма взноса',
+                hintStyle: TextStyle(fontSize: 15, color: c.ink4),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
+              ),
             ),
           ),
-        ),
+        ],
       ],
+    );
+  }
+
+  Widget _priceTab(bool paid, IconData icon, String label, SeeUThemeColors c) {
+    final active = _isPaid == paid;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() {
+          _isPaid = paid;
+          if (!paid) _priceCtrl.clear();
+        }),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 36,
+          decoration: BoxDecoration(
+            color: active ? c.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: active
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1))]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: active ? SeeUColors.accent : c.ink3),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  color: active ? c.ink : c.ink3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -643,7 +698,8 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     final canCreate = _titleCtrl.text.trim().length >= 3 &&
         _category != null &&
         (_flexibleTime || _scheduledDate != null) &&
-        _placeCtrl.text.trim().isNotEmpty;
+        _placeCtrl.text.trim().isNotEmpty &&
+        (!_isPaid || (int.tryParse(_priceCtrl.text.trim()) ?? 0) > 0);
 
     return Positioned(
       left: 0, right: 0, bottom: 0,
@@ -783,7 +839,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       }
 
       final city = ref.read(sboryCityProvider);
-      final price = int.tryParse(_priceCtrl.text.trim()) ?? 0;
+      final price = _isPaid ? (int.tryParse(_priceCtrl.text.trim()) ?? 0) : 0;
       await api.post(ApiEndpoints.sbory, data: {
         'title': _titleCtrl.text.trim(),
         'type': _type.name,

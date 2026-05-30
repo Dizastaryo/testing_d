@@ -23,6 +23,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
+  int _prevMsgCount = 0;
 
   @override
   void dispose() {
@@ -53,6 +54,28 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       _scrollToBottom();
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _joinVoice() async {
+    HapticFeedback.mediumImpact();
+    try {
+      await ref.read(apiClientProvider).post(ApiEndpoints.joinRoom(widget.roomId));
+      ref.read(roomDetailProvider(widget.roomId).notifier).load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    }
+  }
+
+  Future<void> _leaveVoice() async {
+    HapticFeedback.mediumImpact();
+    try {
+      await ref.read(apiClientProvider).delete(ApiEndpoints.leaveRoom(widget.roomId));
+      ref.read(roomDetailProvider(widget.roomId).notifier).load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
@@ -149,7 +172,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   style: TextStyle(fontSize: 13, color: c.ink3),
                 ),
               ),
-            Expanded(child: _buildMessages(c, room, myId)),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshMessages,
+                color: SeeUColors.accent,
+                child: _buildMessages(c, room, myId),
+              ),
+            ),
             if (room.isActive) _buildInput(c, room),
           ],
         ),
@@ -218,14 +247,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           if (isCreator && room.isActive)
             IconButton(
               onPressed: _closeRoom,
-              icon: Icon(PhosphorIcons.signOut(), size: 20, color: SeeUColors.error),
+              icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill), size: 22, color: SeeUColors.error),
               tooltip: 'Закрыть комнату',
             )
           else if (room.isJoined && room.isActive)
             IconButton(
               onPressed: _leaveRoom,
               icon: Icon(PhosphorIcons.signOut(), size: 20, color: c.ink3),
-              tooltip: 'Выйти',
+              tooltip: 'Покинуть',
             ),
         ],
       ),
@@ -282,37 +311,79 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
               const Spacer(),
-              if (room.isJoined && room.isActive)
+              if (!room.isJoined && room.isActive)
+                // Not in voice yet — show join button
                 GestureDetector(
-                  onTap: () => _toggleMute(room),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
+                  onTap: _joinVoice,
+                  child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: room.isMuted ? c.surface2 : SeeUColors.accent,
+                      color: SeeUColors.accent,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          room.isMuted
-                              ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                              : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-                          size: 13,
-                          color: room.isMuted ? c.ink3 : Colors.white,
-                        ),
+                        Icon(PhosphorIcons.microphone(PhosphorIconsStyle.fill), size: 13, color: Colors.white),
                         const SizedBox(width: 4),
-                        Text(
-                          room.isMuted ? 'Выкл.' : 'Вкл.',
-                          style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600,
-                            color: room.isMuted ? c.ink3 : Colors.white,
-                          ),
+                        const Text(
+                          'Войти',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
                         ),
                       ],
                     ),
                   ),
+                )
+              else if (room.isJoined && room.isActive)
+                // In voice — show mute toggle + leave voice button
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _toggleMute(room),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: room.isMuted ? c.surface2 : SeeUColors.accent,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              room.isMuted
+                                  ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                              size: 13,
+                              color: room.isMuted ? c.ink3 : Colors.white,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              room.isMuted ? 'Выкл.' : 'Вкл.',
+                              style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600,
+                                color: room.isMuted ? c.ink3 : Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _leaveVoice,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: c.surface2,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: c.line),
+                        ),
+                        child: Icon(PhosphorIcons.phoneDisconnect(PhosphorIconsStyle.fill), size: 14, color: SeeUColors.error),
+                      ),
+                    ),
+                  ],
                 ),
             ],
           ),
@@ -367,7 +438,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       );
     }
 
-    _scrollToBottom();
+    // Only auto-scroll when message count increases (new message arrived).
+    final msgCount = msgsState.messages.length;
+    if (msgCount > _prevMsgCount) {
+      _prevMsgCount = msgCount;
+      _scrollToBottom();
+    }
 
     return ListView.builder(
       controller: _scrollController,
@@ -384,6 +460,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       },
     );
   }
+
+  Future<void> _refreshMessages() =>
+      ref.read(roomMessagesProvider(widget.roomId).notifier).load();
 
   // ─── Input bar ───────────────────────────────────────────────────
 

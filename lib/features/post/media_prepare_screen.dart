@@ -448,10 +448,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text(
+                  children: [
+                    Icon(PhosphorIconsBold.sparkle, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
                       'AI-стилизация',
                       style: TextStyle(
                         color: Colors.white,
@@ -839,8 +839,8 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                         shape: BoxShape.circle,
                         gradient: SeeUGradients.heroOrange,
                       ),
-                      child: const Icon(
-                        Icons.auto_awesome,
+                      child: Icon(
+                        PhosphorIconsBold.sparkle,
                         color: Colors.white,
                         size: 18,
                       ),

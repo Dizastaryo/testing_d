@@ -226,16 +226,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 _showSearchSheet();
               },
             ),
-            ListTile(
-              leading: Icon(PhosphorIconsRegular.bellSlash, color: c.ink),
-              title: const Text('Отключить уведомления'),
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Уведомления: скоро появится')),
-                );
-              },
-            ),
             if (isGroup)
               ListTile(
                 leading: const Icon(PhosphorIconsRegular.signOut, color: SeeUColors.error),
@@ -252,39 +242,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   _leaveGroup(sborId: chat?.sborId, isOrganizer: chat?.isOrganizer == true);
                 },
               ),
-            ListTile(
-              leading: const Icon(PhosphorIconsRegular.trash, color: SeeUColors.error),
-              title: const Text('Очистить чат', style: TextStyle(color: SeeUColors.error)),
-              onTap: () async {
-                Navigator.of(sheetCtx).pop();
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    backgroundColor: c.surface,
-                    title: Text('Очистить историю?', style: TextStyle(color: c.ink, fontSize: 17)),
-                    content: Text(
-                      'Все сообщения будут удалены только у тебя.',
-                      style: TextStyle(color: c.ink2, fontSize: 14),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text('Отмена', style: TextStyle(color: c.ink3)),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Очистить', style: TextStyle(color: SeeUColors.error)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Очистка чата: скоро появится')),
-                  );
-                }
-              },
-            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -678,9 +635,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .where((c) => c.id == widget.chatId)
         .cast<Chat?>()
         .firstWhere((_) => true, orElse: () => null);
+    // For group chats otherUser is null — use senderUsername from the message.
     final replyUsername = m.isMe
         ? (me?.username ?? '')
-        : (chat?.otherUser?.username ?? '');
+        : (m.senderUsername.isNotEmpty
+            ? m.senderUsername
+            : (chat?.otherUser?.username ?? ''));
 
     final c = context.seeuColors;
     showModalBottomSheet<void>(
@@ -1332,9 +1292,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               final chats = ref.read(chatListProvider).chats;
               final chat = chats.where((c) => c.id == widget.chatId)
                   .cast<Chat?>().firstWhere((_) => true, orElse: () => null);
+              // For group chats otherUser is null — use senderUsername.
               final username = isMine
                   ? (me?.username ?? '')
-                  : (chat?.otherUser?.username ?? '');
+                  : (msg.senderUsername.isNotEmpty
+                      ? msg.senderUsername
+                      : (chat?.otherUser?.username ?? ''));
               setState(() {
                 _replyingTo = ReplyPreview(
                   id: msg.id,
@@ -1595,6 +1558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildPinnedBanner(ReplyPreview pinned) {
     final c = context.seeuColors;
     return GestureDetector(
+      onTap: () => _scrollToMessage(pinned.id),
       onLongPress: () => _confirmUnpin(),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),

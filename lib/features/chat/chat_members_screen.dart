@@ -538,9 +538,10 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                               width: 1,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.add,
+                          child: Icon(
+                            PhosphorIcons.plus(PhosphorIconsStyle.bold),
                             color: SeeUColors.accent,
+                            size: 20,
                           ),
                         ),
                         title: Text('Добавить участника',
@@ -910,8 +911,8 @@ class _PickUserToAddScreenState extends ConsumerState<_PickUserToAddScreen> {
                           subtitle: Text('@${u.username}',
                               style: SeeUTypography.caption
                                   .copyWith(color: c.ink3)),
-                          trailing: const Icon(Icons.add,
-                              color: SeeUColors.accent),
+                          trailing: Icon(PhosphorIcons.plus(),
+                              color: SeeUColors.accent, size: 20),
                           onTap: () {
                             Navigator.of(context).pop(u);
                           },

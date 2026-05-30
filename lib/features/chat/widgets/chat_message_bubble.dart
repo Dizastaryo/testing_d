@@ -263,18 +263,20 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  /// F3: detect emoji-only messages (1-3 emoji, no other text)
-  static final _emojiOnlyRegex = RegExp(
-    r'^(\p{Emoji}){1,3}$',
-    unicode: true,
-  );
+  /// F3: detect emoji-only messages (1-3 emoji, no other text).
+  /// Uses code-point heuristic: short text, no ASCII letters/digits/whitespace,
+  /// all runes above basic Latin. Covers standard emoji + ZWJ sequences.
+  static bool _isEmojiOnlyText(String text) {
+    if (text.isEmpty || text.length > 36) return false;
+    if (RegExp(r'[a-zA-Z0-9\s]').hasMatch(text)) return false;
+    return text.runes.every((r) => r > 0x7F);
+  }
 
   bool _isEmojiOnly(ChatMessage msg) {
     if (msg.kind == 'deleted' || msg.isDeletedForAll) return false;
     if (msg.kind != 'text' && msg.kind.isNotEmpty) return false;
     if (msg.replyTo != null) return false;
-    final text = msg.text.trim();
-    return text.isNotEmpty && _emojiOnlyRegex.hasMatch(text);
+    return _isEmojiOnlyText(msg.text.trim());
   }
 
   // B1/B2/B3/B4/B5: Redesigned bubble container with gradient, inline time

@@ -18,8 +18,8 @@ import 'sbory_widgets.dart';
 /// Increment to force-refresh all sbory lists (after leave/cancel/create).
 final sborRefreshProvider = StateProvider<int>((ref) => 0);
 
-/// Параметр провайдера: тип-фильтр + город.
-typedef _SboryParams = ({String? type, String city});
+/// Параметр провайдера: тип-фильтр + категория + город.
+typedef _SboryParams = ({String? type, String? category, String city});
 
 final _sboryProvider = FutureProvider.autoDispose
     .family<List<Sbor>, _SboryParams>((ref, p) async {
@@ -27,6 +27,7 @@ final _sboryProvider = FutureProvider.autoDispose
   final api = ref.read(apiClientProvider);
   final params = <String, dynamic>{};
   if (p.type != null && p.type!.isNotEmpty) params['type'] = p.type;
+  if (p.category != null && p.category!.isNotEmpty) params['category'] = p.category;
   if (p.city.isNotEmpty) params['city'] = p.city;
   final r = await api.get(ApiEndpoints.sbory, queryParameters: params);
   final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
@@ -69,7 +70,6 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   bool _showMine = false;
   bool _showBookmarked = false;
   SborCategory? _catFilter;
-  bool _searchActive = false;
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
@@ -236,11 +236,12 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final city = ref.watch(sboryCityProvider);
+    final catName = _catFilter?.name;
     final async = _showBookmarked
         ? ref.watch(_bookmarkedSboryProvider)
         : _showMine
             ? ref.watch(_mySboryProvider)
-            : ref.watch(_sboryProvider((type: _typeFilter, city: city)));
+            : ref.watch(_sboryProvider((type: _typeFilter, category: catName, city: city)));
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -248,9 +249,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         child: Column(
           children: [
             _buildHeader(c),
-            if (_searchActive) _buildSearchBar(c),
-            if (!_searchActive) _buildTypeToggle(c),
-            if (!_searchActive) _buildCategoryChips(c),
+            _buildSearchBar(c),
+            _buildTypeToggle(c),
+            _buildCategoryChips(c),
             Expanded(
               child: async.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -271,7 +272,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                             ref.invalidate(_mySboryProvider);
                           } else {
                             final c2 = ref.read(sboryCityProvider);
-                            ref.invalidate(_sboryProvider((type: _typeFilter, city: c2)));
+                            ref.invalidate(_sboryProvider((type: _typeFilter, category: _catFilter?.name, city: c2)));
                           }
                         },
                         child: const Text('Повторить'),
@@ -280,9 +281,11 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                   ),
                 ),
                 data: (items) {
-                  var filtered = _catFilter == null
-                      ? items
-                      : items.where((s) => s.category == _catFilter).toList();
+                  // For Mine/Bookmarked: apply category client-side (no server-side param).
+                  // For main feed: category is already server-filtered.
+                  var filtered = (_catFilter != null && (_showMine || _showBookmarked))
+                      ? items.where((s) => s.category == _catFilter).toList()
+                      : items;
                   if (_searchQuery.isNotEmpty) {
                     final q = _searchQuery.toLowerCase();
                     filtered = filtered
@@ -347,24 +350,6 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
           ),
           const Spacer(),
           _IconBtn(
-            icon: _searchActive
-                ? PhosphorIcons.x(PhosphorIconsStyle.bold)
-                : PhosphorIcons.magnifyingGlass(),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() {
-                _searchActive = !_searchActive;
-                if (!_searchActive) {
-                  _searchQuery = '';
-                  _searchController.clear();
-                }
-              });
-            },
-            color: c.surface,
-            iconColor: c.ink,
-          ),
-          const SizedBox(width: 8),
-          _IconBtn(
             icon: PhosphorIcons.plus(PhosphorIconsStyle.bold),
             onTap: () {
               HapticFeedback.selectionClick();
@@ -380,9 +365,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
 
   Widget _buildSearchBar(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Container(
-        height: 40,
+        height: 38,
         decoration: BoxDecoration(
           color: c.surface,
           borderRadius: BorderRadius.circular(12),
@@ -391,12 +376,11 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         child: Row(
           children: [
             const SizedBox(width: 10),
-            Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
+            Icon(PhosphorIcons.magnifyingGlass(), size: 15, color: c.ink3),
             const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: _searchController,
-                autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Поиск сборов...',
                   hintStyle: TextStyle(fontSize: 14, color: c.ink3),
@@ -408,6 +392,17 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                 onChanged: (v) => setState(() => _searchQuery = v),
               ),
             ),
+            if (_searchQuery.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(PhosphorIcons.x(), size: 14, color: c.ink3),
+                ),
+              ),
           ],
         ),
       ),
@@ -477,6 +472,10 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
       (SborCategory.draw, 'Творчество', PhosphorIcons.paintBrush()),
       (SborCategory.board, 'Настолки', PhosphorIcons.diceFive()),
       (SborCategory.cinema, 'Кино', PhosphorIcons.filmStrip()),
+      (SborCategory.music, 'Музыка', PhosphorIcons.musicNote()),
+      (SborCategory.food, 'Готовим', PhosphorIcons.forkKnife()),
+      (SborCategory.read, 'Книги', PhosphorIcons.book()),
+      (SborCategory.other, 'Другое', PhosphorIcons.sparkle()),
     ];
     return SizedBox(
       height: 40,
@@ -489,7 +488,13 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
           final (cat, label, icon) = chips[i];
           final active = _catFilter == cat;
           return GestureDetector(
-            onTap: () => setState(() => _catFilter = cat),
+            onTap: () {
+              setState(() => _catFilter = cat);
+              if (!_showMine && !_showBookmarked) {
+                final city2 = ref.read(sboryCityProvider);
+                ref.invalidate(_sboryProvider((type: _typeFilter, category: cat?.name, city: city2)));
+              }
+            },
             child: Container(
               height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -540,49 +545,98 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
     );
   }
 
+  bool get _hasActiveFilter =>
+      _catFilter != null || _typeFilter != null || _showMine || _showBookmarked || _searchQuery.isNotEmpty;
+
+  void _resetFilters() {
+    setState(() {
+      _catFilter = null;
+      _typeFilter = null;
+      _showMine = false;
+      _showBookmarked = false;
+      _searchQuery = '';
+      _searchController.clear();
+    });
+  }
+
   Widget _buildEmpty(SeeUThemeColors c) {
+    final hasFilter = _hasActiveFilter;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIcons.usersThree(), size: 48, color: c.ink4),
+          Icon(
+            hasFilter ? PhosphorIcons.funnel() : PhosphorIcons.usersThree(),
+            size: 48, color: c.ink4,
+          ),
           const SizedBox(height: 12),
           Text(
-            'Сборов пока нет',
+            hasFilter ? 'Ничего не найдено' : 'Сборов пока нет',
             style: SeeUTypography.subtitle.copyWith(color: c.ink),
           ),
           const SizedBox(height: 6),
           Text(
-            'Создай первый — остальные подтянутся',
+            hasFilter
+                ? 'Попробуй другие фильтры'
+                : 'Создай первый — остальные подтянутся',
             style: TextStyle(fontSize: 13, color: c.ink3),
           ),
           const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () => context.push('/sbory/create'),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              decoration: BoxDecoration(
-                color: SeeUColors.accent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(PhosphorIconsBold.plus, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'Создать сбор',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+          if (hasFilter)
+            GestureDetector(
+              onTap: _resetFilters,
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: c.line),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIcons.arrowCounterClockwise(), size: 16, color: c.ink2),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Сбросить фильтры',
+                      style: TextStyle(
+                        color: c.ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => context.push('/sbory/create'),
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsBold.plus, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Создать сбор',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -12,13 +12,14 @@ import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
 import '../post/media_prepare_screen.dart';
+import 'decorations/decoration_item.dart';
+import 'decorations/decoration_picker.dart';
 import 'filters/filter_overlay.dart';
-import 'filters/filter_picker.dart';
-import 'filters/filter_sliders_sheet.dart';
 import 'filters/filter_state.dart';
 import 'filters/frame_effect.dart';
 import 'filters/overlay_effect.dart';
@@ -26,7 +27,6 @@ import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
 import 'masks/mask_debug_config.dart';
 import 'masks/mask_overlay.dart';
-import 'masks/mask_picker.dart';
 import 'widgets/camera_buttons.dart';
 import 'widgets/camera_painters.dart';
 import 'widgets/camera_record_button.dart';
@@ -74,12 +74,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _isRecording = false;
   List<double> _segments = []; // completed segment durations in seconds
   MaskDescriptor? _selectedMask; // AR-маска поверх preview
-  bool _showMaskPicker = false; // toggle для picker'а (по дефолту скрыт)
   FilterState _filter = FilterState.identity; // color/grain/vignette state
-  String? _filterPresetId;
-  bool _showFilterPicker = false;
   OverlayEffect? _overlayEffect; // dust/scratches, light leak, etc.
   FrameEffect? _frameEffect;    // polaroid, film strip, etc.
+
+  // ── Украшения (объединённые фильтры + маски) ──
+  bool _showDecorationPicker = false;
+  String? _selectedDecorationId;
+  Set<String> _savedDecorationIds = {};
   double _currentSegDur = 0.0; // live elapsed seconds for active segment
 
   // ── Timer state ──
@@ -89,7 +91,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   // ── Settings ──
   bool _flashOn = false;
   bool _showGrid = false;
-  String _tab = 'reel'; // photo | reel
 
   // ── Fake music track label ──
   final String _audioTitle = 'Любимая музыка';
@@ -227,6 +228,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         _isSwitching = false;
         _errorMessage = null;
       });
+
+      // Баг 5: восстановить torch на новом контроллере после смены камеры.
+      // Фронтальная камера не поддерживает вспышку — пропускаем.
+      if (_flashOn && !_isFrontCamera) {
+        try {
+          await controller.setFlashMode(FlashMode.torch);
+        } catch (_) {}
+      }
     } on CameraException catch (e) {
       debugPrint('_setupCamera: CameraException: ${e.code} — ${e.description}');
       await controller.dispose();
@@ -284,6 +293,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   double get _totalPct => (_totalWithCurrent / _kMaxDuration).clamp(0.0, 1.0);
 
   void _startRecording() {
+    if (_isRecording || _countdown > 0) return;
     if (_timerSetting > 0) {
       _startCountdown();
     } else {
@@ -311,6 +321,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   void _beginSegment() {
+    if (_isRecording) return; // уже пишем — повторный вызов игнорируем
     if (_controller == null || !_isInitialized) return;
     HapticFeedback.mediumImpact();
     setState(() {
@@ -371,19 +382,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     });
   }
 
-  void _toggleRecord() {
-    if (_isRecording) {
-      _stopRecording();
-    } else {
-      _startRecording();
-    }
-  }
-
-  void _undoLastSegment() {
-    if (_isRecording) _stopRecording();
+  Future<void> _undoLastSegment() async {
+    // Ждём остановки — _stopRecording добавляет сегмент в список,
+    // поэтому await обязателен: без него undo удалит старый сегмент,
+    // а новый (только что остановленный) останется.
+    if (_isRecording) await _stopRecording();
+    if (!mounted) return;
     if (_segments.isEmpty) return;
     HapticFeedback.selectionClick();
-    setState(() => _segments = _segments.sublist(0, _segments.length - 1));
+    setState(() {
+      _segments = _segments.sublist(0, _segments.length - 1);
+      // Галерея preview была открыта _stopRecording — при undo закрываем её,
+      // пользователь продолжает работать с камерой.
+      _showGalleryPreview = false;
+      _galleryFile = null;
+      _galleryBytes = null;
+    });
   }
 
   // ── Photo capture ──────────────────────────────────────────────────────
@@ -585,6 +599,23 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
+  void _applyDecoration(DecorationItem? item) {
+    setState(() {
+      _selectedDecorationId = item?.id;
+      if (item == null) {
+        _filter = FilterState.identity;
+        _selectedMask = null;
+      } else if (item.category == DecorationCategory.filter) {
+        _filter = item.filterPreset!.state;
+        _selectedMask = null;
+      } else {
+        _selectedMask = item.mask;
+        _filter = FilterState.identity;
+      }
+    });
+    _syncFaceTracking();
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────
 
   @override
@@ -594,148 +625,100 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Camera preview ──
-          if (_errorMessage != null)
-            _buildErrorState(_errorMessage!)
-          else if (_isInitialized && _controller != null)
-            GestureDetector(
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              child: FilterOverlay(
-                state: _filter,
-                child: _buildCameraPreview(),
+          // ── Main layout: bounded camera area + solid bottom panel ──
+          Column(
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // ── Camera preview ──
+                    if (_errorMessage != null)
+                      _buildErrorState(_errorMessage!)
+                    else if (_isInitialized && _controller != null)
+                      GestureDetector(
+                        onScaleStart: _onScaleStart,
+                        onScaleUpdate: _onScaleUpdate,
+                        child: FilterOverlay(
+                          state: _filter,
+                          child: _buildCameraPreview(),
+                        ),
+                      )
+                    else
+                      const Center(
+                        child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+                      ),
+
+                    // ── AR mask overlay ──
+                    MaskOverlay(descriptor: _selectedMask),
+
+                    // ── Overlay effect (dust, light leak…) ──
+                    if (_overlayEffect != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: EffectOverlay(effect: _overlayEffect!),
+                        ),
+                      ),
+
+                    // ── Frame effect (polaroid, film strip…) ──
+                    if (_frameEffect != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: FrameOverlay(effect: _frameEffect!),
+                        ),
+                      ),
+
+                    // ── DEBUG: face tracking overlay ──
+                    if (kMaskTuning && _selectedMask != null) const _FaceTrackDebugOverlay(),
+
+                    // ── Grid overlay ──
+                    if (_showGrid)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(painter: CameraGridPainter()),
+                        ),
+                      ),
+
+                    // ── Gradient overlay ──
+                    _buildGradientOverlay(),
+
+                    // ── Top area: segment bar + close/music/flip row ──
+                    _buildTopArea(),
+
+                    // ── Right tools ──
+                    _buildRightTools(),
+
+                    // ── Zoom indicator ──
+                    _buildZoomIndicator(),
+
+                    // ── Camera switching overlay ──
+                    if (_isSwitching)
+                      AnimatedBuilder(
+                        animation: _switchController,
+                        builder: (_, __) => Container(
+                          color: Colors.black
+                              .withValues(alpha: 0.3 * (1 - _switchController.value)),
+                        ),
+                      ),
+
+                    // ── Countdown overlay ──
+                    if (_countdown > 0) _buildCountdownOverlay(),
+                  ],
+                ),
               ),
-            )
-          else
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
-            ),
 
-          // ── AR mask overlay ──
-          MaskOverlay(descriptor: _selectedMask),
+              // ── Solid bottom controls panel ──
+              _buildBottomPanel(),
+            ],
+          ),
 
-          // ── Overlay effect (dust, light leak…) ──
-          if (_overlayEffect != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: EffectOverlay(effect: _overlayEffect!),
-              ),
-            ),
+          // ── Full-screen overlays (above the column layout) ──
 
-          // ── Frame effect (polaroid, film strip…) ──
-          if (_frameEffect != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: FrameOverlay(effect: _frameEffect!),
-              ),
-            ),
-
-          // ── DEBUG: face tracking overlay (remove after debugging) ──
-          if (kMaskTuning && _selectedMask != null) const _FaceTrackDebugOverlay(),
-
-          // ── Grid overlay ──
-          if (_showGrid)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(painter: CameraGridPainter()),
-              ),
-            ),
-
-          // ── Gradient overlay ──
-          _buildGradientOverlay(),
-
-          // ── Top area: segment bar + close/music/flip row ──
-          _buildTopArea(),
-
-          // ── Right tools ──
-          _buildRightTools(),
-
-          // ── Mask picker — между preview и record-row, когда включён ──
-          if (_showMaskPicker)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 220,
-              child: MaskPicker(
-                selected: _selectedMask,
-                onChanged: (m) {
-                  setState(() => _selectedMask = m);
-                  _syncFaceTracking();
-                },
-              ),
-            ),
-
-          // ── Filter picker (presets + sliders entry) ──
-          if (_showFilterPicker)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 220,
-              child: FilterPicker(
-                selectedPresetId: _filterPresetId,
-                state: _filter,
-                selectedOverlay: _overlayEffect,
-                onOverlaySelected: (o) => setState(() => _overlayEffect = o),
-                selectedFrame: _frameEffect,
-                onFrameSelected: (f) => setState(() => _frameEffect = f),
-                onPresetSelected: (preset) {
-                  setState(() {
-                    _filter = preset?.state ?? FilterState.identity;
-                    _filterPresetId = preset?.id;
-                  });
-                },
-                onOpenSliders: () {
-                  showFilterSlidersSheet(
-                    context: context,
-                    initial: _filter,
-                    onChange: (s) {
-                      setState(() {
-                        _filter = s;
-                        _filterPresetId = null;
-                      });
-                    },
-                    onReset: () {
-                      setState(() {
-                        _filter = FilterState.identity;
-                        _filterPresetId = null;
-                      });
-                    },
-                  );
-                },
-              ),
-            ),
-
-          // ── DEBUG: mask adjustment sliders ──
+          // DEBUG: mask adjustment sliders
           if (kMaskTuning && _selectedMask != null)
             _MaskDebugSliders(maskId: _selectedMask!.id),
 
-          // ── Record button row ──
-          _buildRecordRow(),
-
-          // ── Mode tabs ──
-          _buildModeTabs(),
-
-          // ── "Далее" button ──
-          if (_segments.isNotEmpty && !_isRecording)
-            _buildNextButton(),
-
-          // ── Zoom indicator ──
-          _buildZoomIndicator(),
-
-          // ── Camera switching overlay ──
-          if (_isSwitching)
-            AnimatedBuilder(
-              animation: _switchController,
-              builder: (_, __) => Container(
-                color: Colors.black
-                    .withValues(alpha: 0.3 * (1 - _switchController.value)),
-              ),
-            ),
-
-          // ── Countdown overlay ──
-          if (_countdown > 0) _buildCountdownOverlay(),
-
-          // ── Gallery preview overlay ──
+          // Gallery preview
           if (_showGalleryPreview && _galleryFile != null)
             _buildGalleryPreview(),
         ],
@@ -802,36 +785,87 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
+  // ── Bottom controls panel ──────────────────────────────────────────────
+
+  Widget _buildBottomPanel() {
+    return GestureDetector(
+      // Свайп вверх → галерея
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) < -300) {
+          _pickFromGallery();
+        }
+      },
+      child: Container(
+        color: Colors.black,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Пикер украшений (анимированно появляется/скрывается)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOut,
+                child: _showDecorationPicker
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+                        child: DecorationPicker(
+                          allItems: DecorationCatalog.all,
+                          savedIds: _savedDecorationIds,
+                          selectedId: _selectedDecorationId,
+                          onChanged: _applyDecoration,
+                          onToggleSave: (id) => setState(() {
+                            if (_savedDecorationIds.contains(id)) {
+                              _savedDecorationIds = _savedDecorationIds.difference({id});
+                            } else {
+                              _savedDecorationIds = {..._savedDecorationIds, id};
+                            }
+                          }),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 14),
+              _buildRecordRow(),
+              if (_segments.isNotEmpty && !_isRecording) ...[
+                const SizedBox(height: 14),
+                _buildNextButton(),
+              ],
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Gallery preview ────────────────────────────────────────────────────
 
+  bool get _galleryIsVideo {
+    final path = _galleryFile?.path ?? '';
+    final ext = path.split('.').last.toLowerCase();
+    return ['mp4', 'mov', 'webm', 'avi', 'mkv'].contains(ext);
+  }
+
   Widget _buildGalleryPreview() {
+    final isVideo = _galleryIsVideo;
     return Positioned.fill(
       child: Container(
         color: Colors.black,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Pinch-to-zoom image preview
-            InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: _galleryBytes != null
-                  ? Image.memory(_galleryBytes!, fit: BoxFit.contain)
-                  : Container(color: Colors.black),
-            ),
-
-            // Debug path
-            Positioned(
-              bottom: 100,
-              left: 16,
-              right: 16,
-              child: Text(
-                _galleryFile!.path,
-                style: const TextStyle(color: Colors.white54, fontSize: 10),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+            // Preview: видео — VideoPlayer, фото — Image.memory
+            if (isVideo && _galleryFile != null)
+              _VideoGalleryPreview(file: _galleryFile!)
+            else
+              InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: _galleryBytes != null
+                    ? Image.memory(_galleryBytes!, fit: BoxFit.contain)
+                    : Container(color: Colors.black),
               ),
-            ),
 
             // Close (X) button
             Positioned(
@@ -1159,40 +1193,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               active: _showGrid,
               onTap: () => setState(() => _showGrid = !_showGrid),
             ),
-            const SizedBox(height: 12),
-            // AR Masks
-            CameraToolButton(
-              icon: Icon(
-                PhosphorIconsRegular.smiley,
-                color: _selectedMask != null || _showMaskPicker
-                    ? SeeUColors.accent
-                    : Colors.white,
-                size: 22,
-              ),
-              label: 'маска',
-              active: _selectedMask != null,
-              onTap: () => setState(() {
-                _showMaskPicker = !_showMaskPicker;
-                if (_showMaskPicker) _showFilterPicker = false;
-              }),
-            ),
-            const SizedBox(height: 12),
-            // AI / color filters
-            CameraToolButton(
-              icon: Icon(
-                PhosphorIconsFill.sparkle,
-                color: !_filter.isIdentity || _showFilterPicker
-                    ? SeeUColors.accent
-                    : Colors.white,
-                size: 22,
-              ),
-              label: 'фильтр',
-              active: !_filter.isIdentity,
-              onTap: () => setState(() {
-                _showFilterPicker = !_showFilterPicker;
-                if (_showFilterPicker) _showMaskPicker = false;
-              }),
-            ),
           ],
         ),
       ),
@@ -1203,154 +1203,126 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Widget _buildRecordRow() {
     final hasSegments = _segments.isNotEmpty;
+    final showUndo = hasSegments || _isRecording;
 
-    return Positioned(
-      bottom: 130,
-      left: 0,
-      right: 0,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Gallery button
-          GestureDetector(
-            onTap: _pickFromGallery,
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(SeeURadii.small),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  width: 1,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'Галерея',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Галерея (слева)
+        GestureDetector(
+          onTap: _pickFromGallery,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.20),
+                width: 1,
               ),
             ),
+            alignment: Alignment.center,
+            child: const Icon(PhosphorIconsRegular.image, color: Colors.white, size: 22),
           ),
+        ),
 
-          const SizedBox(width: 32),
+        const SizedBox(width: 32),
 
-          // Big record button
-          CameraRecordButton(
-            isRecording: _isRecording,
-            totalPct: _totalPct,
-            isPhotoMode: _tab == 'photo',
-            onPress: _tab == 'photo' ? _takePicture : _toggleRecord,
-          ),
+        // Кнопка съёмки (центр): тап → фото, удержание → видео
+        CameraRecordButton(
+          isRecording: _isRecording,
+          totalPct: _totalPct,
+          isPhotoMode: !_isRecording,
+          onTap: _takePicture,
+          onHoldStart: () {
+            _startRecording();
+          },
+          onHoldEnd: _stopRecording,
+        ),
 
-          const SizedBox(width: 32),
+        const SizedBox(width: 32),
 
-          // Undo button
-          GestureDetector(
-            onTap: hasSegments || _isRecording ? _undoLastSegment : null,
-            child: AnimatedOpacity(
-              opacity: hasSegments || _isRecording ? 1.0 : 0.3,
-              duration: const Duration(milliseconds: 200),
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(PhosphorIconsRegular.arrowCounterClockwise, color: Colors.white, size: 22),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Mode tabs ──────────────────────────────────────────────────────────
-
-  Widget _buildModeTabs() {
-    // `live` and `duet` tabs were UI-only stubs without backend/recording
-    // wiring — hidden 2026-05-09 to stop dead-end taps. Re-add when those
-    // modes have real flows.
-    const tabs = [
-      ('photo', 'Фото'),
-      ('reel', 'Reel'),
-    ];
-
-    return Positioned(
-      bottom: 78,
-      left: 0,
-      right: 0,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: tabs.map((entry) {
-          final (key, label) = entry;
-          final selected = _tab == key;
-          return GestureDetector(
-            onTap: () {
-              if (_isRecording) _stopRecording();
-              setState(() => _tab = key);
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: selected ? Colors.white : Colors.white.withValues(alpha: 0.55),
-                      fontSize: 13,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  AnimatedOpacity(
-                    opacity: selected ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 150),
-                    child: Container(
-                      width: 5,
-                      height: 5,
-                      decoration: const BoxDecoration(
-                        color: _kAccent,
-                        shape: BoxShape.circle,
+        // Справа: отмена сегмента (при записи) или украшения
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: showUndo
+              ? GestureDetector(
+                  key: const ValueKey('undo'),
+                  onTap: _undoLastSegment,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.20),
+                        width: 1,
                       ),
                     ),
+                    alignment: Alignment.center,
+                    child: const Icon(PhosphorIconsRegular.arrowCounterClockwise,
+                        color: Colors.white, size: 22),
                   ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+                )
+              : GestureDetector(
+                  key: const ValueKey('deco'),
+                  onTap: () => setState(
+                      () => _showDecorationPicker = !_showDecorationPicker),
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: _showDecorationPicker || _selectedDecorationId != null
+                          ? SeeUColors.accent.withValues(alpha: 0.18)
+                          : Colors.white.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _showDecorationPicker || _selectedDecorationId != null
+                            ? SeeUColors.accent
+                            : Colors.white.withValues(alpha: 0.20),
+                        width: 1.5,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      PhosphorIconsFill.sparkle,
+                      color: _showDecorationPicker || _selectedDecorationId != null
+                          ? SeeUColors.accent
+                          : Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
   // ── "Далее" button ─────────────────────────────────────────────────────
 
   Widget _buildNextButton() {
-    return Positioned(
-      right: 14,
-      bottom: 200,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
       child: GestureDetector(
         onTap: () {
           HapticFeedback.mediumImpact();
-          widget.onNext?.call();
+          if (widget.onNext != null) {
+            widget.onNext!();
+          } else if (_galleryFile != null) {
+            final file = _galleryFile!;
+            final ext = file.path.split('.').last.toLowerCase();
+            final isVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv'].contains(ext);
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MediaPrepareScreen(file: file, isVideo: isVideo),
+              ),
+            );
+          }
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          height: 46,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
@@ -1360,25 +1332,25 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             borderRadius: BorderRadius.circular(SeeURadii.pill),
             boxShadow: [
               BoxShadow(
-                color: _kAccent.withValues(alpha: 0.45),
-                blurRadius: 16,
+                color: _kAccent.withValues(alpha: 0.40),
+                blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
           child: const Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
                 'Далее',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 13,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              SizedBox(width: 4),
-              const Icon(PhosphorIconsRegular.caretRight, color: Colors.white, size: 16),
+              SizedBox(width: 6),
+              Icon(PhosphorIconsRegular.caretRight, color: Colors.white, size: 18),
             ],
           ),
         ),
@@ -1390,7 +1362,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Widget _buildZoomIndicator() {
     return Positioned(
-      bottom: 160,
+      bottom: 20,
       left: 0,
       right: 0,
       child: Center(
@@ -1428,6 +1400,60 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             child: CameraCountdownNumber(value: _countdown),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Video preview for gallery overlay ────────────────────────────────────
+
+class _VideoGalleryPreview extends StatefulWidget {
+  final XFile file;
+  const _VideoGalleryPreview({required this.file});
+
+  @override
+  State<_VideoGalleryPreview> createState() => _VideoGalleryPreviewState();
+}
+
+class _VideoGalleryPreviewState extends State<_VideoGalleryPreview> {
+  VideoPlayerController? _ctrl;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = kIsWeb
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
+        : VideoPlayerController.file(File(widget.file.path));
+    _ctrl!
+      ..setLooping(true)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _ready = true);
+          _ctrl!.play();
+        }
+      }).catchError((e) {
+        debugPrint('_VideoGalleryPreview init error: $e');
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready || _ctrl == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+      );
+    }
+    return Center(
+      child: AspectRatio(
+        aspectRatio: _ctrl!.value.aspectRatio,
+        child: VideoPlayer(_ctrl!),
       ),
     );
   }
