@@ -58,28 +58,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
-  Future<void> _joinVoice() async {
-    HapticFeedback.mediumImpact();
-    try {
-      await ref.read(apiClientProvider).post(ApiEndpoints.joinRoom(widget.roomId));
-      ref.read(roomDetailProvider(widget.roomId).notifier).load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
-    }
-  }
-
-  Future<void> _leaveVoice() async {
-    HapticFeedback.mediumImpact();
-    try {
-      await ref.read(apiClientProvider).delete(ApiEndpoints.leaveRoom(widget.roomId));
-      ref.read(roomDetailProvider(widget.roomId).notifier).load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
-    }
-  }
-
   Future<void> _toggleMute(Room room) async {
     HapticFeedback.mediumImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
@@ -308,79 +286,37 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
               const Spacer(),
-              if (!room.isJoined && room.isActive)
-                // Not in voice yet — show join button
+              if (room.isJoined && room.isActive)
                 GestureDetector(
-                  onTap: _joinVoice,
-                  child: Container(
+                  onTap: () => _toggleMute(room),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: SeeUColors.accent,
+                      color: room.isMuted ? c.surface2 : SeeUColors.accent,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(PhosphorIcons.microphone(PhosphorIconsStyle.fill), size: 13, color: Colors.white),
+                        Icon(
+                          room.isMuted
+                              ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
+                              : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                          size: 13,
+                          color: room.isMuted ? c.ink3 : Colors.white,
+                        ),
                         const SizedBox(width: 4),
-                        const Text(
-                          'Войти',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                        Text(
+                          room.isMuted ? 'Выкл.' : 'Вкл.',
+                          style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600,
+                            color: room.isMuted ? c.ink3 : Colors.white,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                )
-              else if (room.isJoined && room.isActive)
-                // In voice — show mute toggle + leave voice button
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _toggleMute(room),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: room.isMuted ? c.surface2 : SeeUColors.accent,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              room.isMuted
-                                  ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                                  : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-                              size: 13,
-                              color: room.isMuted ? c.ink3 : Colors.white,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              room.isMuted ? 'Выкл.' : 'Вкл.',
-                              style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600,
-                                color: room.isMuted ? c.ink3 : Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: _leaveVoice,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: c.surface2,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: c.line),
-                        ),
-                        child: Icon(PhosphorIcons.phoneDisconnect(PhosphorIconsStyle.fill), size: 14, color: SeeUColors.error),
-                      ),
-                    ),
-                  ],
                 ),
             ],
           ),

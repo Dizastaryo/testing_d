@@ -163,7 +163,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
       }
 
       if (!mounted) return;
-      context.go('/room/${room.id}');
+      context.replace('/room/${room.id}');
     } catch (e) {
       if (!mounted) return;
       setState(() => _creating = false);
