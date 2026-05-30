@@ -135,6 +135,16 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
             if (state.room != null) {
               state = state.copyWith(room: state.room!.copyWith(isActive: false));
             }
+          case 'room.updated':
+            if (payload != null && state.room != null) {
+              state = state.copyWith(
+                room: state.room!.copyWith(
+                  name: payload['name'] as String?,
+                  description: payload['description'] as String?,
+                  coverUrl: payload['cover_url'] as String?,
+                ),
+              );
+            }
         }
       });
     });
@@ -170,6 +180,20 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
       return pt;
     }).toList();
     state = state.copyWith(room: room.copyWith(participants: updated));
+  }
+
+  Future<void> update({
+    required String name,
+    required String description,
+    required String coverUrl,
+  }) async {
+    final r = await _api.patch(ApiEndpoints.roomById(roomId), data: {
+      'name': name,
+      'description': description,
+      'cover_url': coverUrl,
+    });
+    final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
+    state = RoomDetailState(room: Room.fromJson(data as Map<String, dynamic>));
   }
 
   /// Optimistically update own mute state, then confirm via server
@@ -351,12 +375,23 @@ class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
     );
   }
 
+  Future<void> setAdmin(String userId, {required bool grant}) async {
+    if (grant) {
+      await _api.post(ApiEndpoints.roomAdmin(roomId, userId));
+    } else {
+      await _api.delete(ApiEndpoints.roomAdmin(roomId, userId));
+    }
+    await load();
+  }
+
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
         final payload = evt.payload as Map<String, dynamic>?;
         if (payload?['room_id'] != roomId) return;
-        if (evt.type == 'room.member_added' || evt.type == 'room.member_removed') {
+        if (evt.type == 'room.member_added' ||
+            evt.type == 'room.member_removed' ||
+            evt.type == 'room.admin_changed') {
           load();
         }
       });

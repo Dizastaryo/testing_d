@@ -40,6 +40,8 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     final membersState = ref.watch(roomMembersProvider(widget.roomId));
     final myId = ref.watch(authProvider).user?.id ?? '';
     final isCreator = myId == widget.creatorId;
+    final myMember = membersState.members.where((m) => m.userId == myId).firstOrNull;
+    final isAdmin = isCreator || (myMember?.isAdmin ?? false);
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -70,7 +72,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                       ],
                     ),
                   ),
-                  if (isCreator)
+                  if (isAdmin)
                     GestureDetector(
                       onTap: () => _showInvitePicker(c),
                       child: Container(
@@ -107,7 +109,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : membersState.error != null && membersState.members.isEmpty
                       ? _buildError(c, membersState.error!)
-                      : _buildList(c, membersState.members, myId, isCreator),
+                      : _buildList(c, membersState.members, myId, isCreator, isAdmin),
             ),
 
             // Leave button for non-creators
@@ -130,6 +132,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     List<RoomMember> members,
     String myId,
     bool isCreator,
+    bool isAdmin,
   ) {
     return RefreshIndicator(
       onRefresh: () => ref.read(roomMembersProvider(widget.roomId).notifier).load(),
@@ -142,11 +145,20 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
         itemBuilder: (_, i) {
           final m = members[i];
           final isSelf = m.userId == myId;
+          // Can remove: admins can remove non-admins; creator can remove admins too
+          final canRemove = isAdmin && !isSelf && !m.isCreator &&
+              (isCreator || !m.isAdmin);
+          // Only creator can toggle admin status on others
+          final canToggleAdmin = isCreator && !isSelf && !m.isCreator;
           return _MemberTile(
             member: m,
             isSelf: isSelf,
-            canRemove: isCreator && !isSelf && !m.isCreator,
-            onRemove: isCreator ? () => _confirmRemove(c, m) : null,
+            canRemove: canRemove,
+            canToggleAdmin: canToggleAdmin,
+            onRemove: canRemove ? () => _confirmRemove(c, m) : null,
+            onToggleAdmin: canToggleAdmin
+                ? () => _confirmToggleAdmin(c, m)
+                : null,
             c: c,
           );
         },
@@ -236,6 +248,73 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     );
   }
 
+  void _confirmToggleAdmin(SeeUThemeColors c, RoomMember member) {
+    HapticFeedback.mediumImpact();
+    final grant = !member.isAdmin;
+    showSeeUBottomSheet(
+      context: context,
+      builder: (sheetCtx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              grant ? 'Назначить администратором?' : 'Снять с администратора?',
+              style: SeeUTypography.title.copyWith(color: c.ink),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              grant
+                  ? '${member.fullName} сможет редактировать комнату и приглашать участников.'
+                  : '${member.fullName} потеряет права администратора.',
+              style: SeeUTypography.body.copyWith(color: c.ink2),
+            ),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                try {
+                  await ref
+                      .read(roomMembersProvider(widget.roomId).notifier)
+                      .setAdmin(member.userId, grant: grant);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Ошибка: $e')),
+                    );
+                  }
+                }
+              },
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: grant ? SeeUColors.accent : c.surface2,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  grant ? 'Назначить' : 'Снять',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: grant ? Colors.white : c.ink,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SeeUButton(
+              label: 'Отмена',
+              variant: SeeUButtonVariant.secondary,
+              onTap: () => Navigator.of(sheetCtx).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showInvitePicker(SeeUThemeColors c) {
     showModalBottomSheet(
       context: context, // this.context
@@ -259,14 +338,18 @@ class _MemberTile extends StatelessWidget {
   final RoomMember member;
   final bool isSelf;
   final bool canRemove;
+  final bool canToggleAdmin;
   final VoidCallback? onRemove;
+  final VoidCallback? onToggleAdmin;
   final SeeUThemeColors c;
 
   const _MemberTile({
     required this.member,
     required this.isSelf,
     required this.canRemove,
+    this.canToggleAdmin = false,
     this.onRemove,
+    this.onToggleAdmin,
     required this.c,
   });
 
@@ -353,21 +436,10 @@ class _MemberTile extends StatelessWidget {
                     ),
                     if (member.isCreator) ...[
                       const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: SeeUColors.accent.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Создатель',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: SeeUColors.accent,
-                          ),
-                        ),
-                      ),
+                      _roleBadge('Создатель', SeeUColors.accent),
+                    ] else if (member.isAdmin) ...[
+                      const SizedBox(width: 6),
+                      _roleBadge('Админ', const Color(0xFF6C63FF)),
                     ],
                   ],
                 ),
@@ -379,14 +451,37 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
           ),
-          // Remove button (creator only, non-self)
+          // Toggle admin button (creator only, non-self, non-creator target)
+          if (canToggleAdmin)
+            GestureDetector(
+              onTap: onToggleAdmin,
+              child: Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.only(left: 6),
+                decoration: BoxDecoration(
+                  color: member.isAdmin
+                      ? const Color(0xFF6C63FF).withValues(alpha: 0.12)
+                      : c.surface2,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  member.isAdmin
+                      ? PhosphorIcons.shieldSlash()
+                      : PhosphorIcons.shieldStar(),
+                  size: 16,
+                  color: member.isAdmin ? const Color(0xFF6C63FF) : c.ink3,
+                ),
+              ),
+            ),
+          // Remove button (admins for non-admins, creator for all)
           if (canRemove)
             GestureDetector(
               onTap: onRemove,
               child: Container(
                 width: 32,
                 height: 32,
-                margin: const EdgeInsets.only(left: 8),
+                margin: const EdgeInsets.only(left: 6),
                 decoration: BoxDecoration(
                   color: SeeUColors.error.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
@@ -399,6 +494,24 @@ class _MemberTile extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _roleBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
       ),
     );
   }

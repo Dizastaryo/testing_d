@@ -6,6 +6,7 @@ class RoomMember {
   final String? avatarUrl;
   final bool isMuted;
   final bool isCreator;
+  final bool isAdmin;
   final DateTime joinedAt;
 
   const RoomMember({
@@ -15,6 +16,7 @@ class RoomMember {
     this.avatarUrl,
     this.isMuted = false,
     this.isCreator = false,
+    this.isAdmin = false,
     required this.joinedAt,
   });
 
@@ -25,6 +27,7 @@ class RoomMember {
         avatarUrl: j['avatar_url'] as String?,
         isMuted: j['is_muted'] as bool? ?? false,
         isCreator: j['is_creator'] as bool? ?? false,
+        isAdmin: j['is_admin'] as bool? ?? false,
         joinedAt: DateTime.tryParse(j['joined_at'] as String? ?? '') ?? DateTime.now(),
       );
 }
@@ -77,6 +80,7 @@ class Room {
   final DateTime? lastMessageAt;
   final bool isJoined;
   final bool isMuted;
+  final bool isAdmin;
 
   const Room({
     required this.id,
@@ -94,6 +98,7 @@ class Room {
     this.lastMessageAt,
     this.isJoined = false,
     this.isMuted = false,
+    this.isAdmin = false,
   });
 
   bool get isVoice => type == 'voice';
@@ -119,6 +124,7 @@ class Room {
             : null,
         isJoined: j['is_joined'] as bool? ?? false,
         isMuted: j['is_muted'] as bool? ?? false,
+        isAdmin: j['is_admin'] as bool? ?? false,
       );
 
   Room copyWith({
@@ -127,16 +133,20 @@ class Room {
     bool? isJoined,
     bool? isMuted,
     bool? isActive,
+    bool? isAdmin,
     String? lastMessage,
     DateTime? lastMessageAt,
+    String? name,
+    String? description,
+    String? coverUrl,
   }) =>
       Room(
         id: id,
         creatorId: creatorId,
         type: type,
-        name: name,
-        description: description,
-        coverUrl: coverUrl,
+        name: name ?? this.name,
+        description: description ?? this.description,
+        coverUrl: coverUrl ?? this.coverUrl,
         isPublic: isPublic,
         isActive: isActive ?? this.isActive,
         creatorName: creatorName,
@@ -146,6 +156,7 @@ class Room {
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         isJoined: isJoined ?? this.isJoined,
         isMuted: isMuted ?? this.isMuted,
+        isAdmin: isAdmin ?? this.isAdmin,
       );
 }
 

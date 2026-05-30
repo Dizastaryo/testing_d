@@ -164,6 +164,7 @@ class ApiEndpoints {
   static String roomMembers(String id) => '/rooms/$id/members';
   static String roomInvite(String id) => '/rooms/$id/invite';
   static String roomMember(String id, String userId) => '/rooms/$id/members/$userId';
+  static String roomAdmin(String id, String userId) => '/rooms/$id/admins/$userId';
 
   // === Library Service endpoints ===
   static const String files = '/files';

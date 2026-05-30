@@ -154,8 +154,26 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     );
   }
 
+  void _showEditSheet(Room room) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _RoomEditSheet(
+        room: room,
+        onSaved: (name, desc, cover) async {
+          await ref
+              .read(roomDetailProvider(widget.roomId).notifier)
+              .update(name: name, description: desc, coverUrl: cover);
+          ref.read(roomListProvider.notifier).load();
+        },
+      ),
+    );
+  }
+
   Widget _buildHeader(SeeUThemeColors c, Room room, String myId) {
     final isCreator = room.creatorId == myId;
+    final isAdmin = room.isAdmin || isCreator;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
@@ -220,6 +238,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             icon: Icon(PhosphorIcons.users(), size: 20, color: c.ink),
             tooltip: 'Участники',
           ),
+          // Admin: edit room
+          if (isAdmin)
+            IconButton(
+              onPressed: () => _showEditSheet(room),
+              icon: Icon(PhosphorIcons.pencilSimple(), size: 20, color: c.ink),
+              tooltip: 'Редактировать',
+            ),
           // Creator: close room; member: leave
           if (isCreator && room.isActive)
             IconButton(
@@ -641,6 +666,185 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Room edit sheet ──────────────────────────────────────────────
+
+class _RoomEditSheet extends StatefulWidget {
+  final Room room;
+  final Future<void> Function(String name, String description, String coverUrl) onSaved;
+
+  const _RoomEditSheet({required this.room, required this.onSaved});
+
+  @override
+  State<_RoomEditSheet> createState() => _RoomEditSheetState();
+}
+
+class _RoomEditSheetState extends State<_RoomEditSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _coverCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.room.name);
+    _descCtrl = TextEditingController(text: widget.room.description ?? '');
+    _coverCtrl = TextEditingController(text: widget.room.coverUrl ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    _coverCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onSaved(name, _descCtrl.text.trim(), _coverCtrl.text.trim());
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: c.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Редактировать комнату',
+                style: SeeUTypography.title.copyWith(color: c.ink),
+              ),
+              const SizedBox(height: 20),
+              _label('Название', c),
+              const SizedBox(height: 6),
+              _buildField(
+                controller: _nameCtrl,
+                hint: 'Название комнаты',
+                c: c,
+              ),
+              const SizedBox(height: 16),
+              _label('Описание', c),
+              const SizedBox(height: 6),
+              _buildField(
+                controller: _descCtrl,
+                hint: 'Необязательно',
+                maxLines: 3,
+                c: c,
+              ),
+              const SizedBox(height: 16),
+              _label('Обложка (URL)', c),
+              const SizedBox(height: 6),
+              _buildField(
+                controller: _coverCtrl,
+                hint: 'https://...',
+                c: c,
+              ),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: _saving ? null : _save,
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: SeeUGradients.heroOrange,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Сохранить',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text, SeeUThemeColors c) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: c.ink2,
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String hint,
+    int maxLines = 1,
+    required SeeUThemeColors c,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        maxLines: maxLines,
+        style: TextStyle(fontSize: 14, color: c.ink),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: c.ink3),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: InputBorder.none,
+        ),
       ),
     );
   }
