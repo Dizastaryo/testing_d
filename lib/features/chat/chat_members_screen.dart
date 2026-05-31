@@ -142,11 +142,11 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
   /// chat_create_group_screen — выносить в shared-файл пока нет смысла,
   /// набор крошечный и контекст разный.
   static List<String> get _coverPresets => [
-    '${AppConfig.apiOrigin}/uploads/seed/highlights/h1.jpg',
-    '${AppConfig.apiOrigin}/uploads/seed/highlights/h2.jpg',
-    '${AppConfig.apiOrigin}/uploads/seed/highlights/h3.jpg',
-    '${AppConfig.apiOrigin}/uploads/seed/highlights/h4.jpg',
-    '${AppConfig.apiOrigin}/uploads/seed/highlights/h5.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h1.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h2.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h3.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h4.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h5.jpg',
   ];
 
   Future<void> _showEditGroupSheet() async {

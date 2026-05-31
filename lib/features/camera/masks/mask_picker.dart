@@ -107,7 +107,7 @@ class MaskPicker extends ConsumerWidget {
               },
               child: ClipOval(
                 child: CachedNetworkImage(
-                  imageUrl: AppConfig.apiOrigin + m.fileUrl,
+                  imageUrl: AppConfig.absUrl(m.fileUrl),
                   width: 46,
                   height: 46,
                   fit: BoxFit.cover,
@@ -132,7 +132,7 @@ class MaskPicker extends ConsumerWidget {
     return aiMaskDescriptor(
       id: m.id,
       label: _shortenPrompt(m.prompt),
-      imageUrl: AppConfig.apiOrigin + m.fileUrl,
+      imageUrl: AppConfig.absUrl(m.fileUrl),
     );
   }
 

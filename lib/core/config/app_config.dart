@@ -25,6 +25,11 @@ class AppConfig {
     defaultValue: 'http://192.168.1.3:8001/api/v1',
   );
 
+  static const String r2PublicUrl = String.fromEnvironment(
+    'R2_PUBLIC_URL',
+    defaultValue: 'https://pub-5eaec9d0e404430aae5675661d189e8f.r2.dev',
+  );
+
   static const String videoBaseUrl = String.fromEnvironment(
     'VIDEO_BASE_URL',
     defaultValue: 'http://192.168.1.3:8002/api/v1',
@@ -77,6 +82,15 @@ class AppConfig {
     'MAIN_APP_URL',
     defaultValue: 'http://192.168.1.6:5000',
   );
+
+  /// Converts a server URL to an absolute URL.
+  /// R2 URLs (https://...) are returned as-is.
+  /// Relative /uploads/... paths are prefixed with apiOrigin.
+  static String absUrl(String url) {
+    if (url.isEmpty) return url;
+    if (url.startsWith('http')) return url;
+    return apiOrigin + url;
+  }
 
   /// Strips `/api/v1` from the base URL so callers can build absolute media URLs
   /// from server-relative paths like `/uploads/2026/05/04/foo.png`.

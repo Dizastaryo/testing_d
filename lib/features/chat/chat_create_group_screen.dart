@@ -11,6 +11,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/config/app_config.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/user.dart';
@@ -36,12 +37,12 @@ class _ChatCreateGroupScreenState
   Timer? _debounce;
 
   // Карточки для выбора cover'а — 5 seed-пресетов + кнопка загрузки своего.
-  static const _coverPresets = [
-    '/uploads/seed/highlights/h1.jpg',
-    '/uploads/seed/highlights/h2.jpg',
-    '/uploads/seed/highlights/h3.jpg',
-    '/uploads/seed/highlights/h4.jpg',
-    '/uploads/seed/highlights/h5.jpg',
+  static List<String> get _coverPresets => [
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h1.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h2.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h3.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h4.jpg',
+    '${AppConfig.r2PublicUrl}/uploads/seed/highlights/h5.jpg',
   ];
 
   String? _coverUrl;

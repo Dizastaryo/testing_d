@@ -122,7 +122,7 @@ class _StylizeSheetBodyState extends ConsumerState<_StylizeSheetBody> {
 
       // 3. Download stylized bytes — preview'у нужны bytes.
       final bytesResp = await api.get<List<int>>(
-        AppConfig.apiOrigin + resultUrl,
+        AppConfig.absUrl(resultUrl),
         options: Options(responseType: ResponseType.bytes),
       );
       final bytes = Uint8List.fromList(bytesResp.data!);
