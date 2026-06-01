@@ -43,6 +43,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     CallService.instance.minimized.addListener(_onMinimized);
     CallService.instance.lastError.addListener(_onCallError);
     GroupCallService.instance.session.addListener(_onGroupSession);
+    GroupCallService.instance.lastError.addListener(_onGroupCallError);
   }
 
   @override
@@ -51,6 +52,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     CallService.instance.minimized.removeListener(_onMinimized);
     CallService.instance.lastError.removeListener(_onCallError);
     GroupCallService.instance.session.removeListener(_onGroupSession);
+    GroupCallService.instance.lastError.removeListener(_onGroupCallError);
     super.dispose();
   }
 
@@ -58,6 +60,20 @@ class _CallListenerState extends ConsumerState<CallListener> {
     final err = CallService.instance.lastError.value;
     if (err == null || err.isEmpty) return;
     CallService.instance.lastError.value = null; // сбрасываем сразу
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(err),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _onGroupCallError() {
+    final err = GroupCallService.instance.lastError.value;
+    if (err == null || err.isEmpty) return;
+    GroupCallService.instance.lastError.value = null;
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -135,10 +151,23 @@ class _CallListenerState extends ConsumerState<CallListener> {
             GroupCallService.instance.onRealtimeEvent(evt);
           } else {
             // Peer signaling (offer/answer/ice/invite/accept/decline/end).
-            // Если group-session активна — пробуем сначала туда. CallService
-            // и GroupCallService совместимы — каждый обработает свои peer ID'шники.
             if (GroupCallService.instance.session.value != null) {
-              GroupCallService.instance.onRealtimeEvent(evt);
+              // #32: входящий 1-1 звонок во время активного group call → авто-отклонить,
+              // чтобы звонящий не ждал таймаута вместо ответа.
+              if (evt.type == 'call.invite') {
+                final payload = evt.payload;
+                if (payload is Map) {
+                  final from = payload['from_user_id']?.toString() ?? '';
+                  if (from.isNotEmpty) {
+                    ref.read(realtimeSenderProvider).send(
+                      'call.decline',
+                      {'to_user_id': from},
+                    );
+                  }
+                }
+              } else {
+                GroupCallService.instance.onRealtimeEvent(evt);
+              }
             } else {
               CallService.instance.onRealtimeEvent(evt);
             }

@@ -65,6 +65,7 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
   }
 
   void addRoom(Room room) {
+
     state = state.copyWith(rooms: [room, ...state.rooms]);
   }
 
@@ -121,7 +122,9 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        final payload = evt.payload as Map<String, dynamic>?;
+        final payload = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
         if (payload?['room_id'] != roomId) return;
 
         switch (evt.type) {
@@ -336,7 +339,9 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
         if (evt.type != 'room.message') return;
-        final payload = evt.payload as Map<String, dynamic>?;
+        final payload = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
         if (payload?['room_id'] != roomId) return;
         final msgJson = payload?['message'] as Map<String, dynamic>?;
         if (msgJson == null) return;
@@ -437,7 +442,9 @@ class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        final payload = evt.payload as Map<String, dynamic>?;
+        final payload = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
         if (payload?['room_id'] != roomId) return;
         if (evt.type == 'room.member_added' ||
             evt.type == 'room.member_removed' ||

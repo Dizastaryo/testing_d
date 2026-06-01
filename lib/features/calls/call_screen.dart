@@ -176,6 +176,38 @@ class _CallScreenState extends State<CallScreen> {
                 ),
               ),
 
+              // #25: Reconnecting overlay banner.
+              if (session.status == CallStatus.reconnecting)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.70),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Восстановление связи…',
+                            style: TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
               // Bottom controls — mute / camera / switch / end.
               Positioned(
                 left: 0,
@@ -376,35 +408,46 @@ class _CallScreenState extends State<CallScreen> {
           // C-2: voice-call → скрываем camera-toggle + switch-cam (камера
           // не используется, кнопки no-op'нули бы).
           final isVoice = s.kind == CallKind.voice;
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              CallSmallButton(
-                icon: muted
-                    ? PhosphorIconsFill.microphoneSlash
-                    : PhosphorIconsFill.microphone,
-                active: muted,
-                onTap: CallService.instance.toggleMute,
-              ),
-              if (!isVoice) ...[
+          return ValueListenableBuilder<bool>(
+            valueListenable: CallService.instance.isSpeakerOn,
+            builder: (_, speakerOn, __) => Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
                 CallSmallButton(
-                  icon: cameraOff
-                      ? PhosphorIconsFill.videoCameraSlash
-                      : PhosphorIconsFill.videoCamera,
-                  active: cameraOff,
-                  onTap: CallService.instance.toggleCamera,
+                  icon: muted
+                      ? PhosphorIconsFill.microphoneSlash
+                      : PhosphorIconsFill.microphone,
+                  active: muted,
+                  onTap: CallService.instance.toggleMute,
                 ),
+                // #23: speaker / earpiece toggle
                 CallSmallButton(
-                  icon: PhosphorIconsRegular.arrowsClockwise,
-                  onTap: CallService.instance.switchCamera,
+                  icon: speakerOn
+                      ? PhosphorIconsFill.speakerHigh
+                      : PhosphorIconsFill.speakerLow,
+                  active: speakerOn,
+                  onTap: CallService.instance.toggleSpeaker,
+                ),
+                if (!isVoice) ...[
+                  CallSmallButton(
+                    icon: cameraOff
+                        ? PhosphorIconsFill.videoCameraSlash
+                        : PhosphorIconsFill.videoCamera,
+                    active: cameraOff,
+                    onTap: CallService.instance.toggleCamera,
+                  ),
+                  CallSmallButton(
+                    icon: PhosphorIconsRegular.arrowsClockwise,
+                    onTap: CallService.instance.switchCamera,
+                  ),
+                ],
+                CallBigButton(
+                  icon: PhosphorIconsFill.phoneSlash,
+                  color: SeeUColors.error,
+                  onTap: CallService.instance.hangup,
                 ),
               ],
-              CallBigButton(
-                icon: PhosphorIconsFill.phoneSlash,
-                color: SeeUColors.error,
-                onTap: CallService.instance.hangup,
-              ),
-            ],
+            ),
           );
         },
       ),

@@ -82,6 +82,7 @@ class CallService {
   final ValueNotifier<MediaStream?> remoteStream = ValueNotifier(null);
   final ValueNotifier<bool> isMuted = ValueNotifier(false);
   final ValueNotifier<bool> isCameraOff = ValueNotifier(false);
+  final ValueNotifier<bool> isSpeakerOn = ValueNotifier(false);
   /// C-6: PiP флаг. true = CallScreen свёрнут, CallListener рендерит
   /// floating mini-bubble поверх всего app'а. Tap на mini → set false +
   /// re-open full-screen. Сбрасывается на каждый новый звонок.
@@ -102,6 +103,9 @@ class CallService {
 
   // C-5: timer для ICE-restart fallback'а — даём 10 сек на восстановление.
   Timer? _reconnectTimer;
+
+  // #9: таймаут исходящего звонка — 60 сек без ответа → автоматический hangup.
+  Timer? _inviteTimer;
 
   CallSender? _sender;
 
@@ -228,6 +232,13 @@ class CallService {
       kind: kind,
     );
     _startRing(CallStatus.outgoingRinging);
+    // #9: 60 секунд без ответа → автоматический hangup.
+    _inviteTimer?.cancel();
+    _inviteTimer = Timer(const Duration(seconds: 60), () {
+      if (session.value?.status == CallStatus.outgoingRinging) {
+        hangup();
+      }
+    });
     await _initLocalStream();
     _send('call.invite', {
       'to_user_id': peerId,
@@ -242,7 +253,20 @@ class CallService {
     if (s == null || s.status != CallStatus.incomingRinging) return;
     session.value = s.copyWith(status: CallStatus.connecting);
     await _initLocalStream();
+    // #2: после await проверяем — cleanup мог запуститься (getUserMedia упал
+    // или caller сбросил пока ждали permission dialog). Без этого создаётся
+    // orphaned PeerConnection и отправляется accept в мёртвую сессию.
+    if (session.value == null ||
+        session.value!.status == CallStatus.ended ||
+        session.value!.status == CallStatus.idle) {
+      return;
+    }
     await _ensurePeerConnection();
+    if (session.value == null ||
+        session.value!.status == CallStatus.ended ||
+        session.value!.status == CallStatus.idle) {
+      return;
+    }
     _send('call.accept', {'to_user_id': s.peerId});
     // Caller на свой call.accept event создаст offer и отправит call.offer.
   }
@@ -292,6 +316,18 @@ class CallService {
       await Helper.switchCamera(tracks.first);
     } catch (e) {
       appLog.warn('[CallService] switchCamera failed', e);
+    }
+  }
+
+  /// #23: переключение громкой связи (speaker ↔ earpiece).
+  /// flutter_webrtc Helper.setSpeakerphoneOn работает на Android и iOS.
+  Future<void> toggleSpeaker() async {
+    final next = !isSpeakerOn.value;
+    try {
+      await Helper.setSpeakerphoneOn(next);
+      isSpeakerOn.value = next;
+    } catch (e) {
+      appLog.warn('[CallService] toggleSpeaker failed', e);
     }
   }
 
@@ -346,6 +382,19 @@ class CallService {
                 'height': 480,
               },
       });
+      // #3: пока ждали getUserMedia (диалог разрешений), пользователь мог
+      // нажать hangup или пришёл call.end. Если сессия уже мертва — немедленно
+      // освобождаем только что полученный стрим, иначе камера/микрофон
+      // остаются открытыми бесконечно.
+      if (session.value == null ||
+          session.value!.status == CallStatus.ended ||
+          session.value!.status == CallStatus.idle) {
+        for (final t in media.getTracks()) {
+          try { await t.stop(); } catch (_) {}
+        }
+        try { await media.dispose(); } catch (_) {}
+        return;
+      }
       localStream.value = media;
     } catch (e, st) {
       appLog.error('[CallService] getUserMedia failed', e, st);
@@ -455,16 +504,19 @@ class CallService {
     // Только caller тригерит ICE-restart. Callee пассивно ждёт новый offer.
     if (s.isOutgoing) {
       unawaited(_createAndSendOffer(iceRestart: true));
+      // #11: cleanup-таймер ставим ТОЛЬКО для caller'а. Callee не должен
+      // timeout'иться сам — он дождётся либо нового offer от caller'а,
+      // либо call.end, либо RTCPeerConnectionStateFailed (это уже cleanup).
+      // Раньше callee тоже ставил таймер → убивал звонок раньше чем caller
+      // успевал завершить ICE-restart.
+      _reconnectTimer?.cancel();
+      _reconnectTimer = Timer(const Duration(seconds: 10), () {
+        final cur = session.value;
+        if (cur != null && cur.status == CallStatus.reconnecting) {
+          unawaited(_cleanup());
+        }
+      });
     }
-
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 10), () {
-      // Если за 10 сек state не вернулся в connected — сдаёмся.
-      final cur = session.value;
-      if (cur != null && cur.status == CallStatus.reconnecting) {
-        unawaited(_cleanup());
-      }
-    });
   }
 
   Future<void> _handleIncomingInvite(
@@ -502,6 +554,9 @@ class CallService {
   Future<void> _handleAccept(Map<String, dynamic> p) async {
     final s = session.value;
     if (s == null || !s.isOutgoing) return;
+    // #9: callee ответил — отменяем ring-timeout таймер.
+    _inviteTimer?.cancel();
+    _inviteTimer = null;
     session.value = s.copyWith(status: CallStatus.connecting);
     await _ensurePeerConnection();
     await _createAndSendOffer();
@@ -512,6 +567,15 @@ class CallService {
   }
 
   Future<void> _handleOffer(Map<String, dynamic> p) async {
+    // #17: offer мог прийти после того как сессия уже завершена (задержка WS,
+    // stale offer после reconnect). Игнорируем чтобы не создавать orphaned PC.
+    final s = session.value;
+    if (s == null ||
+        s.status == CallStatus.ended ||
+        s.status == CallStatus.idle) {
+      appLog.warn('[CallService] _handleOffer: нет активной сессии, игнорируем stale offer');
+      return;
+    }
     await _ensurePeerConnection();
     // BUG-9: тот же race-fix что и в _createAndSendOffer. _pc мог быть
     // обнулён в _cleanup между await'ами — capture в local var.
@@ -589,13 +653,24 @@ class CallService {
   Future<void> _cleanup() async {
     // C-3 / C-5: останавливаем ring + reconnect timer'ы при любом cleanup'е.
     _stopRing();
-    // C-3.1: end-tone chirp если звонок был active (не на silent decline).
+    // #9: отменяем outgoing ring-timeout.
+    _inviteTimer?.cancel();
+    _inviteTimer = null;
+    // C-3.1: end-tone chirp только если звонок был реально установлен.
+    // #12: не играем при outgoingRinging/incomingRinging — звонок не начался.
     final s = session.value;
-    if (s != null && s.status != CallStatus.idle) {
+    if (s != null &&
+        (s.status == CallStatus.connected ||
+            s.status == CallStatus.connecting ||
+            s.status == CallStatus.reconnecting)) {
       unawaited(_playEndTone());
     }
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    // #19: сбрасываем флаг AudioSession — следующий звонок получит чистую
+    // конфигурацию. Без сброса после завершённого звонка audio session
+    // остаётся в ringtone-mode и не будет перенастроена.
+    _audioSessionConfigured = false;
     try {
       await _pc?.close();
     } catch (e) {
@@ -622,6 +697,7 @@ class CallService {
     _pendingIce.clear();
     isMuted.value = false;
     isCameraOff.value = false;
+    isSpeakerOn.value = false;
     final endingSession = session.value;
     if (endingSession != null) {
       session.value = endingSession.copyWith(status: CallStatus.ended);

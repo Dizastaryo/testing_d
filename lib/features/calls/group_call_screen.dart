@@ -77,28 +77,38 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                   child: _buildTopBar(sess),
                 ),
               ),
-              // Local PIP (только для video).
+              // Local PIP (только для video). #15: учитываем isCameraOff.
               if (!isVoice)
                 Positioned(
                   bottom: 120,
                   right: 16,
                   width: 90,
                   height: 120,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24, width: 1),
-                        borderRadius: BorderRadius.circular(12),
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: GroupCallService.instance.isCameraOff,
+                    builder: (_, cameraOff, __) => ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          border: Border.all(color: Colors.white24, width: 1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: cameraOff || _localRenderer.srcObject == null
+                            ? const Center(
+                                child: Icon(
+                                  PhosphorIconsBold.videoCameraSlash,
+                                  color: Colors.white54,
+                                  size: 22,
+                                ),
+                              )
+                            : RTCVideoView(
+                                _localRenderer,
+                                mirror: true,
+                                objectFit: RTCVideoViewObjectFit
+                                    .RTCVideoViewObjectFitCover,
+                              ),
                       ),
-                      child: _localRenderer.srcObject != null
-                          ? RTCVideoView(
-                              _localRenderer,
-                              mirror: true,
-                              objectFit: RTCVideoViewObjectFit
-                                  .RTCVideoViewObjectFitCover,
-                            )
-                          : Container(color: Colors.black54),
                     ),
                   ),
                 ),
@@ -182,7 +192,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
         if (n == 1) {
           cols = 1;
         } else if (n == 2) {
-          cols = 1; // vertical stack для лучшего aspect
+          cols = 2; // #26: side-by-side для двух участников
         } else {
           cols = 2;
         }

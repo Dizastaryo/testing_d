@@ -80,10 +80,16 @@ class GroupCallService {
   final ValueNotifier<MediaStream?> localStream = ValueNotifier(null);
   final ValueNotifier<bool> isMuted = ValueNotifier(false);
   final ValueNotifier<bool> isCameraOff = ValueNotifier(false);
+  /// #5: последняя ошибка — показывается снэкбаром через CallListener.
+  final ValueNotifier<String?> lastError = ValueNotifier(null);
 
   CallSender? _sender;
   final AudioPlayer _ringPlayer = AudioPlayer();
   Timer? _ringTimer;
+  // #10: таймаут исходящего группового звонка — 60 сек без join → hangup.
+  Timer? _inviteTimer;
+  // #13: защита от concurrent _ensurePeer() для одного userId.
+  final Map<String, Completer<GroupCallPeer>> _peerCreating = {};
 
   void setSender(CallSender s) {
     _sender = s;
@@ -115,6 +121,13 @@ class GroupCallService {
     );
     await _initLocalStream();
     _startRingback();
+    // #10: 60 секунд без единого join → автоматический hangup.
+    _inviteTimer?.cancel();
+    _inviteTimer = Timer(const Duration(seconds: 60), () {
+      if (session.value?.status == GroupCallStatus.outgoingInviting) {
+        hangup();
+      }
+    });
     _send('call.group.invite', {
       'chat_id': chatId,
       'kind': kind == CallKind.voice ? 'voice' : 'video',
@@ -240,6 +253,9 @@ class GroupCallService {
     // Если это первый join после нашего invite — переходим в active.
     if (s.status == GroupCallStatus.outgoingInviting) {
       _stopRing();
+      // #10: кто-то вошёл — отменяем invite-timeout.
+      _inviteTimer?.cancel();
+      _inviteTimer = null;
       session.value = s.copyWith(status: GroupCallStatus.active);
     }
     // Получаем (или создаём) peer + connection + отправляем offer.
@@ -268,29 +284,39 @@ class GroupCallService {
     final peer = await _ensurePeer(from, username: fromUsername);
     final pc = peer.pc;
     if (pc == null) return;
+    // #14: все signaling-операции в try/catch — невалидный SDP не должен
+    // крашить всю WS-обработку.
     if (type == 'call.offer') {
       final sdp = p['sdp']?.toString() ?? '';
       final t = p['type']?.toString() ?? 'offer';
-      await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
-      for (final cand in peer.pendingIce) {
-        await pc.addCandidate(cand);
+      try {
+        await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
+        for (final cand in peer.pendingIce) {
+          await pc.addCandidate(cand);
+        }
+        peer.pendingIce.clear();
+        final answer = await pc.createAnswer({});
+        await pc.setLocalDescription(answer);
+        _send('call.answer', {
+          'to_user_id': from,
+          'sdp': answer.sdp,
+          'type': answer.type,
+        });
+      } catch (e, st) {
+        appLog.error('[GroupCallService] handle offer from $from failed', e, st);
       }
-      peer.pendingIce.clear();
-      final answer = await pc.createAnswer({});
-      await pc.setLocalDescription(answer);
-      _send('call.answer', {
-        'to_user_id': from,
-        'sdp': answer.sdp,
-        'type': answer.type,
-      });
     } else if (type == 'call.answer') {
       final sdp = p['sdp']?.toString() ?? '';
       final t = p['type']?.toString() ?? 'answer';
-      await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
-      for (final cand in peer.pendingIce) {
-        await pc.addCandidate(cand);
+      try {
+        await pc.setRemoteDescription(RTCSessionDescription(sdp, t));
+        for (final cand in peer.pendingIce) {
+          await pc.addCandidate(cand);
+        }
+        peer.pendingIce.clear();
+      } catch (e, st) {
+        appLog.error('[GroupCallService] handle answer from $from failed', e, st);
       }
-      peer.pendingIce.clear();
     } else if (type == 'call.ice') {
       final cand = RTCIceCandidate(
         p['candidate']?.toString() ?? '',
@@ -317,55 +343,75 @@ class GroupCallService {
       }
       return existing;
     }
-    final peer = existing ?? GroupCallPeer(userId, username: username);
-    await peer.renderer.initialize();
-    final pc = await createPeerConnection({
-      'iceServers': AppConfig.iceServers,
-      'sdpSemantics': 'unified-plan',
-    });
-    pc.onIceCandidate = (cand) {
-      _send('call.ice', {
-        'to_user_id': userId,
-        'candidate': cand.candidate,
-        'sdp_mid': cand.sdpMid,
-        'sdp_m_line_index': cand.sdpMLineIndex,
-      });
-    };
-    pc.onTrack = (event) {
-      if (event.streams.isNotEmpty) {
-        peer.remoteStream = event.streams.first;
-        peer.renderer.srcObject = event.streams.first;
-        // Notify listeners (rebuild grid).
-        peers.value = {...peers.value};
-      }
-    };
-    pc.onConnectionState = (state) {
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-        unawaited(_removePeer(userId));
-      }
-    };
-    final local = localStream.value;
-    if (local != null) {
-      for (final track in local.getTracks()) {
-        await pc.addTrack(track, local);
-      }
+    // #13: если другой concurrent вызов уже создаёт PC для этого userId —
+    // ждём его Completer вместо создания второго PC на того же peer'а.
+    final inProgress = _peerCreating[userId];
+    if (inProgress != null) {
+      return inProgress.future;
     }
-    peer.pc = pc;
-    peers.value = {...peers.value, userId: peer};
-    return peer;
+    final completer = Completer<GroupCallPeer>();
+    _peerCreating[userId] = completer;
+    try {
+      final peer = existing ?? GroupCallPeer(userId, username: username);
+      await peer.renderer.initialize();
+      final pc = await createPeerConnection({
+        'iceServers': AppConfig.iceServers,
+        'sdpSemantics': 'unified-plan',
+      });
+      pc.onIceCandidate = (cand) {
+        _send('call.ice', {
+          'to_user_id': userId,
+          'candidate': cand.candidate,
+          'sdp_mid': cand.sdpMid,
+          'sdp_m_line_index': cand.sdpMLineIndex,
+        });
+      };
+      pc.onTrack = (event) {
+        if (event.streams.isNotEmpty) {
+          peer.remoteStream = event.streams.first;
+          peer.renderer.srcObject = event.streams.first;
+          peers.value = {...peers.value};
+        }
+      };
+      pc.onConnectionState = (state) {
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+            state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          unawaited(_removePeer(userId));
+        }
+      };
+      final local = localStream.value;
+      if (local != null) {
+        for (final track in local.getTracks()) {
+          await pc.addTrack(track, local);
+        }
+      }
+      peer.pc = pc;
+      peers.value = {...peers.value, userId: peer};
+      completer.complete(peer);
+      return peer;
+    } catch (e, st) {
+      appLog.error('[GroupCallService] _ensurePeer failed for $userId', e, st);
+      completer.completeError(e, st);
+      rethrow;
+    } finally {
+      _peerCreating.remove(userId);
+    }
   }
 
   Future<void> _createAndSendOffer(GroupCallPeer peer) async {
     final pc = peer.pc;
     if (pc == null) return;
-    final offer = await pc.createOffer({});
-    await pc.setLocalDescription(offer);
-    _send('call.offer', {
-      'to_user_id': peer.userId,
-      'sdp': offer.sdp,
-      'type': offer.type,
-    });
+    try {
+      final offer = await pc.createOffer({});
+      await pc.setLocalDescription(offer);
+      _send('call.offer', {
+        'to_user_id': peer.userId,
+        'sdp': offer.sdp,
+        'type': offer.type,
+      });
+    } catch (e, st) {
+      appLog.error('[GroupCallService] createOffer for ${peer.userId} failed', e, st);
+    }
   }
 
   Future<void> _removePeer(String userId) async {
@@ -401,6 +447,8 @@ class GroupCallService {
       localStream.value = media;
     } catch (e, st) {
       appLog.error('[GroupCallService] getUserMedia failed', e, st);
+      // #5: показываем ошибку пользователю через CallListener.
+      lastError.value = 'Нет доступа к камере / микрофону. Проверьте разрешения.';
       await _cleanup();
     }
   }
@@ -462,6 +510,11 @@ class GroupCallService {
 
   Future<void> _cleanup() async {
     _stopRing();
+    // #10: отменяем invite-timeout.
+    _inviteTimer?.cancel();
+    _inviteTimer = null;
+    // #13: сбрасываем pending creators (сессия всё равно мертва).
+    _peerCreating.clear();
     // Close all peers.
     final ids = List<String>.from(peers.value.keys);
     for (final id in ids) {
@@ -489,6 +542,11 @@ class GroupCallService {
   }
 
   void _send(String type, Map<String, dynamic> payload) {
-    _sender?.call(type, payload);
+    // #4: guard — без sender все сообщения пропадут молча.
+    if (_sender == null) {
+      appLog.warn('[GroupCallService] _send: sender not set, dropping $type');
+      return;
+    }
+    _sender!.call(type, payload);
   }
 }

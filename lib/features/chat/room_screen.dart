@@ -82,6 +82,37 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     await ref.read(roomDetailProvider(widget.roomId).notifier).leaveVoice(myId);
   }
 
+  Future<void> _leaveRoom() async {
+    final c = context.seeuColors;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Покинуть комнату?', style: TextStyle(color: c.ink, fontSize: 17)),
+        content: Text('Вы выйдете из комнаты.', style: TextStyle(color: c.ink2, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Отмена', style: TextStyle(color: c.ink3)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Покинуть', style: TextStyle(color: SeeUColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(apiClientProvider).delete(ApiEndpoints.leaveRoom(widget.roomId));
+      ref.read(roomListProvider.notifier).load();
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    }
+  }
+
   Future<void> _closeRoom() async {
     final c = context.seeuColors;
     final confirmed = await showDialog<bool>(
@@ -267,6 +298,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 color: SeeUColors.error,
               ),
               tooltip: 'Закрыть комнату',
+            )
+          else if (!isCreator && room.isJoined)
+            // #8: кнопка выхода из комнаты для не-создателей
+            IconButton(
+              onPressed: _leaveRoom,
+              icon: Icon(
+                PhosphorIcons.signOut(PhosphorIconsStyle.fill),
+                size: 22,
+                color: SeeUColors.error,
+              ),
+              tooltip: 'Покинуть комнату',
             ),
         ],
       ),
