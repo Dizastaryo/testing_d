@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
@@ -586,8 +585,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         final isMe = msg.senderId == myId;
         final showSender = !isMe && (i == 0 ||
             msgsState.messages[i - 1].senderId != msg.senderId);
+        // Show avatar only on last message of a cluster (tail)
+        final showAvatar = !isMe && (i == msgsState.messages.length - 1 ||
+            msgsState.messages[i + 1].senderId != msg.senderId);
         return _MessageBubble(
-          msg: msg, isMe: isMe, showSender: showSender, c: c,
+          msg: msg, isMe: isMe, showSender: showSender,
+          showAvatar: showAvatar, c: c,
         );
       },
     );
@@ -748,15 +751,41 @@ class _MessageBubble extends StatelessWidget {
   final RoomMessage msg;
   final bool isMe;
   final bool showSender;
+  final bool showAvatar;
   final SeeUThemeColors c;
 
   const _MessageBubble({
-    required this.msg, required this.isMe,
-    required this.showSender, required this.c,
+    required this.msg,
+    required this.isMe,
+    required this.showSender,
+    required this.showAvatar,
+    required this.c,
   });
+
+  static const _nameColors = [
+    Color(0xFFFF5A3C), Color(0xFF5DB1FF), Color(0xFF2FA84F),
+    Color(0xFFFFB547), Color(0xFFC04CFD), Color(0xFFFF3B6B),
+    Color(0xFF7B61FF), Color(0xFF1AC8B8),
+  ];
+
+  static Color _senderColor(String name) {
+    if (name.isEmpty) return _nameColors[0];
+    return _nameColors[(name.codeUnitAt(0) + name.length) % _nameColors.length];
+  }
+
+  static List<Color> _senderPalette(String name) {
+    final idx = name.isEmpty
+        ? 0
+        : (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length;
+    return SeeUColors.avatarPalettes[idx];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final localTime = msg.createdAt.toLocal();
+    final timeStr =
+        '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
@@ -765,22 +794,26 @@ class _MessageBubble extends StatelessWidget {
         children: [
           if (!isMe) ...[
             const SizedBox(width: 4),
-            Container(
-              width: 28, height: 28,
-              margin: const EdgeInsets.only(right: 6, bottom: 2),
-              decoration: BoxDecoration(
-                color: c.surface2,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : '?',
-                  style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w700, color: c.ink2,
+            if (showAvatar)
+              Container(
+                width: 28, height: 28,
+                margin: const EdgeInsets.only(right: 6, bottom: 2),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: _senderPalette(msg.senderName)),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
-            ),
+              )
+            else
+              // Placeholder to keep bubble alignment when avatar is hidden
+              const SizedBox(width: 34), // 28 container + 6 margin
           ],
           Flexible(
             child: Column(
@@ -793,14 +826,21 @@ class _MessageBubble extends StatelessWidget {
                       msg.senderName,
                       style: TextStyle(
                         fontSize: 11, fontWeight: FontWeight.w600,
-                        color: SeeUColors.accent,
+                        color: _senderColor(msg.senderName),
                       ),
                     ),
                   ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isMe ? SeeUColors.accent : c.surface,
+                    gradient: isMe
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
+                          )
+                        : null,
+                    color: isMe ? null : c.surface,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -816,7 +856,8 @@ class _MessageBubble extends StatelessWidget {
                     ],
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         msg.text,
@@ -827,10 +868,12 @@ class _MessageBubble extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        timeago.format(msg.createdAt, locale: 'ru'),
+                        timeStr,
                         style: TextStyle(
                           fontSize: 10,
-                          color: isMe ? Colors.white.withValues(alpha: 0.7) : c.ink4,
+                          color: isMe
+                              ? Colors.white.withValues(alpha: 0.65)
+                              : c.ink4,
                         ),
                       ),
                     ],

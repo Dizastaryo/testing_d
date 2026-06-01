@@ -353,7 +353,7 @@ class ChatMessageBubble extends StatelessWidget {
               borderRadius: bubbleRadius,
             ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (msg.replyTo != null) ...[
