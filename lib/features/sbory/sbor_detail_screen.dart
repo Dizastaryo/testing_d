@@ -92,7 +92,11 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               SliverToBoxAdapter(child: _buildInfoGrid(c, s)),
               SliverToBoxAdapter(child: _buildDescription(c, s)),
               SliverToBoxAdapter(child: _buildParticipants(c, s)),
-              const SliverToBoxAdapter(child: SizedBox(height: 120)),
+              // Отступ снизу под sticky-кнопкой. Минимум 220 px + safe-area
+              // чтобы участники при скролле выходили выше кнопки «Войти / Хочу вступить».
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.of(context).padding.bottom + 220),
+              ),
             ],
           ),
           _buildStickyBottom(context, c, s),
@@ -387,7 +391,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                   );
                 }
                 if (i == emptySlotIdx && s.max != null && s.remaining > 0) {
-                  return _EmptySlot(remaining: s.remaining, c: c);
+                  return GestureDetector(
+                    onTap: () => _showAllMembers(s),
+                    child: _EmptySlot(remaining: s.remaining, c: c),
+                  );
                 }
                 final name = s.memberNames[i];
                 final username = i < s.memberUsernames.length ? s.memberUsernames[i] : '';
