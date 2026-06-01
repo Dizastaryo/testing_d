@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/room.dart';
+import 'auth_provider.dart';
 import 'realtime_provider.dart';
 
 // ─── Room list ────────────────────────────────────────────────────
@@ -96,6 +99,7 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   final ApiClient _api;
   final Ref _ref;
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+  Timer? _voiceJoinDebounce; // #H-5
 
   RoomDetailNotifier(this.roomId, this._api, this._ref) : super(const RoomDetailState()) {
     load();
@@ -105,6 +109,7 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   @override
   void dispose() {
     _wsSub?.close();
+    _voiceJoinDebounce?.cancel(); // #H-5
     super.dispose();
   }
 
@@ -186,7 +191,16 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
       if (pt.userId == userId) return pt.copyWith(isMuted: isMuted);
       return pt;
     }).toList();
-    state = state.copyWith(room: room.copyWith(participants: updated));
+    // #H-6: если событие касается текущего пользователя (например
+    // принудительный мут от модератора) — синхронизируем room.isMuted.
+    // Без этого кнопка мута в голосовой панели показывает неверный статус.
+    final myId = _ref.read(authProvider).user?.id;
+    state = state.copyWith(
+      room: room.copyWith(
+        participants: updated,
+        isMuted: userId == myId ? isMuted : room.isMuted,
+      ),
+    );
   }
 
   Future<void> update({
@@ -217,8 +231,10 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   }
 
   void _handleVoiceJoined(Map<String, dynamic> p) {
-    // Refresh to get updated voice_participants list from server
-    load();
+    // #H-5: дебаунсируем — при одновременном входе N участников не делаем
+    // N параллельных HTTP-запросов. Батчим в один load через 300 мс.
+    _voiceJoinDebounce?.cancel();
+    _voiceJoinDebounce = Timer(const Duration(milliseconds: 300), load);
   }
 
   void _handleVoiceLeft(Map<String, dynamic> p) {

@@ -131,8 +131,9 @@ class _CallScreenState extends State<CallScreen> {
               Positioned.fill(child: _buildRemote(session)),
 
               // Local — pip в правом верхнем углу. Скрываем для voice.
-              // Aspect ratio 3:4 (portrait camera) вместо hardcoded 100x130.
-              if (!isVoice)
+              // #M-1: скрываем PIP во время incomingRinging — камера ещё не
+              // запущена, заглушка «камера выключена» вводит в заблуждение.
+              if (!isVoice && session.status != CallStatus.incomingRinging)
                 Positioned(
                   top: 50,
                   right: 20,
@@ -327,7 +328,9 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Widget _buildPeerInfo(CallSession s) {
-    if (s.status == CallStatus.connected) {
+    // #M-9: показываем pill имени и во время реконнекта — пользователь
+    // должен видеть с кем был разговор пока связь восстанавливается.
+    if (s.status == CallStatus.connected || s.status == CallStatus.reconnecting) {
       // C-4: на connected pill показывает «@user · MM:SS». Длительность —
       // от session.connectedAt до сейчас.
       final connectedAt = s.connectedAt;
@@ -386,6 +389,8 @@ class _CallScreenState extends State<CallScreen> {
       builder: (_, muted, __) => ValueListenableBuilder<bool>(
         valueListenable: CallService.instance.isCameraOff,
         builder: (_, cameraOff, __) {
+          // #M-2: в состоянии ended кнопки скрываем — звонок завершён.
+          if (s.status == CallStatus.ended) return const SizedBox.shrink();
           // Для incoming-ringing — две большие кнопки accept/decline.
           if (s.status == CallStatus.incomingRinging) {
             return Row(

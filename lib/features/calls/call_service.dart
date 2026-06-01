@@ -700,10 +700,16 @@ class CallService {
     isSpeakerOn.value = false;
     final endingSession = session.value;
     if (endingSession != null) {
-      session.value = endingSession.copyWith(status: CallStatus.ended);
+      final endedRef = endingSession.copyWith(status: CallStatus.ended);
+      session.value = endedRef;
+      // #C-1: захватываем ссылку на ended-сессию. Future.delayed обнуляет
+      // ТОЛЬКО эту сессию — если за 1 секунду придёт новый входящий звонок,
+      // он НЕ будет уничтожен.
       Future.delayed(const Duration(seconds: 1), () {
-        session.value = null;
-        minimized.value = false; // C-6: сбрасываем PiP на каждый cleanup.
+        if (identical(session.value, endedRef)) {
+          session.value = null;
+          minimized.value = false;
+        }
       });
     } else {
       minimized.value = false;

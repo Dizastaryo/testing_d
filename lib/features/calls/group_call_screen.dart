@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -18,6 +20,8 @@ class GroupCallScreen extends StatefulWidget {
 
 class _GroupCallScreenState extends State<GroupCallScreen> {
   final _localRenderer = RTCVideoRenderer();
+  // #M-3: тикер для MM:SS таймера длительности звонка.
+  Timer? _durationTicker;
 
   @override
   void initState() {
@@ -25,6 +29,33 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
     _initLocal();
     GroupCallService.instance.localStream.addListener(_syncLocal);
     GroupCallService.instance.session.addListener(_onSession);
+    GroupCallService.instance.session.addListener(_onSessionForTimer); // #M-3
+    _onSessionForTimer();
+  }
+
+  // #M-3: управление тикером — запускаем когда active + connectedAt, иначе гасим.
+  void _onSessionForTimer() {
+    final s = GroupCallService.instance.session.value;
+    if (s != null &&
+        s.status == GroupCallStatus.active &&
+        s.connectedAt != null) {
+      if (_durationTicker == null || !_durationTicker!.isActive) {
+        _durationTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      _durationTicker?.cancel();
+      _durationTicker = null;
+    }
+  }
+
+  String _fmtDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:$m:$s';
+    return '$m:$s';
   }
 
   Future<void> _initLocal() async {
@@ -49,6 +80,8 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
   void dispose() {
     GroupCallService.instance.localStream.removeListener(_syncLocal);
     GroupCallService.instance.session.removeListener(_onSession);
+    GroupCallService.instance.session.removeListener(_onSessionForTimer); // #M-3
+    _durationTicker?.cancel(); // #M-3
     _localRenderer.dispose();
     super.dispose();
   }
@@ -186,18 +219,15 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
           );
         }
         final entries = peers.entries.toList();
-        // Layout: 1 → fullscreen; 2 → row; 3-4 → 2x2 grid; >4 → wrap-grid.
+        // Layout: 1 peer → полный экран; 2+ → сетка 2 колонки.
         final n = entries.length;
-        int cols;
-        if (n == 1) {
-          cols = 1;
-        } else if (n == 2) {
-          cols = 2; // #26: side-by-side для двух участников
-        } else {
-          cols = 2;
-        }
+        final cols = n == 1 ? 1 : 2; // #L-1: упрощено, dead branch убран
         return GridView.count(
           padding: EdgeInsets.zero,
+          // #M-4: запрещаем скролл — случайный свайп не должен
+          // смещать сетку участников во время звонка.
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
           crossAxisCount: cols,
           childAspectRatio: cols == 1 ? 9 / 16 : 3 / 4,
           children: entries.map((e) => _peerTile(e.value, isVoice)).toList(),
@@ -298,6 +328,30 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // #M-3: таймер длительности — показываем только в active.
+                if (sess.status == GroupCallStatus.active &&
+                    sess.connectedAt != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 3,
+                    height: 3,
+                    decoration: const BoxDecoration(
+                      color: Colors.white54,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _fmtDuration(
+                        DateTime.now().difference(sess.connectedAt!)),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

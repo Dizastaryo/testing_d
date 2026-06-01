@@ -70,6 +70,9 @@ class _RealtimeConnection {
   Timer? _reconnect;
   Duration _backoff = const Duration(seconds: 1);
   bool _disposed = false;
+  /// H-7: хранит call-ключи (from_user_id|kind) которые уже были re-injected
+  /// в текущей сессии, чтобы reconnect не показывал один и тот же звонок дважды.
+  final Map<String, DateTime> _replayedInvites = {};
   /// Wall-clock time the last `_connect` attempt opened a channel. Used to
   /// detect "WS handshake closes immediately" — a signature of token expiry.
   DateTime? _connectStartedAt;
@@ -141,16 +144,30 @@ class _RealtimeConnection {
       if (data is Map && data['data'] is List) {
         items = data['data'] as List;
       }
+      // H-7: чистим устаревшие записи (> 2 минут) чтобы не накапливать память.
+      final now = DateTime.now();
+      _replayedInvites.removeWhere(
+          (_, ts) => now.difference(ts) > const Duration(minutes: 2));
+
       for (final raw in items) {
         if (raw is! Map) continue;
         final from = raw['from_user_id']?.toString() ?? '';
         if (from.isEmpty) continue;
+        final kind = raw['kind']?.toString() ?? 'video';
+        // H-7: дедуплицируем — один и тот же pending invite не должен
+        // показываться повторно при каждом reconnect в течение 2 минут.
+        final dedupeKey = '$from|$kind';
+        if (_replayedInvites.containsKey(dedupeKey)) {
+          debugPrint('[realtime] skipping duplicate pending call.invite from=$from');
+          continue;
+        }
+        _replayedInvites[dedupeKey] = now;
         final synthetic = <String, dynamic>{
           'from_user_id': from,
           'from_username': raw['peer_username'] ?? '',
           'from_full_name': raw['peer_full_name'] ?? '',
           'from_avatar': raw['peer_avatar_url'] ?? '',
-          'kind': raw['kind'] ?? 'video',
+          'kind': kind,
         };
         debugPrint('[realtime] replaying missed call.invite from=$from');
         _events.add(RealtimeEvent('call.invite', synthetic));

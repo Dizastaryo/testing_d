@@ -71,6 +71,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 
   Future<void> _joinVoice() async {
+    // #M-6: не вызываем joinVoice если уже в голосовом (защита от двойного тапа)
+    final room = ref.read(roomDetailProvider(widget.roomId)).room;
+    if (room == null || room.isInVoice) return;
     HapticFeedback.mediumImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
     await ref.read(roomDetailProvider(widget.roomId).notifier).joinVoice(myId);
@@ -104,6 +107,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
+      // #M-5: явно выходим из голосового канала перед выходом из комнаты,
+      // чтобы не оставаться "призраком" в голосовом списке других участников.
+      final roomState = ref.read(roomDetailProvider(widget.roomId)).room;
+      if (roomState?.isInVoice == true) {
+        try {
+          await ref
+              .read(apiClientProvider)
+              .delete(ApiEndpoints.roomVoice(widget.roomId));
+        } catch (_) {
+          // не критично — бэкенд должен очищать при leave room
+        }
+      }
       await ref.read(apiClientProvider).delete(ApiEndpoints.leaveRoom(widget.roomId));
       ref.read(roomListProvider.notifier).load();
       if (mounted) Navigator.of(context).pop();
@@ -461,8 +476,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
             ),
-          ] else if (!inVoice) ...[
-            // Prompt to join
+          ] else if (!inVoice && room.isJoined) ...[
+            // #M-7: подсказку показываем только участникам (не гостям)
             const SizedBox(height: 8),
             Text(
               'Нажми «Войти», чтобы подключиться к голосовому',

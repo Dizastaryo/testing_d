@@ -39,6 +39,8 @@ class GroupCallSession {
   /// userId инициатора звонка (для display «X звонит вам»).
   final String inviterId;
   final String inviterUsername;
+  /// Момент перехода в active — для таймера длительности звонка (#M-3).
+  final DateTime? connectedAt;
 
   const GroupCallSession({
     required this.chatId,
@@ -48,9 +50,11 @@ class GroupCallSession {
     required this.status,
     required this.inviterId,
     required this.inviterUsername,
+    this.connectedAt,
   });
 
-  GroupCallSession copyWith({GroupCallStatus? status}) => GroupCallSession(
+  GroupCallSession copyWith({GroupCallStatus? status, DateTime? connectedAt}) =>
+      GroupCallSession(
         chatId: chatId,
         chatTitle: chatTitle,
         kind: kind,
@@ -58,6 +62,7 @@ class GroupCallSession {
         status: status ?? this.status,
         inviterId: inviterId,
         inviterUsername: inviterUsername,
+        connectedAt: connectedAt ?? this.connectedAt,
       );
 }
 
@@ -142,7 +147,10 @@ class GroupCallService {
     _stopRing();
     session.value = s.copyWith(status: GroupCallStatus.active);
     await _initLocalStream();
-    // Сообщаем другим что мы joined → они создадут к нам peer-connection.
+    // #H-1: после await getUserMedia сессия могла быть очищена (отказ в
+    // разрешениях → _cleanup). Без проверки отправляется call.group.join
+    // в мёртвую сессию → все участники создают PC в никуда.
+    if (session.value == null) return;
     _send('call.group.join', {'chat_id': s.chatId});
   }
 
@@ -150,6 +158,8 @@ class GroupCallService {
     final s = session.value;
     if (s == null) return;
     _stopRing();
+    // #H-4: атомарно обнуляем сессию — повторный тап не пройдёт guard.
+    session.value = null;
     _send('call.group.leave', {'chat_id': s.chatId});
     await _cleanup();
   }
@@ -159,6 +169,9 @@ class GroupCallService {
   Future<void> hangup() async {
     final s = session.value;
     if (s == null) return;
+    _stopRing();
+    // #H-4: атомарно обнуляем — двойной тап не отправит второй leave.
+    session.value = null;
     _send('call.group.leave', {'chat_id': s.chatId});
     await _cleanup();
   }
@@ -256,20 +269,37 @@ class GroupCallService {
       // #10: кто-то вошёл — отменяем invite-timeout.
       _inviteTimer?.cancel();
       _inviteTimer = null;
-      session.value = s.copyWith(status: GroupCallStatus.active);
+      // #M-3: фиксируем момент первого join для таймера длительности.
+      session.value = s.copyWith(
+        status: GroupCallStatus.active,
+        connectedAt: DateTime.now(),
+      );
     }
     // Получаем (или создаём) peer + connection + отправляем offer.
     final fromUsername = p['from_username']?.toString() ?? '';
-    final peer = await _ensurePeer(from, username: fromUsername);
+    final GroupCallPeer peer;
+    try {
+      peer = await _ensurePeer(from, username: fromUsername);
+    } on StateError {
+      return; // #H-3: сессия завершилась пока создавался PC
+    } catch (e, st) {
+      appLog.error('[GroupCallService] _handleMemberJoined: ensurePeer failed', e, st);
+      return;
+    }
+    if (session.value == null) return; // #H-3: проверяем после await
     await _createAndSendOffer(peer);
   }
 
   Future<void> _handleMemberLeft(Map<String, dynamic> p) async {
     final from = p['from_user_id']?.toString() ?? '';
     if (from.isEmpty) return;
+    // #C-2: запоминаем до удаления — был ли peer реально в звонке.
+    // call.group.leave = "отклонил приглашение" ИЛИ "вышел из активного".
+    // Если отклонил — он никогда не попадал в peers → wasActive=false →
+    // не завершаем звонок, другие участники могут ещё присоединиться.
+    final wasActive = peers.value.containsKey(from);
     await _removePeer(from);
-    // Если ушёл последний peer — закрываем call.
-    if (peers.value.isEmpty && session.value != null) {
+    if (wasActive && peers.value.isEmpty && session.value != null) {
       await _cleanup();
     }
   }
@@ -281,7 +311,17 @@ class GroupCallService {
     final from = p['from_user_id']?.toString() ?? '';
     if (from.isEmpty) return;
     final fromUsername = p['from_username']?.toString() ?? '';
-    final peer = await _ensurePeer(from, username: fromUsername);
+    final GroupCallPeer peer;
+    try {
+      peer = await _ensurePeer(from, username: fromUsername);
+    } on StateError {
+      return; // #H-3/#H-8: сессия завершилась пока создавался PC
+    } catch (e, st) {
+      appLog.error('[GroupCallService] _handlePeerSignaling: ensurePeer failed', e, st);
+      return;
+    }
+    // #H-8: проверяем после любого await — сессия могла завершиться.
+    if (session.value == null) return;
     final pc = peer.pc;
     if (pc == null) return;
     // #14: все signaling-операции в try/catch — невалидный SDP не должен
@@ -340,6 +380,7 @@ class GroupCallService {
     if (existing != null && existing.pc != null) {
       if (username.isNotEmpty && existing.username.isEmpty) {
         existing.username = username;
+        peers.value = {...peers.value}; // #H-2: нотифицируем для ребилда UI
       }
       return existing;
     }
@@ -384,6 +425,15 @@ class GroupCallService {
         for (final track in local.getTracks()) {
           await pc.addTrack(track, local);
         }
+      }
+      // #H-3: если cleanup прошёл пока создавали PC — закрываем его и не
+      // добавляем в карту. Без этой проверки мёртвый peer попадает обратно
+      // в очищенную peers.value — утечка нативного PeerConnection.
+      if (session.value == null) {
+        try { await pc.close(); } catch (_) {}
+        final err = StateError('GroupCall session ended during peer creation');
+        completer.completeError(err);
+        throw err;
       }
       peer.pc = pc;
       peers.value = {...peers.value, userId: peer};
@@ -538,6 +588,9 @@ class GroupCallService {
     localStream.value = null;
     isMuted.value = false;
     isCameraOff.value = false;
+    // #L-2: принудительно очищаем — страховка если concurrent _ensurePeer
+    // добавил peer между итерациями выше.
+    peers.value = {};
     session.value = null;
   }
 
