@@ -24,13 +24,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
-  int _prevMsgCount = 0;
+  bool _atBottom = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 50;
+    if (atBottom != _atBottom) {
+      if (mounted) setState(() => _atBottom = atBottom);
+    }
   }
 
   void _scrollToBottom() {
@@ -165,6 +181,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final detailState = ref.watch(roomDetailProvider(widget.roomId));
     final room = detailState.room;
     final myId = ref.watch(authProvider).user?.id ?? '';
+    final msgsState = ref.watch(roomMessagesProvider(widget.roomId));
+
+    // Scroll to bottom when new messages arrive — via listener, not side effect in build.
+    ref.listen<RoomMessagesState>(roomMessagesProvider(widget.roomId), (prev, next) {
+      final prevCount = prev?.messages.length ?? 0;
+      final nextCount = next.messages.length;
+      if (nextCount > prevCount) {
+        _scrollToBottom();
+      }
+    });
 
     if (room == null && detailState.isLoading) {
       return Scaffold(
@@ -199,10 +225,43 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: _refreshMessages,
-                color: SeeUColors.accent,
-                child: _buildMessages(c, room, myId),
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    onRefresh: _refreshMessages,
+                    color: SeeUColors.accent,
+                    child: _buildMessages(c, room, myId, msgsState),
+                  ),
+                  if (!_atBottom)
+                    Positioned(
+                      bottom: 12,
+                      right: 16,
+                      child: GestureDetector(
+                        onTap: _scrollToBottom,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: c.line, width: 0.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.arrowDown,
+                            size: 20,
+                            color: c.ink,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             if (room.isActive) _buildInput(c, room),
@@ -491,9 +550,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   // ─── Messages ─────────────────────────────────────────────────────
 
-  Widget _buildMessages(SeeUThemeColors c, Room room, String myId) {
-    final msgsState = ref.watch(roomMessagesProvider(widget.roomId));
-
+  Widget _buildMessages(
+      SeeUThemeColors c, Room room, String myId, RoomMessagesState msgsState) {
     if (msgsState.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -517,13 +575,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ],
         ),
       );
-    }
-
-    // Only auto-scroll when message count increases (new message arrived).
-    final msgCount = msgsState.messages.length;
-    if (msgCount > _prevMsgCount) {
-      _prevMsgCount = msgCount;
-      _scrollToBottom();
     }
 
     return ListView.builder(

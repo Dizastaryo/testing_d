@@ -34,8 +34,8 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
     super.dispose();
   }
 
-  Future<void> load() async {
-    state = state.copyWith(isLoading: true);
+  Future<void> load({bool silent = false}) async {
+    if (!silent) state = state.copyWith(isLoading: true);
     try {
       final r = await _api.get(ApiEndpoints.rooms);
       final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
@@ -61,7 +61,7 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
           'room.member_removed',
         };
         if (refreshEvents.contains(evt.type)) {
-          load();
+          load(silent: true);
         }
       });
     });
