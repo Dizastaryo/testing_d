@@ -41,6 +41,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     );
     CallService.instance.session.addListener(_onSession);
     CallService.instance.minimized.addListener(_onMinimized);
+    CallService.instance.lastError.addListener(_onCallError);
     GroupCallService.instance.session.addListener(_onGroupSession);
   }
 
@@ -48,8 +49,23 @@ class _CallListenerState extends ConsumerState<CallListener> {
   void dispose() {
     CallService.instance.session.removeListener(_onSession);
     CallService.instance.minimized.removeListener(_onMinimized);
+    CallService.instance.lastError.removeListener(_onCallError);
     GroupCallService.instance.session.removeListener(_onGroupSession);
     super.dispose();
+  }
+
+  void _onCallError() {
+    final err = CallService.instance.lastError.value;
+    if (err == null || err.isEmpty) return;
+    CallService.instance.lastError.value = null; // сбрасываем сразу
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(err),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _onGroupSession() {

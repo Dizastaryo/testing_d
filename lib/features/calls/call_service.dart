@@ -86,6 +86,9 @@ class CallService {
   /// floating mini-bubble поверх всего app'а. Tap на mini → set false +
   /// re-open full-screen. Сбрасывается на каждый новый звонок.
   final ValueNotifier<bool> minimized = ValueNotifier(false);
+  /// Последняя ошибка для показа в UI (снэкбар в CallListener).
+  /// Сбрасывается в null после прочтения.
+  final ValueNotifier<String?> lastError = ValueNotifier(null);
 
   RTCPeerConnection? _pc;
   final List<RTCIceCandidate> _pendingIce = [];
@@ -346,6 +349,7 @@ class CallService {
       localStream.value = media;
     } catch (e, st) {
       appLog.error('[CallService] getUserMedia failed', e, st);
+      lastError.value = 'Нет доступа к камере / микрофону. Проверьте разрешения.';
       await _cleanup();
     }
   }
@@ -631,6 +635,10 @@ class CallService {
   }
 
   void _send(String type, Map<String, dynamic> payload) {
-    _sender?.call(type, payload);
+    if (_sender == null) {
+      appLog.warn('[CallService] _send: sender not set, dropping $type');
+      return;
+    }
+    _sender!.call(type, payload);
   }
 }
