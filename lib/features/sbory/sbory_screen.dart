@@ -385,6 +385,8 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                   hintText: 'Поиск сборов...',
                   hintStyle: TextStyle(fontSize: 14, color: c.ink3),
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -824,11 +826,12 @@ class SborCard extends StatelessWidget {
                         child: Icon(meta.icon, size: 150, color: meta.color),
                       ),
                     ),
-                  // Pills (top-left)
+                  // Pills (top-left): category + format + price + live
                   Positioned(
                     top: 12, left: 12,
                     child: Wrap(
                       spacing: 6,
+                      runSpacing: 6,
                       children: [
                         _HeaderPill(
                           icon: meta.icon,
@@ -850,50 +853,19 @@ class SborCard extends StatelessWidget {
                             color: SeeUColors.accent,
                             bg: SeeUColors.accentSoft,
                           ),
+                        if (s.live)
+                          _HeaderPill(
+                            icon: null,
+                            label: '● СЕЙЧАС',
+                            color: Colors.white,
+                            bg: Colors.redAccent.withValues(alpha: 0.85),
+                          ),
                       ],
                     ),
                   ),
-                  // Live badge (top-right)
-                  if (s.live)
-                    Positioned(
-                      top: 12, right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.20),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6, height: 6,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.white.withValues(alpha: 0.4),
-                                    blurRadius: 0, spreadRadius: 3,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            const Text(
-                              'СЕЙЧАС',
-                              style: TextStyle(
-                                fontSize: 10, fontWeight: FontWeight.w700,
-                                letterSpacing: 0.8, color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  // Time chip (bottom-right)
+                  // Date chip (top-right)
                   Positioned(
-                    bottom: 12, right: 12,
+                    top: 12, right: 12,
                     child: Container(
                       height: 30,
                       padding: const EdgeInsets.symmetric(horizontal: 11),
@@ -981,7 +953,7 @@ class SborCard extends StatelessWidget {
                   ),
                   Row(
                     children: [
-                      SboryAvatarStack(names: s.memberNames, size: 26),
+                      SboryAvatarStack(names: s.memberNames, avatarUrls: s.memberAvatarUrls, size: 26),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(

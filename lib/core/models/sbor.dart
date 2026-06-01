@@ -125,6 +125,7 @@ class Sbor {
   final List<String> memberNames;
   final List<String> memberUsernames;
   final List<String> memberIds;
+  final List<String> memberAvatarUrls;
   final String? coverUrl;
   final int price;
   final String? description;
@@ -154,6 +155,7 @@ class Sbor {
     this.memberNames = const [],
     this.memberUsernames = const [],
     this.memberIds = const [],
+    this.memberAvatarUrls = const [],
     this.coverUrl,
     this.price = 0,
     this.description,
@@ -197,6 +199,10 @@ class Sbor {
               .toList() ??
           [],
       memberIds: (j['member_ids'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      memberAvatarUrls: (j['member_avatar_urls'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           [],

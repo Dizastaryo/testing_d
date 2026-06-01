@@ -357,7 +357,16 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Идут', c),
+          Row(
+            children: [
+              _SectionLabel('Идут', c),
+              const SizedBox(width: 6),
+              Text(
+                '${s.joined}',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink3),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
           SizedBox(
             height: 90,
@@ -367,35 +376,147 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                   + (s.joined > s.memberNames.length ? 1 : 0)
                   + (s.max != null && s.remaining > 0 ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (context, i) {
+              itemBuilder: (ctx, i) {
                 final hasMore = s.joined > s.memberNames.length;
                 final moreIdx = s.memberNames.length;
                 final emptySlotIdx = moreIdx + (hasMore ? 1 : 0);
                 if (i == moreIdx && hasMore) {
-                  return _MoreMembersSlot(count: s.joined - s.memberNames.length, c: c);
+                  return GestureDetector(
+                    onTap: () => _showAllMembers(s),
+                    child: _MoreMembersSlot(count: s.joined - s.memberNames.length, c: c),
+                  );
                 }
                 if (i == emptySlotIdx && s.max != null && s.remaining > 0) {
                   return _EmptySlot(remaining: s.remaining, c: c);
                 }
                 final name = s.memberNames[i];
-                final username = i < s.memberUsernames.length ? s.memberUsernames[i] : null;
+                final username = i < s.memberUsernames.length ? s.memberUsernames[i] : '';
                 final memberId = i < s.memberIds.length ? s.memberIds[i] : null;
+                final avatarUrl = i < s.memberAvatarUrls.length ? s.memberAvatarUrls[i] : '';
                 final isHost = memberId != null && memberId == s.hostId;
                 return _ParticipantCell(
                   name: name,
+                  avatarUrl: avatarUrl,
                   isHost: isHost,
-                  onTap: username != null && username.isNotEmpty
+                  onTap: username.isNotEmpty
                       ? () => context.push('/profile/$username')
-                      : memberId != null
-                          ? () => ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Профиль недоступен')),
-                              )
-                          : null,
+                      : null,
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showAllMembers(Sbor s) {
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: c.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 6),
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(color: c.line, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+              child: Row(
+                children: [
+                  Text('Участники · ${s.joined}',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: c.ink)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Icon(PhosphorIcons.x(), size: 20, color: c.ink3),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 20),
+                itemCount: s.memberNames.length,
+                itemBuilder: (_, i) {
+                  final name = s.memberNames[i];
+                  final username = i < s.memberUsernames.length ? s.memberUsernames[i] : '';
+                  final memberId = i < s.memberIds.length ? s.memberIds[i] : null;
+                  final avatarUrl = i < s.memberAvatarUrls.length ? s.memberAvatarUrls[i] : '';
+                  final isHost = memberId != null && memberId == s.hostId;
+                  final resolvedUrl = avatarUrl.isEmpty
+                      ? null
+                      : avatarUrl.startsWith('http')
+                          ? avatarUrl
+                          : AppConfig.apiOrigin + avatarUrl;
+                  final seed = name.isNotEmpty
+                      ? (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length
+                      : 0;
+                  final pal = SeeUColors.avatarPalettes[seed];
+
+                  return ListTile(
+                    onTap: username.isNotEmpty
+                        ? () {
+                            Navigator.pop(ctx);
+                            context.push('/profile/$username');
+                          }
+                        : null,
+                    leading: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: resolvedUrl == null ? LinearGradient(colors: pal) : null,
+                      ),
+                      child: ClipOval(
+                        child: resolvedUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: resolvedUrl,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Container(
+                                  decoration: BoxDecoration(gradient: LinearGradient(colors: pal)),
+                                  child: Center(
+                                    child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
+                              ),
+                      ),
+                    ),
+                    title: Text(name, style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500)),
+                    subtitle: username.isNotEmpty
+                        ? Text('@$username', style: TextStyle(fontSize: 13, color: c.ink3))
+                        : isHost
+                            ? Text('организатор', style: TextStyle(fontSize: 13, color: SeeUColors.accent))
+                            : null,
+                    trailing: isHost
+                        ? Text('★', style: TextStyle(fontSize: 16, color: SeeUColors.accent))
+                        : username.isNotEmpty
+                            ? Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4)
+                            : null,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1115,16 +1236,24 @@ class _SectionLabel extends StatelessWidget {
 
 class _ParticipantCell extends StatelessWidget {
   final String name;
+  final String avatarUrl;
   final bool isHost;
   final VoidCallback? onTap;
 
-  const _ParticipantCell({required this.name, required this.isHost, this.onTap});
+  const _ParticipantCell({required this.name, this.avatarUrl = '', required this.isHost, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final seed = (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length;
+    final seed = name.isNotEmpty
+        ? (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length
+        : 0;
     final pal = SeeUColors.avatarPalettes[seed];
     final c = context.seeuColors;
+    final resolvedUrl = avatarUrl.isEmpty
+        ? null
+        : avatarUrl.startsWith('http')
+            ? avatarUrl
+            : AppConfig.apiOrigin + avatarUrl;
 
     return GestureDetector(
       onTap: onTap,
@@ -1135,19 +1264,37 @@ class _ParticipantCell extends StatelessWidget {
             Container(
               width: 48, height: 48,
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: pal),
                 shape: BoxShape.circle,
                 border: onTap != null
                     ? Border.all(color: SeeUColors.accent, width: 2)
                     : null,
               ),
-              child: Center(
-                child: Text(
-                  name[0].toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20,
-                  ),
-                ),
+              child: ClipOval(
+                child: resolvedUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: resolvedUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          decoration: BoxDecoration(gradient: LinearGradient(colors: pal)),
+                          child: Center(
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20),
+                            ),
+                          ),
+                        ),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(gradient: LinearGradient(colors: pal)),
+                        child: Center(
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20,
+                            ),
+                          ),
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 6),
