@@ -87,7 +87,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
           ApiEndpoints.chatMember(widget.chatId, p.user.id));
       if (selfLeave) {
         // Покинул сам → перейти в chat-list, обновить.
-        ref.read(chatListProvider.notifier).load();
+        ref.read(chatListProvider.notifier).load(silent: true);
         if (!mounted) return;
         context.go('/chat');
         messenger.showSnackBar(
@@ -352,7 +352,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                                 if (mounted) {
                                   ref
                                       .read(chatListProvider.notifier)
-                                      .load();
+                                      .load(silent: true);
                                 }
                                 if (innerCtx.mounted) {
                                   Navigator.of(innerCtx).pop();
@@ -556,12 +556,15 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       final isSelf = p.user.id == myId;
                       final canKick = isMeAdmin && !isSelf;
                       return ListTile(
+                        onTap: () =>
+                            context.push('/profile/${p.user.username}'),
                         leading: CircleAvatar(
                           radius: 22,
                           backgroundColor: c.surface2,
                           backgroundImage:
                               (p.user.avatarUrl?.isNotEmpty ?? false)
-                                  ? NetworkImage(p.user.avatarUrl!)
+                                  ? CachedNetworkImageProvider(
+                                      p.user.avatarUrl!)
                                   : null,
                           child: (p.user.avatarUrl?.isEmpty ?? true)
                               ? Icon(PhosphorIcons.user(),
