@@ -278,6 +278,33 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
           ),
         ),
+        // ── Profile (other user) — fullscreen, no bottom nav ──
+        GoRoute(
+          path: '/profile/:username',
+          pageBuilder: (context, state) => CupertinoPage(
+            child: ProfileScreen(
+              username: state.pathParameters['username'],
+            ),
+          ),
+          routes: [
+            GoRoute(
+              path: 'followers',
+              pageBuilder: (context, state) => CupertinoPage(
+                child: FollowersScreen(
+                  username: state.pathParameters['username']!,
+                ),
+              ),
+            ),
+            GoRoute(
+              path: 'following',
+              pageBuilder: (context, state) => CupertinoPage(
+                child: FollowingScreen(
+                  username: state.pathParameters['username']!,
+                ),
+              ),
+            ),
+          ],
+        ),
         // ── ShellRoute with bottom nav ──
         ShellRoute(
           builder: (context, state, child) => MainScaffold(child: child),
@@ -339,32 +366,6 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                   path: 'edit',
                   pageBuilder: (_, __) => const CupertinoPage(
                     child: EditProfileScreen(),
-                  ),
-                ),
-              ],
-            ),
-            GoRoute(
-              path: '/profile/:username',
-              pageBuilder: (context, state) => CupertinoPage(
-                child: ProfileScreen(
-                  username: state.pathParameters['username'],
-                ),
-              ),
-              routes: [
-                GoRoute(
-                  path: 'followers',
-                  pageBuilder: (context, state) => CupertinoPage(
-                    child: FollowersScreen(
-                      username: state.pathParameters['username']!,
-                    ),
-                  ),
-                ),
-                GoRoute(
-                  path: 'following',
-                  pageBuilder: (context, state) => CupertinoPage(
-                    child: FollowingScreen(
-                      username: state.pathParameters['username']!,
-                    ),
                   ),
                 ),
               ],
