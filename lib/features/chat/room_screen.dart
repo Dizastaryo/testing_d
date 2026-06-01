@@ -216,11 +216,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               Container(
                 width: double.infinity,
                 color: c.surface2,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Комната закрыта',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: c.ink3),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(PhosphorIcons.lockSimple(PhosphorIconsStyle.fill),
+                        size: 12, color: c.ink3),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Комната закрыта',
+                      style: TextStyle(fontSize: 13, color: c.ink3),
+                    ),
+                  ],
                 ),
               ),
             Expanded(
@@ -292,45 +299,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final isAdmin = room.isAdmin || isCreator;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      decoration: BoxDecoration(
+        color: c.bg,
+        border: Border(bottom: BorderSide(color: c.line, width: 0.5)),
+      ),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
-          ),
-          // Lock badge — all rooms are private
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: SeeUColors.accent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(PhosphorIcons.lock(PhosphorIconsStyle.fill),
-                    size: 11, color: SeeUColors.accent),
-                const SizedBox(width: 4),
-                Text(
-                  'Приватная',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: SeeUColors.accent,
-                  ),
-                ),
-              ],
+          // Circle back button
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: c.surface,
+                shape: BoxShape.circle,
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Icon(
+                PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                size: 16, color: c.ink,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   room.name,
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.ink),
+                  style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w700,
+                    fontFamily: 'Fraunces', color: c.ink,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -341,9 +343,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ],
             ),
           ),
-          // Members button — navigates to RoomMembersScreen
-          IconButton(
-            onPressed: () => Navigator.of(context).push(
+          const SizedBox(width: 8),
+          // Members button
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => RoomMembersScreen(
                   roomId: room.id,
@@ -351,39 +354,112 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 ),
               ),
             ),
-            icon: Icon(PhosphorIcons.users(), size: 20, color: c.ink),
-            tooltip: 'Участники',
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: c.surface,
+                shape: BoxShape.circle,
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Icon(PhosphorIcons.users(), size: 18, color: c.ink),
+            ),
           ),
-          // Admin: edit room
-          if (isAdmin)
-            IconButton(
-              onPressed: () => _showEditSheet(room),
-              icon: Icon(PhosphorIcons.pencilSimple(), size: 20, color: c.ink),
-              tooltip: 'Редактировать',
-            ),
-          // Creator: close room; member: leave
-          if (isCreator && room.isActive)
-            IconButton(
-              onPressed: _closeRoom,
-              icon: Icon(
-                PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
-                size: 22,
-                color: SeeUColors.error,
+          const SizedBox(width: 8),
+          // Overflow menu
+          GestureDetector(
+            onTap: () => _showRoomMenu(c, room, isAdmin, isCreator),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: c.surface,
+                shape: BoxShape.circle,
+                boxShadow: SeeUShadows.sm,
               ),
-              tooltip: 'Закрыть комнату',
-            )
-          else if (!isCreator && room.isJoined)
-            // #8: кнопка выхода из комнаты для не-создателей
-            IconButton(
-              onPressed: _leaveRoom,
-              icon: Icon(
-                PhosphorIcons.signOut(PhosphorIconsStyle.fill),
-                size: 22,
-                color: SeeUColors.error,
-              ),
-              tooltip: 'Покинуть комнату',
+              child: Icon(PhosphorIcons.dotsThreeVertical(), size: 18, color: c.ink),
             ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showRoomMenu(SeeUThemeColors c, Room room, bool isAdmin, bool isCreator) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: c.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                decoration: BoxDecoration(
+                  color: c.line, borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              if (isAdmin && room.isActive)
+                ListTile(
+                  leading: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(color: c.surface2, shape: BoxShape.circle),
+                    child: Icon(PhosphorIcons.pencilSimple(), size: 18, color: c.ink),
+                  ),
+                  title: Text('Редактировать', style: TextStyle(fontSize: 15, color: c.ink)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showEditSheet(room);
+                  },
+                ),
+              if (isCreator && room.isActive)
+                ListTile(
+                  leading: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: SeeUColors.error.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
+                      size: 18, color: SeeUColors.error,
+                    ),
+                  ),
+                  title: const Text('Закрыть комнату',
+                      style: TextStyle(fontSize: 15, color: SeeUColors.error)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _closeRoom();
+                  },
+                )
+              else if (!isCreator && room.isJoined)
+                ListTile(
+                  leading: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: SeeUColors.error.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      PhosphorIcons.signOut(PhosphorIconsStyle.fill),
+                      size: 18, color: SeeUColors.error,
+                    ),
+                  ),
+                  title: const Text('Покинуть комнату',
+                      style: TextStyle(fontSize: 15, color: SeeUColors.error)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _leaveRoom();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -560,16 +636,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              room.isVoice
-                  ? PhosphorIcons.microphone()
-                  : PhosphorIcons.chatTeardropText(),
-              size: 40, color: c.ink4,
+            Container(
+              width: 72, height: 72,
+              decoration: BoxDecoration(color: c.surface2, shape: BoxShape.circle),
+              child: Icon(PhosphorIcons.chatTeardropText(), size: 32, color: c.ink3),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             Text(
               'Начните общение',
-              style: TextStyle(fontSize: 14, color: c.ink3),
+              style: TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w600, color: c.ink2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Напишите первое сообщение',
+              style: TextStyle(fontSize: 13, color: c.ink3),
             ),
           ],
         ),
@@ -602,33 +684,39 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   // ─── Input bar ───────────────────────────────────────────────────
 
   Widget _buildInput(SeeUThemeColors c, Room room) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(22),
+      borderSide: BorderSide(color: c.line, width: 0.5),
+    );
     return Container(
-      padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.of(context).viewInsets.bottom + 12),
+      padding: EdgeInsets.fromLTRB(
+          12, 8, 12, MediaQuery.of(context).viewInsets.bottom + 12),
       decoration: BoxDecoration(
         color: c.bg,
         border: Border(top: BorderSide(color: c.line, width: 0.5)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 120),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: c.line, width: 0.5),
-              ),
-              child: TextField(
-                controller: _inputController,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction: TextInputAction.newline,
-                style: TextStyle(fontSize: 15, color: c.ink),
-                decoration: InputDecoration(
-                  hintText: room.isVoice ? 'Написать в чат...' : 'Сообщение...',
-                  hintStyle: TextStyle(fontSize: 15, color: c.ink3),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: TextField(
+              controller: _inputController,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction: TextInputAction.newline,
+              style: TextStyle(fontSize: 15, color: c.ink),
+              decoration: InputDecoration(
+                hintText: 'Написать в чат...',
+                hintStyle: TextStyle(fontSize: 15, color: c.ink3),
+                filled: true,
+                fillColor: c.surface,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                border: border,
+                enabledBorder: border,
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: BorderSide(color: c.line, width: 1.0),
                 ),
               ),
             ),
@@ -654,7 +742,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   ? const Center(
                       child: SizedBox(
                         width: 16, height: 16,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
                       ),
                     )
                   : Icon(
