@@ -80,7 +80,7 @@ class AppConfig {
   /// Chrome production target — это **исключение** из rule «mobile only».
   static const String mainAppUrl = String.fromEnvironment(
     'MAIN_APP_URL',
-    defaultValue: 'http://192.168.1.6:5000',
+    defaultValue: 'http://192.168.1.3:5000',
   );
 
   /// Converts a server URL to an absolute URL.
