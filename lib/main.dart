@@ -89,12 +89,18 @@ class SeeUApp extends ConsumerStatefulWidget {
 }
 
 class _SeeUAppState extends ConsumerState<SeeUApp> {
+  // Ключ передаётся в GoRouter и в CallListener, чтобы тот мог пушить
+  // полноэкранные маршруты без Navigator.of(context) — CallListener
+  // находится в MaterialApp.builder выше навигатора, поэтому context
+  // не имеет NavigatorState-предка и стандартный подход падает тихо.
+  final _navigatorKey = GlobalKey<NavigatorState>();
   late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
     _router = GoRouter(
+      navigatorKey: _navigatorKey,
       initialLocation: '/splash',
       errorBuilder: (context, state) => Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -497,7 +503,10 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
       routerConfig: _router,
       // CallListener должен сидеть выше навигатора, чтобы при incoming WS-event'е
       // открывать полноэкранный CallScreen поверх любого роута.
-      builder: (context, child) => CallListener(child: child ?? const SizedBox()),
+      builder: (context, child) => CallListener(
+        navigatorKey: _navigatorKey,
+        child: child ?? const SizedBox(),
+      ),
     );
   }
 }

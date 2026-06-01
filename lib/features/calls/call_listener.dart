@@ -18,7 +18,11 @@ import 'group_call_service.dart';
 /// Должен сидеть выше навигатора (в `MaterialApp.builder`).
 class CallListener extends ConsumerStatefulWidget {
   final Widget child;
-  const CallListener({super.key, required this.child});
+  /// Ключ GoRouter'овского корневого Navigator'а. Нужен потому что
+  /// CallListener живёт в MaterialApp.builder — его context находится
+  /// ВЫШЕ навигатора и Navigator.of(context) не может найти его как предка.
+  final GlobalKey<NavigatorState> navigatorKey;
+  const CallListener({super.key, required this.child, required this.navigatorKey});
 
   @override
   ConsumerState<CallListener> createState() => _CallListenerState();
@@ -86,21 +90,22 @@ class _CallListenerState extends ConsumerState<CallListener> {
 
   void _onGroupSession() {
     final s = GroupCallService.instance.session.value;
-    if (s != null && !_groupOpen) {
-      _groupOpen = true;
-      Navigator.of(context, rootNavigator: true).push(
-        PageRouteBuilder(
-          opaque: true,
-          fullscreenDialog: true,
-          transitionDuration: const Duration(milliseconds: 220),
-          pageBuilder: (_, __, ___) => const GroupCallScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-        ),
-      ).then((_) {
-        _groupOpen = false;
-      });
-    }
+    if (s == null || _groupOpen) return;
+    final nav = widget.navigatorKey.currentState;
+    if (nav == null) return;
+    _groupOpen = true;
+    nav.push(
+      PageRouteBuilder(
+        opaque: true,
+        fullscreenDialog: true,
+        transitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, __, ___) => const GroupCallScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
+    ).then((_) {
+      _groupOpen = false;
+    });
   }
 
   void _onSession() {
@@ -121,8 +126,10 @@ class _CallListenerState extends ConsumerState<CallListener> {
   }
 
   void _pushCallScreen() {
+    final nav = widget.navigatorKey.currentState;
+    if (nav == null) return; // navigatorKey not ready yet — флаг не трогаем
     _open = true;
-    Navigator.of(context, rootNavigator: true).push(
+    nav.push(
       PageRouteBuilder(
         opaque: true,
         fullscreenDialog: true,
