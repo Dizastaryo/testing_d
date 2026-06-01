@@ -148,36 +148,34 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                   // Search
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Container(
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: c.line),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Icon(PhosphorIcons.magnifyingGlass(),
-                              size: 16, color: c.ink3),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: controller,
-                              autofocus: false,
-                              decoration: InputDecoration(
-                                hintText: 'Поиск города...',
-                                hintStyle:
-                                    TextStyle(fontSize: 14, color: c.ink3),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                              style: TextStyle(fontSize: 14, color: c.ink),
-                              onChanged: (v) => setSheet(() => query = v),
-                            ),
-                          ),
-                        ],
+                    child: TextField(
+                      controller: controller,
+                      autofocus: false,
+                      style: TextStyle(fontSize: 14, color: c.ink),
+                      onChanged: (v) => setSheet(() => query = v),
+                      decoration: InputDecoration(
+                        hintText: 'Поиск города...',
+                        hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+                        filled: true,
+                        fillColor: c.surface,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        prefixIcon: Padding(
+                          padding: const EdgeInsets.only(left: 14, right: 10),
+                          child: Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
+                        ),
+                        prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: c.line),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: c.line),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: c.line, width: 1.5),
+                        ),
                       ),
                     ),
                   ),
@@ -355,7 +353,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               HapticFeedback.selectionClick();
               context.push('/sbory/create');
             },
-            color: c.ink,
+            color: SeeUColors.accent,
             iconColor: Colors.white,
           ),
         ],
@@ -364,48 +362,46 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   }
 
   Widget _buildSearchBar(SeeUThemeColors c) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: c.line),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Container(
-        height: 38,
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: c.line),
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 10),
-            Icon(PhosphorIcons.magnifyingGlass(), size: 15, color: c.ink3),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Поиск сборов...',
-                  hintStyle: TextStyle(fontSize: 14, color: c.ink3),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                style: TextStyle(fontSize: 14, color: c.ink),
-                onChanged: (v) => setState(() => _searchQuery = v),
-              ),
-            ),
-            if (_searchQuery.isNotEmpty)
-              GestureDetector(
-                onTap: () {
-                  _searchController.clear();
-                  setState(() => _searchQuery = '');
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Icon(PhosphorIcons.x(), size: 14, color: c.ink3),
-                ),
-              ),
-          ],
+      child: TextField(
+        controller: _searchController,
+        style: TextStyle(fontSize: 14, color: c.ink),
+        onChanged: (v) => setState(() => _searchQuery = v),
+        decoration: InputDecoration(
+          hintText: 'Поиск сборов...',
+          hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+          filled: true,
+          fillColor: c.surface,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 14, right: 10),
+            child: Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
+          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? GestureDetector(
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Icon(PhosphorIcons.x(), size: 14, color: c.ink3),
+                  ),
+                )
+              : null,
+          suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: c.line, width: 1.5),
+          ),
         ),
       ),
     );
@@ -727,9 +723,11 @@ class _IconBtn extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
+              color: color == SeeUColors.accent
+                  ? SeeUColors.accent.withValues(alpha: 0.30)
+                  : Colors.black.withValues(alpha: 0.06),
+              blurRadius: color == SeeUColors.accent ? 12 : 2,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
@@ -1049,27 +1047,40 @@ class SborHeroCard extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      width: 8, height: 8,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withValues(alpha: 0.4),
-                            blurRadius: 0,
-                            spreadRadius: 3,
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 0.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6, height: 6,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  blurRadius: 0,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'ПРЯМО СЕЙЧАС',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1,
+                              color: Colors.white,
+                            ),
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'ПРЯМО СЕЙЧАС',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
-                        color: Colors.white,
                       ),
                     ),
                     const Spacer(),
@@ -1222,7 +1233,7 @@ class _JoinBtn extends StatelessWidget {
       return _pill(c.surface2, 'Ждём', c.ink3);
     }
     // Default: can join / re-apply
-    return _pill(c.ink, 'Участвую', Colors.white);
+    return _pill(SeeUColors.accent, 'Участвую', Colors.white);
   }
 
   Widget _pill(Color bg, String label, Color textColor) {
@@ -1232,6 +1243,13 @@ class _JoinBtn extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
+        boxShadow: bg == SeeUColors.accent
+            ? [BoxShadow(
+                color: SeeUColors.accent.withValues(alpha: 0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              )]
+            : null,
       ),
       child: Center(
         child: Text(

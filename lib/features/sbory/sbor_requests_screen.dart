@@ -43,55 +43,106 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => context.pop(),
-          child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), color: c.ink),
-        ),
-        title: Text(
-          'Заявки на вступление',
-          style: TextStyle(
-            fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
-          ),
-        ),
-      ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Text('Ошибка: $e', style: TextStyle(color: c.ink2)),
-        ),
-        data: (requests) {
-          if (requests.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Custom header ──────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 14),
+              child: Row(
                 children: [
-                  Icon(PhosphorIcons.usersThree(), size: 48, color: c.ink4),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Нет новых заявок',
-                    style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500, color: c.ink2,
+                  GestureDetector(
+                    onTap: () => context.pop(),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        shape: BoxShape.circle,
+                        boxShadow: SeeUShadows.sm,
+                      ),
+                      child: Icon(
+                        PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                        size: 16, color: c.ink,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Заявки',
+                          style: TextStyle(
+                            fontFamily: 'Fraunces',
+                            fontSize: 22, fontWeight: FontWeight.w500,
+                            letterSpacing: -0.2, height: 1.1, color: c.ink,
+                          ),
+                        ),
+                        Text(
+                          'запросы на вступление',
+                          style: TextStyle(fontSize: 12, color: c.ink3),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            itemCount: requests.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, i) => _RequestCard(
-              request: requests[i],
-              isLoading: _loading.contains(requests[i].id),
-              onApprove: () => _approve(requests[i]),
-              onReject: () => _reject(requests[i]),
             ),
-          );
-        },
+            // ── Body ───────────────────────────────────────────────
+            Expanded(
+              child: async.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(
+                  child: Text('Ошибка: $e', style: TextStyle(color: c.ink2)),
+                ),
+                data: (requests) {
+                  if (requests.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 72, height: 72,
+                            decoration: BoxDecoration(
+                              color: c.surface2,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(PhosphorIcons.usersThree(), size: 34, color: c.ink4),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Нет новых заявок',
+                            style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600, color: c.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Как только кто-то попросится — увидишь здесь',
+                            style: TextStyle(fontSize: 13, color: c.ink3),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                    itemCount: requests.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) => _RequestCard(
+                      request: requests[i],
+                      isLoading: _loading.contains(requests[i].id),
+                      onApprove: () => _approve(requests[i]),
+                      onReject: () => _reject(requests[i]),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

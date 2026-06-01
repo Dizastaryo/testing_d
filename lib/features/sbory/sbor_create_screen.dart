@@ -501,13 +501,18 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickCoverImage,
-          child: Container(
-            height: 140,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 150,
             decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(16),
+              color: _coverImage != null
+                  ? Colors.transparent
+                  : SeeUColors.accentSoft.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: _coverImage != null ? SeeUColors.accent : c.line,
+                color: _coverImage != null
+                    ? SeeUColors.accent
+                    : SeeUColors.accent.withValues(alpha: 0.25),
                 width: _coverImage != null ? 1.5 : 1,
               ),
             ),
@@ -520,12 +525,10 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                       Positioned(
                         top: 8, right: 8,
                         child: GestureDetector(
-                          onTap: () => setState(() {
-                            _coverImage = null;
-                          }),
+                          onTap: () => setState(() => _coverImage = null),
                           child: Container(
                             width: 28, height: 28,
-                            decoration: BoxDecoration(
+                            decoration: const BoxDecoration(
                               color: Colors.black54,
                               shape: BoxShape.circle,
                             ),
@@ -538,14 +541,30 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(PhosphorIcons.image(PhosphorIconsStyle.duotone),
-                          size: 36, color: c.ink4),
-                      const SizedBox(height: 8),
-                      Text('Нажми чтобы добавить фото',
-                          style: TextStyle(fontSize: 13, color: c.ink3)),
-                      const SizedBox(height: 2),
-                      Text('Станет обложкой сбора и группы',
-                          style: TextStyle(fontSize: 11, color: c.ink4)),
+                      Container(
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(
+                          color: SeeUColors.accent.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          PhosphorIcons.image(PhosphorIconsStyle.duotone),
+                          size: 24, color: SeeUColors.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Добавить обложку',
+                        style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                          color: SeeUColors.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Станет обложкой сбора и чата',
+                        style: TextStyle(fontSize: 12, color: c.ink3),
+                      ),
                     ],
                   ),
           ),

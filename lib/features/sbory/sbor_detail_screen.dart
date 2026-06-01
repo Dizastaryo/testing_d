@@ -117,6 +117,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: Container(
+        constraints: const BoxConstraints(minHeight: 220),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -291,13 +292,13 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           crossAxisCount: 2,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
-          childAspectRatio: 2.0,
+          childAspectRatio: 1.75,
         ),
         itemCount: items.length,
         itemBuilder: (context, i) {
           final (icon, label, value, sub) = items[i];
           return Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: c.surface,
               borderRadius: BorderRadius.circular(16),
@@ -305,9 +306,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 16, color: c.ink3),
-                const SizedBox(height: 4),
+                Icon(icon, size: 16, color: s.categoryMeta.color.withValues(alpha: 0.75)),
+                const SizedBox(height: 5),
                 Text(
                   label.toUpperCase(),
                   style: TextStyle(
@@ -315,10 +317,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                     letterSpacing: 0.6, color: c.ink3,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   value,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.ink),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
                 if (sub.isNotEmpty)
@@ -339,16 +341,24 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     if (s.description == null || s.description!.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: c.line, width: 0.5),
+        ),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SectionLabel('О чём сбор', c),
           const SizedBox(height: 8),
           Text(
             s.description!,
-            style: TextStyle(fontSize: 14, height: 1.5, color: c.ink2),
+            style: TextStyle(fontSize: 14, height: 1.55, color: c.ink2),
           ),
         ],
+        ),
       ),
     );
   }
@@ -365,13 +375,34 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             children: [
               _SectionLabel('Идут', c),
               const SizedBox(width: 6),
-              Text(
-                '${s.joined}',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${s.joined}',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c.ink2),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
+          if (s.max != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: s.max! > 0 ? (s.joined / s.max!).clamp(0.0, 1.0) : 0,
+                minHeight: 4,
+                backgroundColor: c.line,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  s.isFull ? c.ink3 : SeeUColors.accent,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           SizedBox(
             height: 90,
             child: ListView.separated(
@@ -1212,12 +1243,13 @@ class _HeroAction extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 34, height: 34,
+        width: 36, height: 36,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.16),
+          color: Colors.black.withValues(alpha: 0.22),
           shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 0.5),
         ),
-        child: Icon(icon, size: 15, color: Colors.white),
+        child: Icon(icon, size: 16, color: Colors.white),
       ),
     );
   }
