@@ -133,6 +133,9 @@ class Sbor {
   final bool isBookmarked;
   final String? chatId;
   final DateTime? scheduledAt;
+  // Request flow
+  final String myRequestStatus;    // '' | 'pending' | 'approved' | 'rejected'
+  final int pendingRequestsCount;  // visible to organizer only
 
   const Sbor({
     required this.id,
@@ -159,6 +162,8 @@ class Sbor {
     this.isBookmarked = false,
     this.chatId,
     this.scheduledAt,
+    this.myRequestStatus = '',
+    this.pendingRequestsCount = 0,
   });
 
   int get remaining => max == null ? 999 : max! - joined;
@@ -205,6 +210,8 @@ class Sbor {
       scheduledAt: j['scheduled_at'] != null
           ? DateTime.tryParse(j['scheduled_at'] as String)
           : null,
+      myRequestStatus: j['my_request_status'] as String? ?? '',
+      pendingRequestsCount: j['pending_requests_count'] as int? ?? 0,
     );
   }
 
@@ -217,5 +224,45 @@ class Sbor {
       default:
         return SborRole.none;
     }
+  }
+}
+
+// ─── Join Request ─────────────────────────────────────────────────
+
+class SborJoinRequest {
+  final String id;
+  final String sborId;
+  final String userId;
+  final String username;
+  final String fullName;
+  final String avatarUrl;
+  final String status; // pending | approved | rejected
+  final String message;
+  final DateTime createdAt;
+
+  const SborJoinRequest({
+    required this.id,
+    required this.sborId,
+    required this.userId,
+    required this.username,
+    required this.fullName,
+    required this.avatarUrl,
+    required this.status,
+    required this.message,
+    required this.createdAt,
+  });
+
+  factory SborJoinRequest.fromJson(Map<String, dynamic> j) {
+    return SborJoinRequest(
+      id: j['id'] as String,
+      sborId: j['sbor_id'] as String,
+      userId: j['user_id'] as String,
+      username: j['username'] as String? ?? '',
+      fullName: j['full_name'] as String? ?? '',
+      avatarUrl: j['avatar_url'] as String? ?? '',
+      status: j['status'] as String? ?? 'pending',
+      message: j['message'] as String? ?? '',
+      createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+    );
   }
 }

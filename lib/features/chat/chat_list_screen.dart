@@ -677,28 +677,6 @@ class _ChatTile extends ConsumerWidget {
                               ],
                             ),
                           )
-                        else
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: SeeUColors.accent.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(99),
-                              border: Border.all(
-                                color: SeeUColors.accent.withValues(alpha: 0.25),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              'группа · ${chat.participantsCount}',
-                              style: const TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                color: SeeUColors.accent,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
                       ],
                       // Badge «взаимный» удалён 2026-05-11 (был фейк по
                       // hashCode). Реальный BLE-match вернётся когда сделаем

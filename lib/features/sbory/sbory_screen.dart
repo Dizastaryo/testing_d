@@ -675,7 +675,7 @@ class _TypeChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: active ? color.ink : color.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(999),
           border: active ? null : Border.all(color: color.line),
         ),
         child: Row(
@@ -759,17 +759,18 @@ class SborCard extends StatelessWidget {
     final s = sbor;
     final meta = s.categoryMeta;
     final coverUrl = _resolvedCoverUrl(s);
+    final headerH = coverUrl != null ? 140.0 : 96.0;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
           color: c.surface,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           border: Border.all(color: c.line, width: 0.5),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF161310).withValues(alpha: 0.04),
+              color: const Color(0xFF161310).withValues(alpha: 0.06),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -781,163 +782,245 @@ class SborCard extends StatelessWidget {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Cover image
-                if (coverUrl != null)
-                  SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: CachedNetworkImage(
+            // ── Header strip ──────────────────────────────────────
+            SizedBox(
+              height: headerH,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Background
+                  if (coverUrl != null)
+                    CachedNetworkImage(
                       imageUrl: coverUrl,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                Padding(
-                  padding: EdgeInsets.all(compact ? 14 : 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (s.live && coverUrl == null) const SizedBox(height: 3),
-                      // Top row
-                      Row(
-                        children: [
-                          _CategoryBadge(meta: meta),
-                          const SizedBox(width: 6),
-                          _TypeBadge(type: s.type, c: c),
-                          if (s.price > 0) ...[
-                            const SizedBox(width: 6),
-                            _PriceBadge(price: s.price, c: c),
+                      errorWidget: (_, __, ___) => Container(color: meta.soft),
+                    )
+                  else
+                    Container(color: meta.soft),
+                  // Cover gradient overlay
+                  if (coverUrl != null)
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.28),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.32),
                           ],
-                          const Spacer(),
-                          if (s.live)
-                            Row(
-                              children: [
-                                Container(
-                                  width: 6, height: 6,
-                                  decoration: BoxDecoration(
-                                    color: SeeUColors.accent,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: SeeUColors.accentSoft,
-                                        blurRadius: 0,
-                                        spreadRadius: 3,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'идёт сейчас',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: SeeUColors.accent,
-                                  ),
-                                ),
-                              ],
-                            )
-                          else if (s.distance != null)
-                            Text(s.distance!, style: TextStyle(fontSize: 12, color: c.ink3))
-                          else
-                            Text(
-                              s.when.split(' · ').first,
-                              style: TextStyle(fontSize: 12, color: c.ink3),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // Title
-                      Text(
-                        s.title,
-                        style: const TextStyle(
-                          fontFamily: 'Fraunces',
-                          fontSize: 19,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.2,
-                          height: 1.2,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      // Meta row
-                      Row(
-                        children: [
-                          Icon(PhosphorIcons.calendarBlank(), size: 13, color: c.ink3),
-                          const SizedBox(width: 4),
-                          Text(s.when, style: TextStyle(fontSize: 13, color: c.ink2)),
-                          const SizedBox(width: 8),
-                          Container(width: 3, height: 3, decoration: BoxDecoration(color: c.ink4, shape: BoxShape.circle)),
-                          const SizedBox(width: 8),
-                          Icon(
-                            s.type == SborType.online
-                                ? PhosphorIcons.headphones()
-                                : PhosphorIcons.mapPinLine(),
-                            size: 13, color: c.ink3,
+                    ),
+                  // Watermark icon (no cover)
+                  if (coverUrl == null)
+                    Positioned(
+                      right: -14, bottom: -34,
+                      child: Opacity(
+                        opacity: 0.16,
+                        child: Icon(meta.icon, size: 150, color: meta.color),
+                      ),
+                    ),
+                  // Pills (top-left)
+                  Positioned(
+                    top: 12, left: 12,
+                    child: Wrap(
+                      spacing: 6,
+                      children: [
+                        _HeaderPill(
+                          icon: meta.icon,
+                          label: meta.name,
+                          color: meta.color,
+                          bg: Colors.white,
+                        ),
+                        _HeaderPill(
+                          icon: s.type == SborType.online
+                              ? PhosphorIcons.globe()
+                              : PhosphorIcons.mapPin(),
+                          label: s.type == SborType.online ? 'Онлайн' : 'Оффлайн',
+                          color: c.ink2,
+                          bg: Colors.white.withValues(alpha: 0.75),
+                        ),
+                        if (s.price > 0)
+                          _HeaderPill(
+                            label: '${s.price} ₸',
+                            color: SeeUColors.accent,
+                            bg: SeeUColors.accentSoft,
                           ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              s.place.isNotEmpty ? s.place : 'Онлайн',
-                              style: TextStyle(fontSize: 13, color: c.ink2),
-                              overflow: TextOverflow.ellipsis,
+                      ],
+                    ),
+                  ),
+                  // Live badge (top-right)
+                  if (s.live)
+                    Positioned(
+                      top: 12, right: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6, height: 6,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    blurRadius: 0, spreadRadius: 3,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            const Text(
+                              'СЕЙЧАС',
+                              style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8, color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Time chip (bottom-right)
+                  Positioned(
+                    bottom: 12, right: 12,
+                    child: Container(
+                      height: 30,
+                      padding: const EdgeInsets.symmetric(horizontal: 11),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 8, offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(PhosphorIcons.calendarBlank(), size: 12, color: meta.color),
+                          const SizedBox(width: 5),
+                          Text(
+                            s.when,
+                            style: const TextStyle(
+                              fontSize: 12.5, fontWeight: FontWeight.w700,
+                              color: Color(0xFF161310),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      // Footer
-                      Row(
-                        children: [
-                          SboryAvatarStack(names: s.memberNames, size: 26),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.max != null ? '${s.joined} из ${s.max}' : '${s.joined} участников',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink),
-                                ),
-                                Text(
-                                  s.isFull
-                                      ? 'заполнено'
-                                      : s.max != null
-                                          ? 'нужно ещё ${s.remaining}'
-                                          : 'открытый сбор',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: s.isFull ? c.ink3 : SeeUColors.accent,
-                                  ),
-                                ),
-                              ],
-                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Body ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Text(
+                    s.title,
+                    style: const TextStyle(
+                      fontFamily: 'Fraunces',
+                      fontSize: 21, fontWeight: FontWeight.w500,
+                      letterSpacing: -0.3, height: 1.18,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  // Meta: place + dot + distance/whenSub
+                  Row(
+                    children: [
+                      Icon(
+                        s.type == SborType.online
+                            ? PhosphorIcons.headphones()
+                            : PhosphorIcons.mapPinLine(),
+                        size: 14, color: c.ink3,
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          s.place.isNotEmpty ? s.place : 'Онлайн',
+                          style: TextStyle(fontSize: 13, color: c.ink2),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if ((s.distance ?? s.whenSub) != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Container(
+                            width: 3, height: 3,
+                            decoration: BoxDecoration(color: c.ink4, shape: BoxShape.circle),
                           ),
-                          const SizedBox(width: 10),
-                          _JoinBtn(isFull: s.isFull, isJoined: s.isJoined, c: c),
-                        ],
+                        ),
+                        Text(
+                          s.distance ?? s.whenSub!,
+                          style: TextStyle(fontSize: 13, color: c.ink3),
+                        ),
+                      ],
+                    ],
+                  ),
+                  // Divider + footer
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14, bottom: 14),
+                    child: Container(height: 1, color: c.line),
+                  ),
+                  Row(
+                    children: [
+                      SboryAvatarStack(names: s.memberNames, size: 26),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.max != null
+                                  ? '${s.joined} из ${s.max}'
+                                  : '${s.joined} чел.',
+                              style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600, color: c.ink,
+                              ),
+                            ),
+                            Text(
+                              s.isFull
+                                  ? 'мест нет'
+                                  : s.max != null
+                                      ? 'нужно ещё ${s.remaining}'
+                                      : 'открытый сбор',
+                              style: TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w500,
+                                color: s.isFull ? c.ink3 : SeeUColors.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _JoinBtn(
+                        isFull: s.isFull,
+                        isJoined: s.isJoined,
+                        requestStatus: s.myRequestStatus,
+                        c: c,
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-            if (s.live)
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: Container(
-                  height: 3,
-                  decoration: const BoxDecoration(
-                    gradient: SeeUGradients.heroOrange,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-                  ),
-                ),
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -1100,85 +1183,40 @@ class SborHeroCard extends StatelessWidget {
 
 // ─── Small helpers ───────────────────────────────────────────────
 
-class _CategoryBadge extends StatelessWidget {
-  final SborCategoryMeta meta;
-  const _CategoryBadge({required this.meta});
+class _HeaderPill extends StatelessWidget {
+  final IconData? icon;
+  final String label;
+  final Color color;
+  final Color bg;
+
+  const _HeaderPill({
+    this.icon,
+    required this.label,
+    required this.color,
+    required this.bg,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 24,
+      height: 26,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        color: meta.soft,
+        color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(meta.icon, size: 12, color: meta.color),
-          const SizedBox(width: 5),
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 5),
+          ],
           Text(
-            meta.name,
-            style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w600, color: meta.color,
-            ),
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _TypeBadge extends StatelessWidget {
-  final SborType type;
-  final SeeUThemeColors c;
-  const _TypeBadge({required this.type, required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            type == SborType.online ? PhosphorIcons.globe() : PhosphorIcons.mapPin(),
-            size: 12, color: c.ink3,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            type == SborType.online ? 'Онлайн' : 'Оффлайн',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.ink2),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PriceBadge extends StatelessWidget {
-  final int price;
-  final SeeUThemeColors c;
-  const _PriceBadge({required this.price, required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(
-        color: SeeUColors.accentSoft,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$price ₸',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: SeeUColors.accent),
       ),
     );
   }
@@ -1187,39 +1225,46 @@ class _PriceBadge extends StatelessWidget {
 class _JoinBtn extends StatelessWidget {
   final bool isFull;
   final bool isJoined;
+  final String requestStatus;
   final SeeUThemeColors c;
 
-  const _JoinBtn({required this.isFull, required this.isJoined, required this.c});
+  const _JoinBtn({
+    required this.isFull,
+    required this.isJoined,
+    required this.requestStatus,
+    required this.c,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Already a member
     if (isJoined) {
-      return Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: SeeUColors.accentSoft,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          'Я иду',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SeeUColors.accent),
-        ),
-      );
+      return _pill(SeeUColors.accentSoft, 'Я иду', SeeUColors.accent);
     }
+    // Full — no slots
+    if (isFull) {
+      return _pill(c.surface2, 'Нет мест', c.ink3);
+    }
+    // Pending request
+    if (requestStatus == 'pending') {
+      return _pill(c.surface2, 'Ждём', c.ink3);
+    }
+    // Default: can join / re-apply
+    return _pill(c.ink, 'Участвую', Colors.white);
+  }
+
+  Widget _pill(Color bg, String label, Color textColor) {
     return Container(
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: isFull ? c.surface2 : c.ink,
+        color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        isFull ? 'Полно' : 'Участвую',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: isFull ? c.ink3 : Colors.white,
+      child: Center(
+        child: Text(
+          label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: textColor),
         ),
       ),
     );

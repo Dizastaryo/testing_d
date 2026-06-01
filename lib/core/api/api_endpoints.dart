@@ -152,6 +152,10 @@ class ApiEndpoints {
   static String leaveSbor(String id) => '/sbory/$id/join';
   static String cancelSbor(String id) => '/sbory/$id';
   static String bookmarkSbor(String id) => '/sbory/$id/bookmark';
+  // Request flow
+  static String sborRequests(String id) => '/sbory/$id/requests';
+  static String approveSborRequest(String sborId, String reqId) => '/sbory/$sborId/requests/$reqId/approve';
+  static String rejectSborRequest(String sborId, String reqId) => '/sbory/$sborId/requests/$reqId/reject';
   static String leaveGroupChat(String id) => '/chats/$id/leave';
 
   // Rooms (private voice + text channels)

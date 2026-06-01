@@ -38,7 +38,7 @@ class SborDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
-  bool _joining = false;
+  bool _joining = false;     // covers both submit-request and cancel-request loading
   bool? _bookmarked; // null = not yet initialised from server
   bool _bookmarkLoading = false;
 
@@ -461,6 +461,42 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 if (isOrganizer)
                   Row(
                     children: [
+                      // Заявки на вступление
+                      if (s.pendingRequestsCount > 0) ...[
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () async {
+                              await context.push('/sbory/${s.id}/requests');
+                              if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+                            },
+                            child: Container(
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: SeeUColors.accent.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: SeeUColors.accent.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(PhosphorIcons.usersThree(), size: 15, color: SeeUColors.accent),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Заявки · ${s.pendingRequestsCount}',
+                                    style: const TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w600,
+                                      color: SeeUColors.accent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       // Редактировать
                       Expanded(
                         child: GestureDetector(
@@ -560,68 +596,165 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                     ),
                   ),
               ] else ...[
-                // ── Not joined: "Я иду" or disabled state ──
-                GestureDetector(
-                  onTap: _joining || s.isFull || s.isPast
-                      ? null
-                      : () => _join(s),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: s.isFull || s.isPast ? c.surface2 : SeeUColors.accent,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: s.isFull || s.isPast
-                          ? null
-                          : [
-                              BoxShadow(
-                                color: SeeUColors.accent.withValues(alpha: 0.35),
-                                blurRadius: 24,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_joining)
-                          const SizedBox(
-                            width: 18, height: 18,
-                            child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2,
-                            ),
-                          )
-                        else ...[
-                          Icon(
-                            s.isPast
-                                ? PhosphorIcons.clockCountdown()
-                                : s.isFull
-                                    ? PhosphorIcons.lockSimple()
-                                    : PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
-                            size: 18,
-                            color: s.isFull || s.isPast ? c.ink3 : Colors.white,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            s.isPast
-                                ? 'Сбор уже прошёл'
-                                : s.isFull
-                                    ? 'Мест нет'
-                                    : 'Я иду',
-                            style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600,
-                              color: s.isFull || s.isPast ? c.ink3 : Colors.white,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                // ── Not joined: request flow ──
+                _buildJoinRequestButton(c, s),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildJoinRequestButton(SeeUThemeColors c, Sbor s) {
+    final status = s.myRequestStatus; // '' | 'pending' | 'approved' | 'rejected'
+
+    if (s.isPast) {
+      return _disabledButton(c, PhosphorIcons.clockCountdown(), 'Сбор уже прошёл');
+    }
+    if (s.isFull && status.isEmpty) {
+      return _disabledButton(c, PhosphorIcons.lockSimple(), 'Мест нет');
+    }
+
+    if (status == 'pending') {
+      return GestureDetector(
+        onTap: _joining ? null : () => _cancelRequest(s),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 52,
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: c.line),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_joining)
+                const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else ...[
+                Icon(PhosphorIcons.hourglassMedium(), size: 18, color: c.ink2),
+                const SizedBox(width: 8),
+                Text(
+                  'Заявка отправлена · отозвать',
+                  style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600, color: c.ink2,
                   ),
                 ),
               ],
             ],
           ),
         ),
+      );
+    }
+
+    if (status == 'rejected') {
+      return GestureDetector(
+        onTap: _joining ? null : () => _submitRequest(s),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 52,
+          decoration: BoxDecoration(
+            color: SeeUColors.accent,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: SeeUColors.accent.withValues(alpha: 0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_joining)
+                const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              else ...[
+                Icon(PhosphorIcons.arrowCounterClockwise(), size: 18, color: Colors.white),
+                const SizedBox(width: 8),
+                const Text(
+                  'Подать заявку снова',
+                  style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Default: not requested yet
+    return GestureDetector(
+      onTap: _joining ? null : () => _submitRequest(s),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 52,
+        decoration: BoxDecoration(
+          color: SeeUColors.accent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: SeeUColors.accent.withValues(alpha: 0.35),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_joining)
+              const SizedBox(
+                width: 18, height: 18,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+            else ...[
+              Icon(
+                PhosphorIcons.handWaving(PhosphorIconsStyle.fill),
+                size: 18, color: Colors.white,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Хочу вступить',
+                style: TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _disabledButton(SeeUThemeColors c, IconData icon, String label) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 18, color: c.ink3),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w600, color: c.ink3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -808,41 +941,52 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   void _openChat(Sbor s) {
     HapticFeedback.mediumImpact();
     if (s.chatId != null) {
-      // Переходим в чат как часть стека /chat — назад ведёт в список чатов.
       context.go('/chat/${s.chatId}');
-      return;
     }
-    // Редкий случай: chatId ещё нет — вызываем join idempotent для получения chatId.
-    _join(s);
   }
 
-  Future<void> _join(Sbor s) async {
+  Future<void> _submitRequest(Sbor s) async {
     HapticFeedback.mediumImpact();
     setState(() => _joining = true);
     try {
       final api = ref.read(apiClientProvider);
-      final resp = await api.post(ApiEndpoints.joinSbor(s.id));
+      await api.post(ApiEndpoints.sborRequests(s.id));
       if (!mounted) return;
-
-      final data = resp.data is Map && resp.data.containsKey('data')
-          ? resp.data['data'] as Map<String, dynamic>
-          : resp.data as Map<String, dynamic>? ?? {};
-      final chatId = data['chat_id'] as String?;
-
       ref.invalidate(_sborDetailProvider(widget.sborId));
-
-      if (chatId != null && mounted) {
-        context.go('/chat/$chatId');
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Вступил в сбор')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заявка отправлена — ждём подтверждения')),
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final msg = e.response?.data?['error'] as String?;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg ?? 'Ошибка: $e')),
+      );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    } finally {
+      if (mounted) setState(() => _joining = false);
+    }
+  }
+
+  Future<void> _cancelRequest(Sbor s) async {
+    HapticFeedback.lightImpact();
+    setState(() => _joining = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete(ApiEndpoints.sborRequests(s.id));
+      if (!mounted) return;
+      ref.invalidate(_sborDetailProvider(widget.sborId));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final msg = e.response?.data?['error'] as String?;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text(msg ?? 'Ошибка: $e')),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     } finally {
       if (mounted) setState(() => _joining = false);
     }

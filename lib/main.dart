@@ -52,6 +52,7 @@ import 'features/sbory/sbory_screen.dart';
 import 'features/sbory/sbor_detail_screen.dart';
 import 'features/sbory/sbor_create_screen.dart';
 import 'features/sbory/sbor_edit_screen.dart';
+import 'features/sbory/sbor_requests_screen.dart';
 import 'features/sbory/sbor_chat_screen.dart';
 import 'features/chat/room_screen.dart';
 import 'features/chat/room_create_screen.dart';
@@ -252,6 +253,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           path: '/sbory/:id/edit',
           pageBuilder: (_, state) => CupertinoPage(
             child: SborEditScreen(sborId: state.pathParameters['id']!),
+          ),
+        ),
+        GoRoute(
+          path: '/sbory/:id/requests',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: SborRequestsScreen(sborId: state.pathParameters['id']!),
           ),
         ),
         GoRoute(
