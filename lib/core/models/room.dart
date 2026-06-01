@@ -71,7 +71,6 @@ class Room {
   final String name;
   final String? description;
   final String? coverUrl;
-  final bool isPublic;
   final bool isActive;
   final String? creatorName;
   final int participantCount;
@@ -93,7 +92,6 @@ class Room {
     required this.name,
     this.description,
     this.coverUrl,
-    this.isPublic = true,
     this.isActive = true,
     this.creatorName,
     this.participantCount = 0,
@@ -117,7 +115,6 @@ class Room {
         name: j['name'] as String,
         description: j['description'] as String?,
         coverUrl: j['cover_url'] as String?,
-        isPublic: j['is_public'] as bool? ?? true,
         isActive: j['is_active'] as bool? ?? true,
         creatorName: j['creator_name'] as String?,
         participantCount: j['participant_count'] as int? ?? 0,
@@ -163,7 +160,6 @@ class Room {
         name: name ?? this.name,
         description: description ?? this.description,
         coverUrl: coverUrl ?? this.coverUrl,
-        isPublic: isPublic,
         isActive: isActive ?? this.isActive,
         creatorName: creatorName,
         participantCount: participantCount ?? this.participantCount,

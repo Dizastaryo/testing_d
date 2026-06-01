@@ -139,7 +139,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     try {
       final api = ref.read(apiClientProvider);
 
-      // 1. Create the room (backend forces type=voice, is_public=false).
+      // 1. Create the room (all rooms are voice, invite-only).
       final resp = await api.post(ApiEndpoints.rooms, data: {
         'name': _nameCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
