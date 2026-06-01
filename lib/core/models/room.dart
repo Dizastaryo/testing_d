@@ -81,6 +81,10 @@ class Room {
   final bool isJoined;
   final bool isMuted;
   final bool isAdmin;
+  // Voice channel (explicit opt-in)
+  final int voiceCount;
+  final List<RoomParticipant> voiceParticipants;
+  final bool isInVoice;
 
   const Room({
     required this.id,
@@ -99,6 +103,9 @@ class Room {
     this.isJoined = false,
     this.isMuted = false,
     this.isAdmin = false,
+    this.voiceCount = 0,
+    this.voiceParticipants = const [],
+    this.isInVoice = false,
   });
 
   bool get isVoice => type == 'voice';
@@ -125,6 +132,12 @@ class Room {
         isJoined: j['is_joined'] as bool? ?? false,
         isMuted: j['is_muted'] as bool? ?? false,
         isAdmin: j['is_admin'] as bool? ?? false,
+        voiceCount: j['voice_count'] as int? ?? 0,
+        voiceParticipants: (j['voice_participants'] as List<dynamic>?)
+                ?.map((e) => RoomParticipant.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
+        isInVoice: j['is_in_voice'] as bool? ?? false,
       );
 
   Room copyWith({
@@ -139,6 +152,9 @@ class Room {
     String? name,
     String? description,
     String? coverUrl,
+    int? voiceCount,
+    List<RoomParticipant>? voiceParticipants,
+    bool? isInVoice,
   }) =>
       Room(
         id: id,
@@ -157,6 +173,9 @@ class Room {
         isJoined: isJoined ?? this.isJoined,
         isMuted: isMuted ?? this.isMuted,
         isAdmin: isAdmin ?? this.isAdmin,
+        voiceCount: voiceCount ?? this.voiceCount,
+        voiceParticipants: voiceParticipants ?? this.voiceParticipants,
+        isInVoice: isInVoice ?? this.isInVoice,
       );
 }
 

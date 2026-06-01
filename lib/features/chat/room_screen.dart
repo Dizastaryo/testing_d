@@ -70,6 +70,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  Future<void> _joinVoice() async {
+    HapticFeedback.mediumImpact();
+    final myId = ref.read(authProvider).user?.id ?? '';
+    await ref.read(roomDetailProvider(widget.roomId).notifier).joinVoice(myId);
+  }
+
+  Future<void> _leaveVoice() async {
+    HapticFeedback.lightImpact();
+    final myId = ref.read(authProvider).user?.id ?? '';
+    await ref.read(roomDetailProvider(widget.roomId).notifier).leaveVoice(myId);
+  }
+
   Future<void> _closeRoom() async {
     final c = context.seeuColors;
     final confirmed = await showDialog<bool>(
@@ -261,104 +273,158 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     );
   }
 
-  // ─── Voice panel: participants with mute status ────────────────────
+  // ─── Voice panel ───────────────────────────────────────────────────
+  // Shows voice channel state. Users must explicitly join to speak.
 
   Widget _buildVoicePanel(SeeUThemeColors c, Room room, String myId) {
+    final inVoice = room.isInVoice;
+    final voiceUsers = room.voiceParticipants;
+    final voiceCount = room.voiceCount;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            SeeUColors.accent.withValues(alpha: 0.08),
-            SeeUColors.accent.withValues(alpha: 0.03),
+            SeeUColors.accent.withValues(alpha: inVoice ? 0.10 : 0.05),
+            SeeUColors.accent.withValues(alpha: 0.02),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: SeeUColors.accent.withValues(alpha: 0.2),
+          color: SeeUColors.accent.withValues(alpha: inVoice ? 0.3 : 0.15),
           width: 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row
           Row(
             children: [
-              // Live dot
+              // Pulse dot — orange when any user in voice, grey when empty
               Container(
                 width: 8, height: 8,
                 decoration: BoxDecoration(
-                  color: SeeUColors.accent,
+                  color: voiceCount > 0 ? SeeUColors.accent : c.ink4,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: SeeUColors.accentSoft,
-                      blurRadius: 0,
-                      spreadRadius: 3,
-                    ),
-                  ],
+                  boxShadow: voiceCount > 0
+                      ? [BoxShadow(color: SeeUColors.accentSoft, blurRadius: 0, spreadRadius: 3)]
+                      : null,
                 ),
               ),
               const SizedBox(width: 6),
               Text(
-                'ГОЛОСОВОЙ ЧАТ · ${room.participantCount}',
+                voiceCount > 0
+                    ? 'ГОЛОСОВОЙ · $voiceCount'
+                    : 'ГОЛОСОВОЙ',
                 style: TextStyle(
                   fontSize: 11, fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6, color: SeeUColors.accent,
+                  letterSpacing: 0.6,
+                  color: voiceCount > 0 ? SeeUColors.accent : c.ink3,
                 ),
               ),
               const Spacer(),
-              if (room.isJoined && room.isActive)
+              if (room.isJoined && room.isActive) ...[
+                // Mute button (only visible when in voice)
+                if (inVoice)
+                  GestureDetector(
+                    onTap: () => _toggleMute(room),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: room.isMuted ? c.surface2 : SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            room.isMuted
+                                ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                            size: 13,
+                            color: room.isMuted ? c.ink3 : Colors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            room.isMuted ? 'Выкл.' : 'Вкл.',
+                            style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600,
+                              color: room.isMuted ? c.ink3 : Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 6),
+                // Join / Leave voice button
                 GestureDetector(
-                  onTap: () => _toggleMute(room),
+                  onTap: inVoice ? _leaveVoice : _joinVoice,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: room.isMuted ? c.surface2 : SeeUColors.accent,
+                      color: inVoice
+                          ? SeeUColors.error.withValues(alpha: 0.12)
+                          : SeeUColors.accent,
                       borderRadius: BorderRadius.circular(999),
+                      border: inVoice
+                          ? Border.all(color: SeeUColors.error.withValues(alpha: 0.4))
+                          : null,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          room.isMuted
-                              ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                              : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                          inVoice
+                              ? PhosphorIconsFill.phoneSlash
+                              : PhosphorIconsFill.phone,
                           size: 13,
-                          color: room.isMuted ? c.ink3 : Colors.white,
+                          color: inVoice ? SeeUColors.error : Colors.white,
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          room.isMuted ? 'Выкл.' : 'Вкл.',
+                          inVoice ? 'Выйти' : 'Войти',
                           style: TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600,
-                            color: room.isMuted ? c.ink3 : Colors.white,
+                            color: inVoice ? SeeUColors.error : Colors.white,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+              ],
             ],
           ),
-          if (room.participants.isNotEmpty) ...[
+          // Participants in voice (only shown if anyone is in voice)
+          if (voiceUsers.isNotEmpty) ...[
             const SizedBox(height: 12),
             SizedBox(
               height: 72,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: room.participants.length,
+                itemCount: voiceUsers.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (ctx, i) => _ParticipantBubble(
-                  participant: room.participants[i],
-                  isMe: room.participants[i].userId == myId,
+                  participant: voiceUsers[i],
+                  isMe: voiceUsers[i].userId == myId,
                   c: c,
                 ),
               ),
+            ),
+          ] else if (!inVoice) ...[
+            // Prompt to join
+            const SizedBox(height: 8),
+            Text(
+              'Нажми «Войти», чтобы подключиться к голосовому',
+              style: TextStyle(fontSize: 12, color: c.ink3),
             ),
           ],
         ],

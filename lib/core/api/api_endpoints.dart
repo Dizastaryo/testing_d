@@ -164,6 +164,7 @@ class ApiEndpoints {
   static String joinRoom(String id) => '/rooms/$id/join';
   static String leaveRoom(String id) => '/rooms/$id/join';
   static String muteRoom(String id) => '/rooms/$id/mute';
+  static String roomVoice(String id) => '/rooms/$id/voice';
   static String roomMessages(String id) => '/rooms/$id/messages';
   static String roomMembers(String id) => '/rooms/$id/members';
   static String roomInvite(String id) => '/rooms/$id/invite';

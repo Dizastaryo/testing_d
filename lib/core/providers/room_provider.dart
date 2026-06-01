@@ -145,6 +145,10 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
                 ),
               );
             }
+          case 'room.voice.joined':
+            if (payload != null) _handleVoiceJoined(payload);
+          case 'room.voice.left':
+            if (payload != null) _handleVoiceLeft(payload);
         }
       });
     });
@@ -207,6 +211,52 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
     state = state.copyWith(
       room: room.copyWith(participants: updated, isMuted: muted),
     );
+  }
+
+  void _handleVoiceJoined(Map<String, dynamic> p) {
+    // Refresh to get updated voice_participants list from server
+    load();
+  }
+
+  void _handleVoiceLeft(Map<String, dynamic> p) {
+    final room = state.room;
+    if (room == null) return;
+    final userId = p['user_id'] as String?;
+    final updated = room.voiceParticipants.where((pt) => pt.userId != userId).toList();
+    state = state.copyWith(
+      room: room.copyWith(
+        voiceParticipants: updated,
+        voiceCount: updated.length,
+      ),
+    );
+  }
+
+  /// Optimistically mark self as in-voice, call API, roll back on error.
+  Future<void> joinVoice(String myUserId) async {
+    final room = state.room;
+    if (room == null) return;
+    state = state.copyWith(room: room.copyWith(isInVoice: true));
+    try {
+      await _api.post(ApiEndpoints.roomVoice(roomId));
+    } catch (_) {
+      if (mounted) {
+        state = state.copyWith(room: state.room!.copyWith(isInVoice: false));
+      }
+    }
+  }
+
+  /// Optimistically mark self as not-in-voice, call API, roll back on error.
+  Future<void> leaveVoice(String myUserId) async {
+    final room = state.room;
+    if (room == null) return;
+    state = state.copyWith(room: room.copyWith(isInVoice: false));
+    try {
+      await _api.delete(ApiEndpoints.roomVoice(roomId));
+    } catch (_) {
+      if (mounted) {
+        state = state.copyWith(room: state.room!.copyWith(isInVoice: true));
+      }
+    }
   }
 }
 
