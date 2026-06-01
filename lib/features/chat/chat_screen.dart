@@ -58,8 +58,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Which message currently shows the reaction picker (null = none)
   String? _reactionPickerMessageId;
 
-  int _prevMessageCount = 0;
   int _messageCount = 0;
+  bool _atBottom = true;
 
   @override
   void initState() {
@@ -87,7 +87,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _onScrollPositionsChanged() {
     final positions = _itemPositionsListener.itemPositions.value;
     if (positions.isEmpty || _messageCount == 0) return;
-    final maxVisible = positions.map((p) => p.index).reduce((a, b) => a > b ? a : b);
+    final indices = positions.map((p) => p.index);
+    final minVisible = indices.reduce((a, b) => a < b ? a : b);
+    final maxVisible = indices.reduce((a, b) => a > b ? a : b);
+    // With reverse=true, index 0 = newest message. atBottom when index 0 is visible.
+    final atBottom = minVisible == 0;
+    if (atBottom != _atBottom) {
+      if (mounted) setState(() => _atBottom = atBottom);
+    }
     if (maxVisible >= _messageCount - 2) {
       ref.read(chatMessagesProvider(widget.chatId).notifier).loadOlderMessages();
     }
@@ -785,12 +792,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final currentUser = ref.watch(authProvider).user;
     final myId = currentUser?.id ?? 'me';
     final otherUser = chat?.otherUser;
-    // Scroll to bottom only when a new message arrives
-    if (msgState.messages.length > _prevMessageCount && _prevMessageCount > 0) {
-      _scrollToBottom();
-    }
-    _prevMessageCount = msgState.messages.length;
     _messageCount = msgState.messages.length;
+
+    // Scroll to bottom on new messages; mark read while chat is open.
+    ref.listen<ChatMessagesState>(chatMessagesProvider(widget.chatId),
+        (prev, next) {
+      _messageCount = next.messages.length;
+      // Ignore pagination loads — don't jump to bottom when loading older msgs.
+      if (prev?.isLoadingOlder == true && !next.isLoadingOlder) return;
+      final prevCount = prev?.messages.length ?? 0;
+      final nextCount = next.messages.length;
+      if (nextCount > prevCount) {
+        _scrollToBottom(animate: prevCount > 0);
+        // Mark read when new messages arrive while chat is open.
+        if (prevCount > 0) {
+          ref
+              .read(chatMessagesProvider(widget.chatId).notifier)
+              .markRead();
+        }
+      }
+    });
 
     final c = context.seeuColors;
     return GestureDetector(
@@ -1147,16 +1168,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     )
                   : msgState.messages.isEmpty
                       ? _buildEmptyChat(otherUser)
-                      : Column(
+                      : Stack(
                           children: [
-                            if (msgState.isLoadingOlder)
-                              const LinearProgressIndicator(
-                                color: SeeUColors.accent,
-                                backgroundColor: Colors.transparent,
-                              ),
-                            Expanded(
-                              child: _buildMessageList(msgState.messages, myId, otherUser),
+                            Column(
+                              children: [
+                                if (msgState.isLoadingOlder)
+                                  const LinearProgressIndicator(
+                                    color: SeeUColors.accent,
+                                    backgroundColor: Colors.transparent,
+                                  ),
+                                Expanded(
+                                  child: _buildMessageList(
+                                      msgState.messages, myId, otherUser, chat),
+                                ),
+                              ],
                             ),
+                            // Scroll-to-bottom FAB: shown when scrolled up.
+                            if (!_atBottom)
+                              Positioned(
+                                bottom: 12,
+                                right: 16,
+                                child: GestureDetector(
+                                  onTap: () => _scrollToBottom(),
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: c.surface,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: c.line, width: 0.5),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.12),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      PhosphorIconsRegular.arrowDown,
+                                      size: 20,
+                                      color: c.ink,
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
             ),
@@ -1229,11 +1287,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildMessageList(List<ChatMessage> messages, String myId, dynamic otherUser) {
-    // Resolve current chat for group detection
-    final chatList = ref.read(chatListProvider).chats;
-    final currentChat = chatList.where((ch) => ch.id == widget.chatId)
-        .cast<Chat?>().firstWhere((_) => true, orElse: () => null);
+  Widget _buildMessageList(
+      List<ChatMessage> messages, String myId, dynamic otherUser, Chat? currentChat) {
 
     // Group by day
     final groups = <String, List<ChatMessage>>{};
@@ -1289,15 +1344,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           SwipeToReply(
             onReply: () {
               final me = ref.read(authProvider).user;
-              final chats = ref.read(chatListProvider).chats;
-              final chat = chats.where((c) => c.id == widget.chatId)
-                  .cast<Chat?>().firstWhere((_) => true, orElse: () => null);
               // For group chats otherUser is null — use senderUsername.
               final username = isMine
                   ? (me?.username ?? '')
                   : (msg.senderUsername.isNotEmpty
                       ? msg.senderUsername
-                      : (chat?.otherUser?.username ?? ''));
+                      : (currentChat?.otherUser?.username ?? ''));
               setState(() {
                 _replyingTo = ReplyPreview(
                   id: msg.id,

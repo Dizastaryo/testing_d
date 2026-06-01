@@ -414,7 +414,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             'chat.message.deleted',
           };
           if (triggerEvents.contains(evt.type)) {
-            load();
+            load(silent: true);
             return;
           }
           // Обновление названия/обложки группы — мутируем локально без
@@ -466,8 +466,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     super.dispose();
   }
 
-  Future<void> load() async {
-    state = state.copyWith(isLoading: true);
+  Future<void> load({bool silent = false}) async {
+    if (!silent) state = state.copyWith(isLoading: true);
     try {
       final response = await _api.get(ApiEndpoints.chats);
       final data = response.data['data'];
