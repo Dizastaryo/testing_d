@@ -22,7 +22,7 @@ class AppConfig {
 
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.3:8001/api/v1',
+    defaultValue: 'http://192.168.1.5:8001/api/v1',
   );
 
   static const String r2PublicUrl = String.fromEnvironment(
@@ -32,12 +32,12 @@ class AppConfig {
 
   static const String videoBaseUrl = String.fromEnvironment(
     'VIDEO_BASE_URL',
-    defaultValue: 'http://192.168.1.3:8002/api/v1',
+    defaultValue: 'http://192.168.1.5:8002/api/v1',
   );
 
   static const String libraryBaseUrl = String.fromEnvironment(
     'LIBRARY_BASE_URL',
-    defaultValue: 'http://192.168.1.3:8003/api/v1',
+    defaultValue: 'http://192.168.1.5:8003/api/v1',
   );
 
   // ── WebRTC ICE servers ──────────────────────────────────────────────────
@@ -80,7 +80,7 @@ class AppConfig {
   /// Chrome production target — это **исключение** из rule «mobile only».
   static const String mainAppUrl = String.fromEnvironment(
     'MAIN_APP_URL',
-    defaultValue: 'http://192.168.1.3:5000',
+    defaultValue: 'http://192.168.1.5:5000',
   );
 
   /// Converts a server URL to an absolute URL.
