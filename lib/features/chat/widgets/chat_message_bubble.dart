@@ -269,7 +269,9 @@ class ChatMessageBubble extends StatelessWidget {
   static bool _isEmojiOnlyText(String text) {
     if (text.isEmpty || text.length > 36) return false;
     if (RegExp(r'[a-zA-Z0-9\s]').hasMatch(text)) return false;
-    return text.runes.every((r) => r > 0x7F);
+    // 0x2600 — начало символьных/emoji блоков Unicode. Всё ниже (кириллица,
+    // арабский, греческий и т.д.) — обычный текст, не emoji.
+    return text.runes.every((r) => r >= 0x2600);
   }
 
   bool _isEmojiOnly(ChatMessage msg) {
