@@ -57,45 +57,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   void _showNewChatPicker() {
     HapticFeedback.mediumImpact();
-    showSeeUBottomSheet(
-      context: context,
-      builder: (sheetCtx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Новый чат', style: SeeUTypography.title),
-              const SizedBox(height: 4),
-              Text('Выберите формат',
-                  style: SeeUTypography.caption
-                      .copyWith(color: SeeUColors.textSecondary)),
-              const SizedBox(height: 16),
-              _NewChatTypeOption(
-                icon: PhosphorIconsBold.user,
-                title: 'Один на один',
-                subtitle: 'Личный чат с одним пользователем',
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  _openDirectPicker();
-                },
-              ),
-              const SizedBox(height: 10),
-              _NewChatTypeOption(
-                icon: PhosphorIconsBold.usersThree,
-                title: 'Группа',
-                subtitle: 'До 100 человек, одна тема',
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  context.push('/chat/new-group');
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    _openDirectPicker();
   }
 
   void _showNewRoomPicker() {
@@ -123,6 +85,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             return;
           }
           context.push('/chat/$chatId');
+        },
+        onCreateGroup: () {
+          Navigator.of(context).pop();
+          context.push('/chat/new-group');
         },
       ),
     );
@@ -1130,8 +1096,12 @@ class _OnlineAvatar extends StatelessWidget {
 
 class _NewChatBottomSheet extends ConsumerStatefulWidget {
   final void Function(User user) onUserSelected;
+  final VoidCallback onCreateGroup;
 
-  const _NewChatBottomSheet({required this.onUserSelected});
+  const _NewChatBottomSheet({
+    required this.onUserSelected,
+    required this.onCreateGroup,
+  });
 
   @override
   ConsumerState<_NewChatBottomSheet> createState() =>
@@ -1253,10 +1223,47 @@ class _NewChatBottomSheetState extends ConsumerState<_NewChatBottomSheet> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Новое сообщение',
+            'Новый чат',
             style: SeeUTypography.title,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          // Создать группу
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Tappable.scaled(
+              onTap: widget.onCreateGroup,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: SeeUGradients.heroOrange,
+                      ),
+                      child: const Icon(
+                        PhosphorIconsBold.usersThree,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Создать группу', style: SeeUTypography.subtitle),
+                    ),
+                    Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink3),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           // Search
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1408,64 +1415,6 @@ class _DestructiveButton extends StatelessWidget {
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NewChatTypeOption extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _NewChatTypeOption({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Material(
-      color: c.surface2,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: SeeUGradients.heroOrange,
-                ),
-                child: Icon(icon, color: Colors.white, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: SeeUTypography.subtitle),
-                    const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: SeeUTypography.caption
-                            .copyWith(color: c.ink3)),
-                  ],
-                ),
-              ),
-              Icon(PhosphorIcons.caretRight(),
-                  size: 16, color: c.ink3),
-            ],
           ),
         ),
       ),
