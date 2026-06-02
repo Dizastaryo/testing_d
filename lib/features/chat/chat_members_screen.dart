@@ -212,7 +212,8 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       onChanged: (_) => setSheetState(() {}),
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        labelText: 'Название',
+                        hintText: 'Название группы',
+                        hintStyle: SeeUTypography.subtitle.copyWith(color: c.ink3),
                         filled: true,
                         fillColor: c.surface2,
                         border: OutlineInputBorder(
@@ -225,11 +226,13 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       style: SeeUTypography.subtitle,
                     ),
                     const SizedBox(height: 16),
-                    Text('Обложка',
-                        style: SeeUTypography.caption.copyWith(
-                          color: c.ink3,
-                          fontWeight: FontWeight.w700,
-                        )),
+                    Text(
+                      'ОБЛОЖКА',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8, color: c.ink3,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     SizedBox(
                       height: 70,
@@ -478,23 +481,39 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text('Участники · ${_members.length}'),
-      ),
-      body: _loading
-          ? const SeeUListSkeleton()
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(_error != null ? friendlyError(_error!) : '',
-                        style: TextStyle(color: c.ink2)),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
                   ),
-                )
-              : ListView(
-                  children: [
+                  Expanded(
+                    child: Text(
+                      'Участники · ${_members.length}',
+                      style: SeeUTypography.title.copyWith(color: c.ink),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const SeeUListSkeleton()
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(_error != null ? friendlyError(_error!) : '',
+                                style: TextStyle(color: c.ink2)),
+                          ),
+                        )
+                      : ListView(
+                          children: [
                     if (isMeAdmin) ...[
                       ListTile(
                         leading: Container(
@@ -633,6 +652,10 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                     const SizedBox(height: 24),
                   ],
                 ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

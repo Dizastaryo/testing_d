@@ -357,13 +357,13 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
               ),
               if (!_noLimit) ...[
                 _StepperBtn(
-                  label: '−',
+                  icon: PhosphorIconsBold.minus,
                   onTap: () => setState(() => _slots = (_slots - 1).clamp(widget.sbor.joined.clamp(2, 99), 99)),
                   c: c,
                 ),
                 const SizedBox(width: 4),
                 _StepperBtn(
-                  label: '+',
+                  icon: PhosphorIconsBold.plus,
                   onTap: () => setState(() => _slots = (_slots + 1).clamp(2, 99)),
                   c: c,
                 ),
@@ -428,16 +428,16 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
   }
 
   static const _catOptions = [
-    (SborCategory.basketball, 'Спорт'),
-    (SborCategory.games, 'Игры'),
-    (SborCategory.hike, 'Природа'),
-    (SborCategory.draw, 'Творчество'),
-    (SborCategory.board, 'Настолки'),
-    (SborCategory.cinema, 'Кино'),
-    (SborCategory.music, 'Музыка'),
-    (SborCategory.food, 'Готовим'),
-    (SborCategory.read, 'Книги'),
-    (SborCategory.other, 'Другое'),
+    (SborCategory.basketball, '⚽', 'Спорт'),
+    (SborCategory.games, '🎮', 'Игры'),
+    (SborCategory.hike, '🏕️', 'Природа'),
+    (SborCategory.draw, '🎨', 'Творчество'),
+    (SborCategory.board, '🎲', 'Настолки'),
+    (SborCategory.cinema, '🎬', 'Кино'),
+    (SborCategory.music, '🎶', 'Музыка'),
+    (SborCategory.food, '🍳', 'Готовим'),
+    (SborCategory.read, '📖', 'Книги'),
+    (SborCategory.other, '✨', 'Другое'),
   ];
 
   Widget _buildCategoryPicker(SeeUThemeColors c) {
@@ -450,7 +450,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
           spacing: 6,
           runSpacing: 6,
           children: _catOptions.map((opt) {
-            final (cat, name) = opt;
+            final (cat, emoji, name) = opt;
             final meta = kSborCategories[cat]!;
             final active = _category == cat;
             return GestureDetector(
@@ -467,7 +467,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(meta.icon, size: 14, color: active ? Colors.white : meta.color),
+                    Text(emoji, style: const TextStyle(fontSize: 14)),
                     const SizedBox(width: 6),
                     Text(
                       name,
@@ -749,11 +749,11 @@ class _FormField extends StatelessWidget {
 }
 
 class _StepperBtn extends StatelessWidget {
-  final String label;
+  final IconData icon;
   final VoidCallback onTap;
   final SeeUThemeColors c;
 
-  const _StepperBtn({required this.label, required this.onTap, required this.c});
+  const _StepperBtn({required this.icon, required this.onTap, required this.c});
 
   @override
   Widget build(BuildContext context) {
@@ -766,10 +766,7 @@ class _StepperBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Center(
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.ink),
-          ),
+          child: Icon(icon, size: 16, color: c.ink),
         ),
       ),
     );

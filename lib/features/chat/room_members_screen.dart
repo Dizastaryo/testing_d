@@ -58,18 +58,9 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                     icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
                   ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Участники · ${membersState.members.length}',
-                          style: SeeUTypography.title.copyWith(color: c.ink),
-                        ),
-                        Text(
-                          'Приватная комната',
-                          style: TextStyle(fontSize: 11, color: c.ink3),
-                        ),
-                      ],
+                    child: Text(
+                      'Участники · ${membersState.members.length}',
+                      style: SeeUTypography.title.copyWith(color: c.ink),
                     ),
                   ),
                   if (isAdmin)
