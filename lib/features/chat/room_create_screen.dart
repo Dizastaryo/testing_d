@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
@@ -33,6 +36,8 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   final _descCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
+
+  XFile? _coverImage;
 
   final Set<String> _selectedIds = {};
   final Map<String, User> _selectedUsers = {};
@@ -132,6 +137,17 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
 
   bool get _canCreate => _nameCtrl.text.trim().isNotEmpty && !_creating;
 
+  Future<void> _pickCoverImage() async {
+    HapticFeedback.selectionClick();
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (file != null && mounted) setState(() => _coverImage = file);
+  }
+
   Future<void> _create() async {
     if (!_canCreate) return;
     HapticFeedback.mediumImpact();
@@ -139,10 +155,25 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     try {
       final api = ref.read(apiClientProvider);
 
+      // Upload cover image if selected
+      String coverUrl = '';
+      if (_coverImage != null) {
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            _coverImage!.path,
+            filename: _coverImage!.name,
+          ),
+        });
+        final up = await api.post(ApiEndpoints.mediaUpload, data: formData);
+        final upData = up.data is Map ? up.data : {};
+        coverUrl = (upData['data']?['url'] ?? upData['url'] ?? '') as String;
+      }
+
       // 1. Create the room (all rooms are voice, invite-only).
       final resp = await api.post(ApiEndpoints.rooms, data: {
         'name': _nameCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
+        if (coverUrl.isNotEmpty) 'cover_url': coverUrl,
       });
       final data = resp.data is Map && resp.data.containsKey('data')
           ? resp.data['data'] as Map<String, dynamic>
@@ -256,6 +287,9 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Cover image picker
+        _buildCoverPicker(c),
+        const SizedBox(height: 20),
         _SectionLabel('НАЗВАНИЕ'),
         const SizedBox(height: 8),
         _InputField(
@@ -277,6 +311,79 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
           c: c,
         ),
       ],
+    );
+  }
+
+  Widget _buildCoverPicker(SeeUThemeColors c) {
+    return GestureDetector(
+      onTap: _pickCoverImage,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 140,
+        decoration: BoxDecoration(
+          color: _coverImage != null
+              ? Colors.transparent
+              : SeeUColors.accent.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: _coverImage != null
+                ? SeeUColors.accent
+                : SeeUColors.accent.withValues(alpha: 0.22),
+            width: _coverImage != null ? 1.5 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _coverImage != null
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(File(_coverImage!.path), fit: BoxFit.cover),
+                  Positioned(
+                    top: 8, right: 8,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _coverImage = null),
+                      child: Container(
+                        width: 28, height: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(PhosphorIconsBold.x, size: 13, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: SeeUColors.accent.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      PhosphorIcons.image(PhosphorIconsStyle.duotone),
+                      size: 22, color: SeeUColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Добавить обложку',
+                    style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'необязательно',
+                    style: TextStyle(fontSize: 11, color: c.ink3),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 

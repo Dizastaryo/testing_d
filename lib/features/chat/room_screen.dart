@@ -1,6 +1,11 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
@@ -323,6 +328,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             ),
           ),
           const SizedBox(width: 10),
+          // Room avatar (cover or gradient initials)
+          _buildRoomAvatar(c, room),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,6 +388,39 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRoomAvatar(SeeUThemeColors c, Room room) {
+    final hasCover = room.coverUrl != null && room.coverUrl!.isNotEmpty;
+    final palIdx = room.name.isEmpty
+        ? 0
+        : (room.name.codeUnitAt(0) + room.name.length) % SeeUColors.avatarPalettes.length;
+    final palette = SeeUColors.avatarPalettes[palIdx];
+    final initial = room.name.isNotEmpty ? room.name[0].toUpperCase() : 'R';
+
+    return Container(
+      width: 36, height: 36,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: hasCover ? null : LinearGradient(colors: palette),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasCover
+          ? CachedNetworkImage(
+              imageUrl: room.coverUrl!,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                decoration: BoxDecoration(gradient: LinearGradient(colors: palette)),
+                child: Center(child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700))),
+              ),
+              errorWidget: (_, __, ___) => Center(
+                child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+              ),
+            )
+          : Center(
+              child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
     );
   }
 
@@ -978,20 +1019,20 @@ class _MessageBubble extends StatelessWidget {
 
 // ─── Room edit sheet ──────────────────────────────────────────────
 
-class _RoomEditSheet extends StatefulWidget {
+class _RoomEditSheet extends ConsumerStatefulWidget {
   final Room room;
   final Future<void> Function(String name, String description, String coverUrl) onSaved;
 
   const _RoomEditSheet({required this.room, required this.onSaved});
 
   @override
-  State<_RoomEditSheet> createState() => _RoomEditSheetState();
+  ConsumerState<_RoomEditSheet> createState() => _RoomEditSheetState();
 }
 
-class _RoomEditSheetState extends State<_RoomEditSheet> {
+class _RoomEditSheetState extends ConsumerState<_RoomEditSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _coverCtrl;
+  XFile? _pickedCoverImage;
   bool _saving = false;
 
   @override
@@ -999,15 +1040,24 @@ class _RoomEditSheetState extends State<_RoomEditSheet> {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.room.name);
     _descCtrl = TextEditingController(text: widget.room.description ?? '');
-    _coverCtrl = TextEditingController(text: widget.room.coverUrl ?? '');
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _coverCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCoverImage() async {
+    HapticFeedback.selectionClick();
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (file != null && mounted) setState(() => _pickedCoverImage = file);
   }
 
   Future<void> _save() async {
@@ -1015,7 +1065,21 @@ class _RoomEditSheetState extends State<_RoomEditSheet> {
     if (name.isEmpty) return;
     setState(() => _saving = true);
     try {
-      await widget.onSaved(name, _descCtrl.text.trim(), _coverCtrl.text.trim());
+      // Upload new cover if a local image was picked
+      String coverUrl = widget.room.coverUrl ?? '';
+      if (_pickedCoverImage != null) {
+        final api = ref.read(apiClientProvider);
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            _pickedCoverImage!.path,
+            filename: _pickedCoverImage!.name,
+          ),
+        });
+        final up = await api.post(ApiEndpoints.mediaUpload, data: formData);
+        final upData = up.data is Map ? up.data : {};
+        coverUrl = (upData['data']?['url'] ?? upData['url'] ?? coverUrl) as String;
+      }
+      await widget.onSaved(name, _descCtrl.text.trim(), coverUrl);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
@@ -1078,13 +1142,9 @@ class _RoomEditSheetState extends State<_RoomEditSheet> {
                 c: c,
               ),
               const SizedBox(height: 16),
-              _label('Обложка (URL)', c),
+              _label('Обложка', c),
               const SizedBox(height: 6),
-              _buildField(
-                controller: _coverCtrl,
-                hint: 'https://...',
-                c: c,
-              ),
+              _buildCoverPicker(c),
               const SizedBox(height: 24),
               GestureDetector(
                 onTap: _saving ? null : _save,
@@ -1114,6 +1174,107 @@ class _RoomEditSheetState extends State<_RoomEditSheet> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCoverPicker(SeeUThemeColors c) {
+    final existingUrl = widget.room.coverUrl;
+    final hasPicked = _pickedCoverImage != null;
+    final hasExisting = existingUrl != null && existingUrl.isNotEmpty;
+
+    return GestureDetector(
+      onTap: _pickCoverImage,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 130,
+        decoration: BoxDecoration(
+          color: (hasPicked || hasExisting)
+              ? Colors.transparent
+              : SeeUColors.accent.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: (hasPicked || hasExisting)
+                ? SeeUColors.accent
+                : SeeUColors.accent.withValues(alpha: 0.22),
+            width: (hasPicked || hasExisting) ? 1.5 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: hasPicked
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(File(_pickedCoverImage!.path), fit: BoxFit.cover),
+                  Positioned(
+                    top: 8, right: 8,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _pickedCoverImage = null),
+                      child: Container(
+                        width: 28, height: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(PhosphorIconsBold.x, size: 13, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : hasExisting
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: existingUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: c.surface2),
+                        errorWidget: (_, __, ___) => Container(color: c.surface2),
+                      ),
+                      // Overlay hint to tap and change
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.30),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(PhosphorIcons.pencilSimple(), size: 22, color: Colors.white),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Изменить обложку',
+                                style: TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: SeeUColors.accent.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          PhosphorIcons.image(PhosphorIconsStyle.duotone),
+                          size: 20, color: SeeUColors.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Добавить обложку',
+                        style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                          color: SeeUColors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
       ),
     );
   }
