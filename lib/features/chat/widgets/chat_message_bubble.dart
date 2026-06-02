@@ -287,7 +287,14 @@ class ChatMessageBubble extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: (mine ? c.surface2 : c.surface2).withValues(alpha: 0.6),
+          gradient: mine
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
+                )
+              : null,
+          color: mine ? null : c.surface2.withValues(alpha: 0.6),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -300,7 +307,7 @@ class ChatMessageBubble extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(time, style: TextStyle(fontSize: 10, color: c.ink3)),
+                  Text(time, style: TextStyle(fontSize: 10, color: mine ? Colors.white.withValues(alpha: 0.65) : c.ink3)),
                   if (mine) ...[
                     const SizedBox(width: 4),
                     Icon(
@@ -308,7 +315,7 @@ class ChatMessageBubble extends StatelessWidget {
                           ? PhosphorIconsBold.checks
                           : PhosphorIconsRegular.check,
                       size: 14,
-                      color: msg.isRead ? SeeUColors.accent : c.ink3,
+                      color: msg.isRead ? Colors.white : const Color(0xBBFFFFFF),
                     ),
                   ],
                 ],

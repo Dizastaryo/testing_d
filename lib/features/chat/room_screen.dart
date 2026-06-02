@@ -689,8 +689,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       borderSide: BorderSide(color: c.line, width: 0.5),
     );
     return Container(
-      padding: EdgeInsets.fromLTRB(
-          12, 8, 12, MediaQuery.of(context).viewInsets.bottom + 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: BoxDecoration(
         color: c.bg,
         border: Border(top: BorderSide(color: c.line, width: 0.5)),

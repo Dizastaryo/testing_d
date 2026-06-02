@@ -166,66 +166,31 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
   }
 
   Widget _buildGallery(GroupCallSession sess, bool isVoice) {
+    if (sess.status == GroupCallStatus.outgoingInviting) {
+      return _buildOutgoingWaiting(sess, isVoice);
+    }
+    if (sess.status == GroupCallStatus.incomingRinging) {
+      return _buildIncomingRinging(sess);
+    }
+    // Active state
     return ValueListenableBuilder<Map<String, GroupCallPeer>>(
       valueListenable: GroupCallService.instance.peers,
       builder: (_, peers, __) {
-        // Incoming/outgoing pending — gradient + лейбл по центру.
-        if (sess.status == GroupCallStatus.outgoingInviting ||
-            sess.status == GroupCallStatus.incomingRinging) {
-          return Container(
-            decoration: const BoxDecoration(gradient: SeeUGradients.heroOrange),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIconsBold.usersThree,
-                    color: Colors.white,
-                    size: 80,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    sess.chatTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    sess.status == GroupCallStatus.incomingRinging
-                        ? '@${sess.inviterUsername} приглашает в звонок'
-                        : 'Ждём ответа…',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
         if (peers.isEmpty) {
           return Container(
-            color: Colors.black,
-            child: const Center(
+            color: const Color(0xFF0D0D1A),
+            child: Center(
               child: Text(
                 'Ждём участников…',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
               ),
             ),
           );
         }
         final entries = peers.entries.toList();
-        // Layout: 1 peer → полный экран; 2+ → сетка 2 колонки.
-        final n = entries.length;
-        final cols = n == 1 ? 1 : 2; // #L-1: упрощено, dead branch убран
+        final cols = entries.length == 1 ? 1 : 2;
         return GridView.count(
           padding: EdgeInsets.zero,
-          // #M-4: запрещаем скролл — случайный свайп не должен
-          // смещать сетку участников во время звонка.
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           crossAxisCount: cols,
@@ -236,15 +201,223 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
     );
   }
 
+  Widget _buildOutgoingWaiting(GroupCallSession sess, bool isVoice) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1C1C2E), Color(0xFF0D0D1A)],
+        ),
+      ),
+      child: ValueListenableBuilder<List<GroupCallMember>>(
+        valueListenable: GroupCallService.instance.invitedMembers,
+        builder: (_, members, __) {
+          final joinedCount = members
+              .where((m) => m.status == GroupCallMemberStatus.joined)
+              .length;
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Call type icon
+              Container(
+                width: 76, height: 76,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: SeeUColors.accent.withValues(alpha: 0.35), width: 1.5),
+                ),
+                child: Icon(
+                  isVoice ? PhosphorIconsBold.phone : PhosphorIconsBold.videoCamera,
+                  color: SeeUColors.accent,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                sess.chatTitle,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Fraunces',
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45), fontSize: 13),
+              ),
+              const SizedBox(height: 40),
+              if (members.isNotEmpty) ...[
+                SizedBox(
+                  height: 104,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    itemCount: members.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 18),
+                    itemBuilder: (_, i) =>
+                        _MemberStatusBubble(member: members[i]),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  joinedCount > 0
+                      ? '$joinedCount из ${members.length} уже в звонке'
+                      : 'Вызываем участников…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 13,
+                  ),
+                ),
+              ] else ...[
+                Text(
+                  'Вызываем участников…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildIncomingRinging(GroupCallSession sess) {
+    final isVoice = sess.kind == CallKind.voice;
+    final name = sess.inviterUsername;
+    final palIdx = name.isEmpty
+        ? 0
+        : (name.codeUnitAt(0) + name.length) %
+            SeeUColors.avatarPalettes.length;
+    final palette = SeeUColors.avatarPalettes[palIdx];
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1C1C2E), Color(0xFF0D0D1A)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Inviter avatar with pulsing ring
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 104, height: 104,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: SeeUColors.accent.withValues(alpha: 0.25), width: 12),
+                  ),
+                ),
+                Container(
+                  width: 84, height: 84,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: palette),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12), width: 2),
+                  ),
+                  child: Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Text(
+              '@${sess.inviterUsername}',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55), fontSize: 14),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              sess.chatTitle,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Fraunces',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12), width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isVoice
+                        ? PhosphorIconsBold.phone
+                        : PhosphorIconsBold.videoCamera,
+                    color: Colors.white,
+                    size: 13,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _peerTile(GroupCallPeer peer, bool isVoice) {
     final hasVideo = peer.remoteStream != null &&
         !isVoice &&
         peer.remoteStream!.getVideoTracks().isNotEmpty;
+    final name = peer.username.isNotEmpty
+        ? peer.username
+        : (peer.userId.length > 8 ? peer.userId.substring(0, 8) : peer.userId);
+    final palIdx = peer.username.isEmpty
+        ? 0
+        : (peer.username.codeUnitAt(0) + peer.username.length) %
+            SeeUColors.avatarPalettes.length;
+    final palette = SeeUColors.avatarPalettes[palIdx];
+    final initial = peer.username.isNotEmpty ? peer.username[0].toUpperCase() : '?';
+
     return Container(
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.grey.shade900,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(16),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -258,44 +431,60 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
             )
           else
             Positioned.fill(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64, height: 64,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: palette),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (hasVideo)
+            Positioned(
+              bottom: 6, left: 8,
               child: Container(
-                decoration:
-                    const BoxDecoration(gradient: SeeUGradients.heroOrange),
-                child: Center(
-                  child: Icon(
-                    isVoice
-                        ? PhosphorIconsBold.microphone
-                        : PhosphorIconsBold.user,
-                    size: 48,
-                    color: Colors.white,
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
             ),
-          Positioned(
-            bottom: 6,
-            left: 8,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                peer.username.isNotEmpty
-                    ? peer.username
-                    : (peer.userId.length > 8
-                        ? peer.userId.substring(0, 8)
-                        : peer.userId),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -415,4 +604,179 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
     );
   }
 
+}
+
+// ─── Member status bubble (outgoing call waiting screen) ──────────────────
+
+class _MemberStatusBubble extends StatefulWidget {
+  final GroupCallMember member;
+  const _MemberStatusBubble({required this.member});
+
+  @override
+  State<_MemberStatusBubble> createState() => _MemberStatusBubbleState();
+}
+
+class _MemberStatusBubbleState extends State<_MemberStatusBubble>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+  late Animation<double> _scaleAnim;
+  late Animation<double> _opacityAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.35).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeOut),
+    );
+    _opacityAnim = Tween<double>(begin: 0.55, end: 0.0).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeOut),
+    );
+    if (widget.member.status == GroupCallMemberStatus.ringing) {
+      _pulseCtrl.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_MemberStatusBubble old) {
+    super.didUpdateWidget(old);
+    if (widget.member.status == GroupCallMemberStatus.ringing) {
+      if (!_pulseCtrl.isAnimating) _pulseCtrl.repeat();
+    } else {
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.member;
+    final name = m.fullName.isNotEmpty ? m.fullName : m.username;
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final palIdx = name.isEmpty
+        ? 0
+        : (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length;
+    final palette = SeeUColors.avatarPalettes[palIdx];
+
+    final isRinging = m.status == GroupCallMemberStatus.ringing;
+    final isJoined = m.status == GroupCallMemberStatus.joined;
+    final isDeclined = m.status == GroupCallMemberStatus.declined;
+
+    // Status dot icon/color
+    final dotIcon = isJoined
+        ? PhosphorIconsBold.check
+        : isDeclined
+            ? PhosphorIconsBold.x
+            : PhosphorIconsBold.phone;
+    final dotBg = isJoined
+        ? const Color(0xFF2FA84F)
+        : isDeclined
+            ? Colors.white12
+            : SeeUColors.accent;
+
+    return SizedBox(
+      width: 64,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              // Pulsing ring (ringing state only)
+              if (isRinging)
+                AnimatedBuilder(
+                  animation: _pulseCtrl,
+                  builder: (_, __) => Transform.scale(
+                    scale: _scaleAnim.value,
+                    child: Opacity(
+                      opacity: _opacityAnim.value,
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: SeeUColors.accent,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              // Avatar circle
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: palette),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isJoined
+                        ? const Color(0xFF2FA84F)
+                        : isRinging
+                            ? SeeUColors.accent.withValues(alpha: 0.7)
+                            : Colors.white24,
+                    width: isJoined || isRinging ? 2 : 1,
+                  ),
+                ),
+                child: Opacity(
+                  opacity: isDeclined ? 0.45 : 1.0,
+                  child: Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Status dot (bottom-right)
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: dotBg,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF0D0D1A), width: 1.5),
+                  ),
+                  child: Icon(dotIcon, color: Colors.white, size: 9),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            m.username.isNotEmpty ? '@${m.username}' : name,
+            style: TextStyle(
+              color: isDeclined
+                  ? Colors.white.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.85),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 }

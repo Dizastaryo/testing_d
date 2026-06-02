@@ -99,19 +99,15 @@ class _ChatSearchSheetState extends ConsumerState<ChatSearchSheet> {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: SafeArea(
-        child: Container(
-          height: MediaQuery.of(context).size.height * 0.75,
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(SeeURadii.sheet)),
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(SeeURadii.sheet)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
             children: [
               Center(
                 child: Container(
@@ -153,9 +149,7 @@ class _ChatSearchSheetState extends ConsumerState<ChatSearchSheet> {
               Expanded(child: _buildBody(c)),
             ],
           ),
-        ),
-      ),
-    );
+        );
   }
 
   Widget _buildBody(SeeUThemeColors c) {

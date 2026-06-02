@@ -19,6 +19,38 @@ enum GroupCallStatus {
   active,           // мы joined (хотя бы один peer connected)
 }
 
+// ── Member status tracking ──────────────────────────────────────────────────
+
+/// Статус участника во время ожидания ответа на звонок.
+enum GroupCallMemberStatus { ringing, joined, declined }
+
+/// Данные одного участника чата, которому был разослан инвайт.
+class GroupCallMember {
+  final String userId;
+  final String username;
+  final String fullName;
+  final String avatarUrl;
+  final GroupCallMemberStatus status;
+
+  const GroupCallMember({
+    required this.userId,
+    required this.username,
+    this.fullName = '',
+    this.avatarUrl = '',
+    this.status = GroupCallMemberStatus.ringing,
+  });
+
+  GroupCallMember copyWith({GroupCallMemberStatus? status}) => GroupCallMember(
+        userId: userId,
+        username: username,
+        fullName: fullName,
+        avatarUrl: avatarUrl,
+        status: status ?? this.status,
+      );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 /// Один peer в group-call'е. Per-peer renderer + connection state.
 class GroupCallPeer {
   final String userId;
@@ -87,6 +119,8 @@ class GroupCallService {
   final ValueNotifier<bool> isCameraOff = ValueNotifier(false);
   /// #5: последняя ошибка — показывается снэкбаром через CallListener.
   final ValueNotifier<String?> lastError = ValueNotifier(null);
+  /// Список участников чата, которым отправлен инвайт, с их статусами.
+  final ValueNotifier<List<GroupCallMember>> invitedMembers = ValueNotifier([]);
 
   CallSender? _sender;
   final AudioPlayer _ringPlayer = AudioPlayer();
@@ -98,6 +132,27 @@ class GroupCallService {
 
   void setSender(CallSender s) {
     _sender = s;
+  }
+
+  /// Передаёт список участников чата (без себя) при старте звонка.
+  void setInvitedMembers(List<GroupCallMember> members) {
+    invitedMembers.value = List<GroupCallMember>.of(members);
+  }
+
+  void _updateMemberStatus(String userId, GroupCallMemberStatus status,
+      {String username = ''}) {
+    final list = List<GroupCallMember>.of(invitedMembers.value);
+    final idx = list.indexWhere((m) => m.userId == userId);
+    if (idx < 0) {
+      // Незнакомый участник присоединился — добавляем
+      if (status == GroupCallMemberStatus.joined) {
+        list.add(GroupCallMember(userId: userId, username: username, status: status));
+        invitedMembers.value = list;
+      }
+      return;
+    }
+    list[idx] = list[idx].copyWith(status: status);
+    invitedMembers.value = list;
   }
 
   void onRealtimeEvent(RealtimeEvent evt) => _onRealtimeEvent(evt);
@@ -277,6 +332,7 @@ class GroupCallService {
     }
     // Получаем (или создаём) peer + connection + отправляем offer.
     final fromUsername = p['from_username']?.toString() ?? '';
+    _updateMemberStatus(from, GroupCallMemberStatus.joined, username: fromUsername);
     final GroupCallPeer peer;
     try {
       peer = await _ensurePeer(from, username: fromUsername);
@@ -299,6 +355,9 @@ class GroupCallService {
     // не завершаем звонок, другие участники могут ещё присоединиться.
     final wasActive = peers.value.containsKey(from);
     await _removePeer(from);
+    if (!wasActive) {
+      _updateMemberStatus(from, GroupCallMemberStatus.declined);
+    }
     if (wasActive && peers.value.isEmpty && session.value != null) {
       await _cleanup();
     }
@@ -588,6 +647,7 @@ class GroupCallService {
     localStream.value = null;
     isMuted.value = false;
     isCameraOff.value = false;
+    invitedMembers.value = [];
     // #L-2: принудительно очищаем — страховка если concurrent _ensurePeer
     // добавил peer между итерациями выше.
     peers.value = {};
