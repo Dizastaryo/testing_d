@@ -41,6 +41,10 @@ class CallSession {
   /// MM:SS в UI (C-4). null пока not-connected.
   final DateTime? connectedAt;
 
+  /// null = неизвестно, true = пир получил звонок (ответил/отклонил),
+  /// false = 8 секунд прошло без ответа (вероятно не в сети).
+  final bool? peerResponseSeen;
+
   const CallSession({
     required this.peerId,
     required this.peerUsername,
@@ -49,12 +53,14 @@ class CallSession {
     required this.status,
     this.kind = CallKind.video,
     this.connectedAt,
+    this.peerResponseSeen,
   });
 
   CallSession copyWith({
     CallStatus? status,
     CallKind? kind,
     DateTime? connectedAt,
+    bool? peerResponseSeen,
   }) =>
       CallSession(
         peerId: peerId,
@@ -64,6 +70,7 @@ class CallSession {
         status: status ?? this.status,
         kind: kind ?? this.kind,
         connectedAt: connectedAt ?? this.connectedAt,
+        peerResponseSeen: peerResponseSeen ?? this.peerResponseSeen,
       );
 }
 
@@ -106,6 +113,10 @@ class CallService {
 
   // #9: таймаут исходящего звонка — 60 сек без ответа → автоматический hangup.
   Timer? _inviteTimer;
+
+  // Через 8 сек без единого ответа от пира — помечаем peerResponseSeen=false
+  // (вероятно offline). Отменяется при любом ответе (accept/decline).
+  Timer? _noResponseTimer;
 
   CallSender? _sender;
 
@@ -237,6 +248,14 @@ class CallService {
     _inviteTimer = Timer(const Duration(seconds: 60), () {
       if (session.value?.status == CallStatus.outgoingRinging) {
         hangup();
+      }
+    });
+    // 8 сек без реакции → помечаем как «возможно не в сети».
+    _noResponseTimer?.cancel();
+    _noResponseTimer = Timer(const Duration(seconds: 8), () {
+      final s = session.value;
+      if (s != null && s.status == CallStatus.outgoingRinging) {
+        session.value = s.copyWith(peerResponseSeen: false);
       }
     });
     await _initLocalStream();
@@ -557,12 +576,16 @@ class CallService {
     // #9: callee ответил — отменяем ring-timeout таймер.
     _inviteTimer?.cancel();
     _inviteTimer = null;
-    session.value = s.copyWith(status: CallStatus.connecting);
+    _noResponseTimer?.cancel();
+    _noResponseTimer = null;
+    session.value = s.copyWith(status: CallStatus.connecting, peerResponseSeen: true);
     await _ensurePeerConnection();
     await _createAndSendOffer();
   }
 
   Future<void> _handleDecline(Map<String, dynamic> p) async {
+    _noResponseTimer?.cancel();
+    _noResponseTimer = null;
     await _cleanup();
   }
 
@@ -656,6 +679,8 @@ class CallService {
     // #9: отменяем outgoing ring-timeout.
     _inviteTimer?.cancel();
     _inviteTimer = null;
+    _noResponseTimer?.cancel();
+    _noResponseTimer = null;
     // C-3.1: end-tone chirp только если звонок был реально установлен.
     // #12: не играем при outgoingRinging/incomingRinging — звонок не начался.
     final s = session.value;

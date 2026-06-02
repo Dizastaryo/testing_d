@@ -280,7 +280,7 @@ class _CallScreenState extends State<CallScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              _statusLabel(s.status),
+              _statusLabel(s),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.7),
                 fontSize: 14,
@@ -459,10 +459,14 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  String _statusLabel(CallStatus s) {
-    switch (s) {
+  String _statusLabel(CallSession s) {
+    switch (s.status) {
       case CallStatus.outgoingRinging:
-        return 'Гудки…';
+        // null = ещё не знаем дошёл ли звонок (первые 8 секунд).
+        // false = 8 сек без ответа, вероятно абонент не в сети.
+        // true = пир ответил/отклонил (в этот момент статус уже не outgoingRinging).
+        if (s.peerResponseSeen == false) return 'Не отвечает…';
+        return 'Соединение…';
       case CallStatus.incomingRinging:
         return 'Входящий звонок';
       case CallStatus.connecting:

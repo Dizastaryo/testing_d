@@ -93,7 +93,12 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
       builder: (_, sess, __) {
         if (sess == null) return const SizedBox.shrink();
         final isVoice = sess.kind == CallKind.voice;
-        return Scaffold(
+        return PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) GroupCallService.instance.minimized.value = true;
+          },
+          child: Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
             children: [
@@ -105,9 +110,35 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
               Positioned(
                 top: 50,
                 left: 20,
-                right: 20,
+                right: 80,
                 child: SafeArea(
                   child: _buildTopBar(sess),
+                ),
+              ),
+              // Кнопка свернуть (minimize → PiP).
+              Positioned(
+                top: 10,
+                right: 20,
+                child: SafeArea(
+                  child: GestureDetector(
+                    onTap: () {
+                      GroupCallService.instance.minimized.value = true;
+                      Navigator.of(context).maybePop();
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        PhosphorIconsRegular.arrowsInSimple,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               // Local PIP (только для video). #15: учитываем isCameraOff.
@@ -159,6 +190,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

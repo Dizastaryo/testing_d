@@ -14,6 +14,7 @@ import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/room_provider.dart';
+import '../../core/services/voice_room_service.dart';
 import 'room_members_screen.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
@@ -97,12 +98,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     HapticFeedback.mediumImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
     await ref.read(roomDetailProvider(widget.roomId).notifier).joinVoice(myId);
+    VoiceRoomService.instance.join(widget.roomId, room.name);
   }
 
   Future<void> _leaveVoice() async {
     HapticFeedback.lightImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
     await ref.read(roomDetailProvider(widget.roomId).notifier).leaveVoice(myId);
+    VoiceRoomService.instance.leave();
   }
 
   Future<void> _leaveRoom() async {
@@ -131,6 +134,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       // чтобы не оставаться "призраком" в голосовом списке других участников.
       final roomState = ref.read(roomDetailProvider(widget.roomId)).room;
       if (roomState?.isInVoice == true) {
+        VoiceRoomService.instance.leave();
         try {
           await ref
               .read(apiClientProvider)
@@ -169,6 +173,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    VoiceRoomService.instance.leave();
     try {
       await ref.read(apiClientProvider).delete(ApiEndpoints.roomById(widget.roomId));
       ref.read(roomListProvider.notifier).load();

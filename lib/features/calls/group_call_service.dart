@@ -121,6 +121,9 @@ class GroupCallService {
   final ValueNotifier<String?> lastError = ValueNotifier(null);
   /// Список участников чата, которым отправлен инвайт, с их статусами.
   final ValueNotifier<List<GroupCallMember>> invitedMembers = ValueNotifier([]);
+  /// PiP флаг — аналог CallService.minimized. true = GroupCallScreen свёрнут,
+  /// CallListener рендерит floating mini overlay. Tap → set false → re-open.
+  final ValueNotifier<bool> minimized = ValueNotifier(false);
 
   CallSender? _sender;
   final AudioPlayer _ringPlayer = AudioPlayer();
@@ -170,6 +173,7 @@ class GroupCallService {
     CallKind kind = CallKind.video,
   }) async {
     if (session.value != null) return;
+    minimized.value = false;
     session.value = GroupCallSession(
       chatId: chatId,
       chatTitle: chatTitle,
@@ -652,6 +656,7 @@ class GroupCallService {
     // добавил peer между итерациями выше.
     peers.value = {};
     session.value = null;
+    minimized.value = false;
   }
 
   void _send(String type, Map<String, dynamic> payload) {
