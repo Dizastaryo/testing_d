@@ -217,26 +217,48 @@ class _ChatCreateGroupScreenState
     final c = context.seeuColors;
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Новая группа'),
-        actions: [
-          TextButton(
-            onPressed: _canSubmit ? _submit : null,
-            child: Text(
-              _submitting ? '…' : 'Создать',
-              style: TextStyle(
-                color: _canSubmit ? SeeUColors.accent : c.ink3,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: Column(
           children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(PhosphorIcons.x(), size: 22, color: c.ink),
+                  ),
+                  Expanded(
+                    child: Text('Новая группа', style: SeeUTypography.title.copyWith(color: c.ink)),
+                  ),
+                  GestureDetector(
+                    onTap: _canSubmit ? _submit : null,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: _canSubmit ? SeeUColors.accent : c.surface2,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text(
+                              'Создать',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _canSubmit ? Colors.white : c.ink3,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             // Title input
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
@@ -346,7 +368,7 @@ class _ChatCreateGroupScreenState
                     final u = _selectedUsers.values.elementAt(i);
                     return Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: SeeUColors.accent.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(99),
@@ -370,7 +392,7 @@ class _ChatCreateGroupScreenState
                           GestureDetector(
                             onTap: () => _toggleUser(u),
                             child: Icon(PhosphorIcons.x(),
-                                size: 12, color: SeeUColors.accent),
+                                size: 14, color: SeeUColors.accent),
                           ),
                         ],
                       ),
@@ -379,9 +401,40 @@ class _ChatCreateGroupScreenState
                 ),
               ),
             if (_selectedUsers.isNotEmpty) const SizedBox(height: 8),
+            // УЧАСТНИКИ label + счётчик
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: [
+                  Text(
+                    'УЧАСТНИКИ',
+                    style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8, color: c.ink3,
+                    ),
+                  ),
+                  if (_selectedIds.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        '${_selectedIds.length}',
+                        style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
             // Search
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: TextField(
                 controller: _searchCtrl,
                 onChanged: _onSearch,
@@ -401,6 +454,15 @@ class _ChatCreateGroupScreenState
                 style: SeeUTypography.body,
               ),
             ),
+            // Подсказка валидации
+            if (_titleCtrl.text.trim().isNotEmpty && _selectedIds.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  'Добавьте хотя бы одного участника',
+                  style: TextStyle(fontSize: 12, color: c.ink3),
+                ),
+              ),
             // Candidates list
             Expanded(
               child: _loading
@@ -428,7 +490,7 @@ class _ChatCreateGroupScreenState
                                     backgroundColor: c.surface2,
                                     backgroundImage:
                                         (u.avatarUrl?.isNotEmpty ?? false)
-                                            ? NetworkImage(u.avatarUrl!)
+                                            ? CachedNetworkImageProvider(u.avatarUrl!)
                                             : null,
                                     child: (u.avatarUrl?.isEmpty ?? true)
                                         ? Icon(PhosphorIcons.user(),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -242,16 +243,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
             icon: Icon(PhosphorIcons.x(), size: 22, color: c.ink),
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Новая комната', style: SeeUTypography.title.copyWith(color: c.ink)),
-                Text(
-                  'Приватная · Голос + текст',
-                  style: TextStyle(fontSize: 11, color: c.ink3),
-                ),
-              ],
-            ),
+            child: Text('Новая комната', style: SeeUTypography.title.copyWith(color: c.ink)),
           ),
           GestureDetector(
             onTap: _canCreate ? _create : null,
@@ -287,9 +279,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Cover image picker
-        _buildCoverPicker(c),
-        const SizedBox(height: 20),
         _SectionLabel('НАЗВАНИЕ'),
         const SizedBox(height: 8),
         _InputField(
@@ -307,9 +296,12 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
           controller: _descCtrl,
           hintText: 'О чём эта комната...',
           maxLength: 500,
-          maxLines: 3,
+          maxLines: 2,
           c: c,
         ),
+        const SizedBox(height: 20),
+        // Cover image picker
+        _buildCoverPicker(c),
       ],
     );
   }
@@ -319,7 +311,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
       onTap: _pickCoverImage,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        height: 140,
+        height: 100,
         decoration: BoxDecoration(
           color: _coverImage != null
               ? Colors.transparent
@@ -393,7 +385,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
       children: [
         Row(
           children: [
-            _SectionLabel('УЧАСТНИКИ'),
+            _SectionLabel('КОГО ПОЗВАТЬ'),
             if (_selectedIds.isNotEmpty) ...[
               const SizedBox(width: 8),
               Container(
@@ -656,7 +648,7 @@ class _UserTile extends StatelessWidget {
         radius: 22,
         backgroundColor: c.surface2,
         backgroundImage:
-            (user.avatarUrl?.isNotEmpty ?? false) ? NetworkImage(user.avatarUrl!) : null,
+            (user.avatarUrl?.isNotEmpty ?? false) ? CachedNetworkImageProvider(user.avatarUrl!) : null,
         child: (user.avatarUrl?.isEmpty ?? true)
             ? Icon(PhosphorIcons.user(), color: c.ink3, size: 18)
             : null,
