@@ -13,17 +13,8 @@ import '../../core/providers/chat_provider.dart';
 import '../chat/widgets/chat_message_bubble.dart';
 import 'sbory_widgets.dart';
 
-// ─── Provider ────────────────────────────────────────────────────
-
-final _sborMemberCountProvider =
-    FutureProvider.autoDispose.family<int, String>((ref, sborId) async {
-  final api = ref.read(apiClientProvider);
-  final r = await api.get(ApiEndpoints.sborById(sborId));
-  final data = r.data is Map && (r.data as Map).containsKey('data')
-      ? r.data['data']
-      : r.data;
-  return (data['joined'] as int?) ?? 0;
-});
+// _sborMemberCountProvider удалён: лишний full-GET ради одного поля.
+// Счётчик участников берётся из widget.memberCount (передаётся при открытии).
 
 // ─── Voice participant model ──────────────────────────────────────
 
@@ -189,14 +180,15 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'чат сбора · ${ref.watch(_sborMemberCountProvider(widget.sborId)).valueOrNull ?? widget.memberCount} участников',
+                  'чат сбора · ${widget.memberCount} участников',
                   style: TextStyle(fontSize: 11, color: c.ink3),
                 ),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () {},
+            // Переключаемся на вкладку «Голос» (tab index 1)
+            onTap: () => _tabCtrl.animateTo(1),
             child: Container(
               width: 36, height: 36,
               decoration: BoxDecoration(
@@ -288,11 +280,14 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
 
   void _joinVoice(BuildContext context) {
     HapticFeedback.mediumImpact();
+    // TODO: отправить WS-событие «вхожу в голосовой канал сбора» и обновлять
+    // _voiceParticipants по push-событиям (sbor.voice.join / sbor.voice.leave).
+    // Пока показываем только себя без speaking-флага.
     setState(() {
       _voiceLive = true;
       _youInVoice = true;
       _voiceParticipants = const [
-        VoiceParticipant(name: 'Ты', isYou: true, speaking: true),
+        VoiceParticipant(name: 'Вы', isYou: true),
       ];
     });
   }

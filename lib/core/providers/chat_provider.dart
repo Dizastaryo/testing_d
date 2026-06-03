@@ -27,17 +27,28 @@ class Chat {
   final User? otherUser; // только для direct
   final int participantsCount; // только для group
   final String lastMessage;
-  final String lastSenderUsername; // для group: префикс «X: ...» в last-сообщении
+  final String
+      lastSenderUsername; // для group: префикс «X: ...» в last-сообщении
   final DateTime lastMessageAt;
   final int unreadCount;
+
   /// Закреплённое сообщение (sticky-banner на topе чата). nil = ничего не закреплено.
   final ReplyPreview? pinnedMessage;
+
   /// ID сбора, если этот group-чат является чатом сбора. null — обычный чат.
   final String? sborId;
+
   /// true если текущий пользователь — организатор сбора этого чата.
   final bool isOrganizer;
+
   /// Закреплён ли чат у текущего пользователя (хранится на сервере).
   final bool isPinned;
+
+  /// Архивирован ли чат у текущего пользователя.
+  final bool isArchived;
+
+  /// Отключены ли уведомления для этого чата.
+  final bool isMuted;
 
   const Chat({
     required this.id,
@@ -54,6 +65,8 @@ class Chat {
     this.sborId,
     this.isOrganizer = false,
     this.isPinned = false,
+    this.isArchived = false,
+    this.isMuted = false,
   });
 
   bool get isGroup => kind == 'group';
@@ -77,6 +90,8 @@ class Chat {
     String? sborId,
     bool? isOrganizer,
     bool? isPinned,
+    bool? isArchived,
+    bool? isMuted,
   }) {
     return Chat(
       id: id ?? this.id,
@@ -93,6 +108,8 @@ class Chat {
       sborId: sborId ?? this.sborId,
       isOrganizer: isOrganizer ?? this.isOrganizer,
       isPinned: isPinned ?? this.isPinned,
+      isArchived: isArchived ?? this.isArchived,
+      isMuted: isMuted ?? this.isMuted,
     );
   }
 
@@ -129,6 +146,8 @@ class Chat {
       sborId: json['sbor_id']?.toString(),
       isOrganizer: (json['is_organizer'] ?? false) as bool,
       isPinned: (json['is_pinned'] ?? false) as bool,
+      isArchived: (json['archived'] ?? false) as bool,
+      isMuted: (json['muted'] ?? false) as bool,
     );
   }
 }
@@ -212,35 +231,46 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMe;
   final bool isRead;
+
   /// True когда сообщение доставлено хотя бы одному peer'у (CHAT-10.1).
   /// Computed на бэке как `delivered_count > 0`.
   final bool isDelivered;
+
   /// Per-recipient counts (CHAT-10.2). Для direct-чата recipientsCount=1.
   /// Для group: bubble рисует «X из N» когда `readCount < recipientsCount`.
   final int deliveredCount;
   final int readCount;
   final int recipientsCount;
+
   /// CHAT-11: момент когда сообщение исчезнет. null = вечно. Frontend
   /// рисует ⏱ countdown + auto-remove из local state по Timer'у.
   final DateTime? expiresAt;
+
   /// "text" (default), "shared_post", "image", "voice".
   final String kind;
   final AttachedPostShort? attachedPost;
+
   /// For kind="image"/"voice" — server-relative URL like `/uploads/...`.
   final String attachedMediaUrl;
   final String attachedMediaType;
+
   /// For kind="voice" — длительность аудио в секундах.
   final int mediaDurationSeconds;
+
   /// For kind="voice" — нормализованные сэмплы 0..1 (обычно ~48 точек) для
   /// прорисовки waveform'а в bubble без декодирования аудио клиентом.
   final List<double> waveform;
+
   /// Если это reply на другое сообщение — preview оригинала (text/username/kind).
   /// nil — обычное сообщение.
   final ReplyPreview? replyTo;
+
   /// Reaction counts per emoji aggregated by server. Empty when none.
   final Map<String, int> reactions;
+
   /// The emoji the *current user* placed on this message — empty when none.
   final String myReaction;
+
   /// Sender info (for group chats)
   final String senderName;
   final String senderUsername;
@@ -298,9 +328,8 @@ class ChatMessage {
           ? DateTime.tryParse(json['expires_at'].toString())
           : null,
       kind: json['kind']?.toString() ?? 'text',
-      attachedPost: ap is Map<String, dynamic>
-          ? AttachedPostShort.fromJson(ap)
-          : null,
+      attachedPost:
+          ap is Map<String, dynamic> ? AttachedPostShort.fromJson(ap) : null,
       attachedMediaUrl: json['attached_media_url']?.toString() ?? '',
       attachedMediaType: json['attached_media_type']?.toString() ?? '',
       mediaDurationSeconds:
@@ -382,8 +411,8 @@ class ChatListState {
   final List<Chat> chats;
   final bool isLoading;
   const ChatListState({this.chats = const [], this.isLoading = false});
-  ChatListState copyWith({List<Chat>? chats, bool? isLoading}) =>
-      ChatListState(chats: chats ?? this.chats, isLoading: isLoading ?? this.isLoading);
+  ChatListState copyWith({List<Chat>? chats, bool? isLoading}) => ChatListState(
+      chats: chats ?? this.chats, isLoading: isLoading ?? this.isLoading);
 }
 
 class ChatListNotifier extends StateNotifier<ChatListState> {
@@ -407,6 +436,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           // last_message, unread, kind, title, participants_count.
           const triggerEvents = {
             'chat.message',
+            'chat.message.read',
             'chat.group.joined',
             'chat.group.member.added',
             'chat.group.member.removed',
@@ -472,16 +502,16 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       final response = await _api.get(ApiEndpoints.chats);
       final data = response.data['data'];
       if (data is List) {
-        final chats = data
-            .map((e) => Chat.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final chats =
+            data.map((e) => Chat.fromJson(e as Map<String, dynamic>)).toList();
         state = ChatListState(chats: chats);
       } else {
         state = const ChatListState(chats: []);
       }
     } catch (e, st) {
       appLog.error('[ChatListNotifier] load error', e, st);
-      state = const ChatListState(chats: []);
+      // Не стираем старый список при ошибке сети — пользователь видит кэш.
+      state = state.copyWith(isLoading: false);
     }
   }
 
@@ -526,6 +556,46 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       return prev.isPinned;
     }
     return newPinned;
+  }
+
+  /// Optimistically archives or unarchives [chatId] for current user.
+  Future<void> archiveChat(String chatId, bool archived) async {
+    final updated = state.chats.map((c) {
+      if (c.id != chatId) return c;
+      return c.copyWith(isArchived: archived);
+    }).toList();
+    state = state.copyWith(chats: updated);
+    try {
+      await _api.patch(ApiEndpoints.chatArchive(chatId), data: {'archived': archived});
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] archiveChat error', e, st);
+      // Roll back.
+      final rolled = state.chats.map((c) {
+        if (c.id != chatId) return c;
+        return c.copyWith(isArchived: !archived);
+      }).toList();
+      state = state.copyWith(chats: rolled);
+    }
+  }
+
+  /// Optimistically mutes or unmutes notifications for [chatId].
+  Future<void> muteChat(String chatId, bool muted) async {
+    final updated = state.chats.map((c) {
+      if (c.id != chatId) return c;
+      return c.copyWith(isMuted: muted);
+    }).toList();
+    state = state.copyWith(chats: updated);
+    try {
+      await _api.patch(ApiEndpoints.chatMute(chatId), data: {'muted': muted});
+    } catch (e, st) {
+      appLog.error('[ChatListNotifier] muteChat error', e, st);
+      // Roll back.
+      final rolled = state.chats.map((c) {
+        if (c.id != chatId) return c;
+        return c.copyWith(isMuted: !muted);
+      }).toList();
+      state = state.copyWith(chats: rolled);
+    }
   }
 
   /// Hides a chat from the list (delete for self for direct; leave for group).
@@ -645,8 +715,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             if (messageId.isEmpty) return;
             final raw = p['reactions'];
             final newCounts = raw is Map
-                ? Map<String, int>.from(raw.map(
-                    (k, v) => MapEntry(k.toString(), (v is num) ? v.toInt() : 0)))
+                ? Map<String, int>.from(raw.map((k, v) =>
+                    MapEntry(k.toString(), (v is num) ? v.toInt() : 0)))
                 : <String, int>{};
             state = state.copyWith(
               messages: state.messages.map((m) {
@@ -693,10 +763,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             // flow без counts) — флипаем isRead на все мои unread в этой
             // conversation.
             final readerId = p['reader_id']?.toString() ?? '';
-            final ids = (p['message_ids'] as List?)
-                    ?.map((e) => e.toString())
-                    .toSet() ??
-                <String>{};
+            final ids =
+                (p['message_ids'] as List?)?.map((e) => e.toString()).toSet() ??
+                    <String>{};
             final countsByMsg = p['counts_by_msg'] is Map
                 ? (p['counts_by_msg'] as Map).cast<String, dynamic>()
                 : const <String, dynamic>{};
@@ -711,11 +780,12 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
                   final c = cnt.cast<String, dynamic>();
                   return m.copyWith(
                     isRead: true,
-                    deliveredCount:
-                        (c['delivered_count'] as num?)?.toInt() ?? m.deliveredCount,
-                    readCount: (c['read_count'] as num?)?.toInt() ?? m.readCount,
-                    recipientsCount:
-                        (c['recipients_count'] as num?)?.toInt() ?? m.recipientsCount,
+                    deliveredCount: (c['delivered_count'] as num?)?.toInt() ??
+                        m.deliveredCount,
+                    readCount:
+                        (c['read_count'] as num?)?.toInt() ?? m.readCount,
+                    recipientsCount: (c['recipients_count'] as num?)?.toInt() ??
+                        m.recipientsCount,
                   );
                 }
                 return m.copyWith(isRead: true);
@@ -825,15 +895,14 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     List<double> waveform = const [],
     ReplyPreview? replyTo,
     int expiresInSeconds = 0,
+    bool rethrowOnError = false,
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
     // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
     final kind = attachedPostId != null
         ? 'shared_post'
         : hasMedia
-            ? (attachedMediaType == 'audio'
-                ? 'voice'
-                : (attachedMediaType ?? 'image'))
+            ? (attachedMediaType == 'audio' ? 'voice' : 'image')
             : 'text';
 
     // Optimistic UI: add message locally (no preview yet — server fills it).
@@ -865,8 +934,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (waveform.isNotEmpty) 'waveform': waveform,
           if (replyTo != null) 'reply_to_message_id': replyTo.id,
           if (hasMedia) 'attached_media_url': attachedMediaUrl,
-          if (hasMedia)
-            'attached_media_type': attachedMediaType ?? 'image',
+          if (hasMedia) 'attached_media_type': attachedMediaType ?? 'image',
           if (expiresInSeconds > 0) 'expires_in_seconds': expiresInSeconds,
         },
       );
@@ -892,6 +960,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       state = state.copyWith(
         messages: state.messages.where((m) => m.id != optimistic.id).toList(),
       );
+      if (rethrowOnError) rethrow;
     }
   }
 
@@ -944,6 +1013,40 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         );
       }).toList(),
     );
+  }
+
+  /// Редактирует текст сообщения. Оптимистично обновляет локально,
+  /// откатывает при ошибке.
+  Future<void> editMessage(String messageId, String newText) async {
+    final idx = state.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final original = state.messages[idx];
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, idx),
+        original.copyWith(text: newText),
+        ...state.messages.sublist(idx + 1),
+      ],
+    );
+    try {
+      await _api.patch(
+        ApiEndpoints.chatMessageEdit(chatId, messageId),
+        data: {'text': newText},
+      );
+    } catch (e, st) {
+      appLog.error('[ChatMessagesNotifier] editMessage error', e, st);
+      final i = state.messages.indexWhere((m) => m.id == messageId);
+      if (i >= 0) {
+        state = state.copyWith(
+          messages: [
+            ...state.messages.sublist(0, i),
+            original,
+            ...state.messages.sublist(i + 1),
+          ],
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Toggle the current user's reaction on a message. If `emoji` matches the
@@ -1165,13 +1268,14 @@ final typingChatsProvider =
   (ref) => _TypingChatsNotifier(ref),
 );
 
-final chatListProvider = StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
+final chatListProvider =
+    StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
   final api = ref.watch(apiClientProvider);
   return ChatListNotifier(api, ref);
 });
 
-final chatMessagesProvider =
-    StateNotifierProvider.family<ChatMessagesNotifier, ChatMessagesState, String>((ref, chatId) {
+final chatMessagesProvider = StateNotifierProvider.family<ChatMessagesNotifier,
+    ChatMessagesState, String>((ref, chatId) {
   final api = ref.watch(apiClientProvider);
   return ChatMessagesNotifier(chatId, api, ref);
 });

@@ -42,9 +42,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   }
 
   List<Chat> _filteredChats(List<Chat> chats) {
-    if (_searchQuery.isEmpty) return chats;
+    // Exclude archived chats from main list.
+    final active = chats.where((c) => !c.isArchived).toList();
+    if (_searchQuery.isEmpty) return active;
     final q = _searchQuery.toLowerCase();
-    return chats.where((c) {
+    return active.where((c) {
       // Для direct ищем по имени/нику собеседника, для group — по title.
       final label = c.isGroup
           ? c.title.toLowerCase()
@@ -380,8 +382,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   }
 
   Widget _buildChatList(List<Chat> chats) {
-    final pinned = chats.where((c) => c.isPinned).toList();
-    final unpinned = chats.where((c) => !c.isPinned).toList();
+    final c = context.seeuColors;
+    final pinned = chats.where((ch) => ch.isPinned).toList();
+    final unpinned = chats.where((ch) => !ch.isPinned).toList();
+    final allChats = ref.read(chatListProvider).chats;
+    final archivedCount = allChats.where((ch) => ch.isArchived).length;
 
     final items = <Widget>[];
 
@@ -396,6 +401,48 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     }
     for (final chat in unpinned) {
       items.add(_buildSwipableTile(chat));
+    }
+
+    // Archive tile at the bottom (only if there are archived chats)
+    if (archivedCount > 0) {
+      items.add(
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => _ArchivedChatsScreen(
+                chats: allChats.where((ch) => ch.isArchived).toList(),
+              ),
+            ),
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 52, height: 52,
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(PhosphorIcons.archive(PhosphorIconsStyle.regular), size: 24, color: c.ink3),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Архив ($archivedCount)',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: c.ink,
+                    ),
+                  ),
+                ),
+                Icon(PhosphorIconsRegular.caretRight, size: 16, color: c.ink3),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     return SeeURadarRefresh(
@@ -421,6 +468,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
       onTogglePin: () async {
         HapticFeedback.mediumImpact();
         await ref.read(chatListProvider.notifier).togglePin(chat.id);
+      },
+      onArchive: () async {
+        HapticFeedback.mediumImpact();
+        await ref.read(chatListProvider.notifier).archiveChat(chat.id, true);
+      },
+      onToggleMute: () async {
+        HapticFeedback.selectionClick();
+        await ref.read(chatListProvider.notifier).muteChat(chat.id, !chat.isMuted);
       },
       onDelete: () => _confirmHideChat(chat),
     );
@@ -608,6 +663,10 @@ class _ChatTile extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (chat.isMuted) ...[
+                        const SizedBox(width: 4),
+                        Icon(PhosphorIconsRegular.bellSlash, size: 13, color: c.ink3),
+                      ],
                       if (isGroup) ...[
                         const SizedBox(width: 6),
                         if (chat.sborId != null)
@@ -783,6 +842,8 @@ class _SwipableChatTile extends StatefulWidget {
   final Chat chat;
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
+  final VoidCallback onArchive;
+  final VoidCallback onToggleMute;
   final VoidCallback onDelete;
 
   const _SwipableChatTile({
@@ -790,6 +851,8 @@ class _SwipableChatTile extends StatefulWidget {
     required this.chat,
     required this.onTap,
     required this.onTogglePin,
+    required this.onArchive,
+    required this.onToggleMute,
     required this.onDelete,
   });
 
@@ -799,8 +862,8 @@ class _SwipableChatTile extends StatefulWidget {
 
 class _SwipableChatTileState extends State<_SwipableChatTile>
     with SingleTickerProviderStateMixin {
-  // Width of the revealed action panel (pin + delete buttons).
-  static const _actionPanelWidth = 144.0; // 2 × 72px buttons
+  // Width of the revealed action panel (archive + pin + delete buttons).
+  static const _actionPanelWidth = 216.0; // 3 × 72px buttons
 
   late final AnimationController _ctrl;
   late final Animation<double> _offset;
@@ -863,6 +926,18 @@ class _SwipableChatTileState extends State<_SwipableChatTile>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // Archive button.
+                _ActionButton(
+                  icon: PhosphorIcons.archive(PhosphorIconsStyle.regular),
+                  label: 'В архив',
+                  color: c.surface2,
+                  iconColor: c.ink3,
+                  width: 72,
+                  onTap: () {
+                    _close();
+                    widget.onArchive();
+                  },
+                ),
                 // Pin / Unpin button.
                 _ActionButton(
                   icon: widget.chat.isPinned
@@ -937,6 +1012,34 @@ class _SwipableChatTileState extends State<_SwipableChatTile>
                 onTap: () {
                   Navigator.of(ctx).pop();
                   widget.onTogglePin();
+                },
+              ),
+              Divider(color: c.line, height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  widget.chat.isMuted
+                      ? PhosphorIconsRegular.bell
+                      : PhosphorIconsRegular.bellSlash,
+                  color: c.ink2,
+                ),
+                title: Text(
+                  widget.chat.isMuted ? 'Включить звук' : 'Замолчать',
+                  style: SeeUTypography.body,
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  widget.onToggleMute();
+                },
+              ),
+              Divider(color: c.line, height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(PhosphorIcons.archive(PhosphorIconsStyle.regular), color: c.ink2),
+                title: Text('В архив', style: SeeUTypography.body),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  widget.onArchive();
                 },
               ),
               Divider(color: c.line, height: 1),
@@ -1638,6 +1741,84 @@ class _AvatarStack extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Archived chats screen
+// ---------------------------------------------------------------------------
+
+class _ArchivedChatsScreen extends ConsumerStatefulWidget {
+  final List<Chat> chats;
+  const _ArchivedChatsScreen({required this.chats});
+
+  @override
+  ConsumerState<_ArchivedChatsScreen> createState() => _ArchivedChatsScreenState();
+}
+
+class _ArchivedChatsScreenState extends ConsumerState<_ArchivedChatsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    // Watch live state so unarchiving updates the list immediately.
+    final liveChats = ref.watch(chatListProvider).chats.where((ch) => ch.isArchived).toList();
+
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Icon(PhosphorIconsRegular.caretLeft, size: 22, color: c.ink),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Архив',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: c.ink,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: liveChats.isEmpty
+                  ? Center(
+                      child: Text('Архив пуст', style: TextStyle(color: c.ink3)),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 40),
+                      itemCount: liveChats.length,
+                      itemBuilder: (_, i) {
+                        final chat = liveChats[i];
+                        return _SwipableChatTile(
+                          key: ValueKey('arch_${chat.id}'),
+                          chat: chat,
+                          onTap: () => context.push('/chat/${chat.id}'),
+                          onTogglePin: () =>
+                              ref.read(chatListProvider.notifier).togglePin(chat.id),
+                          onArchive: () =>
+                              ref.read(chatListProvider.notifier).archiveChat(chat.id, false),
+                          onToggleMute: () => ref
+                              .read(chatListProvider.notifier)
+                              .muteChat(chat.id, !chat.isMuted),
+                          onDelete: () {},
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

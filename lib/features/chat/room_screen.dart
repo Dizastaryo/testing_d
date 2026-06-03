@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:record/record.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
@@ -15,7 +18,9 @@ import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/room_provider.dart';
 import '../../core/services/voice_room_service.dart';
+import '../../widgets/speaking_rings.dart';
 import 'room_members_screen.dart';
+import 'widgets/emoji_sticker_panel.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -31,6 +36,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _sending = false;
   bool _atBottom = true;
 
+  // ── Search ──────────────────────────────────────────────────────────────
+  bool _isSearching = false;
+  String _searchQuery = '';
+  final _searchCtrl = TextEditingController();
+
+  // ── Reactions (local-only, no backend) ──────────────────────────────────
+  String? _reactionPickerMsgId;
+  final Map<String, String> _myReactions = {};
+  final Map<String, Map<String, int>> _allReactions = {};
+
+  // ── Mic level monitoring (только пока пользователь в голосовом канале) ──
+  final AudioRecorder _micMonitor = AudioRecorder();
+  StreamSubscription<dynamic>? _micStreamSub;
+  StreamSubscription<Amplitude>? _ampSub;
+  final ValueNotifier<double> _myAudioLevel = ValueNotifier(0.0);
+
   @override
   void initState() {
     super.initState();
@@ -41,8 +62,49 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _inputController.dispose();
+    _searchCtrl.dispose();
     _scrollController.dispose();
+    _stopMicMonitoring();
+    _micMonitor.dispose();
+    _myAudioLevel.dispose();
     super.dispose();
+  }
+
+  /// Запускает мониторинг уровня микрофона через record package (stream-режим).
+  /// Amplitude нормализуется из dBFS [-50..0] → [0..1].
+  Future<void> _startMicMonitoring() async {
+    _stopMicMonitoring(); // закрываем предыдущий, если был
+    if (!await _micMonitor.hasPermission()) return;
+    try {
+      final stream = await _micMonitor.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
+      // Читаем поток, чтобы не было backpressure — данные нам не нужны.
+      _micStreamSub = stream.listen((_) {});
+      _ampSub = _micMonitor
+          .onAmplitudeChanged(const Duration(milliseconds: 100))
+          .listen((amp) {
+        final db = amp.current;
+        final normalized =
+            ((db.clamp(-50.0, 0.0) + 50.0) / 50.0).clamp(0.0, 1.0);
+        _myAudioLevel.value = normalized;
+      });
+    } catch (_) {
+      // Если платформа не поддерживает PCM streaming — молча игнорируем.
+    }
+  }
+
+  void _stopMicMonitoring() {
+    _ampSub?.cancel();
+    _ampSub = null;
+    _micStreamSub?.cancel();
+    _micStreamSub = null;
+    _myAudioLevel.value = 0.0;
+    _micMonitor.stop().ignore(); // fire-and-forget, ошибки suppressed
   }
 
   void _onScroll() {
@@ -79,14 +141,89 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  void _showEmojiStickerPanel() {
+    FocusScope.of(context).unfocus();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => EmojiStickerPanel(
+        onEmojiSelected: (emoji) {
+          Navigator.pop(context);
+          final sel = _inputController.selection;
+          final text = _inputController.text;
+          final pos = sel.isValid ? sel.baseOffset : text.length;
+          final newText = text.substring(0, pos) + emoji + text.substring(pos);
+          _inputController.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: pos + emoji.length),
+          );
+        },
+        onStickerSelected: (url) {
+          Navigator.pop(context);
+          _sendSticker(url);
+        },
+        onCreateSticker: () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  Future<void> _sendSticker(String url) async {
+    setState(() => _sending = true);
+    try {
+      await ref.read(roomMessagesProvider(widget.roomId).notifier).send(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'sticker',
+          );
+      _scrollToBottom();
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _toggleReaction(String msgId, String emoji) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _reactionPickerMsgId = null;
+      final current = _myReactions[msgId];
+      final reactions = Map<String, int>.from(_allReactions[msgId] ?? {});
+      if (current == emoji) {
+        _myReactions.remove(msgId);
+        reactions[emoji] = ((reactions[emoji] ?? 1) - 1).clamp(0, 999);
+        if ((reactions[emoji] ?? 0) == 0) reactions.remove(emoji);
+      } else {
+        if (current != null) {
+          reactions[current] = ((reactions[current] ?? 1) - 1).clamp(0, 999);
+          if ((reactions[current] ?? 0) == 0) reactions.remove(current);
+        }
+        _myReactions[msgId] = emoji;
+        reactions[emoji] = (reactions[emoji] ?? 0) + 1;
+      }
+      _allReactions[msgId] = reactions;
+    });
+  }
+
   Future<void> _toggleMute(Room room) async {
     HapticFeedback.mediumImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
-    ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, !room.isMuted);
+    final newMuted = !room.isMuted;
+    // Оптимистично синхронизируем мониторинг микрофона с новым состоянием мута
+    if (newMuted) {
+      _stopMicMonitoring();
+    } else {
+      _startMicMonitoring();
+    }
+    ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, newMuted);
     try {
       await ref.read(apiClientProvider).patch(ApiEndpoints.muteRoom(room.id));
     } catch (_) {
-      // Roll back on error
+      // Roll back on error — откатываем и мониторинг
+      if (newMuted) {
+        _startMicMonitoring();
+      } else {
+        _stopMicMonitoring();
+      }
       ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, room.isMuted);
     }
   }
@@ -99,11 +236,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final myId = ref.read(authProvider).user?.id ?? '';
     await ref.read(roomDetailProvider(widget.roomId).notifier).joinVoice(myId);
     VoiceRoomService.instance.join(widget.roomId, room.name);
+    // Начинаем мониторить микрофон, если не замьючены
+    if (!room.isMuted) _startMicMonitoring();
   }
 
   Future<void> _leaveVoice() async {
     HapticFeedback.lightImpact();
     final myId = ref.read(authProvider).user?.id ?? '';
+    _stopMicMonitoring();
     await ref.read(roomDetailProvider(widget.roomId).notifier).leaveVoice(myId);
     VoiceRoomService.instance.leave();
   }
@@ -308,6 +448,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final isCreator = room.creatorId == myId;
     final isAdmin = room.isAdmin || isCreator;
 
+    Widget backBtn = GestureDetector(
+      onTap: () => Navigator.of(context).pop(),
+      child: Container(
+        width: 36, height: 36,
+        decoration: BoxDecoration(
+          color: c.surface,
+          shape: BoxShape.circle,
+          boxShadow: SeeUShadows.sm,
+        ),
+        child: Icon(
+          PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+          size: 16, color: c.ink,
+        ),
+      ),
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       decoration: BoxDecoration(
@@ -316,81 +472,114 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       ),
       child: Row(
         children: [
-          // Circle back button
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                shape: BoxShape.circle,
-                boxShadow: SeeUShadows.sm,
-              ),
-              child: Icon(
-                PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-                size: 16, color: c.ink,
+          backBtn,
+          const SizedBox(width: 10),
+          if (_isSearching) ...[
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                style: TextStyle(fontSize: 15, color: c.ink),
+                decoration: InputDecoration(
+                  hintText: 'Поиск в чате...',
+                  hintStyle: TextStyle(fontSize: 15, color: c.ink3),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          // Room avatar (cover or gradient initials)
-          _buildRoomAvatar(c, room),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  room.name,
-                  style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w700,
-                    fontFamily: 'Fraunces', color: c.ink,
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => setState(() {
+                _isSearching = false;
+                _searchQuery = '';
+                _searchCtrl.clear();
+              }),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  shape: BoxShape.circle,
+                  boxShadow: SeeUShadows.sm,
+                ),
+                child: Icon(PhosphorIconsRegular.x, size: 16, color: c.ink),
+              ),
+            ),
+          ] else ...[
+            _buildRoomAvatar(c, room),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    room.name,
+                    style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700,
+                      fontFamily: 'Fraunces', color: c.ink,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${room.participantCount} участников',
-                  style: TextStyle(fontSize: 11, color: c.ink3),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Members button
-          GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => RoomMembersScreen(
-                  roomId: room.id,
-                  creatorId: room.creatorId,
-                ),
+                  Text(
+                    '${room.participantCount} участников',
+                    style: TextStyle(fontSize: 11, color: c.ink3),
+                  ),
+                ],
               ),
             ),
-            child: Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                shape: BoxShape.circle,
-                boxShadow: SeeUShadows.sm,
+            const SizedBox(width: 8),
+            // Members button
+            GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RoomMembersScreen(
+                    roomId: room.id,
+                    creatorId: room.creatorId,
+                  ),
+                ),
               ),
-              child: Icon(PhosphorIcons.users(), size: 18, color: c.ink),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Overflow menu
-          GestureDetector(
-            onTap: () => _showRoomMenu(c, room, isAdmin, isCreator),
-            child: Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                shape: BoxShape.circle,
-                boxShadow: SeeUShadows.sm,
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  shape: BoxShape.circle,
+                  boxShadow: SeeUShadows.sm,
+                ),
+                child: Icon(PhosphorIcons.users(), size: 18, color: c.ink),
               ),
-              child: Icon(PhosphorIcons.dotsThreeVertical(), size: 18, color: c.ink),
             ),
-          ),
+            const SizedBox(width: 8),
+            // Search button
+            GestureDetector(
+              onTap: () => setState(() => _isSearching = true),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  shape: BoxShape.circle,
+                  boxShadow: SeeUShadows.sm,
+                ),
+                child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 18, color: c.ink),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Overflow menu
+            GestureDetector(
+              onTap: () => _showRoomMenu(c, room, isAdmin, isCreator),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  shape: BoxShape.circle,
+                  boxShadow: SeeUShadows.sm,
+                ),
+                child: Icon(PhosphorIcons.dotsThreeVertical(), size: 18, color: c.ink),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -649,11 +838,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 scrollDirection: Axis.horizontal,
                 itemCount: voiceUsers.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (ctx, i) => _ParticipantBubble(
-                  participant: voiceUsers[i],
-                  isMe: voiceUsers[i].userId == myId,
-                  c: c,
-                ),
+                itemBuilder: (ctx, i) {
+                  final isMe = voiceUsers[i].userId == myId;
+                  return _ParticipantBubble(
+                    participant: voiceUsers[i],
+                    isMe: isMe,
+                    c: c,
+                    audioLevelListenable: isMe ? _myAudioLevel : null,
+                  );
+                },
               ),
             ),
           ] else if (!inVoice && room.isJoined) ...[
@@ -704,23 +897,46 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      itemCount: msgsState.messages.length,
-      itemBuilder: (ctx, i) {
-        final msg = msgsState.messages[i];
-        final isMe = msg.senderId == myId;
-        final showSender = !isMe && (i == 0 ||
-            msgsState.messages[i - 1].senderId != msg.senderId);
-        // Show avatar only on last message of a cluster (tail)
-        final showAvatar = !isMe && (i == msgsState.messages.length - 1 ||
-            msgsState.messages[i + 1].senderId != msg.senderId);
-        return _MessageBubble(
-          msg: msg, isMe: isMe, showSender: showSender,
-          showAvatar: showAvatar, c: c,
-        );
+    final query = _searchQuery.trim().toLowerCase();
+    final messages = query.isEmpty
+        ? msgsState.messages
+        : msgsState.messages
+            .where((m) => m.text.toLowerCase().contains(query))
+            .toList();
+
+    return GestureDetector(
+      onTap: () {
+        if (_reactionPickerMsgId != null) {
+          setState(() => _reactionPickerMsgId = null);
+        }
       },
+      behavior: HitTestBehavior.translucent,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        itemCount: messages.length,
+        itemBuilder: (ctx, i) {
+          final msg = messages[i];
+          final isMe = msg.senderId == myId;
+          final showSender = !isMe && (i == 0 ||
+              messages[i - 1].senderId != msg.senderId);
+          final showAvatar = !isMe && (i == messages.length - 1 ||
+              messages[i + 1].senderId != msg.senderId);
+          return _MessageBubble(
+            msg: msg,
+            isMe: isMe,
+            showSender: showSender,
+            showAvatar: showAvatar,
+            c: c,
+            showReactionPicker: _reactionPickerMsgId == msg.id,
+            reactions: _allReactions[msg.id] ?? {},
+            myReaction: _myReactions[msg.id],
+            searchQuery: query,
+            onLongPress: () => setState(() => _reactionPickerMsgId = msg.id),
+            onReactionSelected: (emoji) => _toggleReaction(msg.id, emoji),
+          );
+        },
+      ),
     );
   }
 
@@ -743,6 +959,20 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Emoji / sticker button
+          GestureDetector(
+            onTap: _showEmojiStickerPanel,
+            child: Container(
+              width: 38, height: 38,
+              margin: const EdgeInsets.only(right: 8, bottom: 2),
+              decoration: BoxDecoration(
+                color: c.surface,
+                shape: BoxShape.circle,
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Icon(PhosphorIconsRegular.smiley, size: 20, color: c.ink3),
+            ),
+          ),
           Expanded(
             child: TextField(
               controller: _inputController,
@@ -809,9 +1039,15 @@ class _ParticipantBubble extends StatelessWidget {
   final RoomParticipant participant;
   final bool isMe;
   final SeeUThemeColors c;
+  /// Передаётся только для текущего пользователя (isMe == true).
+  /// null = не показываем кольца.
+  final ValueListenable<double>? audioLevelListenable;
 
   const _ParticipantBubble({
-    required this.participant, required this.isMe, required this.c,
+    required this.participant,
+    required this.isMe,
+    required this.c,
+    this.audioLevelListenable,
   });
 
   @override
@@ -823,49 +1059,65 @@ class _ParticipantBubble extends StatelessWidget {
     final pal = SeeUColors.avatarPalettes[seed];
     final initial = participant.fullName.isNotEmpty ? participant.fullName[0].toUpperCase() : '?';
 
+    Widget avatarStack = Stack(
+      children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: pal),
+            shape: BoxShape.circle,
+            border: isMe
+                ? Border.all(color: SeeUColors.accent, width: 2)
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              initial,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+          ),
+        ),
+        // Mute indicator
+        Positioned(
+          right: 0, bottom: 0,
+          child: Container(
+            width: 16, height: 16,
+            decoration: BoxDecoration(
+              color: participant.isMuted ? c.surface2 : SeeUColors.success,
+              shape: BoxShape.circle,
+              border: Border.all(color: c.bg, width: 2),
+            ),
+            child: Icon(
+              participant.isMuted
+                  ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
+                  : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+              size: 7,
+              color: participant.isMuted ? c.ink3 : Colors.white,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    // Оборачиваем в SpeakingRings только для себя и только если не мут
+    if (audioLevelListenable != null && !participant.isMuted) {
+      avatarStack = ValueListenableBuilder<double>(
+        valueListenable: audioLevelListenable!,
+        builder: (_, level, ch) => SpeakingRings(
+          audioLevel: level,
+          size: 44,
+          color: SeeUColors.success,
+          child: ch!,
+        ),
+        child: avatarStack,
+      );
+    }
+
     return SizedBox(
-      width: 52,
+      width: 60, // немного шире чтобы кольца не обрезались
       child: Column(
         children: [
-          Stack(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: pal),
-                  shape: BoxShape.circle,
-                  border: isMe
-                      ? Border.all(color: SeeUColors.accent, width: 2)
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    initial,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
-                  ),
-                ),
-              ),
-              // Mute indicator
-              Positioned(
-                right: 0, bottom: 0,
-                child: Container(
-                  width: 16, height: 16,
-                  decoration: BoxDecoration(
-                    color: participant.isMuted ? c.surface2 : SeeUColors.success,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: c.bg, width: 2),
-                  ),
-                  child: Icon(
-                    participant.isMuted
-                        ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                        : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-                    size: 7,
-                    color: participant.isMuted ? c.ink3 : Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          avatarStack,
           const SizedBox(height: 4),
           Text(
             isMe ? 'Вы' : participant.fullName.split(' ').first,
@@ -887,6 +1139,12 @@ class _MessageBubble extends StatelessWidget {
   final bool showSender;
   final bool showAvatar;
   final SeeUThemeColors c;
+  final bool showReactionPicker;
+  final Map<String, int> reactions;
+  final String? myReaction;
+  final String searchQuery;
+  final VoidCallback? onLongPress;
+  final ValueChanged<String>? onReactionSelected;
 
   const _MessageBubble({
     required this.msg,
@@ -894,6 +1152,12 @@ class _MessageBubble extends StatelessWidget {
     required this.showSender,
     required this.showAvatar,
     required this.c,
+    this.showReactionPicker = false,
+    this.reactions = const {},
+    this.myReaction,
+    this.searchQuery = '',
+    this.onLongPress,
+    this.onReactionSelected,
   });
 
   static const _nameColors = [
@@ -914,109 +1178,266 @@ class _MessageBubble extends StatelessWidget {
     return SeeUColors.avatarPalettes[idx];
   }
 
+  Widget _buildText(String text) {
+    if (searchQuery.isEmpty) {
+      return Text(
+        text,
+        style: TextStyle(fontSize: 14, height: 1.4, color: isMe ? Colors.white : c.ink),
+      );
+    }
+    final lower = text.toLowerCase();
+    final q = searchQuery.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+    int idx = lower.indexOf(q, start);
+    while (idx != -1) {
+      if (idx > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, idx),
+          style: TextStyle(color: isMe ? Colors.white : c.ink),
+        ));
+      }
+      spans.add(TextSpan(
+        text: text.substring(idx, idx + q.length),
+        style: TextStyle(
+          color: isMe ? Colors.white : c.ink,
+          backgroundColor: Colors.yellow.withValues(alpha: 0.55),
+          fontWeight: FontWeight.w700,
+        ),
+      ));
+      start = idx + q.length;
+      idx = lower.indexOf(q, start);
+    }
+    if (start < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(start),
+        style: TextStyle(color: isMe ? Colors.white : c.ink),
+      ));
+    }
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 14, height: 1.4),
+        children: spans,
+      ),
+    );
+  }
+
+  Widget _buildBubble(String timeStr) {
+    final isSticker = msg.attachedMediaType == 'sticker' &&
+        msg.attachedMediaUrl != null &&
+        msg.attachedMediaUrl!.isNotEmpty;
+
+    if (isSticker) {
+      return Column(
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CachedNetworkImage(
+            imageUrl: msg.attachedMediaUrl!,
+            width: 120,
+            height: 120,
+            fit: BoxFit.contain,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              timeStr,
+              style: TextStyle(
+                fontSize: 10,
+                color: isMe
+                    ? Colors.white.withValues(alpha: 0.65)
+                    : c.ink4,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: isMe
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
+              )
+            : null,
+        color: isMe ? null : c.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(16),
+          topRight: const Radius.circular(16),
+          bottomLeft: Radius.circular(isMe ? 16 : 4),
+          bottomRight: Radius.circular(isMe ? 4 : 16),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildText(msg.text),
+          const SizedBox(height: 2),
+          Text(
+            timeStr,
+            style: TextStyle(
+              fontSize: 10,
+              color: isMe
+                  ? Colors.white.withValues(alpha: 0.65)
+                  : c.ink4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final localTime = msg.createdAt.toLocal();
     final timeStr =
         '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMe) ...[
-            const SizedBox(width: 4),
-            if (showAvatar)
-              Container(
-                width: 28, height: 28,
-                margin: const EdgeInsets.only(right: 6, bottom: 2),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: _senderPalette(msg.senderName)),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white,
-                    ),
-                  ),
-                ),
-              )
-            else
-              // Placeholder to keep bubble alignment when avatar is hidden
-              const SizedBox(width: 34), // 28 container + 6 margin
-          ],
-          Flexible(
-            child: Column(
-              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                if (showSender && !isMe)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 2),
-                    child: Text(
-                      msg.senderName,
-                      style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w600,
-                        color: _senderColor(msg.senderName),
-                      ),
-                    ),
-                  ),
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: reactions.isNotEmpty ? 20 : 4),
+        child: Row(
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isMe) ...[
+              const SizedBox(width: 4),
+              if (showAvatar)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  width: 28, height: 28,
+                  margin: const EdgeInsets.only(right: 6, bottom: 2),
                   decoration: BoxDecoration(
-                    gradient: isMe
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
-                          )
-                        : null,
-                    color: isMe ? null : c.surface,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isMe ? 16 : 4),
-                      bottomRight: Radius.circular(isMe ? 4 : 16),
+                    gradient: LinearGradient(colors: _senderPalette(msg.senderName)),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      msg.senderName.isNotEmpty ? msg.senderName[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white,
+                      ),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                )
+              else
+                const SizedBox(width: 34),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  if (showSender && !isMe)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 2),
+                      child: Text(
+                        msg.senderName,
+                        style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w600,
+                          color: _senderColor(msg.senderName),
+                        ),
+                      ),
+                    ),
+                  Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Text(
-                        msg.text,
-                        style: TextStyle(
-                          fontSize: 14, height: 1.4,
-                          color: isMe ? Colors.white : c.ink,
+                      _buildBubble(timeStr),
+                      // Reaction picker (appears above bubble)
+                      if (showReactionPicker)
+                        Positioned(
+                          top: -48,
+                          left: isMe ? null : 0,
+                          right: isMe ? 0 : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: c.surface2,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: SeeUShadows.md,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: kQuickReactionEmojis.map((emoji) {
+                                final isSelected = myReaction == emoji;
+                                return GestureDetector(
+                                  onTap: () => onReactionSelected?.call(emoji),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: isSelected
+                                        ? BoxDecoration(
+                                            color: SeeUColors.accentSoft,
+                                            shape: BoxShape.circle,
+                                          )
+                                        : null,
+                                    child: Text(emoji, style: const TextStyle(fontSize: 22)),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        timeStr,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isMe
-                              ? Colors.white.withValues(alpha: 0.65)
-                              : c.ink4,
+                      // Reaction pills (below bubble)
+                      if (reactions.isNotEmpty)
+                        Positioned(
+                          bottom: -18,
+                          left: isMe ? null : 4,
+                          right: isMe ? 4 : null,
+                          child: Wrap(
+                            spacing: 4,
+                            children: reactions.entries.map((e) {
+                              final isMine = myReaction == e.key;
+                              return GestureDetector(
+                                onTap: () => onReactionSelected?.call(e.key),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isMine ? SeeUColors.accentSoft : c.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: SeeUShadows.sm,
+                                    border: isMine
+                                        ? Border.all(color: SeeUColors.accent, width: 0.8)
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(e.key, style: const TextStyle(fontSize: 13)),
+                                      if (e.value > 1) ...[
+                                        const SizedBox(width: 3),
+                                        Text('${e.value}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: c.ink2,
+                                              fontWeight: FontWeight.w600,
+                                            )),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
                         ),
-                      ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

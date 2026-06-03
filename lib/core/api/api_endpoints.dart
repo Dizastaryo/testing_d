@@ -109,9 +109,15 @@ class ApiEndpoints {
   // Upload
   static const String mediaUpload = '/media/upload';
 
+  // Stickers
+  static const String stickers = '/stickers';
+  static const String stickerRemoveBg = '/stickers/remove-bg';
+  static String stickerById(String id) => '/stickers/$id';
+
   // Chats
   static const String chats = '/chats';
   static String chatMessages(String id) => '/chats/$id/messages';
+  static String chatMessageEdit(String chatId, String messageId) => '/chats/$chatId/messages/$messageId';
   static String chatRead(String id) => '/chats/$id/read';
   static String chatMessageReact(String messageId) =>
       '/chat-messages/$messageId/react';
@@ -126,6 +132,8 @@ class ApiEndpoints {
       '/chats/$chatId/members/$userId/role';
   static String chatPin(String chatId) => '/chats/$chatId/pin';
   static String chatUserPin(String chatId) => '/chats/$chatId/user-pin';
+  static String chatArchive(String chatId) => '/chats/$chatId/archive';
+  static String chatMute(String chatId) => '/chats/$chatId/mute';
   static String chatHide(String chatId) => '/chats/$chatId';
   static const String myCalls = '/users/me/calls'; // C-1 история звонков
   static String viewPost(String id) => '/posts/$id/view'; // FEED-5

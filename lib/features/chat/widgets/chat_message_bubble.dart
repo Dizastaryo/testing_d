@@ -329,14 +329,18 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     final isVoice = msg.kind == 'voice' || msg.kind == 'audio';
+    final isSticker =
+        msg.kind == 'image' && msg.attachedMediaType == 'sticker';
     final isMedia = (msg.kind == 'shared_post' && msg.attachedPost != null) ||
         (msg.kind == 'image' && msg.attachedMediaUrl.isNotEmpty);
 
-    final bubblePadding = isMedia
-        ? const EdgeInsets.all(4)
-        : isVoice
-            ? EdgeInsets.zero
-            : const EdgeInsets.fromLTRB(12, 8, 12, 4); // B5: compact
+    final bubblePadding = isSticker
+        ? EdgeInsets.zero
+        : isMedia
+            ? const EdgeInsets.all(4)
+            : isVoice
+                ? EdgeInsets.zero
+                : const EdgeInsets.fromLTRB(12, 8, 12, 4); // B5: compact
 
     final bubbleRadius = BorderRadius.only(
       topLeft: const Radius.circular(20),
@@ -347,7 +351,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     return Container(
       padding: bubblePadding,
-      decoration: isVoice
+      decoration: isVoice || isSticker
           ? null
           : BoxDecoration(
               // B1: gradient for own, B2: surface2 no border for other
@@ -373,9 +377,11 @@ class ChatMessageBubble extends StatelessWidget {
           // B4: inline time + receipts inside bubble
           if (!isVoice)
             Padding(
-              padding: isMedia
-                  ? const EdgeInsets.fromLTRB(8, 4, 4, 2)
-                  : const EdgeInsets.only(top: 2),
+              padding: isSticker
+                  ? const EdgeInsets.fromLTRB(4, 2, 4, 0)
+                  : isMedia
+                      ? const EdgeInsets.fromLTRB(8, 4, 4, 2)
+                      : const EdgeInsets.only(top: 2),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -392,7 +398,9 @@ class ChatMessageBubble extends StatelessWidget {
                   Text(time,
                       style: TextStyle(
                         fontSize: 11,
-                        color: mine ? const Color(0xDDFFFFFF) : c.ink3,
+                        color: (mine && !isSticker)
+                            ? const Color(0xDDFFFFFF)
+                            : c.ink3,
                       )),
                   if (mine) ...[
                     const SizedBox(width: 4),
@@ -499,6 +507,21 @@ class ChatMessageBubble extends StatelessWidget {
         post: message.attachedPost!,
         isMine: isMine,
         trailingText: message.text,
+      );
+    }
+    if (message.kind == 'image' &&
+        message.attachedMediaType == 'sticker' &&
+        message.attachedMediaUrl.isNotEmpty) {
+      final absUrl = AppConfig.absUrl(message.attachedMediaUrl);
+      return CachedNetworkImage(
+        imageUrl: absUrl,
+        width: 140,
+        height: 140,
+        fit: BoxFit.contain,
+        placeholder: (_, __) =>
+            const SizedBox(width: 140, height: 140),
+        errorWidget: (_, __, ___) =>
+            const SizedBox(width: 140, height: 140),
       );
     }
     if (message.kind == 'image' && message.attachedMediaUrl.isNotEmpty) {

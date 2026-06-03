@@ -70,6 +70,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   bool _showMine = false;
   bool _showBookmarked = false;
   SborCategory? _catFilter;
+  DateTimeRange? _dateFilter;
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
@@ -292,6 +293,15 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                             s.place.toLowerCase().contains(q))
                         .toList();
                   }
+                  if (_dateFilter != null) {
+                    final df = _dateFilter!;
+                    final endOfDay = df.end.add(const Duration(days: 1));
+                    filtered = filtered.where((s) {
+                      if (s.scheduledAt == null) return false;
+                      return !s.scheduledAt!.isBefore(df.start) &&
+                          s.scheduledAt!.isBefore(endOfDay);
+                    }).toList();
+                  }
                   if (filtered.isEmpty) {
                     return _buildEmpty(c);
                   }
@@ -475,14 +485,69 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
       (SborCategory.read, 'Книги', PhosphorIcons.book()),
       (SborCategory.other, 'Другое', PhosphorIcons.sparkle()),
     ];
+    final dateActive = _dateFilter != null;
+    final dateLabel = dateActive
+        ? '${_dateFilter!.start.day}.${_dateFilter!.start.month}–${_dateFilter!.end.day}.${_dateFilter!.end.month}'
+        : 'Дата';
     return SizedBox(
       height: 40,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         scrollDirection: Axis.horizontal,
-        itemCount: chips.length,
+        itemCount: chips.length + 1,
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (context, i) {
+          // Last item is date filter chip
+          if (i == chips.length) {
+            return GestureDetector(
+              onTap: () async {
+                if (dateActive) {
+                  setState(() => _dateFilter = null);
+                  return;
+                }
+                final range = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  initialDateRange: _dateFilter,
+                  builder: (ctx, child) => Theme(
+                    data: Theme.of(ctx).copyWith(
+                      colorScheme: Theme.of(ctx).colorScheme.copyWith(
+                        primary: SeeUColors.accent,
+                      ),
+                    ),
+                    child: child!,
+                  ),
+                );
+                if (range != null) setState(() => _dateFilter = range);
+              },
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: dateActive ? SeeUColors.accent : c.surface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: dateActive ? null : Border.all(color: c.line),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIcons.calendarBlank(), size: 14,
+                        color: dateActive ? Colors.white : c.ink2),
+                    const SizedBox(width: 5),
+                    Text(
+                      dateLabel,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: dateActive ? Colors.white : c.ink2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           final (cat, label, icon) = chips[i];
           final active = _catFilter == cat;
           return GestureDetector(
@@ -544,7 +609,8 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   }
 
   bool get _hasActiveFilter =>
-      _catFilter != null || _typeFilter != null || _showMine || _showBookmarked || _searchQuery.isNotEmpty;
+      _catFilter != null || _typeFilter != null || _showMine || _showBookmarked ||
+      _searchQuery.isNotEmpty || _dateFilter != null;
 
   void _resetFilters() {
     setState(() {
@@ -552,6 +618,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
       _typeFilter = null;
       _showMine = false;
       _showBookmarked = false;
+      _dateFilter = null;
       _searchQuery = '';
       _searchController.clear();
     });

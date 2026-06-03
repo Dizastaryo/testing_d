@@ -4,11 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:record/record.dart';
 
 import '../../../core/design/design.dart';
+
+enum _RecState { recording, preview }
 
 /// Inline recorder. Hold-to-record поведение через `_active` флаг,
 /// рендерится поверх обычного input-bar'а как replacement когда юзер
@@ -50,6 +53,14 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   final List<double> _samples = [];
   // Окно из последних 32 сэмплов для живой визуализации.
   final List<double> _liveWindow = [];
+
+  // Preview state (Feature 2)
+  _RecState _recState = _RecState.recording;
+  AudioPlayer? _previewPlayer;
+  String? _previewPath;
+  int _previewDurationSec = 0;
+  List<double> _previewSamples = [];
+  bool _previewPlaying = false;
 
   static const _maxDuration = Duration(seconds: 60);
   static const _liveWindowSize = 32;
@@ -131,12 +142,63 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     }
     final dur = _elapsed.inSeconds;
     if (dur < 1) {
-      // Слишком короткое нажатие — отмена, не отправляем.
       widget.onCancel();
       return;
     }
     HapticFeedback.heavyImpact();
-    widget.onSubmit(pathFinal, dur, _downsample(_samples, _finalSampleCount));
+
+    // Feature 2: switch to preview instead of immediately sending
+    _previewPath = pathFinal;
+    _previewDurationSec = dur;
+    _previewSamples = _downsample(_samples, _finalSampleCount);
+
+    _previewPlayer = AudioPlayer();
+    _previewPlayer!.playerStateStream.listen((s) {
+      if (s.processingState == ProcessingState.completed) {
+        _previewPlayer?.seek(Duration.zero);
+        if (mounted) setState(() => _previewPlaying = false);
+      } else {
+        if (mounted) setState(() => _previewPlaying = s.playing);
+      }
+    });
+    if (!kIsWeb) {
+      try {
+        await _previewPlayer!.setFilePath(pathFinal);
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _recState = _RecState.preview);
+  }
+
+  void _sendNow() {
+    HapticFeedback.heavyImpact();
+    _previewPlayer?.stop();
+    _previewPlayer?.dispose();
+    _previewPlayer = null;
+    widget.onSubmit(_previewPath!, _previewDurationSec, _previewSamples);
+  }
+
+  Future<void> _reRecord() async {
+    await _previewPlayer?.stop();
+    _previewPlayer?.dispose();
+    _previewPlayer = null;
+    _previewPath = null;
+    _previewSamples = [];
+    _previewPlaying = false;
+    _elapsed = Duration.zero;
+    _samples.clear();
+    _liveWindow.clear();
+    _path = null;
+    setState(() => _recState = _RecState.recording);
+    await _start();
+  }
+
+  Future<void> _togglePreviewPlay() async {
+    if (_previewPlayer == null) return;
+    if (_previewPlaying) {
+      await _previewPlayer!.pause();
+    } else {
+      await _previewPlayer!.play();
+    }
   }
 
   Future<void> _cancel() async {
@@ -189,6 +251,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     _ampSub?.cancel();
     _tick?.cancel();
     _recorder.dispose();
+    _previewPlayer?.dispose();
     super.dispose();
   }
 
@@ -203,69 +266,168 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
       ),
       child: SafeArea(
         top: false,
-        child: GestureDetector(
-          // Slide left to cancel (WhatsApp-style)
-          onHorizontalDragEnd: (details) {
-            if ((details.primaryVelocity ?? 0) < -200) _cancel();
-          },
-          child: Row(
-            children: [
-              // Cancel — text button for clarity
-              GestureDetector(
-                onTap: _cancel,
-                child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'Отмена',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: SeeUColors.error,
-                    ),
-                  ),
-                ),
+        child: _recState == _RecState.preview
+            ? _buildPreviewRow(c)
+            : GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if ((details.primaryVelocity ?? 0) < -200) _cancel();
+                },
+                child: _buildRecordingRow(c),
               ),
-              // Pulsing red dot + timer
-              const _PulsingDot(),
-              const SizedBox(width: 6),
-              Text(
-                _fmtDuration(_elapsed),
-                style: TextStyle(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w600,
-                  color: c.ink,
-                ),
+      ),
+    );
+  }
+
+  Widget _buildRecordingRow(SeeUThemeColors c) {
+    return Row(
+      children: [
+        // Cancel
+        GestureDetector(
+          onTap: _cancel,
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.center,
+            child: Text(
+              'Отмена',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: SeeUColors.error,
               ),
-              const SizedBox(width: 12),
-              // Live waveform
-              Expanded(
-                child: SizedBox(
-                  height: 36,
-                  child: CustomPaint(
-                    painter: _LiveWavePainter(_liveWindow),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Submit
-              GestureDetector(
-                onTap: _submit,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: SeeUGradients.heroOrange,
-                  ),
-                  child: Icon(PhosphorIconsBold.arrowUp, color: Colors.white, size: 20),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        // Pulsing red dot + timer
+        const _PulsingDot(),
+        const SizedBox(width: 6),
+        Text(
+          _fmtDuration(_elapsed),
+          style: TextStyle(
+            fontFeatures: const [FontFeature.tabularFigures()],
+            fontWeight: FontWeight.w600,
+            color: c.ink,
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Live waveform
+        Expanded(
+          child: SizedBox(
+            height: 36,
+            child: CustomPaint(
+              painter: _LiveWavePainter(_liveWindow),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Submit button + Feature 3: lock hint for first 3 seconds
+        Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            GestureDetector(
+              onTap: _submit,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SeeUGradients.heroOrange,
+                ),
+                child: Icon(PhosphorIconsBold.arrowUp,
+                    color: Colors.white, size: 20),
+              ),
+            ),
+            Positioned(
+              top: -20,
+              child: AnimatedOpacity(
+                opacity:
+                    _elapsed < const Duration(seconds: 3) ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 500),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIcons.lock(), size: 11, color: c.ink3),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Удержи',
+                      style: TextStyle(fontSize: 10, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPreviewRow(SeeUThemeColors c) {
+    return Row(
+      children: [
+        // Rerecord
+        GestureDetector(
+          onTap: _reRecord,
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.center,
+            child: Text(
+              'Перезаписать',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: c.ink2,
+              ),
+            ),
+          ),
+        ),
+        // Play/pause preview
+        GestureDetector(
+          onTap: _togglePreviewPlay,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: SeeUColors.accent.withValues(alpha: 0.12),
+            ),
+            child: Icon(
+              _previewPlaying
+                  ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
+                  : PhosphorIcons.play(PhosphorIconsStyle.fill),
+              color: SeeUColors.accent,
+              size: 18,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Static waveform of recorded audio
+        Expanded(
+          child: SizedBox(
+            height: 36,
+            child: CustomPaint(
+              painter: _LiveWavePainter(_previewSamples),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Send
+        GestureDetector(
+          onTap: _sendNow,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SeeUGradients.heroOrange,
+            ),
+            child: Icon(PhosphorIconsBold.arrowUp,
+                color: Colors.white, size: 20),
+          ),
+        ),
+      ],
     );
   }
 }

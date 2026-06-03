@@ -337,11 +337,14 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     }
   }
 
-  Future<void> send(String text) async {
-    if (text.trim().isEmpty) return;
+  Future<void> send(String text, {String? attachedMediaUrl, String? attachedMediaType}) async {
+    if (text.trim().isEmpty && attachedMediaUrl == null) return;
     state = state.copyWith(isSending: true);
     try {
-      final r = await _api.post(ApiEndpoints.roomMessages(roomId), data: {'text': text.trim()});
+      final body = <String, dynamic>{'text': text.trim()};
+      if (attachedMediaUrl != null) body['attached_media_url'] = attachedMediaUrl;
+      if (attachedMediaType != null) body['attached_media_type'] = attachedMediaType;
+      final r = await _api.post(ApiEndpoints.roomMessages(roomId), data: body);
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
       final msg = RoomMessage.fromJson(data as Map<String, dynamic>);
       // Message will also arrive via WS; use API response as optimistic add

@@ -85,6 +85,7 @@ dependencies:
   # многих пакетов, но указываем явно чтобы import был чистый.
   path_provider: ^2.1.4
   mediapipe_face_mesh: ^1.6.0
+  video_thumbnail: ^0.5.3
 
 dev_dependencies:
   flutter_test:

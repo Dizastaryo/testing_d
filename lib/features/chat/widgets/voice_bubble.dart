@@ -56,6 +56,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
   // just_audio поддерживает stable до 2.0× без артефактов pitch'а.
   double _speed = 1.0;
   static const _speedCycle = [1.0, 1.5, 2.0];
+  double? _seekIndicator; // 0..1, normalised drag position
 
   ProviderSubscription<String?>? _queueSub;
   ProviderSubscription<String?>? _coordinatorSub;
@@ -284,20 +285,50 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  height: 36,
-                  child: CustomPaint(
-                    painter: _StaticWavePainter(
-                      samples: widget.waveformSamples ?? const [],
-                      progress: progress,
-                      colorBase: widget.isMine
-                          ? Colors.white.withValues(alpha: 0.45)
-                          : c.ink3,
-                      colorPlayed: widget.isMine
-                          ? Colors.white
-                          : SeeUColors.accent,
-                    ),
-                  ),
+                LayoutBuilder(
+                  builder: (_, constraints) {
+                    final w = constraints.maxWidth;
+                    return GestureDetector(
+                      onTapUp: (details) {
+                        final ratio =
+                            (details.localPosition.dx / w).clamp(0.0, 1.0);
+                        _player.seek(Duration(
+                            milliseconds:
+                                (_duration.inMilliseconds * ratio).round()));
+                        if (mounted) setState(() => _seekIndicator = null);
+                      },
+                      onHorizontalDragUpdate: (details) {
+                        final ratio =
+                            (details.localPosition.dx / w).clamp(0.0, 1.0);
+                        if (mounted) setState(() => _seekIndicator = ratio);
+                      },
+                      onHorizontalDragEnd: (_) {
+                        if (_seekIndicator != null) {
+                          _player.seek(Duration(
+                              milliseconds: (_duration.inMilliseconds *
+                                      _seekIndicator!)
+                                  .round()));
+                          if (mounted) setState(() => _seekIndicator = null);
+                        }
+                      },
+                      child: SizedBox(
+                        height: 36,
+                        child: CustomPaint(
+                          painter: _StaticWavePainter(
+                            samples: widget.waveformSamples ?? const [],
+                            progress: _seekIndicator ?? progress,
+                            colorBase: widget.isMine
+                                ? Colors.white.withValues(alpha: 0.45)
+                                : c.ink3,
+                            colorPlayed: widget.isMine
+                                ? Colors.white
+                                : SeeUColors.accent,
+                            seekIndicator: _seekIndicator,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -364,12 +395,14 @@ class _StaticWavePainter extends CustomPainter {
   final double progress; // 0..1, played-portion
   final Color colorBase;
   final Color colorPlayed;
+  final double? seekIndicator; // 0..1, drag seek line
 
   _StaticWavePainter({
     required this.samples,
     required this.progress,
     required this.colorBase,
     required this.colorPlayed,
+    this.seekIndicator,
   });
 
   @override
@@ -404,11 +437,23 @@ class _StaticWavePainter extends CustomPainter {
         paint,
       );
     }
+    // Seek drag indicator line
+    if (seekIndicator != null) {
+      final x = seekIndicator! * size.width;
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        Paint()
+          ..color = colorPlayed
+          ..strokeWidth = 1.5,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _StaticWavePainter old) =>
       old.progress != progress ||
       old.samples.length != samples.length ||
-      old.colorPlayed != colorPlayed;
+      old.colorPlayed != colorPlayed ||
+      old.seekIndicator != seekIndicator;
 }

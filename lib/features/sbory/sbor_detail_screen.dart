@@ -182,6 +182,11 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                     ),
                     const Spacer(),
                     _HeroAction(
+                      icon: PhosphorIcons.paperPlaneTilt(),
+                      onTap: () => _sendToChatDirect(s),
+                    ),
+                    const SizedBox(width: 6),
+                    _HeroAction(
                       icon: PhosphorIcons.shareFat(),
                       onTap: () => _showShareSheet(s),
                     ),
@@ -945,6 +950,110 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     } finally {
       if (mounted) setState(() => _bookmarkLoading = false);
     }
+  }
+
+  Future<void> _sendToChatDirect(Sbor s) async {
+    final c = context.seeuColors;
+    final chats = ref.read(chatListProvider).chats;
+
+    if (chats.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет доступных чатов')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.60,
+          ),
+          decoration: BoxDecoration(
+            color: c.bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 10, bottom: 6),
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: c.line, borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+                child: Row(
+                  children: [
+                    Text(
+                      'Отправить в чат',
+                      style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Icon(PhosphorIcons.x(), size: 20, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 20),
+                  itemCount: chats.length,
+                  itemBuilder: (_, i) {
+                    final chat = chats[i];
+                    final name = chat.isGroup
+                        ? chat.title
+                        : chat.otherUser?.fullName ?? chat.otherUser?.username ?? '';
+                    return ListTile(
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _sendSborToChat(chat.id, s);
+                      },
+                      leading: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                          color: c.surface2,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600,
+                              color: c.ink2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      title: Text(name, style: TextStyle(fontSize: 15, color: c.ink)),
+                      subtitle: chat.isGroup
+                          ? Text('${chat.participantsCount} участников',
+                              style: TextStyle(fontSize: 12, color: c.ink3))
+                          : chat.otherUser?.username != null
+                              ? Text('@${chat.otherUser!.username}',
+                                  style: TextStyle(fontSize: 12, color: c.ink3))
+                              : null,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showShareSheet(Sbor s) async {

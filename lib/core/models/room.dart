@@ -183,6 +183,8 @@ class RoomMessage {
   final String senderUsername;
   final String? senderAvatar;
   final String text;
+  final String? attachedMediaUrl;
+  final String? attachedMediaType;
   final DateTime createdAt;
 
   const RoomMessage({
@@ -193,6 +195,8 @@ class RoomMessage {
     required this.senderUsername,
     this.senderAvatar,
     required this.text,
+    this.attachedMediaUrl,
+    this.attachedMediaType,
     required this.createdAt,
   });
 
@@ -203,7 +207,9 @@ class RoomMessage {
         senderName: j['sender_name'] as String? ?? '',
         senderUsername: j['sender_username'] as String? ?? '',
         senderAvatar: j['sender_avatar_url'] as String?,
-        text: j['text'] as String,
+        text: j['text'] as String? ?? '',
+        attachedMediaUrl: j['attached_media_url'] as String?,
+        attachedMediaType: j['attached_media_type'] as String?,
         createdAt: DateTime.parse(j['created_at'] as String),
       );
 }
