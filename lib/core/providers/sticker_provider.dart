@@ -63,8 +63,10 @@ class StickerListNotifier
       ApiEndpoints.stickerRemoveBg,
       data: formData,
       options: Options(
-        receiveTimeout: const Duration(seconds: 75),
+        receiveTimeout: const Duration(seconds: 120),
         sendTimeout: const Duration(seconds: 30),
+        // FormData stream cannot be replayed — disable retry interceptor
+        extra: const {'_retryAttempt': 2},
       ),
     );
     return resp.data['data']['url'] as String;
