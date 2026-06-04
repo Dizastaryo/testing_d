@@ -446,6 +446,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           const triggerEvents = {
             'chat.message',
             'chat.message.read',
+            'chat.message.edited',
             'chat.group.joined',
             'chat.group.member.added',
             'chat.group.member.removed',
@@ -804,6 +805,23 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
               return m;
             }).toList();
             state = state.copyWith(messages: updated);
+            return;
+          }
+
+          if (evt.type == 'chat.message.edited') {
+            try {
+              final msg = ChatMessage.fromJson(p);
+              // Обновляем только текст — остальные поля (reactions, isRead и т.д.)
+              // могут быть более актуальны в локальном state.
+              state = state.copyWith(
+                messages: state.messages.map((m) {
+                  if (m.id != msg.id) return m;
+                  return m.copyWith(text: msg.text);
+                }).toList(),
+              );
+            } catch (e, st) {
+              appLog.error('[ChatMessagesNotifier] parse ws edit', e, st);
+            }
             return;
           }
 
