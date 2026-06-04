@@ -300,6 +300,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // #39: DRY-хелпер для кнопок звонка в хедере direct-чата.
+  Widget _callHeaderButton(SeeUThemeColors c, dynamic peer, CallKind kind) {
+    final isVoice = kind == CallKind.voice;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        CallService.instance.startCall(
+          peerId: peer.id,
+          peerUsername: peer.username,
+          peerAvatarUrl: peer.avatarUrl ?? '',
+          kind: kind,
+        );
+      },
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Icon(
+          isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+          size: 22,
+          color: c.ink,
+        ),
+      ),
+    );
+  }
+
   Future<void> _leaveGroup({String? sborId, bool isOrganizer = false}) async {
     final c = context.seeuColors;
     final isSbor = sborId != null;
@@ -1379,40 +1404,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                             // Для direct: 📞 + 📹 в хедере (всего 3 иконки: поиск+звонок+видео)
                             if (otherUser != null) ...[
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.mediumImpact();
-                                  CallService.instance.startCall(
-                                    peerId: otherUser.id,
-                                    peerUsername: otherUser.username,
-                                    peerAvatarUrl: otherUser.avatarUrl ?? '',
-                                    kind: CallKind.voice,
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(PhosphorIconsRegular.phone,
-                                      size: 22, color: c.ink),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.mediumImpact();
-                                  CallService.instance.startCall(
-                                    peerId: otherUser.id,
-                                    peerUsername: otherUser.username,
-                                    peerAvatarUrl: otherUser.avatarUrl ?? '',
-                                    kind: CallKind.video,
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(PhosphorIconsRegular.videoCamera,
-                                      size: 22, color: c.ink),
-                                ),
-                              ),
+                              _callHeaderButton(c, otherUser, CallKind.voice),
+                              _callHeaderButton(c, otherUser, CallKind.video),
                             ],
                             // Для группы: только ⋮ (звонки перенесены внутрь меню)
                             if (chat?.isGroup == true)
@@ -1569,27 +1562,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildMessageList(List<ChatMessage> messages, String myId,
       dynamic otherUser, Chat? currentChat) {
-    // Group by day
+    // #30: вместо List<Widget> (O(N) allocation per rebuild) строим плоский
+    // список дескрипторов: String = разделитель даты, ChatMessage = сообщение.
+    // Виджеты создаются лениво в itemBuilder только для видимых элементов.
+    final items = <Object>[];
     final groups = <String, List<ChatMessage>>{};
     for (final msg in messages) {
       // Используем local time — иначе в UTC+N группировка по дням неверна.
       final key = _dateKey(msg.createdAt.toLocal());
       groups.putIfAbsent(key, () => []).add(msg);
     }
-
-    final widgets = <Widget>[];
     for (final entry in groups.entries) {
-      // Date separator
-      widgets.add(ChatDateSeparator(
-          label: _formatDateLabel(entry.value.first.createdAt)));
-      for (var i = 0; i < entry.value.length; i++) {
-        final msg = entry.value[i];
+      items.add(_formatDateLabel(entry.value.first.createdAt)); // separator
+      items.addAll(entry.value);
+    }
+
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
+      // #22: с reverse=true, EdgeInsets.top — это визуальный низ (под newest msg).
+      // Когда FAB виден (!_atBottom), нижние сообщения перекрываются — даём 60px.
+      padding: EdgeInsets.fromLTRB(16, _atBottom ? 8 : 60, 16, 8),
+      physics: const BouncingScrollPhysics(),
+      // reverse=true: index 0 рендерится в нижней части viewport'а
+      // (newest message внизу — как в любом мессенджере).
+      reverse: true,
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[items.length - 1 - index]; // reverse mapping
+        if (item is String) return ChatDateSeparator(label: item);
+
+        final msg = item as ChatMessage;
         final isMine = msg.senderId == myId;
-        final showTail = i == entry.value.length - 1 ||
-            entry.value[i + 1].senderId != msg.senderId;
+        final rawIdx = items.length - 1 - index;
+        // showTail: следующий элемент — разделитель или другой отправитель
+        final nextIdx = rawIdx + 1;
+        final showTail = nextIdx >= items.length ||
+            items[nextIdx] is String ||
+            (items[nextIdx] as ChatMessage).senderId != msg.senderId;
+
         // CHAT-3.1: wrapper с animated bg для flash-highlight на scroll-to.
-        // Всегда рендерится (color transparent когда не flashing) чтобы
-        // AnimatedContainer мог анимировать color transition в обе стороны.
         final bubble = AnimatedContainer(
           key: ValueKey('flash-${msg.id}'),
           duration: const Duration(milliseconds: 350),
@@ -1612,8 +1624,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             senderAvatarUrl: isMine
                 ? null
                 : (currentChat?.isGroup == true
-                    ? msg
-                        .senderAvatarUrl // empty string → shows initials/icon fallback
+                    ? msg.senderAvatarUrl
                     : otherUser?.avatarUrl),
             reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
             allReactions: msg.reactions,
@@ -1623,46 +1634,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         );
         // E1: swipe right → reply
-        widgets.add(
-          SwipeToReply(
-            onReply: () {
-              final me = ref.read(authProvider).user;
-              // For group chats otherUser is null — use senderUsername.
-              final username = isMine
-                  ? (me?.username ?? '')
-                  : (msg.senderUsername.isNotEmpty
-                      ? msg.senderUsername
-                      : (currentChat?.otherUser?.username ?? ''));
-              setState(() {
-                _replyingTo = ReplyPreview(
-                  id: msg.id,
-                  senderId: msg.senderId,
-                  senderUsername: username,
-                  text: msg.text,
-                  kind: msg.kind,
-                );
-              });
-              _focusNode.requestFocus();
-            },
-            child: bubble,
-          ),
+        return SwipeToReply(
+          onReply: () {
+            final me = ref.read(authProvider).user;
+            final username = isMine
+                ? (me?.username ?? '')
+                : (msg.senderUsername.isNotEmpty
+                    ? msg.senderUsername
+                    : (currentChat?.otherUser?.username ?? ''));
+            setState(() {
+              _replyingTo = ReplyPreview(
+                id: msg.id,
+                senderId: msg.senderId,
+                senderUsername: username,
+                text: msg.text,
+                kind: msg.kind,
+              );
+            });
+            _focusNode.requestFocus();
+          },
+          child: bubble,
         );
-      }
-    }
-
-    return ScrollablePositionedList.builder(
-      itemScrollController: _itemScrollController,
-      itemPositionsListener: _itemPositionsListener,
-      // #22: с reverse=true, EdgeInsets.top — это визуальный низ (под newest msg).
-      // Когда FAB виден (!_atBottom), нижние сообщения перекрываются — даём 60px.
-      padding: EdgeInsets.fromLTRB(16, _atBottom ? 8 : 60, 16, 8),
-      physics: const BouncingScrollPhysics(),
-      // reverse=true: index 0 рендерится в нижней части viewport'а
-      // (newest message внизу — как в любом мессенджере). Поэтому при
-      // builder'е достаём элементы в обратном порядке: index 0 = widgets.last.
-      reverse: true,
-      itemCount: widgets.length,
-      itemBuilder: (context, index) => widgets[widgets.length - 1 - index],
+      },
     );
   }
 
