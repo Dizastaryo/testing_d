@@ -219,9 +219,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .firstWhere((_) => true, orElse: () => null);
     final isGroup = chat?.isGroup ?? false;
 
-    // Для group-чата: показываем «Выйти из группы».
-    // Поиск убран — есть отдельная кнопка в хедере.
-    if (!isGroup) return; // для direct-чата меню пустое, не показываем
+    // Для group-чата: звонки + выйти. Поиск убран (есть отдельная кнопка).
+    if (!isGroup) return;
+    final me = ref.read(authProvider).user;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -242,6 +242,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // Голосовой звонок
+            if (me != null)
+              ListTile(
+                leading: Icon(PhosphorIconsRegular.phone, color: c.ink),
+                title: const Text('Голосовой звонок'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  HapticFeedback.mediumImpact();
+                  GroupCallService.instance.startGroupCall(
+                    chatId: widget.chatId,
+                    chatTitle: chat!.title,
+                    myId: me.id,
+                    myUsername: me.username,
+                    kind: CallKind.voice,
+                  );
+                },
+              ),
+            // Видеозвонок
+            if (me != null)
+              ListTile(
+                leading: Icon(PhosphorIconsRegular.videoCamera, color: c.ink),
+                title: const Text('Видеозвонок'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  HapticFeedback.mediumImpact();
+                  GroupCallService.instance.startGroupCall(
+                    chatId: widget.chatId,
+                    chatTitle: chat!.title,
+                    myId: me.id,
+                    myUsername: me.username,
+                    kind: CallKind.video,
+                  );
+                },
+              ),
+            Divider(height: 1, color: c.line),
             ListTile(
               leading: const Icon(PhosphorIconsRegular.signOut,
                   color: SeeUColors.error),
@@ -1349,8 +1384,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 ),
                               ),
                             ),
-                            // Voice-call (C-2 audio-only) для direct.
-                            if (otherUser != null)
+                            // Для direct: 📞 + 📹 в хедере (всего 3 иконки: поиск+звонок+видео)
+                            if (otherUser != null) ...[
                               GestureDetector(
                                 onTap: () {
                                   HapticFeedback.mediumImpact();
@@ -1364,15 +1399,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 child: SizedBox(
                                   width: 44,
                                   height: 44,
-                                  child: Icon(
-                                    PhosphorIconsRegular.phone,
-                                    size: 22,
-                                    color: c.ink,
-                                  ),
+                                  child: Icon(PhosphorIconsRegular.phone,
+                                      size: 22, color: c.ink),
                                 ),
                               ),
-                            // Video-call для direct.
-                            if (otherUser != null)
                               GestureDetector(
                                 onTap: () {
                                   HapticFeedback.mediumImpact();
@@ -1386,76 +1416,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 child: SizedBox(
                                   width: 44,
                                   height: 44,
-                                  child: Icon(
-                                    PhosphorIconsRegular.videoCamera,
-                                    size: 22,
-                                    color: c.ink,
-                                  ),
-                                ),
-                              ),
-                            // C-7: group-call для group-чатов. Voice + video icons
-                            // вызывают GroupCallService.startGroupCall с chat_id.
-                            if (chat?.isGroup == true) ...[
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.mediumImpact();
-                                  final me = ref.read(authProvider).user;
-                                  if (me == null) return;
-                                  GroupCallService.instance.startGroupCall(
-                                    chatId: widget.chatId,
-                                    chatTitle: chat!.title,
-                                    myId: me.id,
-                                    myUsername: me.username,
-                                    kind: CallKind.voice,
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    PhosphorIconsRegular.phone,
-                                    size: 22,
-                                    color: c.ink,
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.mediumImpact();
-                                  final me = ref.read(authProvider).user;
-                                  if (me == null) return;
-                                  GroupCallService.instance.startGroupCall(
-                                    chatId: widget.chatId,
-                                    chatTitle: chat!.title,
-                                    myId: me.id,
-                                    myUsername: me.username,
-                                    kind: CallKind.video,
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    PhosphorIconsRegular.videoCamera,
-                                    size: 22,
-                                    color: c.ink,
-                                  ),
+                                  child: Icon(PhosphorIconsRegular.videoCamera,
+                                      size: 22, color: c.ink),
                                 ),
                               ),
                             ],
-                            // More vertical icon
-                            GestureDetector(
-                              onTap: () => _showChatMenu(c),
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Icon(
-                                  PhosphorIconsRegular.dotsThreeVertical,
-                                  size: 22,
-                                  color: c.ink,
+                            // Для группы: только ⋮ (звонки перенесены внутрь меню)
+                            if (chat?.isGroup == true)
+                              GestureDetector(
+                                onTap: () => _showChatMenu(c),
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    PhosphorIconsRegular.dotsThreeVertical,
+                                    size: 22,
+                                    color: c.ink,
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                       ),

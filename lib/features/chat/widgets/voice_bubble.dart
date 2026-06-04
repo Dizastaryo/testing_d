@@ -503,6 +503,7 @@ class _StaticWavePainter extends CustomPainter {
   bool shouldRepaint(covariant _StaticWavePainter old) =>
       old.progress != progress ||
       old.samples.length != samples.length ||
+      old.colorBase != colorBase ||
       old.colorPlayed != colorPlayed ||
       old.seekIndicator != seekIndicator;
 }
