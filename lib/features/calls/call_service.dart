@@ -97,6 +97,12 @@ class CallService {
   /// Последняя ошибка для показа в UI (снэкбар в CallListener).
   /// Сбрасывается в null после прочтения.
   final ValueNotifier<String?> lastError = ValueNotifier(null);
+  /// Нормализованный уровень локального микрофона (0.0..1.0).
+  /// Обновляется каждые ~150 мс из RTCPeerConnection.getStats() пока
+  /// status == connected && !isMuted. Используется в CallScreen для
+  /// отображения SpeakingRings вокруг аватара.
+  final ValueNotifier<double> localAudioLevel = ValueNotifier(0.0);
+  Timer? _levelTimer;
 
   RTCPeerConnection? _pc;
   final List<RTCIceCandidate> _pendingIce = [];
@@ -203,6 +209,48 @@ class CallService {
     _ringTimer?.cancel();
     _ringTimer = null;
     unawaited(_ringPlayer.stop());
+  }
+
+  /// Запускает периодический опрос RTCPeerConnection.getStats() для получения
+  /// audioLevel (0.0..1.0) из stats типа «media-source». Срабатывает
+  /// только когда статус connected и микрофон не замьючен.
+  void _startLevelMonitoring() {
+    _levelTimer?.cancel();
+    _levelTimer = Timer.periodic(const Duration(milliseconds: 150), (_) async {
+      if (isMuted.value) {
+        if (localAudioLevel.value != 0.0) localAudioLevel.value = 0.0;
+        return;
+      }
+      final pc = _pc;
+      if (pc == null) {
+        localAudioLevel.value = 0.0;
+        return;
+      }
+      try {
+        final stats = await pc.getStats();
+        double level = 0.0;
+        for (final s in stats) {
+          // Тип «media-source» (Chrome/Android) или «audio-source» (некоторые
+          // нативные реализации) содержит audioLevel 0.0..1.0.
+          if (s.type == 'media-source' || s.type == 'audio-source') {
+            final v = s.values['audioLevel'];
+            if (v != null) {
+              level = (v as num).toDouble().clamp(0.0, 1.0);
+              break;
+            }
+          }
+        }
+        localAudioLevel.value = level;
+      } catch (_) {
+        // getStats может не поддерживаться на конкретной платформе — молча игнорируем.
+      }
+    });
+  }
+
+  void _stopLevelMonitoring() {
+    _levelTimer?.cancel();
+    _levelTimer = null;
+    localAudioLevel.value = 0.0;
   }
 
   /// One-shot endtone (descending chirp) при hangup. Играется до cleanup'а
@@ -316,6 +364,7 @@ class CallService {
       t.enabled = !next;
     }
     isMuted.value = next;
+    if (next) localAudioLevel.value = 0.0; // сразу обнуляем при муте
   }
 
   void toggleCamera() {
@@ -451,6 +500,7 @@ class CallService {
         _stopRing();
         _reconnectTimer?.cancel();
         _reconnectTimer = null;
+        _startLevelMonitoring();
         final s = session.value;
         if (s != null) {
           // C-4: фиксируем connect моmenт (только если ещё не fix'или —
@@ -676,6 +726,7 @@ class CallService {
   Future<void> _cleanup() async {
     // C-3 / C-5: останавливаем ring + reconnect timer'ы при любом cleanup'е.
     _stopRing();
+    _stopLevelMonitoring();
     // #9: отменяем outgoing ring-timeout.
     _inviteTimer?.cancel();
     _inviteTimer = null;

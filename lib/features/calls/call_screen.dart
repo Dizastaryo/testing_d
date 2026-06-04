@@ -6,6 +6,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../widgets/speaking_rings.dart';
 import 'call_buttons.dart';
 import 'call_service.dart';
 
@@ -248,26 +249,38 @@ class _CallScreenState extends State<CallScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white24, width: 3),
-                color: Colors.white12,
+            // SpeakingRings: кольца появляются когда МЫ говорим (localAudioLevel > 0).
+            // В голосовом звонке аватар remote-пользователя — это единственная
+            // визуальная точка, поэтому именно вокруг него показываем активность микрофона.
+            ValueListenableBuilder<double>(
+              valueListenable: CallService.instance.localAudioLevel,
+              builder: (_, level, ch) => SpeakingRings(
+                audioLevel: level,
+                size: 140,
+                color: Colors.white,
+                child: ch!,
               ),
-              clipBehavior: Clip.antiAlias,
-              child: s.peerAvatarUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: s.peerAvatarUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const Icon(
-                          PhosphorIconsBold.user,
-                          color: Colors.white54,
-                          size: 60),
-                    )
-                  : const Icon(PhosphorIconsBold.user,
-                      color: Colors.white54, size: 60),
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24, width: 3),
+                  color: Colors.white12,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: s.peerAvatarUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: s.peerAvatarUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const Icon(
+                            PhosphorIconsBold.user,
+                            color: Colors.white54,
+                            size: 60),
+                      )
+                    : const Icon(PhosphorIconsBold.user,
+                        color: Colors.white54, size: 60),
+              ),
             ),
             const SizedBox(height: 20),
             Text(
@@ -297,31 +310,55 @@ class _CallScreenState extends State<CallScreen> {
       valueListenable: CallService.instance.isCameraOff,
       builder: (_, cameraOff, __) {
         if (cameraOff || _localRenderer.srcObject == null) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white24, width: 1),
-            ),
-            child: const Center(
-              child: Icon(PhosphorIconsBold.videoCameraSlash,
-                  color: Colors.white54, size: 24),
-            ),
+          return ValueListenableBuilder<double>(
+            valueListenable: CallService.instance.localAudioLevel,
+            builder: (_, level, __) {
+              final speaking = level > 0.08;
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: speaking
+                        ? const Color(0xFF2FA84F).withValues(
+                            alpha: (0.4 + level * 0.6).clamp(0.0, 1.0))
+                        : Colors.white24,
+                    width: speaking ? 2.5 : 1.0,
+                  ),
+                ),
+                child: const Center(
+                  child: Icon(PhosphorIconsBold.videoCameraSlash,
+                      color: Colors.white54, size: 24),
+                ),
+              );
+            },
           );
         }
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white24, width: 1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: RTCVideoView(
-              _localRenderer,
-              mirror: true,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-            ),
-          ),
+        return ValueListenableBuilder<double>(
+          valueListenable: CallService.instance.localAudioLevel,
+          builder: (_, level, __) {
+            final speaking = level > 0.08;
+            return Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: speaking
+                      ? const Color(0xFF2FA84F).withValues(
+                          alpha: (0.4 + level * 0.6).clamp(0.0, 1.0))
+                      : Colors.white24,
+                  width: speaking ? 2.5 : 1.0,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: RTCVideoView(
+                  _localRenderer,
+                  mirror: true,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+            );
+          },
         );
       },
     );
