@@ -250,12 +250,20 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     final progress =
         _duration.inMilliseconds == 0 ? 0.0 : _position.inMilliseconds / _duration.inMilliseconds;
     return Container(
-      constraints: const BoxConstraints(minWidth: 200, maxWidth: 260),
+      // #23: уменьшили minWidth 200→160 — меньше overflow на узких экранах
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
       padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
       decoration: BoxDecoration(
         gradient: widget.isMine ? SeeUGradients.heroOrange : null,
         color: widget.isMine ? null : c.surface2,
-        borderRadius: BorderRadius.circular(20),
+        // #37: асимметричный radius как у текстовых баблов — «хвост» указывает
+        // на отправителя (правый нижний для своих, левый нижний для чужих)
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(20),
+          topRight: const Radius.circular(20),
+          bottomLeft: Radius.circular(widget.isMine ? 20 : 8),
+          bottomRight: Radius.circular(widget.isMine ? 8 : 20),
+        ),
       ),
       child: Row(
         children: [
@@ -446,7 +454,8 @@ class _StaticWavePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const barW = 2.0;
+    // #33: унифицировали с рекордером — было 2px, стало 3px
+    const barW = 3.0;
     const gap = 2.0;
     final n = ((size.width + gap) / (barW + gap)).floor();
     final centerY = size.height / 2;

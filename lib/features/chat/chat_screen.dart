@@ -450,10 +450,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                option('Отключить (вечно)', null, PhosphorIcons.infinity()),
-                option('Через 1 час', 3600, PhosphorIcons.timer()),
-                option('Через 24 часа', 86400, PhosphorIcons.calendarBlank()),
-                option('Через 7 дней', 604800, PhosphorIcons.calendarX()),
+                option('Вечно (выключить)', null, PhosphorIcons.infinity()),
+                option('1 час', 3600, PhosphorIcons.timer()),
+                option('24 часа', 86400, PhosphorIcons.calendarBlank()),
+                option('7 дней', 604800, PhosphorIcons.calendarX()),
                 const SizedBox(height: 8),
               ],
             ),
@@ -468,7 +468,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (seconds >= 86400) return '${seconds ~/ 86400}д';
     if (seconds >= 3600) return '${seconds ~/ 3600}ч';
     if (seconds >= 60) return '${seconds ~/ 60}м';
-    return '${seconds}с'; // ignore: unnecessary_brace_in_string_interps
+    return '$secondsс';
   }
 
   /// Opens the emoji + sticker panel as a bottom sheet.
@@ -1951,9 +1951,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final c = context.seeuColors;
     return GestureDetector(
       onTap: () => _scrollToMessage(pinned.id),
-      onLongPress: () => _confirmUnpin(),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
         decoration: BoxDecoration(
           color: c.surface,
           border: Border(
@@ -1962,7 +1961,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         child: Row(
           children: [
-            Icon(PhosphorIconsBold.pushPin, size: 16, color: SeeUColors.accent),
+            Icon(PhosphorIconsBold.pushPin, size: 15, color: SeeUColors.accent),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -1981,13 +1980,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     pinned.shortLabel(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: c.ink2,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: c.ink2, fontSize: 13),
                   ),
                 ],
               ),
+            ),
+            // Явная кнопка открепить — раньше функция была скрыта за long-press
+            IconButton(
+              onPressed: () => _confirmUnpin(),
+              icon: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
+              tooltip: 'Открепить',
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
           ],
         ),

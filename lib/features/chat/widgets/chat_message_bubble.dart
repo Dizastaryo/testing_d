@@ -125,7 +125,7 @@ class ChatMessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(
         top: showTail ? 8 : 4,
-        bottom: allReactions.isNotEmpty ? 14 : 0,
+        bottom: allReactions.isNotEmpty ? 22 : 0,
         left: isMine ? 48 : 0,
         right: isMine ? 0 : 48,
       ),
@@ -269,9 +269,18 @@ class ChatMessageBubble extends StatelessWidget {
   static bool _isEmojiOnlyText(String text) {
     if (text.isEmpty || text.length > 36) return false;
     if (RegExp(r'[a-zA-Z0-9\s]').hasMatch(text)) return false;
-    // 0x2600 — начало символьных/emoji блоков Unicode. Всё ниже (кириллица,
-    // арабский, греческий и т.д.) — обычный текст, не emoji.
-    return text.runes.every((r) => r >= 0x2600);
+    // Разрешаем:
+    // • emoji-блоки Unicode (>= 0x2600)
+    // • ZWJ 0x200D — склеивает семейные/профессиональные emoji (👨‍👩‍👧)
+    // • Variation selectors 0xFE00-0xFE0F — emoji vs text representation
+    // • Skin-tone modifiers 0x1F3FB-0x1F3FF
+    // • Regional indicators 0x1F1E0-0x1F1FF — флаги (🇷🇺)
+    return text.runes.every((r) =>
+        r >= 0x2600 ||
+        r == 0x200D ||
+        (r >= 0xFE00 && r <= 0xFE0F) ||
+        (r >= 0x1F3FB && r <= 0x1F3FF) ||
+        (r >= 0x1F1E0 && r <= 0x1F1FF));
   }
 
   bool _isEmojiOnly(ChatMessage msg) {
