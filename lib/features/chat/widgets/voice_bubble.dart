@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/utils/format.dart';
@@ -249,7 +250,16 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     final c = context.seeuColors;
     final progress =
         _duration.inMilliseconds == 0 ? 0.0 : _position.inMilliseconds / _duration.inMilliseconds;
-    return Container(
+    // #26: пауза когда bubble уходит из viewport — аудио не должно играть невидимо.
+    return VisibilityDetector(
+      key: Key('vb-${widget.messageId ?? widget.audioUrl}'),
+      onVisibilityChanged: (info) {
+        if (info.visibleFraction == 0 && _player.playing) {
+          _player.pause();
+          _releaseCoordinatorIfMine();
+        }
+      },
+      child: Container(
       // #23: уменьшили minWidth 200→160 — меньше overflow на узких экранах
       constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
       padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
@@ -433,6 +443,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
           ),
         ],
       ),
+    ), // Container (child of VisibilityDetector)
     );
   }
 }
