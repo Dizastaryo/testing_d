@@ -280,6 +280,11 @@ class ChatMessage {
   /// Фронт показывает «Сообщение удалено» вместо содержимого.
   final bool isDeletedForAll;
 
+  /// Forwarding: имя отправителя оригинального сообщения.
+  /// Пустая строка = не пересланное. Заполняется бэком (forwarded_from_sender)
+  /// или на фронте при оптимистичном пересылании.
+  final String forwardedFromSender;
+
   const ChatMessage({
     required this.id,
     required this.chatId,
@@ -306,6 +311,7 @@ class ChatMessage {
     this.senderUsername = '',
     this.senderAvatarUrl = '',
     this.isDeletedForAll = false,
+    this.forwardedFromSender = '',
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -354,6 +360,7 @@ class ChatMessage {
       senderUsername: json['sender_username']?.toString() ?? '',
       senderAvatarUrl: _absUrl(json['sender_avatar_url']?.toString()),
       isDeletedForAll: (json['is_deleted_for_all'] ?? false) as bool,
+      forwardedFromSender: json['forwarded_from_sender']?.toString() ?? '',
     );
   }
 
@@ -377,6 +384,7 @@ class ChatMessage {
     String? senderUsername,
     String? senderAvatarUrl,
     bool? isDeletedForAll,
+    String? forwardedFromSender,
   }) =>
       ChatMessage(
         id: id,
@@ -404,6 +412,7 @@ class ChatMessage {
         senderUsername: senderUsername ?? this.senderUsername,
         senderAvatarUrl: senderAvatarUrl ?? this.senderAvatarUrl,
         isDeletedForAll: isDeletedForAll ?? this.isDeletedForAll,
+        forwardedFromSender: forwardedFromSender ?? this.forwardedFromSender,
       );
 }
 
@@ -896,6 +905,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     ReplyPreview? replyTo,
     int expiresInSeconds = 0,
     bool rethrowOnError = false,
+    String? forwardedFromMessageId,
+    String forwardedFromSender = '',
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
     // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
@@ -920,6 +931,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       mediaDurationSeconds: mediaDurationSeconds,
       waveform: waveform,
       replyTo: replyTo,
+      forwardedFromSender: forwardedFromSender,
     );
     state = state.copyWith(messages: [...state.messages, optimistic]);
 
@@ -936,6 +948,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           if (hasMedia) 'attached_media_url': attachedMediaUrl,
           if (hasMedia) 'attached_media_type': attachedMediaType ?? 'image',
           if (expiresInSeconds > 0) 'expires_in_seconds': expiresInSeconds,
+          if (forwardedFromMessageId != null)
+            'forwarded_from_message_id': forwardedFromMessageId,
+          if (forwardedFromSender.isNotEmpty)
+            'forwarded_from_sender': forwardedFromSender,
         },
       );
       // Replace the optimistic message with the real one from server

@@ -2103,12 +2103,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             final messenger = ScaffoldMessenger.of(context);
                             final forwardText = m.text.isNotEmpty
                                 ? m.text
-                                : '[Медиа]';
+                                : '';
+                            // Имя оригинального отправителя для баннера
+                            final originSender = m.isMe
+                                ? (ref.read(authProvider).user?.username ?? '')
+                                : (m.senderUsername.isNotEmpty
+                                    ? m.senderUsername
+                                    : m.senderName);
                             try {
                               await ref
                                   .read(chatMessagesProvider(chat.id).notifier)
                                   .sendMessage(
-                                    '📩 $forwardText',
+                                    forwardText,
                                     attachedMediaUrl: m.attachedMediaUrl
                                             .isNotEmpty
                                         ? m.attachedMediaUrl
@@ -2117,6 +2123,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                             .isNotEmpty
                                         ? m.attachedMediaType
                                         : null,
+                                    forwardedFromMessageId: m.id,
+                                    forwardedFromSender: originSender,
                                   );
                               if (mounted) {
                                 messenger.showSnackBar(

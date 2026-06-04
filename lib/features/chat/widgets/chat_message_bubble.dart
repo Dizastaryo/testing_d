@@ -345,6 +345,10 @@ class ChatMessageBubble extends StatelessWidget {
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (msg.forwardedFromSender.isNotEmpty) ...[
+            _buildForwardedBanner(msg.forwardedFromSender, mine, c),
+            const SizedBox(height: 2),
+          ],
           if (msg.replyTo != null) ...[
             _buildReplyQuoted(msg.replyTo!, mine, c),
             const SizedBox(height: 4),
@@ -407,6 +411,28 @@ class ChatMessageBubble extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildForwardedBanner(String sender, bool isMine, SeeUThemeColors c) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          PhosphorIconsRegular.arrowBendUpRight,
+          size: 11,
+          color: isMine ? Colors.white.withValues(alpha: 0.7) : SeeUColors.accent,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          'Переслано от @$sender',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isMine ? Colors.white.withValues(alpha: 0.7) : SeeUColors.accent,
+          ),
+        ),
+      ],
     );
   }
 
