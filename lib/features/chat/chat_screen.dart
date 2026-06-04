@@ -1653,7 +1653,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      // #22: с reverse=true, EdgeInsets.top — это визуальный низ (под newest msg).
+      // Когда FAB виден (!_atBottom), нижние сообщения перекрываются — даём 60px.
+      padding: EdgeInsets.fromLTRB(16, _atBottom ? 8 : 60, 16, 8),
       physics: const BouncingScrollPhysics(),
       // reverse=true: index 0 рендерится в нижней части viewport'а
       // (newest message внизу — как в любом мессенджере). Поэтому при

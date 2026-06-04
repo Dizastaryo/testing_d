@@ -19,12 +19,18 @@ class SwipeToReply extends StatefulWidget {
 class _SwipeToReplyState extends State<SwipeToReply> {
   double _dragX = 0;
   bool _triggered = false;
+  bool _dragStarted = false; // #31: haptic при начале свайпа
   static const _threshold = 64.0;
 
   void _onUpdate(DragUpdateDetails d) {
     // Only allow rightward drag
     final next = (_dragX + d.delta.dx).clamp(0.0, _threshold * 1.3);
     setState(() => _dragX = next);
+    // #31: лёгкий haptic как только пользователь начал тянуть вправо
+    if (!_dragStarted && _dragX > 0) {
+      _dragStarted = true;
+      HapticFeedback.selectionClick();
+    }
     if (!_triggered && _dragX >= _threshold) {
       _triggered = true;
       HapticFeedback.lightImpact();
@@ -36,6 +42,7 @@ class _SwipeToReplyState extends State<SwipeToReply> {
     setState(() {
       _dragX = 0;
       _triggered = false;
+      _dragStarted = false;
     });
   }
 
@@ -48,6 +55,7 @@ class _SwipeToReplyState extends State<SwipeToReply> {
       onHorizontalDragCancel: () => setState(() {
         _dragX = 0;
         _triggered = false;
+        _dragStarted = false;
       }),
       child: Stack(
         clipBehavior: Clip.none,

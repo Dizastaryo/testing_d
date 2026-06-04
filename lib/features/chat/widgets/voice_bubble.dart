@@ -355,7 +355,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                   children: [
                     // Длительность / позиция воспроизведения
                     Text(
-                      _player.playing || _position > Duration.zero
+                      _position > Duration.zero
                           ? formatDuration(_position)
                           : formatDuration(_duration),
                       style: TextStyle(
