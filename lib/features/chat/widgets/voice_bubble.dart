@@ -28,6 +28,10 @@ class VoiceBubble extends ConsumerStatefulWidget {
   final bool isMine;
   final String? chatId;
   final String? messageId;
+  /// Время отправки в формате "HH:MM" для отображения внутри бабла.
+  final String? sentTimeLabel;
+  final bool isRead;
+  final bool isDelivered;
 
   const VoiceBubble({
     super.key,
@@ -37,6 +41,9 @@ class VoiceBubble extends ConsumerStatefulWidget {
     required this.isMine,
     this.chatId,
     this.messageId,
+    this.sentTimeLabel,
+    this.isRead = false,
+    this.isDelivered = false,
   });
 
   @override
@@ -333,6 +340,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                 const SizedBox(height: 2),
                 Row(
                   children: [
+                    // Длительность / позиция воспроизведения
                     Text(
                       _player.playing || _position > Duration.zero
                           ? formatDuration(_position)
@@ -345,13 +353,13 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                       ),
                     ),
                     const Spacer(),
-                    // Speed pill. Активный (≠1×) выделен сильнее.
+                    // Speed pill
                     GestureDetector(
                       onTap: _cycleSpeed,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 140),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
+                            horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: _speed == 1.0
                               ? (widget.isMine
@@ -379,6 +387,32 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                         ),
                       ),
                     ),
+                    // Время отправки + галочки прочтения
+                    if (widget.sentTimeLabel != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        widget.sentTimeLabel!,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: widget.isMine
+                              ? Colors.white.withValues(alpha: 0.6)
+                              : c.ink3,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      if (widget.isMine) ...[
+                        const SizedBox(width: 3),
+                        Icon(
+                          (widget.isRead || widget.isDelivered)
+                              ? PhosphorIconsBold.checks
+                              : PhosphorIconsRegular.check,
+                          size: 12,
+                          color: widget.isRead
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.65),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ],
@@ -418,7 +452,8 @@ class _StaticWavePainter extends CustomPainter {
       // зацикливаем для bar-плейсхолдера.
       double v;
       if (samples.isEmpty) {
-        v = 0.4 + 0.2 * math.sin(i * 0.6);
+        // Плоская линия вместо фейкового синуса — не вводим юзера в заблуждение.
+        v = 0.35;
       } else {
         final idx = ((i / n) * samples.length).floor().clamp(0, samples.length - 1);
         v = samples[idx];

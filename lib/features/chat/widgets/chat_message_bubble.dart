@@ -284,6 +284,8 @@ class ChatMessageBubble extends StatelessWidget {
   // B1/B2/B3/B4/B5: Redesigned bubble container with gradient, inline time
   Widget _buildBubbleContainer(
       ChatMessage msg, bool mine, SeeUThemeColors c, String time) {
+    // time передаётся дальше в _buildBubbleContent для голосовых сообщений
+    // (у них нет внешнего time-row из-за `if (!isVoice)` условия ниже).
     // F3: emoji-only → big emoji with subtle pill background
     if (_isEmojiOnly(msg)) {
       return Container(
@@ -373,8 +375,8 @@ class ChatMessageBubble extends StatelessWidget {
             _buildReplyQuoted(msg.replyTo!, mine, c),
             const SizedBox(height: 4),
           ],
-          _buildBubbleContent(msg, mine, c),
-          // B4: inline time + receipts inside bubble
+          _buildBubbleContent(msg, mine, c, time),
+          // B4: inline time + receipts inside bubble (для голосовых — внутри VoiceBubble)
           if (!isVoice)
             Padding(
               padding: isSticker
@@ -479,7 +481,7 @@ class ChatMessageBubble extends StatelessWidget {
   }
 
   Widget _buildBubbleContent(
-      ChatMessage message, bool isMine, SeeUThemeColors c) {
+      ChatMessage message, bool isMine, SeeUThemeColors c, String time) {
     // Сообщение удалено для всех
     if (message.kind == 'deleted' || message.isDeletedForAll) {
       return Row(
@@ -544,6 +546,9 @@ class ChatMessageBubble extends StatelessWidget {
         isMine: isMine,
         chatId: message.chatId,
         messageId: message.id,
+        sentTimeLabel: time,
+        isRead: message.isRead,
+        isDelivered: message.isDelivered,
       );
     }
     return Text(
@@ -897,26 +902,29 @@ class _ChatTtlCountdownState extends ConsumerState<ChatTtlCountdown> {
     final remaining = widget.expiresAt.difference(DateTime.now());
     if (remaining.isNegative) return const SizedBox.shrink();
     final c = context.seeuColors;
-    final urgent = remaining.inHours < 1;
-    final color = urgent ? SeeUColors.accent : c.ink3;
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(PhosphorIconsFill.timer, size: 10, color: color),
-          const SizedBox(width: 2),
-          Text(
-            _format(remaining),
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: color,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+    final urgent = remaining.inMinutes < 5;
+    final warning = remaining.inHours < 1;
+    final color = urgent
+        ? SeeUColors.error
+        : warning
+            ? SeeUColors.accent
+            : c.ink3;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(PhosphorIconsFill.timer, size: 11, color: color),
+        const SizedBox(width: 2),
+        Text(
+          _format(remaining),
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: color,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 3),
+      ],
     );
   }
 }

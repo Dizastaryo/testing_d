@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -13,20 +14,15 @@ import '../../../core/design/design.dart';
 
 enum _RecState { recording, preview }
 
-/// Inline recorder. Hold-to-record поведение через `_active` флаг,
-/// рендерится поверх обычного input-bar'а как replacement когда юзер
-/// начал запись.
+/// Inline recorder bar — заменяет input-bar во время записи голосового.
 ///
 /// Поток:
-///  1. Юзер тапает mic-кнопку → `start()` callback родителя; родитель
-///     заменяет input на этот widget (или показывает overlay).
-///  2. Идёт запись с amplitude-stream — рисуется живой mini-waveform.
-///  3. Юзер тапает «✓» → `onSubmit(filePath, durationSec, samples)` →
-///     родитель грузит на сервер.
-///  4. Юзер тапает «✕» → `onCancel()` — файл удаляется.
-///
-/// На вебе `record` пишет webm/opus; на iOS/Android — m4a/aac. Backend
-/// принимает audio/* в media-handler'е (после `audio` MIME-фикса от seed-pipeline'а).
+///  1. Показывается сразу с началом записи.
+///  2. Запись: [🗑 отменить] [● таймер ~~~waveform~~~] [✓ остановить]
+///  3. Preview: [✕ отменить] [▶ play] [~~~waveform~~~ длит.] [🔄 перезаписать] [➤ отправить]
+///     — юзер может сразу нажать ➤ без прослушивания, либо прослушать ▶ затем ➤.
+///  4. onSubmit(filePath, durationSec, samples) → родитель грузит на сервер.
+///  5. onCancel() → возврат к обычному input.
 class VoiceRecorderBar extends StatefulWidget {
   final VoidCallback onCancel;
   final void Function(String path, int durationSec, List<double> samples)
@@ -48,13 +44,9 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   Timer? _tick;
   Duration _elapsed = Duration.zero;
   String? _path;
-  // Накопленные amplitude-сэмплы для отрисовки во время записи + для
-  // финальной превью-волны на bubble. Сэмплируем раз в ~100ms.
   final List<double> _samples = [];
-  // Окно из последних 32 сэмплов для живой визуализации.
   final List<double> _liveWindow = [];
 
-  // Preview state (Feature 2)
   _RecState _recState = _RecState.recording;
   AudioPlayer? _previewPlayer;
   String? _previewPath;
@@ -77,10 +69,6 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
       _fail('нет разрешения на микрофон');
       return;
     }
-    // BUG-FIX: раньше `_tempDir()` возвращал пустую строку → filePath
-    // получался '/voice_NNN.m4a' (absolute root, не writeable). Теперь
-    // используем path_provider.getTemporaryDirectory() для real temp-dir.
-    // Web: record сам создаёт blob, path игнорируется.
     final filePath = await _buildFilePath();
     try {
       await _recorder.start(
@@ -101,7 +89,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
         setState(() {
           _elapsed += const Duration(milliseconds: 200);
         });
-        if (_elapsed >= _maxDuration) _submit();
+        if (_elapsed >= _maxDuration) _stopToPreview();
       });
     } catch (e) {
       _fail('не удалось начать запись: $e');
@@ -110,17 +98,12 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
 
   Future<String> _buildFilePath() async {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    if (kIsWeb) {
-      // Web — record создаёт blob, path-параметр игнорируется. Возвращаем
-      // что-нибудь чтобы start() не падал на null-arg.
-      return 'voice_$ts.webm';
-    }
+    if (kIsWeb) return 'voice_$ts.webm';
     final dir = await getTemporaryDirectory();
     return '${dir.path}/voice_$ts.m4a';
   }
 
   void _onAmp(Amplitude a) {
-    // Amplitude.current в dBFS, диапазон ~ -60..0 dB. Нормализуем в 0..1.
     final db = a.current;
     final normalized = ((db.clamp(-50.0, 0.0) + 50.0) / 50.0).clamp(0.0, 1.0);
     _samples.add(normalized);
@@ -131,7 +114,9 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _submit() async {
+  /// Останавливает запись и переходит в preview-режим.
+  /// Кнопка ✓ (checkmark) — не отправка, а завершение записи.
+  Future<void> _stopToPreview() async {
     final p = await _recorder.stop();
     _ampSub?.cancel();
     _tick?.cancel();
@@ -142,12 +127,12 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     }
     final dur = _elapsed.inSeconds;
     if (dur < 1) {
+      _deleteFile(pathFinal);
       widget.onCancel();
       return;
     }
     HapticFeedback.heavyImpact();
 
-    // Feature 2: switch to preview instead of immediately sending
     _previewPath = pathFinal;
     _previewDurationSec = dur;
     _previewSamples = _downsample(_samples, _finalSampleCount);
@@ -169,6 +154,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     if (mounted) setState(() => _recState = _RecState.preview);
   }
 
+  /// Отправляет записанный файл сразу без ожидания.
   void _sendNow() {
     HapticFeedback.heavyImpact();
     _previewPlayer?.stop();
@@ -181,6 +167,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     await _previewPlayer?.stop();
     _previewPlayer?.dispose();
     _previewPlayer = null;
+    _deleteFile(_previewPath);
     _previewPath = null;
     _previewSamples = [];
     _previewPlaying = false;
@@ -201,12 +188,32 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     }
   }
 
-  Future<void> _cancel() async {
+  /// Отмена из режима ЗАПИСИ — удаляем временный файл.
+  Future<void> _cancelRecording() async {
     HapticFeedback.lightImpact();
     await _recorder.stop();
     _ampSub?.cancel();
     _tick?.cancel();
+    _deleteFile(_path);
     widget.onCancel();
+  }
+
+  /// Отмена из режима PREVIEW — удаляем файл, возвращаем к обычному вводу.
+  Future<void> _discardPreview() async {
+    HapticFeedback.lightImpact();
+    await _previewPlayer?.stop();
+    _previewPlayer?.dispose();
+    _previewPlayer = null;
+    _deleteFile(_previewPath);
+    widget.onCancel();
+  }
+
+  void _deleteFile(String? path) {
+    if (path == null || kIsWeb) return;
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   void _fail(String reason) {
@@ -216,14 +223,11 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     widget.onCancel();
   }
 
-  /// Сжимаем длинный список сэмплов до фиксированного N.
   List<double> _downsample(List<double> input, int target) {
     if (input.isEmpty) return List.filled(target, 0.4);
     if (input.length <= target) {
       final out = List<double>.from(input);
-      while (out.length < target) {
-        out.add(0.0);
-      }
+      while (out.length < target) { out.add(0.0); }
       return out;
     }
     final out = <double>[];
@@ -232,9 +236,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
       final start = (i * step).floor();
       final end = math.min(input.length, ((i + 1) * step).ceil());
       var sum = 0.0;
-      for (var j = start; j < end; j++) {
-        sum += input[j];
-      }
+      for (var j = start; j < end; j++) { sum += input[j]; }
       out.add(sum / (end - start));
     }
     return out;
@@ -259,7 +261,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border(top: BorderSide(color: c.line, width: 0.5)),
@@ -270,7 +272,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
             ? _buildPreviewRow(c)
             : GestureDetector(
                 onHorizontalDragEnd: (details) {
-                  if ((details.primaryVelocity ?? 0) < -200) _cancel();
+                  if ((details.primaryVelocity ?? 0) < -200) _cancelRecording();
                 },
                 child: _buildRecordingRow(c),
               ),
@@ -278,39 +280,41 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Режим записи: [🗑] [● 00:15 ~~~waveform~~~] [✓]
+  // ---------------------------------------------------------------------------
   Widget _buildRecordingRow(SeeUThemeColors c) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Cancel
+        // Отмена записи — иконка корзины
         GestureDetector(
-          onTap: _cancel,
-          child: Container(
+          onTap: _cancelRecording,
+          child: SizedBox(
+            width: 44,
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            alignment: Alignment.center,
-            child: Text(
-              'Отмена',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: SeeUColors.error,
-              ),
+            child: Icon(
+              PhosphorIcons.trash(),
+              color: SeeUColors.error,
+              size: 22,
             ),
           ),
         ),
-        // Pulsing red dot + timer
+        // Пульсирующая красная точка
         const _PulsingDot(),
         const SizedBox(width: 6),
+        // Таймер
         Text(
           _fmtDuration(_elapsed),
           style: TextStyle(
             fontFeatures: const [FontFeature.tabularFigures()],
             fontWeight: FontWeight.w600,
+            fontSize: 14,
             color: c.ink,
           ),
         ),
-        const SizedBox(width: 12),
-        // Live waveform
+        const SizedBox(width: 8),
+        // Живая waveform
         Expanded(
           child: SizedBox(
             height: 36,
@@ -320,70 +324,45 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
           ),
         ),
         const SizedBox(width: 8),
-        // Submit button + Feature 3: lock hint for first 3 seconds
-        Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            GestureDetector(
-              onTap: _submit,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: SeeUGradients.heroOrange,
-                ),
-                child: Icon(PhosphorIconsBold.arrowUp,
-                    color: Colors.white, size: 20),
-              ),
+        // Остановить запись → перейти в preview (✓ checkmark)
+        GestureDetector(
+          onTap: _stopToPreview,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SeeUGradients.heroOrange,
             ),
-            Positioned(
-              top: -20,
-              child: AnimatedOpacity(
-                opacity:
-                    _elapsed < const Duration(seconds: 3) ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 500),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(PhosphorIcons.lock(), size: 11, color: c.ink3),
-                    const SizedBox(width: 3),
-                    Text(
-                      'Удержи',
-                      style: TextStyle(fontSize: 10, color: c.ink3),
-                    ),
-                  ],
-                ),
-              ),
+            child: const Icon(
+              PhosphorIconsBold.check,
+              color: Colors.white,
+              size: 22,
             ),
-          ],
+          ),
         ),
       ],
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Режим preview: [✕] [▶] [~~~waveform~~~ длит.] [🔄] [➤]
+  // ---------------------------------------------------------------------------
   Widget _buildPreviewRow(SeeUThemeColors c) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Rerecord
+        // Отменить и выбросить запись
         GestureDetector(
-          onTap: _reRecord,
-          child: Container(
+          onTap: _discardPreview,
+          child: SizedBox(
+            width: 40,
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            alignment: Alignment.center,
-            child: Text(
-              'Перезаписать',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: c.ink2,
-              ),
-            ),
+            child: Icon(PhosphorIcons.x(), color: c.ink3, size: 20),
           ),
         ),
-        // Play/pause preview
+        const SizedBox(width: 4),
+        // Play / pause для прослушивания перед отправкой
         GestureDetector(
           onTap: _togglePreviewPlay,
           child: Container(
@@ -403,17 +382,49 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
           ),
         ),
         const SizedBox(width: 8),
-        // Static waveform of recorded audio
+        // Waveform + длительность
         Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 32,
+                child: CustomPaint(
+                  painter: _LiveWavePainter(_previewSamples),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  _fmtDuration(Duration(seconds: _previewDurationSec)),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 4),
+        // Перезаписать (иконка стрелки-перезагрузки)
+        GestureDetector(
+          onTap: _reRecord,
           child: SizedBox(
-            height: 36,
-            child: CustomPaint(
-              painter: _LiveWavePainter(_previewSamples),
+            width: 40,
+            height: 44,
+            child: Icon(
+              PhosphorIcons.arrowCounterClockwise(),
+              color: c.ink2,
+              size: 20,
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        // Send
+        const SizedBox(width: 4),
+        // Отправить сразу — paper plane, не стрелка вверх
         GestureDetector(
           onTap: _sendNow,
           child: Container(
@@ -423,14 +434,21 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
               shape: BoxShape.circle,
               gradient: SeeUGradients.heroOrange,
             ),
-            child: Icon(PhosphorIconsBold.arrowUp,
-                color: Colors.white, size: 20),
+            child: const Icon(
+              PhosphorIconsFill.paperPlaneRight,
+              color: Colors.white,
+              size: 20,
+            ),
           ),
         ),
       ],
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Live waveform painter
+// ---------------------------------------------------------------------------
 
 class _LiveWavePainter extends CustomPainter {
   final List<double> samples;
@@ -446,7 +464,6 @@ class _LiveWavePainter extends CustomPainter {
     const gap = 2.0;
     final centerY = size.height / 2;
     final n = ((size.width + gap) / (barW + gap)).floor();
-    // Last n samples (или меньше).
     final start = math.max(0, samples.length - n);
     final visible = samples.sublist(start);
     final pad = n - visible.length;
@@ -466,9 +483,15 @@ class _LiveWavePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _LiveWavePainter old) =>
-      old.samples.length != samples.length;
+  // Всегда перерисовываем — живая waveform меняется постоянно.
+  // (Старый код проверял samples.length, что замораживало картинку когда
+  // окно из 32 баров было заполнено — длина не менялась.)
+  bool shouldRepaint(covariant _LiveWavePainter old) => true;
 }
+
+// ---------------------------------------------------------------------------
+// Pulsing red dot
+// ---------------------------------------------------------------------------
 
 class _PulsingDot extends StatefulWidget {
   const _PulsingDot();
