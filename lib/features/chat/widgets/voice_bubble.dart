@@ -182,14 +182,19 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     setState(() => _loading = true);
     try {
       await _player.setUrl(widget.audioUrl);
-      // Применяем сохранённую скорость (юзер мог потыкать pill до load'а).
       if (_speed != 1.0) {
         try { await _player.setSpeed(_speed); } catch (_) {}
       }
       _loaded = true;
     } catch (_) {
-      // ignore — просто оставляем _loaded = false, юзер увидит
-      // что прогресс не двигается; кнопка останется нажимаемой.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не удалось загрузить аудио'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -52,6 +52,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _recording = false;
   ReplyPreview? _replyingTo;
   String? _editingMessageId;
+  // Оригинальный текст редактируемого сообщения — показывается в edit-банере,
+  // чтобы юзер видел что редактирует, а не что уже напечатал.
+  String _editingOriginalText = '';
   // CHAT-3.1: scroll-to-search-result + flash highlight. Timer сбрасывает
   // подсветку через 2 сек.
   String? _flashMessageId;
@@ -216,6 +219,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .firstWhere((_) => true, orElse: () => null);
     final isGroup = chat?.isGroup ?? false;
 
+    // Для group-чата: показываем «Выйти из группы».
+    // Поиск убран — есть отдельная кнопка в хедере.
+    if (!isGroup) return; // для direct-чата меню пустое, не показываем
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -237,32 +243,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             const SizedBox(height: 12),
             ListTile(
-              leading: Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink),
-              title: const Text('Поиск по чату'),
+              leading: const Icon(PhosphorIconsRegular.signOut,
+                  color: SeeUColors.error),
+              title: Text(
+                chat?.isOrganizer == true
+                    ? 'Отменить сбор'
+                    : chat?.sborId != null
+                        ? 'Выйти из сбора'
+                        : 'Выйти из группы',
+                style: const TextStyle(color: SeeUColors.error),
+              ),
               onTap: () {
                 Navigator.of(sheetCtx).pop();
-                _showSearchSheet();
+                _leaveGroup(
+                    sborId: chat?.sborId,
+                    isOrganizer: chat?.isOrganizer == true);
               },
             ),
-            if (isGroup)
-              ListTile(
-                leading: const Icon(PhosphorIconsRegular.signOut,
-                    color: SeeUColors.error),
-                title: Text(
-                  chat?.isOrganizer == true
-                      ? 'Отменить сбор'
-                      : chat?.sborId != null
-                          ? 'Выйти из сбора'
-                          : 'Выйти из группы',
-                  style: const TextStyle(color: SeeUColors.error),
-                ),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  _leaveGroup(
-                      sborId: chat?.sborId,
-                      isOrganizer: chat?.isOrganizer == true);
-                },
-              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -985,6 +982,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
                 Divider(height: 1, color: c.line),
+                if (!m.isDeletedForAll && m.kind != 'deleted')
                 ListTile(
                   leading: Icon(PhosphorIcons.arrowBendUpLeft(),
                       color: SeeUColors.accent),
@@ -1036,6 +1034,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       Navigator.of(sheetCtx).pop();
                       setState(() {
                         _editingMessageId = m.id;
+                        _editingOriginalText = m.text;
                         _replyingTo = null;
                       });
                       _textController.text = m.text;
@@ -1601,7 +1600,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Group by day
     final groups = <String, List<ChatMessage>>{};
     for (final msg in messages) {
-      final key = _dateKey(msg.createdAt);
+      // Используем local time — иначе в UTC+N группировка по дням неверна.
+      final key = _dateKey(msg.createdAt.toLocal());
       groups.putIfAbsent(key, () => []).add(msg);
     }
 
@@ -1841,7 +1841,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         textCapitalization: TextCapitalization.sentences,
                         style: SeeUTypography.body.copyWith(fontSize: 14),
                         decoration: InputDecoration(
-                          hintText: 'Сообщение',
+                          hintText: _editingMessageId != null
+                              ? 'Редактировать сообщение'
+                              : 'Сообщение',
                           hintStyle: SeeUTypography.body.copyWith(
                             fontSize: 14,
                             color: c.ink3,
@@ -2025,7 +2027,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
                 Text(
-                  _textController.text,
+                  _editingOriginalText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: c.ink2, fontSize: 13),
@@ -2035,7 +2037,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
           IconButton(
             onPressed: () {
-              setState(() => _editingMessageId = null);
+              setState(() {
+                _editingMessageId = null;
+                _editingOriginalText = '';
+              });
               _textController.clear();
             },
             icon: Icon(PhosphorIcons.x(), size: 18, color: c.ink3),
@@ -2172,10 +2177,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dlgCtx) => AlertDialog(
-        title: const Text('Удалить сообщение?'),
+        title: Text(forAll ? 'Удалить для всех?' : 'Удалить у себя?'),
         content: Text(
           forAll
-              ? 'Сообщение будет видно как «Сообщение удалено» для всех участников.'
+              ? 'Сообщение станет видно как «Сообщение удалено» для всех участников.'
               : 'Сообщение исчезнет только у вас.',
         ),
         actions: [

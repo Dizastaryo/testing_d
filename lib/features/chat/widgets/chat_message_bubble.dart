@@ -863,20 +863,35 @@ class _ChatTtlCountdownState extends ConsumerState<ChatTtlCountdown> {
   @override
   void initState() {
     super.initState();
+    _scheduleTick();
+  }
+
+  /// Рекурсивный таймер: интервал адаптируется к оставшемуся времени.
+  /// < 60с → тикает каждую секунду; < 1ч → каждые 15с; иначе → каждые 30с.
+  /// Это решает проблему фиксированного интервала который не переключался
+  /// при пересечении границы в 1 минуту.
+  void _scheduleTick() {
+    _ticker?.cancel();
+    if (_removed || !mounted) return;
     final remaining = widget.expiresAt.difference(DateTime.now());
-    final interval = remaining.inMinutes < 1
-        ? const Duration(seconds: 1)
-        : const Duration(seconds: 30);
-    _ticker = Timer.periodic(interval, (_) {
-      if (!mounted) return;
-      if (DateTime.now().isAfter(widget.expiresAt) && !_removed) {
+    if (remaining.isNegative) {
+      if (!_removed) {
         _removed = true;
         ref
             .read(chatMessagesProvider(widget.chatId).notifier)
             .removeMessageLocally(widget.messageId);
-      } else {
-        setState(() {});
       }
+      return;
+    }
+    final interval = remaining.inSeconds < 60
+        ? const Duration(seconds: 1)
+        : remaining.inMinutes < 60
+            ? const Duration(seconds: 15)
+            : const Duration(seconds: 30);
+    _ticker = Timer(interval, () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleTick();
     });
   }
 
