@@ -88,7 +88,6 @@ class ChatMessageBubble extends StatelessWidget {
   final bool showTail;
   final String? reaction;
   final Map<String, int> allReactions;
-  final bool showReactionPicker;
   final VoidCallback onLongPress;
   final VoidCallback? onDoubleTap;
   final void Function(String emoji) onReactionSelected;
@@ -105,7 +104,6 @@ class ChatMessageBubble extends StatelessWidget {
     this.showTail = true,
     this.reaction,
     this.allReactions = const {},
-    this.showReactionPicker = false,
     required this.onLongPress,
     this.onDoubleTap,
     required this.onReactionSelected,
@@ -170,39 +168,6 @@ class ChatMessageBubble extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       _buildBubbleContainer(message, isMine, c, time),
-                      if (showReactionPicker)
-                        Positioned(
-                          top: -44,
-                          left: isMine ? null : 0,
-                          right: isMine ? 0 : null,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: c.surface2,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: SeeUShadows.md,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: kQuickReactionEmojis.map((emoji) {
-                                final isSelected = reaction == emoji;
-                                return GestureDetector(
-                                  onTap: () => onReactionSelected(emoji),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: isSelected
-                                        ? BoxDecoration(
-                                            color: SeeUColors.accentSoft,
-                                            shape: BoxShape.circle,
-                                          )
-                                        : null,
-                                    child: Text(emoji, style: const TextStyle(fontSize: 20)),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ),
                       if (allReactions.isNotEmpty)
                         Positioned(
                           bottom: -14,

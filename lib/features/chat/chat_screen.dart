@@ -64,9 +64,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // disappearing'ом (per-message UX, не chat-wide).
   int? _ttlSeconds;
 
-  /// Which message currently shows the reaction picker (null = none)
-  String? _reactionPickerMessageId;
-
   int _messageCount = 0;
   bool _atBottom = true;
 
@@ -78,7 +75,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (mounted) setState(() {});
     });
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionsChanged);
-    _scrollToBottom(animate: false);
+    // Прокрутка вниз происходит через ref.listen когда грузятся первые сообщения.
+    // Вызов здесь бесполезен — контроллер ещё не прикреплён (список не отрендерен).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
@@ -388,6 +386,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final editId = _editingMessageId!;
       setState(() {
         _editingMessageId = null;
+        _editingOriginalText = '';
       });
       _textController.clear();
       try {
@@ -929,7 +928,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _onReactionSelected(String messageId, String emoji) {
-    setState(() => _reactionPickerMessageId = null);
     HapticFeedback.selectionClick();
     ref
         .read(chatMessagesProvider(widget.chatId).notifier)
@@ -1154,12 +1152,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final c = context.seeuColors;
     return GestureDetector(
-      onTap: () {
-        // Dismiss reaction picker when tapping outside
-        if (_reactionPickerMessageId != null) {
-          setState(() => _reactionPickerMessageId = null);
-        }
-      },
+      onTap: () {},
       child: Scaffold(
         backgroundColor: c.bg,
         body: Container(
@@ -1624,7 +1617,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     : otherUser?.avatarUrl),
             reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
             allReactions: msg.reactions,
-            showReactionPicker: _reactionPickerMessageId == msg.id,
             onLongPress: () => _onMessageLongPress(msg.id),
             onDoubleTap: () => _onReactionSelected(msg.id, '❤️'),
             onReactionSelected: (emoji) => _onReactionSelected(msg.id, emoji),
@@ -2098,6 +2090,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ? chat.title
                             : (chat.otherUser?.fullName ?? '');
                         return ListTile(
+                          leading: ChatSmallAvatar(
+                            avatarUrl: chat.isGroup
+                                ? chat.coverUrl
+                                : chat.otherUser?.avatarUrl,
+                            isGroup: chat.isGroup,
+                          ),
                           title: Text(name,
                               style: SeeUTypography.body.copyWith(color: c.ink)),
                           subtitle: chat.isGroup
