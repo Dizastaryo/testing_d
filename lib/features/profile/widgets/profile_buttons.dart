@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/user.dart';
 import '../../../core/providers/blocks_provider.dart';
+import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/user_provider.dart';
 
 class ProfileStoryRingPainter extends CustomPainter {
@@ -175,53 +176,109 @@ class ProfileOwnButtons extends StatelessWidget {
   }
 }
 
-class ProfileOtherButtons extends ConsumerWidget {
+class ProfileOtherButtons extends ConsumerStatefulWidget {
   final User user;
   const ProfileOtherButtons({super.key, required this.user});
 
-  Future<void> _toggleFollow(BuildContext context, WidgetRef ref) async {
-    final err = await ref.read(userProfileProvider(user.username).notifier).toggleFollow();
-    if (err != null && context.mounted) {
+  @override
+  ConsumerState<ProfileOtherButtons> createState() => _ProfileOtherButtonsState();
+}
+
+class _ProfileOtherButtonsState extends ConsumerState<ProfileOtherButtons> {
+  bool _chatLoading = false;
+
+  Future<void> _toggleFollow() async {
+    final err = await ref
+        .read(userProfileProvider(widget.user.username).notifier)
+        .toggleFollow();
+    if (err != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }
   }
 
-  Future<void> _unblock(BuildContext context, WidgetRef ref) async {
-    final err = await ref.read(blocksProvider.notifier).unblock(user.username);
-    if (!context.mounted) return;
+  Future<void> _unblock() async {
+    final err =
+        await ref.read(blocksProvider.notifier).unblock(widget.user.username);
+    if (!mounted) return;
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось разблокировать: $err')));
+          SnackBar(content: Text('Не удалось разблокировать: $err')));
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('@${user.username} разблокирован')));
-    ref.invalidate(userProfileProvider(user.username));
+        SnackBar(content: Text('@${widget.user.username} разблокирован')));
+    ref.invalidate(userProfileProvider(widget.user.username));
+  }
+
+  /// Получаем или создаём переписку с пользователем, затем переходим в неё.
+  /// Передавать user.id напрямую в /chat/:id нельзя — ChatScreen ждёт
+  /// conversation ID, а не user ID.
+  Future<void> _openChat() async {
+    if (_chatLoading) return;
+    setState(() => _chatLoading = true);
+    try {
+      final chatId = await ref
+          .read(chatListProvider.notifier)
+          .getOrCreateChat(widget.user.id);
+      if (!mounted) return;
+      if (chatId == null || chatId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Не удалось открыть переписку')));
+        return;
+      }
+      context.push('/chat/$chatId');
+    } finally {
+      if (mounted) setState(() => _chatLoading = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final isBlocked = ref.watch(blocksProvider).maybeWhen(
-      data: (items) => items.any((b) => b.username == user.username),
+      data: (items) =>
+          items.any((b) => b.username == widget.user.username),
       orElse: () => false,
     );
     if (isBlocked) {
-      return ProfileActionButton(label: 'Разблокировать', onTap: () => _unblock(context, ref));
+      return ProfileActionButton(
+          label: 'Разблокировать', onTap: _unblock);
     }
     final Widget followBtn;
-    if (user.isFollowing) {
-      followBtn = ProfileActionButton(label: 'Отписаться', onTap: () => _toggleFollow(context, ref));
-    } else if (user.hasPendingFollowRequest) {
-      followBtn = ProfileActionButton(label: 'Запрос отправлен', onTap: () => _toggleFollow(context, ref));
+    if (widget.user.isFollowing) {
+      followBtn =
+          ProfileActionButton(label: 'Отписаться', onTap: _toggleFollow);
+    } else if (widget.user.hasPendingFollowRequest) {
+      followBtn = ProfileActionButton(
+          label: 'Запрос отправлен', onTap: _toggleFollow);
     } else {
-      followBtn = ProfileActionButton(label: 'Подписаться', isPrimary: true, onTap: () => _toggleFollow(context, ref));
+      followBtn = ProfileActionButton(
+          label: 'Подписаться', isPrimary: true, onTap: _toggleFollow);
     }
     return Row(
       children: [
         Expanded(child: followBtn),
         const SizedBox(width: 8),
-        Expanded(child: ProfileActionButton(
-          label: 'Сообщение', onTap: () => context.push('/chat/${user.id}'))),
+        Expanded(
+          child: _chatLoading
+              ? Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: context.seeuColors.surface2,
+                    borderRadius:
+                        BorderRadius.circular(SeeURadii.medium),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: SeeUColors.accent),
+                    ),
+                  ),
+                )
+              : ProfileActionButton(
+                  label: 'Сообщение', onTap: _openChat),
+        ),
       ],
     );
   }
