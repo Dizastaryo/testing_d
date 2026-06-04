@@ -290,10 +290,15 @@ String apiErrorMessage(DioException e) {
     if (errors is Map) {
       return errors.values.first?.toString() ?? 'Validation error.';
     }
-    return e.response?.data?['message']?.toString() ?? 'Validation error.';
+    return e.response?.data?['error']?.toString() ??
+        e.response?.data?['message']?.toString() ??
+        'Validation error.';
   }
   if (statusCode != null && statusCode >= 500) {
-    return 'Something went wrong on the server. Please try again.';
+    return e.response?.data?['error']?.toString() ??
+        'Something went wrong on the server. Please try again.';
   }
-  return e.response?.data?['message']?.toString() ?? 'Something went wrong.';
+  return e.response?.data?['error']?.toString() ??
+      e.response?.data?['message']?.toString() ??
+      'Something went wrong.';
 }

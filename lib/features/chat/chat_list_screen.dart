@@ -101,6 +101,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     final c = context.seeuColors;
     final chatState = ref.watch(chatListProvider);
     final chats = _filteredChats(chatState.chats);
+    final currentUsername =
+        ref.watch(authProvider.select((s) => s.user?.username)) ?? '';
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -255,7 +257,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                       ? const SeeUChatSkeleton()
                       : chats.isEmpty
                           ? _buildEmptyState()
-                          : _buildChatList(chats),
+                          : _buildChatList(chats, currentUsername),
             ),
           ],
         ),
@@ -381,7 +383,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     );
   }
 
-  Widget _buildChatList(List<Chat> chats) {
+  Widget _buildChatList(List<Chat> chats, String currentUsername) {
     final c = context.seeuColors;
     final pinned = chats.where((ch) => ch.isPinned).toList();
     final unpinned = chats.where((ch) => !ch.isPinned).toList();
@@ -393,14 +395,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     if (pinned.isNotEmpty) {
       items.add(_SectionHeader(label: 'Закреплённые'));
       for (final chat in pinned) {
-        items.add(_buildSwipableTile(chat));
+        items.add(_buildSwipableTile(chat, currentUsername));
       }
       if (unpinned.isNotEmpty) {
         items.add(_SectionHeader(label: 'Все чаты'));
       }
     }
     for (final chat in unpinned) {
-      items.add(_buildSwipableTile(chat));
+      items.add(_buildSwipableTile(chat, currentUsername));
     }
 
     // Archive tile at the bottom (only if there are archived chats)
@@ -457,10 +459,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     );
   }
 
-  Widget _buildSwipableTile(Chat chat) {
+  Widget _buildSwipableTile(Chat chat, String currentUsername) {
     return _SwipableChatTile(
       key: ValueKey(chat.id),
       chat: chat,
+      currentUsername: currentUsername,
       onTap: () {
         HapticFeedback.selectionClick();
         context.push('/chat/${chat.id}');
@@ -600,10 +603,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 class _ChatTile extends ConsumerWidget {
   final Chat chat;
   final VoidCallback onTap;
+  final String currentUsername;
 
   const _ChatTile({
     required this.chat,
     required this.onTap,
+    required this.currentUsername,
   });
 
   @override
@@ -614,9 +619,13 @@ class _ChatTile extends ConsumerWidget {
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
-    // Для group last_message: «X: текст» если есть sender; для direct — как было.
+    // Для group last_message: «Вы: текст» если отправитель — текущий юзер,
+    // иначе «username: текст»; для direct — без префикса.
     final lastMsgWithPrefix = isGroup && chat.lastSenderUsername.isNotEmpty
-        ? '${chat.lastSenderUsername}: $lastMsg'
+        ? (currentUsername.isNotEmpty &&
+                chat.lastSenderUsername == currentUsername
+            ? 'Вы: $lastMsg'
+            : '${chat.lastSenderUsername}: $lastMsg')
         : lastMsg;
     // Real online status from backend (otherUser.isOnline, обновляется
     // через WS user.presence).
@@ -840,6 +849,7 @@ class _SectionHeader extends StatelessWidget {
 
 class _SwipableChatTile extends StatefulWidget {
   final Chat chat;
+  final String currentUsername;
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
   final VoidCallback onArchive;
@@ -849,6 +859,7 @@ class _SwipableChatTile extends StatefulWidget {
   const _SwipableChatTile({
     super.key,
     required this.chat,
+    required this.currentUsername,
     required this.onTap,
     required this.onTogglePin,
     required this.onArchive,
@@ -978,7 +989,7 @@ class _SwipableChatTileState extends State<_SwipableChatTile>
             ),
             child: ColoredBox(
               color: c.bg,
-              child: _ChatTile(chat: widget.chat, onTap: widget.onTap),
+              child: _ChatTile(chat: widget.chat, onTap: widget.onTap, currentUsername: widget.currentUsername),
             ),
           ),
         ],
@@ -1764,6 +1775,8 @@ class _ArchivedChatsScreenState extends ConsumerState<_ArchivedChatsScreen> {
     final c = context.seeuColors;
     // Watch live state so unarchiving updates the list immediately.
     final liveChats = ref.watch(chatListProvider).chats.where((ch) => ch.isArchived).toList();
+    final currentUsername =
+        ref.watch(authProvider.select((s) => s.user?.username)) ?? '';
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -1804,6 +1817,7 @@ class _ArchivedChatsScreenState extends ConsumerState<_ArchivedChatsScreen> {
                         return _SwipableChatTile(
                           key: ValueKey('arch_${chat.id}'),
                           chat: chat,
+                          currentUsername: currentUsername,
                           onTap: () => context.push('/chat/${chat.id}'),
                           onTogglePin: () =>
                               ref.read(chatListProvider.notifier).togglePin(chat.id),

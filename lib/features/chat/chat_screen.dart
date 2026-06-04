@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:flutter/material.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
@@ -588,6 +591,123 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Показывает меню выбора вложения: фото из галереи или файл.
+  void _showAttachMenu() {
+    if (_isUploading) return;
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.only(
+          left: 16, right: 16, top: 16,
+          bottom: 16 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: c.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: c.line, borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              onTap: () { Navigator.pop(ctx); _attachImage(); },
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              leading: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.12), shape: BoxShape.circle,
+                ),
+                child: Icon(PhosphorIcons.image(), color: Colors.blue, size: 20),
+              ),
+              title: Text('Фото из галереи', style: TextStyle(color: c.ink, fontWeight: FontWeight.w500)),
+            ),
+            ListTile(
+              onTap: () { Navigator.pop(ctx); _attachFile(); },
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              leading: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.12), shape: BoxShape.circle,
+                ),
+                child: Icon(PhosphorIcons.paperclip(), color: SeeUColors.accent, size: 20),
+              ),
+              title: Text('Файл', style: TextStyle(color: c.ink, fontWeight: FontWeight.w500)),
+              subtitle: Text('Видео, аудио, изображения', style: TextStyle(fontSize: 12, color: c.ink3)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Выбор файла через FilePicker → upload → send.
+  Future<void> _attachFile() async {
+    if (_isUploading) return;
+    HapticFeedback.selectionClick();
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: [
+        'jpg', 'jpeg', 'png', 'gif', 'webp',
+        'mp4', 'mov', 'webm',
+        'mp3', 'm4a', 'wav', 'aac', 'ogg',
+      ],
+      withData: kIsWeb,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final file = result.files.first;
+    final ext = (file.extension ?? '').toLowerCase();
+    final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext);
+    final isVideo = ['mp4', 'mov', 'webm'].contains(ext);
+    final isAudio = ['mp3', 'm4a', 'wav', 'aac', 'ogg'].contains(ext);
+    if (!isImage && !isVideo && !isAudio) return;
+    final mediaType = isImage ? 'image' : isVideo ? 'video' : 'audio';
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      final FormData formData;
+      if (kIsWeb || file.bytes != null) {
+        formData = FormData.fromMap({
+          'file': MultipartFile.fromBytes(file.bytes!, filename: file.name),
+        });
+      } else {
+        formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(file.path!, filename: file.name),
+        });
+      }
+      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+      final reply = _replyingTo;
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: mediaType,
+            replyTo: reply,
+          );
+      if (reply != null && mounted) setState(() => _replyingTo = null);
+      _scrollToBottom();
+    } on DioException catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Не удалось отправить: ${friendlyError(e)}'),
+      ));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
   /// Голосовое сообщение: расшариваем уже-готовый файл (recorder сохранил
   /// в temp), грузим как multipart на /media/upload и отправляем сообщение
   /// с attached_media_type='audio' → backend выставит kind='voice'.
@@ -598,9 +718,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(filePath),
-      });
+      final FormData formData;
+      if (kIsWeb) {
+        // На вебе record возвращает blob URL — прямая загрузка через fromFile
+        // невозможна. Показываем ошибку.
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Голосовые сообщения пока недоступны в веб-версии'),
+        ));
+        return;
+      } else {
+        final filename = filePath.split('/').last;
+        // Явно указываем audio/mp4 (m4a контейнер) чтобы бэкенд
+        // корректно определил тип без fallback на extension.
+        formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            filePath,
+            filename: filename,
+            contentType: MediaType('audio', 'mp4'),
+          ),
+        });
+      }
       final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
       final url = upload.data['data']['url'] as String;
 
@@ -612,6 +749,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             mediaDurationSeconds: durationSec,
             waveform: samples,
             replyTo: reply,
+            rethrowOnError: true,
           );
       if (reply != null && mounted) setState(() => _replyingTo = null);
       _scrollToBottom();
@@ -1603,9 +1741,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Image attachment button: pick → upload → send as image message.
+                  // Attach button: opens menu → photo from gallery or file.
                   GestureDetector(
-                    onTap: _isUploading ? null : _attachImage,
+                    onTap: _isUploading ? null : _showAttachMenu,
                     child: Container(
                       width: 44,
                       height: 44,
@@ -1622,7 +1760,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               ),
                             )
                           : Icon(
-                              PhosphorIconsRegular.image,
+                              PhosphorIcons.paperclip(),
                               size: 20,
                               color: c.ink2,
                             ),
