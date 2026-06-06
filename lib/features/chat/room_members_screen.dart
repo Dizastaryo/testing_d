@@ -97,7 +97,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
             // Content
             Expanded(
               child: membersState.isLoading && membersState.members.isEmpty
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const SeeUListSkeleton(count: 6)
                   : membersState.error != null && membersState.members.isEmpty
                       ? _buildError(c, membersState.error!)
                       : _buildList(c, membersState.members, myId, isCreator, isAdmin),

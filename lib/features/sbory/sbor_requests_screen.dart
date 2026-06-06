@@ -34,12 +34,34 @@ class SborRequestsScreen extends ConsumerStatefulWidget {
 }
 
 class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
+  List<SborJoinRequest>? _requests;
   final Set<String> _loading = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final async = ref.read(_requestsProvider(widget.sborId));
+      if (async.hasValue) setState(() => _requests = async.value!);
+    });
+  }
+
+  Future<void> _refresh() async {
+    final fresh = await ref.refresh(_requestsProvider(widget.sborId).future);
+    if (mounted) setState(() => _requests = fresh);
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final async = ref.watch(_requestsProvider(widget.sborId));
+
+    // Sync provider data into local list on first load.
+    if (_requests == null && async.hasValue) {
+      _requests = async.value!;
+    }
+
+    final count = _requests?.length;
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -72,7 +94,7 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Заявки',
+                          count != null ? 'Заявки ($count)' : 'Заявки',
                           style: TextStyle(
                             fontFamily: 'Fraunces',
                             fontSize: 22, fontWeight: FontWeight.w500,
@@ -91,55 +113,15 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
             ),
             // ── Body ───────────────────────────────────────────────
             Expanded(
-              child: async.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(
-                  child: Text('Ошибка: $e', style: TextStyle(color: c.ink2)),
-                ),
-                data: (requests) {
-                  if (requests.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 72, height: 72,
-                            decoration: BoxDecoration(
-                              color: c.surface2,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(PhosphorIcons.usersThree(), size: 34, color: c.ink4),
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Нет новых заявок',
-                            style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600, color: c.ink,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Как только кто-то попросится — увидишь здесь',
-                            style: TextStyle(fontSize: 13, color: c.ink3),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+              child: _requests == null
+                  ? async.when(
+                      loading: () => const SeeURequestListSkeleton(),
+                      error: (e, _) => Center(
+                        child: Text('Ошибка: $e', style: TextStyle(color: c.ink2)),
                       ),
-                    );
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-                    itemCount: requests.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) => _RequestCard(
-                      request: requests[i],
-                      isLoading: _loading.contains(requests[i].id),
-                      onApprove: () => _approve(requests[i]),
-                      onReject: () => _reject(requests[i]),
-                    ),
-                  );
-                },
-              ),
+                      data: (_) => const SeeURequestListSkeleton(),
+                    )
+                  : _buildList(c, _requests!),
             ),
           ],
         ),
@@ -147,22 +129,85 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
     );
   }
 
+  Widget _buildList(SeeUThemeColors c, List<SborJoinRequest> requests) {
+    if (requests.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        color: SeeUColors.accent,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: 400,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72, height: 72,
+                    decoration: BoxDecoration(
+                      color: c.surface2,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(PhosphorIcons.usersThree(), size: 34, color: c.ink4),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Нет новых заявок',
+                    style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600, color: c.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Как только кто-то попросится — увидишь здесь',
+                    style: TextStyle(fontSize: 13, color: c.ink3),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: SeeUColors.accent,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        itemCount: requests.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, i) => _RequestCard(
+          request: requests[i],
+          isLoading: _loading.contains(requests[i].id),
+          onApprove: () => _approve(requests[i]),
+          onReject: () => _reject(requests[i]),
+        ),
+      ),
+    );
+  }
+
   Future<void> _approve(SborJoinRequest req) async {
     if (_loading.contains(req.id)) return;
-    setState(() => _loading.add(req.id));
+    // Optimistic: remove immediately.
+    setState(() {
+      _loading.add(req.id);
+      _requests = _requests?.where((r) => r.id != req.id).toList();
+    });
     try {
       final api = ref.read(apiClientProvider);
       await api.post(ApiEndpoints.approveSborRequest(widget.sborId, req.id));
       if (!mounted) return;
-      ref.invalidate(_requestsProvider(widget.sborId));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${req.fullName} принят')),
       );
     } on DioException catch (e) {
+      // Roll back.
       if (!mounted) return;
+      setState(() => _requests = [req, ...?_requests]);
       final msg = e.response?.data?['error'] as String?;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg ?? 'Ошибка')),
+        SnackBar(content: Text(msg ?? 'Не удалось принять заявку')),
       );
     } finally {
       if (mounted) setState(() => _loading.remove(req.id));
@@ -171,17 +216,21 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
 
   Future<void> _reject(SborJoinRequest req) async {
     if (_loading.contains(req.id)) return;
-    setState(() => _loading.add(req.id));
+    // Optimistic: remove immediately.
+    setState(() {
+      _loading.add(req.id);
+      _requests = _requests?.where((r) => r.id != req.id).toList();
+    });
     try {
       final api = ref.read(apiClientProvider);
       await api.post(ApiEndpoints.rejectSborRequest(widget.sborId, req.id));
-      if (!mounted) return;
-      ref.invalidate(_requestsProvider(widget.sborId));
     } on DioException catch (e) {
+      // Roll back.
       if (!mounted) return;
+      setState(() => _requests = [req, ...?_requests]);
       final msg = e.response?.data?['error'] as String?;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg ?? 'Ошибка')),
+        SnackBar(content: Text(msg ?? 'Не удалось отклонить заявку')),
       );
     } finally {
       if (mounted) setState(() => _loading.remove(req.id));

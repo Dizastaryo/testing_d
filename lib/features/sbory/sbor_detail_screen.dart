@@ -49,7 +49,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     return async.when(
       loading: () => Scaffold(
         backgroundColor: context.seeuColors.bg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SafeArea(child: SeeUSborDetailSkeleton()),
       ),
       error: (e, _) {
         final isNotFound = e is DioException && e.response?.statusCode == 404;

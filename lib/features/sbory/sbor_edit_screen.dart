@@ -1,12 +1,17 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:dio/dio.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import '../../core/providers/chat_provider.dart';
@@ -73,6 +78,11 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
   bool _noLimit = false;
   bool _submitting = false;
 
+  // Cover image state
+  XFile? _coverImage;      // newly picked file (not yet uploaded)
+  String? _coverUrl;       // existing cover URL from sbor
+  bool _deleteCover = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +103,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
     } else {
       _noLimit = true;
     }
+    _coverUrl = s.coverUrl;
     _titleCtrl.addListener(() => setState(() {}));
     _placeCtrl.addListener(() => setState(() {}));
   }
@@ -124,6 +135,8 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _buildCoverPicker(c),
+                        const SizedBox(height: 18),
                         _buildTitleField(c),
                         const SizedBox(height: 18),
                         _buildCategoryPicker(c),
@@ -194,6 +207,159 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
         ],
       ),
     );
+  }
+
+  String? get _resolvedCoverUrl {
+    if (_coverUrl == null || _coverUrl!.isEmpty) return null;
+    return _coverUrl!.startsWith('/') ? AppConfig.apiOrigin + _coverUrl! : _coverUrl!;
+  }
+
+  Widget _buildCoverPicker(SeeUThemeColors c) {
+    final hasExisting = _resolvedCoverUrl != null && !_deleteCover && _coverImage == null;
+    final hasNew = _coverImage != null;
+    final isEmpty = !hasExisting && !hasNew;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _label('Обложка сбора'),
+            const SizedBox(width: 6),
+            Text('необязательно', style: TextStyle(fontSize: 11, color: c.ink4)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _pickCoverImage,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 150,
+            decoration: BoxDecoration(
+              color: isEmpty
+                  ? SeeUColors.accentSoft.withValues(alpha: 0.35)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isEmpty
+                    ? SeeUColors.accent.withValues(alpha: 0.25)
+                    : SeeUColors.accent,
+                width: isEmpty ? 1 : 1.5,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: hasNew
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.file(File(_coverImage!.path), fit: BoxFit.cover),
+                      Positioned(
+                        top: 8, right: 8,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _coverImage = null),
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : hasExisting
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            imageUrl: _resolvedCoverUrl!,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                          ),
+                          // Overlay hint to tap and replace
+                          Positioned(
+                            bottom: 8, right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'Заменить',
+                                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          // Delete button
+                          Positioned(
+                            top: 8, right: 8,
+                            child: GestureDetector(
+                              onTap: () => setState(() => _deleteCover = true),
+                              child: Container(
+                                width: 28, height: 28,
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 48, height: 48,
+                            decoration: BoxDecoration(
+                              color: SeeUColors.accent.withValues(alpha: 0.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              PhosphorIcons.image(PhosphorIconsStyle.duotone),
+                              size: 24, color: SeeUColors.accent,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Добавить обложку',
+                            style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600,
+                              color: SeeUColors.accent,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Обложка сбора и чата',
+                            style: TextStyle(fontSize: 12, color: c.ink3),
+                          ),
+                        ],
+                      ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickCoverImage() async {
+    HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      setState(() {
+        _coverImage = file;
+        _deleteCover = false;
+      });
+    }
   }
 
   Widget _buildTitleField(SeeUThemeColors c) {
@@ -664,6 +830,22 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
         );
       }
 
+      // Handle cover image
+      String? newCoverUrl;
+      if (_coverImage != null) {
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(
+            _coverImage!.path,
+            filename: _coverImage!.name,
+          ),
+        });
+        final uploadRes = await api.post(ApiEndpoints.mediaUpload, data: formData);
+        final resData = uploadRes.data is Map ? uploadRes.data : {};
+        newCoverUrl = (resData['data']?['url'] ?? resData['url'] ?? '') as String;
+      } else if (_deleteCover) {
+        newCoverUrl = '';
+      }
+
       final body = <String, dynamic>{
         'title': _titleCtrl.text.trim(),
         'place': _placeCtrl.text.trim(),
@@ -672,6 +854,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
         'max_slots': _noLimit ? null : _slots,
         'price': _isPaid ? (int.tryParse(_priceCtrl.text.trim()) ?? 0) : 0,
         'category': _category.name,
+        if (newCoverUrl != null) 'cover_url': newCoverUrl,
         if (dt != null) 'scheduled_at': dt.toUtc().toIso8601String(),
         if (_flexibleTime) 'scheduled_at': null,
       };

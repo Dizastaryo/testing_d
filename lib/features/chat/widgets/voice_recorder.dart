@@ -460,7 +460,7 @@ class _LiveWavePainter extends CustomPainter {
     final paint = Paint()
       ..color = SeeUColors.accent
       ..style = PaintingStyle.fill;
-    const barW = 3.0;
+    const barW = 3.5;
     const gap = 2.0;
     final centerY = size.height / 2;
     final n = ((size.width + gap) / (barW + gap)).floor();
@@ -469,13 +469,13 @@ class _LiveWavePainter extends CustomPainter {
     final pad = n - visible.length;
     for (var i = 0; i < n; i++) {
       final v = i < pad ? 0.05 : visible[i - pad];
-      final h = math.max(2.0, v * size.height * 0.9);
+      final h = math.max(2.0, v * size.height * 0.92);
       final x = i * (barW + gap);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
               center: Offset(x + barW / 2, centerY), width: barW, height: h),
-          const Radius.circular(2),
+          const Radius.circular(2.5),
         ),
         paint,
       );
@@ -521,16 +521,18 @@ class _PulsingDotState extends State<_PulsingDot>
 
   @override
   Widget build(BuildContext context) {
+    final curve = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
     return FadeTransition(
-      opacity: Tween(begin: 0.25, end: 1.0).animate(
-        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-      ),
-      child: Container(
-        width: 8,
-        height: 8,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: SeeUColors.error,
+      opacity: Tween(begin: 0.35, end: 1.0).animate(curve),
+      child: ScaleTransition(
+        scale: Tween(begin: 0.75, end: 1.0).animate(curve),
+        child: Container(
+          width: 9,
+          height: 9,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: SeeUColors.error,
+          ),
         ),
       ),
     );

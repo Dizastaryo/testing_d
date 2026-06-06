@@ -66,6 +66,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   int _messageCount = 0;
   bool _atBottom = true;
+  bool _sendError = false;
+  String _failedText = '';
 
   @override
   void initState() {
@@ -428,26 +430,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return;
     }
 
-    if (overrideText == null) {
-      _textController.clear();
-    }
-
     final reply = _replyingTo;
     // CHAT-11: TTL prok'ается + сбрасывается после send'а (per-message, не
     // chat-wide). Если юзер хочет каждое сообщение с TTL — нужно tap'ать
     // ⏱ перед каждым отправлением. Чтобы не было «забыл выключить»
     // ситуаций когда disappearing включается случайно для всего чата.
     final ttl = _ttlSeconds ?? 0;
-    await ref
-        .read(chatMessagesProvider(widget.chatId).notifier)
-        .sendMessage(text, replyTo: reply, expiresInSeconds: ttl);
-    if (mounted) {
+    if (overrideText == null) {
+      _textController.clear();
+    }
+    if (mounted && _sendError) setState(() => _sendError = false);
+    try {
+      await ref
+          .read(chatMessagesProvider(widget.chatId).notifier)
+          .sendMessage(text, replyTo: reply, expiresInSeconds: ttl,
+              rethrowOnError: true);
+      if (mounted) {
+        setState(() {
+          if (reply != null) _replyingTo = null;
+          _ttlSeconds = null;
+          _failedText = '';
+        });
+      }
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      // Restore text so user can retry without retyping.
+      if (overrideText == null && _textController.text.isEmpty) {
+        _textController.text = text;
+        _textController.selection = TextSelection.collapsed(
+            offset: _textController.text.length);
+      }
       setState(() {
-        if (reply != null) _replyingTo = null;
-        _ttlSeconds = null;
+        _sendError = true;
+        _failedText = text;
       });
     }
-    _scrollToBottom();
   }
 
   /// Bottom-sheet выбора TTL (CHAT-11). Опции: off / 1h / 24h / 7d.
@@ -1162,6 +1180,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     ref.listen<ChatMessagesState>(chatMessagesProvider(widget.chatId),
         (prev, next) {
       _messageCount = next.messages.length;
+      // Show SnackBar when loading older messages fails.
+      if (next.loadOlderFailed && prev?.loadOlderFailed != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось загрузить старые сообщения')),
+        );
+      }
       // Ignore pagination loads — don't jump to bottom when loading older msgs.
       if (prev?.isLoadingOlder == true && !next.isLoadingOlder) return;
       final prevCount = prev?.messages.length ?? 0;
@@ -1434,13 +1458,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               // Messages
               Expanded(
                 child: msgState.isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          color: SeeUColors.accent,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : msgState.messages.isEmpty
+                    ? const SeeUMessagesSkeleton()
+                    : msgState.error != null
+                        ? _buildLoadErrorState(msgState.error!)
+                        : msgState.messages.isEmpty
                         ? _buildEmptyChat(otherUser)
                         : Stack(
                             children: [
@@ -1674,6 +1695,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Send error banner
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: _sendError
+              ? _buildSendErrorBanner(c)
+              : const SizedBox.shrink(),
+        ),
         // Edit banner
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
@@ -1961,6 +1990,88 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadErrorState(String error) {
+    final c = context.seeuColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIconsRegular.cloudSlash, size: 52, color: c.ink3),
+            const SizedBox(height: 16),
+            Text(
+              'Не удалось загрузить сообщения',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.ink),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              error,
+              style: TextStyle(fontSize: 12, color: c.ink3),
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: () => ref.invalidate(chatMessagesProvider(widget.chatId)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Повторить',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSendErrorBanner(SeeUThemeColors c) {
+    return Container(
+      color: SeeUColors.error.withValues(alpha: 0.10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(PhosphorIconsRegular.warningCircle, size: 16, color: SeeUColors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Не удалось отправить',
+              style: TextStyle(fontSize: 13, color: SeeUColors.error),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _sendMessage(_failedText),
+            child: Text(
+              'Повторить',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: SeeUColors.error,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => setState(() {
+              _sendError = false;
+              _failedText = '';
+            }),
+            child: Icon(PhosphorIconsRegular.x, size: 16, color: SeeUColors.error),
+          ),
+        ],
       ),
     );
   }

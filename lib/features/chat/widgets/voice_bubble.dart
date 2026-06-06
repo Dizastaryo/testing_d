@@ -261,7 +261,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
       },
       child: Container(
       // #23: уменьшили minWidth 200→160 — меньше overflow на узких экранах
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
       padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
       decoration: BoxDecoration(
         gradient: widget.isMine ? SeeUGradients.heroOrange : null,
@@ -342,7 +342,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                         }
                       },
                       child: SizedBox(
-                        height: 36,
+                        height: 40,
                         child: CustomPaint(
                           painter: _StaticWavePainter(
                             samples: widget.waveformSamples ?? const [],
@@ -354,6 +354,7 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                                 ? Colors.white
                                 : SeeUColors.accent,
                             seekIndicator: _seekIndicator,
+                            showPlaybackKnob: _player.playing || _position > Duration.zero,
                           ),
                         ),
                       ),
@@ -454,6 +455,7 @@ class _StaticWavePainter extends CustomPainter {
   final Color colorBase;
   final Color colorPlayed;
   final double? seekIndicator; // 0..1, drag seek line
+  final bool showPlaybackKnob; // показывать кружок на текущей позиции
 
   _StaticWavePainter({
     required this.samples,
@@ -461,23 +463,22 @@ class _StaticWavePainter extends CustomPainter {
     required this.colorBase,
     required this.colorPlayed,
     this.seekIndicator,
+    this.showPlaybackKnob = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // #33: унифицировали с рекордером — было 2px, стало 3px
     const barW = 3.0;
     const gap = 2.0;
     final n = ((size.width + gap) / (barW + gap)).floor();
     final centerY = size.height / 2;
-    final total = n;
-    final playedBars = (progress * total).round();
+    final progressF = progress * n; // fractional bar index
+    final playedBars = progressF.floor();
+
     for (var i = 0; i < n; i++) {
-      // Если samples длинее n — берём ближайший downsample. Если меньше —
-      // зацикливаем для bar-плейсхолдера.
       double v;
       if (samples.isEmpty) {
-        // Плоская линия вместо фейкового синуса — не вводим юзера в заблуждение.
+        // Плоская линия — не вводим юзера в заблуждение.
         v = 0.35;
       } else {
         final idx = ((i / n) * samples.length).floor().clamp(0, samples.length - 1);
@@ -485,27 +486,52 @@ class _StaticWavePainter extends CustomPainter {
       }
       final h = math.max(3.0, v * size.height * 0.95);
       final x = i * (barW + gap);
-      final paint = Paint()
-        ..color = i < playedBars ? colorPlayed : colorBase
-        ..style = PaintingStyle.fill;
+
+      // Плавный переход на границе воспроизведения.
+      final Color barColor;
+      if (i < playedBars) {
+        barColor = colorPlayed;
+      } else if (i == playedBars) {
+        final frac = progressF - playedBars;
+        barColor = Color.lerp(colorBase, colorPlayed, frac) ?? colorBase;
+      } else {
+        barColor = colorBase;
+      }
+
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(
               center: Offset(x + barW / 2, centerY), width: barW, height: h),
-          const Radius.circular(1.5),
+          const Radius.circular(2.0),
         ),
-        paint,
+        Paint()
+          ..color = barColor
+          ..style = PaintingStyle.fill,
       );
     }
-    // Seek drag indicator line
+
+    // Seek drag indicator: line + large circle knob.
     if (seekIndicator != null) {
-      final x = seekIndicator! * size.width;
+      final x = (seekIndicator! * size.width).clamp(0.0, size.width);
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
         Paint()
-          ..color = colorPlayed
+          ..color = colorPlayed.withValues(alpha: 0.75)
           ..strokeWidth = 1.5,
+      );
+      canvas.drawCircle(
+        Offset(x, centerY),
+        5.5,
+        Paint()..color = colorPlayed,
+      );
+    } else if (showPlaybackKnob && progress > 0) {
+      // Постоянный маленький кружок на текущей позиции воспроизведения.
+      final x = (progress * size.width).clamp(0.0, size.width);
+      canvas.drawCircle(
+        Offset(x, centerY),
+        4.0,
+        Paint()..color = colorPlayed,
       );
     }
   }
@@ -513,8 +539,9 @@ class _StaticWavePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _StaticWavePainter old) =>
       old.progress != progress ||
-      old.samples.length != samples.length ||
+      old.samples != samples ||
       old.colorBase != colorBase ||
       old.colorPlayed != colorPlayed ||
-      old.seekIndicator != seekIndicator;
+      old.seekIndicator != seekIndicator ||
+      old.showPlaybackKnob != showPlaybackKnob;
 }

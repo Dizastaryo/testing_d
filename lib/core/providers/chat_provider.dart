@@ -663,12 +663,16 @@ class ChatMessagesState {
   final bool isLoadingOlder;
   final bool hasMore;
   final Chat? chat;
+  final String? error;
+  final bool loadOlderFailed;
   const ChatMessagesState({
     this.messages = const [],
     this.isLoading = false,
     this.isLoadingOlder = false,
     this.hasMore = true,
     this.chat,
+    this.error,
+    this.loadOlderFailed = false,
   });
   ChatMessagesState copyWith({
     List<ChatMessage>? messages,
@@ -676,6 +680,8 @@ class ChatMessagesState {
     bool? isLoadingOlder,
     bool? hasMore,
     Chat? chat,
+    String? error,
+    bool? loadOlderFailed,
   }) =>
       ChatMessagesState(
         messages: messages ?? this.messages,
@@ -683,6 +689,8 @@ class ChatMessagesState {
         isLoadingOlder: isLoadingOlder ?? this.isLoadingOlder,
         hasMore: hasMore ?? this.hasMore,
         chat: chat ?? this.chat,
+        error: error ?? this.error,
+        loadOlderFailed: loadOlderFailed ?? this.loadOlderFailed,
       );
 }
 
@@ -868,13 +876,13 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       }
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] load error', e, st);
-      state = const ChatMessagesState(messages: []);
+      state = ChatMessagesState(error: e.toString());
     }
   }
 
   Future<void> loadOlderMessages() async {
     if (state.isLoadingOlder || !state.hasMore) return;
-    state = state.copyWith(isLoadingOlder: true);
+    state = state.copyWith(isLoadingOlder: true, loadOlderFailed: false);
     try {
       final response = await _api.get(
         ApiEndpoints.chatMessages(chatId),
@@ -898,7 +906,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       }
     } catch (e, st) {
       appLog.error('[ChatMessagesNotifier] loadOlderMessages error', e, st);
-      state = state.copyWith(isLoadingOlder: false);
+      state = state.copyWith(isLoadingOlder: false, loadOlderFailed: true);
     }
   }
 

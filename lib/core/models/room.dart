@@ -76,6 +76,7 @@ class Room {
   final int participantCount;
   final List<RoomParticipant> participants;
   final String? lastMessage;
+  final String lastSenderUsername;
   final DateTime? lastMessageAt;
   final bool isJoined;
   final bool isMuted;
@@ -97,6 +98,7 @@ class Room {
     this.participantCount = 0,
     this.participants = const [],
     this.lastMessage,
+    this.lastSenderUsername = '',
     this.lastMessageAt,
     this.isJoined = false,
     this.isMuted = false,
@@ -123,6 +125,7 @@ class Room {
                 .toList() ??
             [],
         lastMessage: j['last_message'] as String?,
+        lastSenderUsername: j['last_sender_username'] as String? ?? '',
         lastMessageAt: j['last_message_at'] != null
             ? DateTime.tryParse(j['last_message_at'] as String)
             : null,
@@ -145,6 +148,7 @@ class Room {
     bool? isActive,
     bool? isAdmin,
     String? lastMessage,
+    String? lastSenderUsername,
     DateTime? lastMessageAt,
     String? name,
     String? description,
@@ -165,6 +169,7 @@ class Room {
         participantCount: participantCount ?? this.participantCount,
         participants: participants ?? this.participants,
         lastMessage: lastMessage ?? this.lastMessage,
+        lastSenderUsername: lastSenderUsername ?? this.lastSenderUsername,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         isJoined: isJoined ?? this.isJoined,
         isMuted: isMuted ?? this.isMuted,

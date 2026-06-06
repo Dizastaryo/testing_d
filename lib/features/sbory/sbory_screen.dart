@@ -253,7 +253,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             _buildCategoryChips(c),
             Expanded(
               child: async.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => const SeeUSborCardSkeleton(),
                 error: (e, _) => Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -588,23 +588,39 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
     );
   }
 
+  Future<void> _refresh() {
+    if (_showBookmarked) {
+      return ref.refresh(_bookmarkedSboryProvider.future);
+    } else if (_showMine) {
+      return ref.refresh(_mySboryProvider.future);
+    } else {
+      final city = ref.read(sboryCityProvider);
+      return ref.refresh(
+          _sboryProvider((type: _typeFilter, category: _catFilter?.name, city: city)).future);
+    }
+  }
+
   Widget _buildList(SeeUThemeColors c, List<Sbor> items) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-      itemCount: items.length,
-      itemBuilder: (context, i) {
-        final s = items[i];
-        if (i == 0 && s.live) {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: SeeUColors.accent,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        itemCount: items.length,
+        itemBuilder: (context, i) {
+          final s = items[i];
+          if (i == 0 && s.live) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: SborHeroCard(sbor: s, onTap: () => _openDetail(s.id)),
+            );
+          }
           return Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: SborHeroCard(sbor: s, onTap: () => _openDetail(s.id)),
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SborCard(sbor: s, onTap: () => _openDetail(s.id)),
           );
-        }
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: SborCard(sbor: s, onTap: () => _openDetail(s.id)),
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -626,7 +642,14 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
 
   Widget _buildEmpty(SeeUThemeColors c) {
     final hasFilter = _hasActiveFilter;
-    return Center(
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: SeeUColors.accent,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: SizedBox(
+          height: 400,
+          child: Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -703,6 +726,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               ),
             ),
         ],
+      ),
+          ),
+        ),
       ),
     );
   }

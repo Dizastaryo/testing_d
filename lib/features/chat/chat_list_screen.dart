@@ -268,6 +268,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   // ─── Rooms tab ───────────────────────────────────────────────────
 
   Widget _buildRoomsTab(SeeUThemeColors c) {
+    final currentUsername =
+        ref.watch(authProvider.select((s) => s.user?.username)) ?? '';
     final roomState = ref.watch(roomListProvider);
     final q = _roomSearchQuery.toLowerCase();
     final rooms = q.isEmpty
@@ -321,7 +323,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
         ),
         Expanded(
           child: roomState.isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? const SeeURoomCardSkeleton()
               : rooms.isEmpty
                   ? (_roomSearchQuery.isNotEmpty
                       ? Center(child: Text('Ничего не найдено', style: TextStyle(color: c.ink3)))
@@ -334,6 +336,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                         itemCount: rooms.length,
                         itemBuilder: (_, i) => _RoomCard(
                           room: rooms[i],
+                          currentUsername: currentUsername,
                           onTap: () => context.push('/room/${rooms[i].id}'),
                         ),
                       ),
@@ -619,14 +622,20 @@ class _ChatTile extends ConsumerWidget {
     final hasUnread = chat.unreadCount > 0;
     final lastMsg = chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
-    // Для group last_message: «Вы: текст» если отправитель — текущий юзер,
-    // иначе «username: текст»; для direct — без префикса.
-    final lastMsgWithPrefix = isGroup && chat.lastSenderUsername.isNotEmpty
-        ? (currentUsername.isNotEmpty &&
-                chat.lastSenderUsername == currentUsername
-            ? 'Вы: $lastMsg'
-            : '${chat.lastSenderUsername}: $lastMsg')
-        : lastMsg;
+    // Если отправитель — текущий юзер → «Вы: текст».
+    // Для group: если чужой → «username: текст».
+    // Для direct: если чужой → без префикса (имя и так в заголовке чата).
+    final String lastMsgWithPrefix;
+    if (lastMsg.isEmpty || chat.lastSenderUsername.isEmpty) {
+      lastMsgWithPrefix = lastMsg;
+    } else if (currentUsername.isNotEmpty &&
+        chat.lastSenderUsername == currentUsername) {
+      lastMsgWithPrefix = 'Вы: $lastMsg';
+    } else if (isGroup) {
+      lastMsgWithPrefix = '${chat.lastSenderUsername}: $lastMsg';
+    } else {
+      lastMsgWithPrefix = lastMsg;
+    }
     // Real online status from backend (otherUser.isOnline, обновляется
     // через WS user.presence).
     final isOnline = !isGroup && (user?.isOnline ?? false);
@@ -1589,9 +1598,14 @@ class _TabChip extends StatelessWidget {
 
 class _RoomCard extends StatelessWidget {
   final Room room;
+  final String currentUsername;
   final VoidCallback onTap;
 
-  const _RoomCard({required this.room, required this.onTap});
+  const _RoomCard({
+    required this.room,
+    required this.currentUsername,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1689,11 +1703,7 @@ class _RoomCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    room.lastMessage?.isNotEmpty == true
-                        ? room.lastMessage!
-                        : room.description?.isNotEmpty == true
-                            ? room.description!
-                            : isVoice ? 'Голосовая комната' : 'Текстовая комната',
+                    _roomLastMsgLabel(isVoice),
                     style: TextStyle(fontSize: 13, color: c.ink3),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                   ),
@@ -1710,6 +1720,21 @@ class _RoomCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _roomLastMsgLabel(bool isVoice) {
+    final msg = room.lastMessage;
+    if (msg == null || msg.isEmpty) {
+      return room.description?.isNotEmpty == true
+          ? room.description!
+          : isVoice ? 'Голосовая комната' : 'Текстовая комната';
+    }
+    if (room.lastSenderUsername.isEmpty) return msg;
+    if (currentUsername.isNotEmpty &&
+        room.lastSenderUsername == currentUsername) {
+      return 'Вы: $msg';
+    }
+    return '${room.lastSenderUsername}: $msg';
   }
 }
 

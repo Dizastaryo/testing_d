@@ -344,7 +344,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     if (room == null && detailState.isLoading) {
       return Scaffold(
         backgroundColor: c.bg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SeeUMessagesSkeleton(),
       );
     }
     if (room == null) {
@@ -867,7 +867,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Widget _buildMessages(
       SeeUThemeColors c, Room room, String myId, RoomMessagesState msgsState) {
     if (msgsState.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const SeeUMessagesSkeleton();
     }
 
     if (msgsState.messages.isEmpty) {
