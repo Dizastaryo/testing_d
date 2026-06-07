@@ -572,7 +572,7 @@ class ChatMessageBubble extends StatelessWidget {
     return Text(
       message.text,
       style: SeeUTypography.body.copyWith(
-        fontSize: 22,
+        fontSize: 14,
         color: isMine ? Colors.white : c.ink,
         height: 1.4,
       ),
