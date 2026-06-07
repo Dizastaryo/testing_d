@@ -12,98 +12,23 @@ import '../../../core/providers/sticker_provider.dart';
 // ---------------------------------------------------------------------------
 const _emojiCategories = {
   'Эмоции': [
-    '😀',
-    '😂',
-    '🥲',
-    '😍',
-    '😎',
-    '😭',
-    '😡',
-    '🤔',
-    '🤩',
-    '🥳',
-    '😴',
-    '🥺',
-    '😱',
-    '😏',
-    '🤗',
-    '😐',
-    '🫠',
-    '🤭',
-    '🫡',
-    '😇',
-    '🤪',
-    '😋',
-    '🥴',
-    '😤',
-    '🫢',
-    '😬',
-    '🙃',
-    '😑',
-    '😶',
+    '😀', '😂', '🥲', '😍', '😎', '😭', '😡', '🤔', '🤩', '🥳',
+    '😴', '🥺', '😱', '😏', '🤗', '😐', '🫠', '🤭', '🫡', '😇',
+    '🤪', '😋', '🥴', '😤', '🫢', '😬', '🙃', '😑', '😶',
+    '🥰', '😘', '😜', '😅', '😉', '😊', '🤣', '☺️', '😌', '😔',
+    '🤯', '🤠', '🤓', '🤫', '😶‍🌫️',
   ],
   'Сердечки': [
-    '❤️',
-    '🧡',
-    '💛',
-    '💚',
-    '💙',
-    '💜',
-    '🖤',
-    '🤍',
-    '💔',
-    '💖',
-    '💯',
-    '✨',
-    '💕',
-    '💞',
-    '💓',
-    '💗',
-    '❣️',
-    '💝',
-    '🫶',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💖',
+    '💯', '✨', '💕', '💞', '💓', '💗', '❣️', '💝', '🫶',
   ],
   'Жесты': [
-    '👍',
-    '👎',
-    '👏',
-    '🙌',
-    '🙏',
-    '💪',
-    '🤝',
-    '👌',
-    '✌️',
-    '🤘',
-    '🫶',
-    '🤜',
-    '🤛',
-    '👊',
-    '✊',
-    '🤙',
-    '🫰',
-    '🤞',
-    '🫵',
+    '👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👌', '✌️', '🤘',
+    '🫶', '🤜', '🤛', '👊', '✊', '🤙', '🫰', '🤞', '🫵',
   ],
   'Прочее': [
-    '🔥',
-    '🎉',
-    '🚀',
-    '⭐',
-    '⚡',
-    '💀',
-    '👀',
-    '🎯',
-    '💊',
-    '🏆',
-    '🎁',
-    '🫧',
-    '🌈',
-    '🍕',
-    '🍔',
-    '🎶',
-    '🤡',
-    '👾',
-    '🧠',
+    '🔥', '🎉', '🚀', '⭐', '⚡', '💀', '👀', '🎯', '💊', '🏆',
+    '🎁', '🫧', '🌈', '🍕', '🍔', '🎶', '🤡', '👾', '🧠',
   ],
 };
 
@@ -229,34 +154,64 @@ class _EmojiTab extends StatelessWidget {
             Wrap(
               spacing: 4,
               runSpacing: 4,
-              children: entry.value.map((emoji) {
-                return Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => onSelected(emoji),
-                    borderRadius: BorderRadius.circular(SeeURadii.small),
-                    splashColor: SeeUColors.accent.withValues(alpha: 0.2),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: c.surface2,
-                        borderRadius: BorderRadius.circular(SeeURadii.small),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        emoji,
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
+              children: entry.value
+                  .map((emoji) => _EmojiTapButton(
+                        emoji: emoji,
+                        onTap: () => onSelected(emoji),
+                      ))
+                  .toList(),
             ),
             const SizedBox(height: 4),
           ],
         );
       }).toList(),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Animated emoji tap button
+// ---------------------------------------------------------------------------
+
+class _EmojiTapButton extends StatefulWidget {
+  final String emoji;
+  final VoidCallback onTap;
+
+  const _EmojiTapButton({required this.emoji, required this.onTap});
+
+  @override
+  State<_EmojiTapButton> createState() => _EmojiTapButtonState();
+}
+
+class _EmojiTapButtonState extends State<_EmojiTapButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        widget.onTap();
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) setState(() => _pressed = false);
+        });
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 1.3 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.small),
+          ),
+          alignment: Alignment.center,
+          child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
+        ),
+      ),
     );
   }
 }

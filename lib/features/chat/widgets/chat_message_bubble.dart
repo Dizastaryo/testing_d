@@ -255,6 +255,18 @@ class ChatMessageBubble extends StatelessWidget {
     return _isEmojiOnlyText(msg.text.trim());
   }
 
+  /// Counts visible emoji units (excludes ZWJ, variation selectors, skin tones).
+  static int _countEmojiUnits(String text) {
+    int count = 0;
+    for (final r in text.runes) {
+      if (r == 0x200D) continue; // ZWJ
+      if (r >= 0xFE00 && r <= 0xFE0F) continue; // variation selectors
+      if (r >= 0x1F3FB && r <= 0x1F3FF) continue; // skin tone modifiers
+      count++;
+    }
+    return count;
+  }
+
   // B1/B2/B3/B4/B5: Redesigned bubble container with gradient, inline time
   Widget _buildBubbleContainer(
       ChatMessage msg, bool mine, SeeUThemeColors c, String time) {
@@ -279,7 +291,13 @@ class ChatMessageBubble extends StatelessWidget {
           crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(msg.text.trim(), style: const TextStyle(fontSize: 28, height: 1.2)),
+            Text(
+              msg.text.trim(),
+              style: TextStyle(
+                fontSize: _countEmojiUnits(msg.text.trim()) <= 3 ? 48.0 : 36.0,
+                height: 1.1,
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Row(
@@ -554,7 +572,7 @@ class ChatMessageBubble extends StatelessWidget {
     return Text(
       message.text,
       style: SeeUTypography.body.copyWith(
-        fontSize: 14,
+        fontSize: 22,
         color: isMine ? Colors.white : c.ink,
         height: 1.4,
       ),
