@@ -42,7 +42,7 @@ class SborEditScreen extends ConsumerWidget {
     return async.when(
       loading: () => Scaffold(
         backgroundColor: c.bg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SafeArea(child: SeeUSborDetailSkeleton()),
       ),
       error: (e, _) => Scaffold(
         backgroundColor: c.bg,

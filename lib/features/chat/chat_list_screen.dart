@@ -124,6 +124,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                         child: Icon(PhosphorIconsRegular.caretLeft, size: 22, color: c.ink),
                       ),
                     ),
+                  Text(
+                    _showRooms ? 'Комнаты' : 'Сообщения',
+                    style: TextStyle(
+                      fontFamily: 'Fraunces',
+                      fontSize: 24, fontWeight: FontWeight.w500,
+                      letterSpacing: -0.3, height: 1.1, color: c.ink,
+                    ),
+                  ),
                   const Spacer(),
                   if (!_showRooms) ...[
                     GestureDetector(
@@ -1847,20 +1855,31 @@ class _ArchivedChatsScreenState extends ConsumerState<_ArchivedChatsScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
               child: Row(
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Icon(PhosphorIconsRegular.caretLeft, size: 22, color: c.ink),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        shape: BoxShape.circle,
+                        boxShadow: SeeUShadows.sm,
+                      ),
+                      child: Icon(
+                        PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                        size: 16, color: c.ink,
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Text(
                     'Архив',
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: c.ink,
+                      fontFamily: 'Fraunces',
+                      fontSize: 22, fontWeight: FontWeight.w500,
+                      letterSpacing: -0.2, height: 1.1, color: c.ink,
                     ),
                   ),
                 ],
