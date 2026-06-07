@@ -844,60 +844,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Для prod-MVP этого хватает; полный picker — отдельная задача.
   static const _expandedEmojiCategories = {
     'Эмоции': [
-      '😀',
-      '😂',
-      '😍',
-      '😎',
-      '😭',
-      '😡',
-      '🤔',
-      '🤩',
-      '🥳',
-      '😴',
-      '🥺',
-      '😱'
+      '😀', '😂', '🤣', '😅', '😍', '🥰', '😘', '😎', '🤩', '🥳',
+      '😭', '😡', '🤔', '🥺', '😱', '🤗', '😏', '🙃', '😴', '🤫',
     ],
     'Сердечки': [
-      '❤️',
-      '🧡',
-      '💛',
-      '💚',
-      '💙',
-      '💜',
-      '🖤',
-      '🤍',
-      '💔',
-      '💖',
-      '💯',
-      '✨'
+      '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💖',
+      '💕', '💞', '❣️', '❤️‍🔥', '💯', '✨', '🫶', '💝',
     ],
     'Жесты': [
-      '👍',
-      '👎',
-      '👏',
-      '🙌',
-      '🙏',
-      '💪',
-      '🤝',
-      '👌',
-      '✌️',
-      '🤘',
-      '🫶',
-      '🫡'
+      '👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👌', '✌️', '🤘',
+      '🫶', '🤜', '🤛', '👊', '✊', '🤙', '🤞', '🫵',
     ],
     'Прочее': [
-      '🔥',
-      '🎉',
-      '🚀',
-      '⭐',
-      '⚡',
-      '💀',
-      '🥰',
-      '😅',
-      '🤯',
-      '🤡',
-      '👀',
-      '🎯'
+      '🔥', '🎉', '🚀', '⭐', '⚡', '💀', '👀', '🎯', '🏆', '🎁',
+      '🌈', '😤', '🤯', '🫡', '😬', '🥴', '🤡', '👾',
     ],
   };
 
@@ -1711,14 +1671,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ? _buildEditBanner(c)
               : const SizedBox.shrink(),
         ),
-        // D2: reply banner with slide-in animation
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          child: _replyingTo != null
-              ? _buildReplyBanner(_replyingTo!)
-              : const SizedBox.shrink(),
-        ),
+        // D2: reply banner — instant (no animation delay)
+        if (_replyingTo != null) _buildReplyBanner(_replyingTo!),
         Container(
           decoration: BoxDecoration(
             color: c.surface,
