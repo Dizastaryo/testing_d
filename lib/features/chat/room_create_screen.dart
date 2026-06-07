@@ -235,13 +235,22 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
 
   Widget _buildHeader(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: Icon(PhosphorIcons.x(), size: 22, color: c.ink),
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: c.surface,
+                shape: BoxShape.circle,
+                boxShadow: SeeUShadows.sm,
+              ),
+              child: Icon(PhosphorIcons.x(), size: 18, color: c.ink),
+            ),
           ),
+          const SizedBox(width: 10),
           Expanded(
             child: Text('Новая комната', style: SeeUTypography.title.copyWith(color: c.ink)),
           ),
@@ -440,10 +449,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
 
   Widget _buildCandidateList(SeeUThemeColors c) {
     if (_loadingCandidates) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const SeeUListSkeleton(count: 5);
     }
     if (_candidatesError != null) {
       return Padding(
