@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -59,17 +60,33 @@ class StickerListNotifier
         contentType: MediaType('image', 'png'),
       ),
     });
-    final resp = await _api.post(
-      ApiEndpoints.stickerRemoveBg,
-      data: formData,
-      options: Options(
-        receiveTimeout: const Duration(seconds: 120),
-        sendTimeout: const Duration(seconds: 30),
-        // FormData stream cannot be replayed — disable retry interceptor
-        extra: const {'_retryAttempt': 2},
-      ),
-    );
-    return resp.data['data']['url'] as String;
+    try {
+      final resp = await _api.post(
+        ApiEndpoints.stickerRemoveBg,
+        data: formData,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 120),
+          sendTimeout: const Duration(seconds: 30),
+          // FormData stream cannot be replayed — disable retry interceptor
+          extra: const {'_retryAttempt': 2},
+        ),
+      );
+      return resp.data['data']['url'] as String;
+    } on DioException catch (e) {
+      dev.log(
+        '[removeBg] DioException\n'
+        '  type:    ${e.type}\n'
+        '  status:  ${e.response?.statusCode}\n'
+        '  body:    ${e.response?.data}\n'
+        '  message: ${e.message}',
+        name: 'StickerProvider',
+        error: e,
+      );
+      rethrow;
+    } catch (e, st) {
+      dev.log('[removeBg] unexpected error: $e', name: 'StickerProvider', error: e, stackTrace: st);
+      rethrow;
+    }
   }
 
   /// Upload composited PNG [bytes] to media, then register as sticker.

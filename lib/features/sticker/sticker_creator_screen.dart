@@ -15,6 +15,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/sticker_provider.dart';
+import 'sticker_editor_screen.dart';
 
 class StickerCreatorResult {
   final String url;
@@ -238,12 +239,17 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
           await ref.read(stickerListProvider.notifier).removeBg(frameBytes);
       if (!mounted || requestId != _removeRequestId) return;
 
-      setState(() {
-        _bgRemovedUrl = url;
-        _processedUrl = url;
-        _imageLoaded = false;
-        _textOffset = const Offset(0, 0);
-      });
+      final String? result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute<String>(
+          fullscreenDialog: true,
+          builder: (_) => StickerEditorScreen(imageUrl: url),
+        ),
+      );
+
+      if (result != null && mounted) {
+        Navigator.of(context).pop(StickerCreatorResult(result));
+      }
     } catch (e) {
       if (mounted && requestId == _removeRequestId) {
         setState(() => _error = e.toString());
@@ -275,11 +281,18 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
           bytes,
         );
     if (!mounted) return;
-    setState(() {
-      _processedUrl = url;
-      _imageLoaded = false;
-      _textOffset = const Offset(0, 0);
-    });
+
+    final String? result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (_) => StickerEditorScreen(imageUrl: url),
+      ),
+    );
+
+    if (result != null && mounted) {
+      Navigator.of(context).pop(StickerCreatorResult(result));
+    }
   }
 
   void _openTextEditor() {
