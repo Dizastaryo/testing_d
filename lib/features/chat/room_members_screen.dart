@@ -34,6 +34,15 @@ class RoomMembersScreen extends ConsumerStatefulWidget {
 }
 
 class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -43,6 +52,15 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     final myMember = membersState.members.where((m) => m.userId == myId).firstOrNull;
     final isAdmin = isCreator || (myMember?.isAdmin ?? false);
 
+    final q = _searchQuery.trim().toLowerCase();
+    final filteredMembers = q.isEmpty
+        ? membersState.members
+        : membersState.members
+            .where((m) =>
+                m.fullName.toLowerCase().contains(q) ||
+                m.username.toLowerCase().contains(q))
+            .toList();
+
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
@@ -50,13 +68,25 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        shape: BoxShape.circle,
+                        boxShadow: SeeUShadows.sm,
+                      ),
+                      child: Icon(
+                        PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                        size: 16, color: c.ink,
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Участники · ${membersState.members.length}',
@@ -94,13 +124,61 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
             ),
             const SizedBox(height: 8),
 
+            // Search bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  style: SeeUTypography.body.copyWith(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск участника',
+                    hintStyle: SeeUTypography.body.copyWith(fontSize: 14, color: c.ink3),
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 8),
+                      child: Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink3, size: 16),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Icon(PhosphorIconsFill.xCircle, color: c.ink3, size: 16),
+                            ),
+                          )
+                        : null,
+                    suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 40),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+            ),
+
             // Content
             Expanded(
               child: membersState.isLoading && membersState.members.isEmpty
                   ? const SeeUListSkeleton(count: 6)
                   : membersState.error != null && membersState.members.isEmpty
                       ? _buildError(c, membersState.error!)
-                      : _buildList(c, membersState.members, myId, isCreator, isAdmin),
+                      : filteredMembers.isEmpty && _searchQuery.isNotEmpty
+                          ? Center(
+                              child: Text(
+                                'Никого не найдено',
+                                style: TextStyle(color: c.ink3, fontSize: 13),
+                              ),
+                            )
+                          : _buildList(c, filteredMembers, myId, isCreator, isAdmin),
             ),
 
             // Leave button for non-creators

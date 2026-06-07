@@ -1630,26 +1630,63 @@ class _RoomCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Icon container
-            Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isVoice
-                      ? [SeeUColors.accent, SeeUColors.accentSecondary]
-                      : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            // Cover / icon container
+            Builder(builder: (_) {
+              final hasCover = room.coverUrl != null && room.coverUrl!.isNotEmpty;
+              return Container(
+                width: 52, height: 52,
+                decoration: BoxDecoration(
+                  gradient: hasCover
+                      ? null
+                      : LinearGradient(
+                          colors: isVoice
+                              ? [SeeUColors.accent, SeeUColors.accentSecondary]
+                              : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                isVoice
-                    ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
-                    : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
-                size: 22, color: Colors.white,
-              ),
-            ),
+                clipBehavior: Clip.antiAlias,
+                child: hasCover
+                    ? CachedNetworkImage(
+                        imageUrl: room.coverUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isVoice
+                                  ? [SeeUColors.accent, SeeUColors.accentSecondary]
+                                  : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                            ),
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isVoice
+                                  ? [SeeUColors.accent, SeeUColors.accentSecondary]
+                                  : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                            ),
+                          ),
+                          child: Icon(
+                            isVoice
+                                ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
+                            size: 22, color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Icon(
+                          isVoice
+                              ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
+                              : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
+                          size: 22, color: Colors.white,
+                        ),
+                      ),
+              );
+            }),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
