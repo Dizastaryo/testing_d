@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -57,7 +56,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   // Video
   VideoPlayerController? _controller;
   String? _videoPath;
-  Timer? _debounceTimer;
   bool _isRemoving = false;
   double _videoSliderValue = 0;
   bool _videoReady = false;
@@ -67,7 +65,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
     _controller?.removeListener(_syncVideoSlider);
     _controller?.dispose();
     super.dispose();
@@ -115,7 +112,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   }
 
   Future<void> _disposeVideo() async {
-    _debounceTimer?.cancel();
     _controller?.removeListener(_syncVideoSlider);
     await _controller?.dispose();
     _controller = null;
@@ -157,7 +153,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
     final VideoPlayerController? c = _controller;
     if (c == null || !c.value.isInitialized) return;
 
-    _debounceTimer?.cancel();
     _removeRequestId++;
 
     final Duration position = Duration(
@@ -171,10 +166,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _bgRemovedUrl = null;
       _isRemoving = false;
       _error = null;
-    });
-
-    _debounceTimer = Timer(const Duration(milliseconds: 650), () {
-      _extractAndRemoveBgAt(position);
     });
   }
 
