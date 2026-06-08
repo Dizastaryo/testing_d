@@ -71,6 +71,12 @@ class EditorBottomBar extends ConsumerWidget {
               c: c,
               onTap: () => _showSheet(context, const LayersPanelSheet()),
             ),
+            _ToolButton(
+              icon: PhosphorIconsRegular.smiley,
+              label: 'Эмодзи',
+              c: c,
+              onTap: () {},
+            ),
           ],
         ),
       ),

@@ -615,6 +615,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Take photo with camera → upload → send as image message.
+  Future<void> _attachFromCamera() async {
+    if (_isUploading) return;
+    HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = await picked.readAsBytes();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
+      });
+      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+      final reply = _replyingTo;
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'image',
+            replyTo: reply,
+          );
+      if (reply != null && mounted) setState(() => _replyingTo = null);
+      _scrollToBottom();
+    } on DioException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
   /// Pick image from gallery → upload to /media/upload → send as image
   /// message. Caption is the current text input (sent + cleared).
   Future<void> _attachImage() async {
@@ -665,60 +705,126 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  /// Показывает меню выбора вложения: фото из галереи или файл.
+  /// Показывает меню выбора вложения: 8 опций в 4-column grid.
   void _showAttachMenu() {
     if (_isUploading) return;
     final c = context.seeuColors;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: EdgeInsets.only(
-          left: 16, right: 16, top: 16,
-          bottom: 16 + MediaQuery.of(ctx).padding.bottom,
-        ),
-        decoration: BoxDecoration(
-          color: c.bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: c.line, borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              onTap: () { Navigator.pop(ctx); _attachImage(); },
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              leading: Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.12), shape: BoxShape.circle,
+      builder: (ctx) {
+        void snackSoon() {
+          Navigator.pop(ctx);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Скоро')),
+          );
+        }
+
+        Widget opt(String label, IconData icon, List<Color> colors, VoidCallback onTap) {
+          return GestureDetector(
+            onTap: onTap,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: colors,
+                    ),
+                    boxShadow: SeeUShadows.sm,
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 25),
                 ),
-                child: Icon(PhosphorIcons.image(), color: Colors.blue, size: 20),
-              ),
-              title: Text('Фото из галереи', style: TextStyle(color: c.ink, fontWeight: FontWeight.w500)),
-            ),
-            ListTile(
-              onTap: () { Navigator.pop(ctx); _attachFile(); },
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              leading: Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: SeeUColors.accent.withValues(alpha: 0.12), shape: BoxShape.circle,
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: c.ink2,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                child: Icon(PhosphorIcons.paperclip(), color: SeeUColors.accent, size: 20),
-              ),
-              title: Text('Файл', style: TextStyle(color: c.ink, fontWeight: FontWeight.w500)),
-              subtitle: Text('Видео, аудио, изображения', style: TextStyle(fontSize: 12, color: c.ink3)),
+              ],
             ),
-          ],
-        ),
-      ),
+          );
+        }
+
+        return Container(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 0,
+            bottom: 16 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          decoration: BoxDecoration(
+            color: c.bg,
+            borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(SeeURadii.sheet)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: c.line, borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 16),
+                child: Text(
+                  'Прикрепить',
+                  style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
+                  ),
+                ),
+              ),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 4,
+                mainAxisSpacing: 18,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.85,
+                children: [
+                  opt('Камера', PhosphorIconsRegular.camera,
+                      const [Color(0xFFFF5A3C), Color(0xFFFF3B6B)],
+                      () { Navigator.pop(ctx); _attachFromCamera(); }),
+                  opt('Фото', PhosphorIconsRegular.image,
+                      const [Color(0xFFC04CFD), Color(0xFF5DB1FF)],
+                      () { Navigator.pop(ctx); _attachImage(); }),
+                  opt('Видео', PhosphorIconsRegular.videoCamera,
+                      const [Color(0xFF5DB1FF), Color(0xFF1AC8B8)],
+                      () { Navigator.pop(ctx); _attachFile(); }),
+                  opt('Файл', PhosphorIconsRegular.paperclip,
+                      const [Color(0xFF2FA84F), Color(0xFF5DB1FF)],
+                      () { Navigator.pop(ctx); _attachFile(); }),
+                  opt('Геолокация', PhosphorIconsRegular.mapPin,
+                      const [Color(0xFFFF8060), Color(0xFFFFB547)],
+                      snackSoon),
+                  opt('Контакт', PhosphorIconsRegular.userCircle,
+                      const [Color(0xFF7B61FF), Color(0xFFC04CFD)],
+                      snackSoon),
+                  opt('Сбор', PhosphorIconsRegular.usersThree,
+                      const [Color(0xFFFFB547), Color(0xFFFF5A3C)],
+                      snackSoon),
+                  opt('Аудио', PhosphorIconsRegular.microphone,
+                      const [Color(0xFF1AC8B8), Color(0xFF5DB1FF)],
+                      () { Navigator.pop(ctx); _attachFile(); }),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1205,19 +1311,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   context.go('/chat');
                                 }
                               },
-                              child: Container(
-                                width: 44,
-                                height: 44,
-                                decoration: const BoxDecoration(
-                                  color: Colors.transparent,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
+                              child: Icon(
                                   PhosphorIconsRegular.caretLeft,
                                   color: c.ink,
                                   size: 22,
                                 ),
-                              ),
                             ),
                             const SizedBox(width: 2),
                             // Header-tail: для group тапается всё подряд → /members,
@@ -1693,25 +1791,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   // Attach button: opens menu → photo from gallery or file.
                   GestureDetector(
                     onTap: _isUploading ? null : _showAttachMenu,
-                    child: Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: c.surface2,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: c.line, width: 0.5),
-                      ),
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
                       child: _isUploading
                           ? Padding(
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(10),
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: c.ink2,
                               ),
                             )
                           : Icon(
-                              PhosphorIcons.paperclip(),
-                              size: 20,
+                              PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                              size: 22,
                               color: c.ink2,
                             ),
                     ),
@@ -1722,20 +1815,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   GestureDetector(
                     onTap: _showTtlPicker,
                     child: Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: _ttlSeconds != null
-                            ? SeeUColors.accent.withValues(alpha: 0.15)
-                            : c.surface2,
+                      width: 40,
+                      height: 40,
+                      decoration: _ttlSeconds != null ? BoxDecoration(
+                        color: SeeUColors.accent.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _ttlSeconds != null
-                              ? SeeUColors.accent.withValues(alpha: 0.35)
-                              : c.line,
-                          width: 0.5,
-                        ),
-                      ),
+                      ) : null,
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
@@ -1775,7 +1860,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // D3: text input with focus border
+                  // iMessage-style field: emoji left, send/camera right inside
                   Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
@@ -1800,24 +1885,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         decoration: InputDecoration(
                           hintText: _editingMessageId != null
                               ? 'Редактировать сообщение'
-                              : 'Сообщение',
+                              : 'Сообщение…',
                           hintStyle: SeeUTypography.body.copyWith(
                             fontSize: 14,
                             color: c.ink3,
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.only(
-                            left: 14,
+                            left: 4,
                             right: 4,
                             top: 9,
                             bottom: 9,
                           ),
-                          suffixIcon: GestureDetector(
+                          // Emoji/smiley icon — LEFT inside field
+                          prefixIcon: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: _showEmojiStickerPanel,
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
                               child: Icon(
                                 PhosphorIconsRegular.smiley,
                                 size: 20,
@@ -1825,8 +1910,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               ),
                             ),
                           ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 36,
+                          ),
+                          // Camera (empty) or Send (typing) — RIGHT inside field
+                          suffixIcon: _hasText
+                              ? GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _sendMessage,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: const BoxDecoration(
+                                        color: SeeUColors.accent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        PhosphorIconsFill.arrowUp,
+                                        size: 15,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _attachFromCamera,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    child: Icon(
+                                      PhosphorIconsRegular.camera,
+                                      size: 20,
+                                      color: c.ink2,
+                                    ),
+                                  ),
+                                ),
                           suffixIconConstraints: const BoxConstraints(
-                            minWidth: 36,
+                            minWidth: 40,
                             minHeight: 36,
                           ),
                         ),
@@ -1834,46 +1957,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // D1: animated send ↔ mic crossfade
-                  GestureDetector(
-                    onTap: _hasText
-                        ? _sendMessage
-                        : () => setState(() => _recording = true),
-                    child: Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        gradient: _hasText ? null : SeeUGradients.heroOrange,
-                        color: _hasText ? SeeUColors.accent : null,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: SeeUColors.accent.withValues(alpha: 0.32),
-                            offset: const Offset(0, 6),
-                            blurRadius: 18,
-                          ),
-                        ],
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeIn,
-                        transitionBuilder: (child, anim) => ScaleTransition(
-                          scale: anim,
-                          child: FadeTransition(opacity: anim, child: child),
-                        ),
+                  // External mic — only when not typing
+                  if (!_hasText) ...[
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () => setState(() => _recording = true),
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
                         child: Icon(
-                          _hasText
-                              ? PhosphorIconsFill.paperPlaneRight
-                              : PhosphorIconsFill.microphone,
-                          key: ValueKey(_hasText ? 'send' : 'mic'),
-                          size: 20,
-                          color: Colors.white,
+                          PhosphorIconsRegular.microphone,
+                          size: 22,
+                          color: c.ink2,
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -1917,48 +2016,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return GestureDetector(
       onTap: () => _scrollToMessage(pinned.id),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
         decoration: BoxDecoration(
           color: c.surface,
           border: Border(
             bottom: BorderSide(color: c.line, width: 0.5),
           ),
         ),
-        child: Row(
-          children: [
-            Icon(PhosphorIconsBold.pushPin, size: 15, color: SeeUColors.accent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Закреплено · @${pinned.senderUsername}',
-                    style: const TextStyle(
-                      color: SeeUColors.accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left accent strip
+              Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(2),
+                    bottomRight: Radius.circular(2),
                   ),
-                  Text(
-                    pinned.shortLabel(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.ink2, fontSize: 13),
-                  ),
-                ],
+                ),
               ),
-            ),
-            // Явная кнопка открепить — раньше функция была скрыта за long-press
-            IconButton(
-              onPressed: () => _confirmUnpin(),
-              icon: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
-              tooltip: 'Открепить',
-              padding: const EdgeInsets.all(8),
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(PhosphorIconsBold.pushPin,
+                              size: 12, color: SeeUColors.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Закреплённое',
+                            style: const TextStyle(
+                              color: SeeUColors.accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        pinned.shortLabel(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.ink2, fontSize: 12.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Caret-down to dismiss
+              GestureDetector(
+                onTap: () => _confirmUnpin(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Icon(
+                    PhosphorIconsRegular.caretDown,
+                    size: 18,
+                    color: c.ink3,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

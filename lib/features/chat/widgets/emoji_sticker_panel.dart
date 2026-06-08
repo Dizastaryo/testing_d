@@ -114,6 +114,12 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
                       c: c,
                       onTap: () => _tabController.animateTo(1),
                     ),
+                    const Spacer(),
+                    Icon(
+                      PhosphorIconsRegular.magnifyingGlass,
+                      size: 20,
+                      color: c.ink3,
+                    ),
                   ],
                 ),
               );
@@ -166,9 +172,12 @@ class _EmojiTab extends StatelessWidget {
                 ),
               ),
             ),
-            Wrap(
-              spacing: 4,
-              runSpacing: 4,
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
               children: entry.value
                   .map((emoji) => _EmojiTapButton(
                         emoji: emoji,
@@ -203,7 +212,6 @@ class _EmojiTapButtonState extends State<_EmojiTapButton> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) {
@@ -216,15 +224,12 @@ class _EmojiTapButtonState extends State<_EmojiTapButton> {
       child: AnimatedScale(
         scale: _pressed ? 1.3 : 1.0,
         duration: const Duration(milliseconds: 100),
-        child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: BorderRadius.circular(SeeURadii.small),
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Center(
+            child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
           ),
-          alignment: Alignment.center,
-          child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
         ),
       ),
     );

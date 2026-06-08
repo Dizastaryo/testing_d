@@ -284,61 +284,81 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   // Режим записи: [🗑] [● 00:15 ~~~waveform~~~] [✓]
   // ---------------------------------------------------------------------------
   Widget _buildRecordingRow(SeeUThemeColors c) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Отмена записи — иконка корзины
-        GestureDetector(
-          onTap: _cancelRecording,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              PhosphorIcons.trash(),
-              color: SeeUColors.error,
-              size: 22,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Отмена записи — иконка корзины
+            GestureDetector(
+              onTap: _cancelRecording,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(
+                  PhosphorIcons.trash(),
+                  color: SeeUColors.error,
+                  size: 22,
+                ),
+              ),
             ),
-          ),
+            // Пульсирующая красная точка
+            const _PulsingDot(),
+            const SizedBox(width: 6),
+            // Таймер
+            Text(
+              _fmtDuration(_elapsed),
+              style: TextStyle(
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: c.ink,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Живая waveform
+            Expanded(
+              child: SizedBox(
+                height: 36,
+                child: CustomPaint(
+                  painter: _LiveWavePainter(_liveWindow),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Остановить запись → перейти в preview (✓ checkmark)
+            GestureDetector(
+              onTap: _stopToPreview,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SeeUGradients.heroOrange,
+                ),
+                child: const Icon(
+                  PhosphorIconsBold.check,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+            ),
+          ],
         ),
-        // Пульсирующая красная точка
-        const _PulsingDot(),
-        const SizedBox(width: 6),
-        // Таймер
-        Text(
-          _fmtDuration(_elapsed),
-          style: TextStyle(
-            fontFeatures: const [FontFeature.tabularFigures()],
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-            color: c.ink,
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Живая waveform
-        Expanded(
-          child: SizedBox(
-            height: 36,
-            child: CustomPaint(
-              painter: _LiveWavePainter(_liveWindow),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // Остановить запись → перейти в preview (✓ checkmark)
-        GestureDetector(
-          onTap: _stopToPreview,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: SeeUGradients.heroOrange,
-            ),
-            child: const Icon(
-              PhosphorIconsBold.check,
-              color: Colors.white,
-              size: 22,
-            ),
+        // Swipe hint
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(PhosphorIconsRegular.caretLeft, size: 13, color: c.ink3),
+              const SizedBox(width: 4),
+              Text(
+                'Смахните, чтобы отменить',
+                style: TextStyle(fontSize: 12, color: c.ink3),
+              ),
+            ],
           ),
         ),
       ],

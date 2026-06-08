@@ -72,6 +72,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   SborCategory? _catFilter;
   DateTimeRange? _dateFilter;
   String _searchQuery = '';
+  bool _showSearch = false;
   final _searchController = TextEditingController();
 
   @override
@@ -248,9 +249,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         child: Column(
           children: [
             _buildHeader(c),
-            _buildSearchBar(c),
-            _buildTypeToggle(c),
+            if (_showSearch) _buildSearchBar(c),
             _buildCategoryChips(c),
+            _buildTypeToggle(c),
             Expanded(
               child: async.when(
                 loading: () => const SeeUSborCardSkeleton(),
@@ -326,37 +327,30 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               HapticFeedback.selectionClick();
               _openCityPicker();
             },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
                 Text(
-                  'СБОРЫ РЯДОМ',
+                  city,
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                    color: c.ink3,
+                    color: c.ink,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      city,
-                      style: SeeUTypography.displayM.copyWith(
-                        color: c.ink,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                        size: 14, color: c.ink2),
-                  ],
-                ),
+                const SizedBox(width: 4),
+                Icon(PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+                    size: 14, color: c.ink2),
               ],
             ),
           ),
           const Spacer(),
+          _IconBtn(
+            icon: PhosphorIcons.magnifyingGlass(),
+            onTap: () => setState(() => _showSearch = !_showSearch),
+            color: c.surface,
+            iconColor: c.ink2,
+          ),
+          const SizedBox(width: 8),
           _IconBtn(
             icon: PhosphorIcons.plus(PhosphorIconsStyle.bold),
             onTap: () {
@@ -660,20 +654,21 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            hasFilter ? PhosphorIcons.funnel() : PhosphorIcons.usersThree(),
+            hasFilter ? PhosphorIcons.funnel() : PhosphorIcons.confetti(),
             size: 48, color: c.ink4,
           ),
           const SizedBox(height: 12),
           Text(
-            hasFilter ? 'Ничего не найдено' : 'Сборов пока нет',
+            hasFilter ? 'Ничего не найдено' : 'Здесь пока пусто',
             style: SeeUTypography.subtitle.copyWith(color: c.ink),
           ),
           const SizedBox(height: 6),
           Text(
             hasFilter
                 ? 'Попробуй другие фильтры'
-                : 'Создай первый — остальные подтянутся',
+                : 'В этой категории нет сборов. Создайте свой и позовите людей.',
             style: TextStyle(fontSize: 13, color: c.ink3),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
           if (hasFilter)
@@ -708,10 +703,14 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             GestureDetector(
               onTap: () => context.push('/sbory/create'),
               child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 decoration: BoxDecoration(
-                  color: SeeUColors.accent,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF5A3C), Color(0xFFFF3B6B)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Row(
@@ -838,12 +837,34 @@ class _IconBtn extends StatelessWidget {
 
 // ─── SborCard ────────────────────────────────────────────────────
 
-class SborCard extends StatelessWidget {
+class SborCard extends ConsumerStatefulWidget {
   final Sbor sbor;
   final VoidCallback? onTap;
   final bool compact;
 
   const SborCard({super.key, required this.sbor, this.onTap, this.compact = false});
+
+  @override
+  ConsumerState<SborCard> createState() => _SborCardState();
+}
+
+class _SborCardState extends ConsumerState<SborCard> {
+  late bool _bookmarked;
+  bool _bookmarkLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bookmarked = widget.sbor.isBookmarked;
+  }
+
+  @override
+  void didUpdateWidget(SborCard old) {
+    super.didUpdateWidget(old);
+    if (old.sbor.isBookmarked != widget.sbor.isBookmarked) {
+      _bookmarked = widget.sbor.isBookmarked;
+    }
+  }
 
   String? _resolvedCoverUrl(Sbor s) {
     final url = s.coverUrl;
@@ -852,16 +873,64 @@ class SborCard extends StatelessWidget {
     return '${AppConfig.apiOrigin}$url';
   }
 
+  Future<void> _toggleBookmark() async {
+    if (_bookmarkLoading) return;
+    HapticFeedback.selectionClick();
+    setState(() { _bookmarkLoading = true; });
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.post(ApiEndpoints.bookmarkSbor(widget.sbor.id));
+      if (mounted) {
+        setState(() { _bookmarked = !_bookmarked; });
+        ref.invalidate(_bookmarkedSboryProvider);
+      }
+    } catch (_) {
+      // тихо игнорируем — state не меняется
+    } finally {
+      if (mounted) setState(() { _bookmarkLoading = false; });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final s = sbor;
+    final s = widget.sbor;
     final meta = s.categoryMeta;
     final coverUrl = _resolvedCoverUrl(s);
-    final headerH = coverUrl != null ? 150.0 : 96.0;
+    // Cover status pill
+    Widget? statusPill;
+    if (s.myRole == SborRole.organizer) {
+      statusPill = _StatusPill(
+        bg: SeeUColors.accent.withValues(alpha: 0.95),
+        fg: Colors.white,
+        icon: PhosphorIcons.crownSimple(PhosphorIconsStyle.fill),
+        label: 'Вы организатор',
+      );
+    } else if (s.isJoined) {
+      statusPill = _StatusPill(
+        bg: const Color(0xEF2FA84F),
+        fg: Colors.white,
+        icon: PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+        label: 'Вы идёте',
+      );
+    } else if (s.myRequestStatus == 'pending') {
+      statusPill = _StatusPill(
+        bg: const Color(0xF5FFB547),
+        fg: const Color(0xFF3A2A05),
+        icon: PhosphorIcons.hourglassMedium(),
+        label: 'Заявка отправлена',
+      );
+    } else if (s.isFull) {
+      statusPill = _StatusPill(
+        bg: Colors.black.withValues(alpha: 0.60),
+        fg: Colors.white,
+        icon: PhosphorIcons.lockSimple(),
+        label: 'Мест нет',
+      );
+    }
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         decoration: BoxDecoration(
           color: c.surface,
@@ -870,13 +939,11 @@ class SborCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF161310).withValues(alpha: 0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
+              blurRadius: 16, offset: const Offset(0, 4),
             ),
             BoxShadow(
               color: const Color(0xFF161310).withValues(alpha: 0.04),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
+              blurRadius: 2, offset: const Offset(0, 1),
             ),
           ],
         ),
@@ -884,22 +951,19 @@ class SborCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header strip ──────────────────────────────────────
+            // ── Cover ─────────────────────────────────────────────
             SizedBox(
-              height: headerH,
+              height: 150,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Background
                   if (coverUrl != null)
                     CachedNetworkImage(
-                      imageUrl: coverUrl,
-                      fit: BoxFit.cover,
+                      imageUrl: coverUrl, fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => Container(color: meta.soft),
                     )
                   else
                     Container(color: meta.soft),
-                  // Cover gradient overlay
                   if (coverUrl != null)
                     Container(
                       decoration: BoxDecoration(
@@ -914,7 +978,6 @@ class SborCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // Watermark icon (no cover)
                   if (coverUrl == null)
                     Positioned(
                       right: -14, bottom: -34,
@@ -923,75 +986,88 @@ class SborCard extends StatelessWidget {
                         child: Icon(meta.icon, size: 150, color: meta.color),
                       ),
                     ),
-                  // Pills (top-left): category + format + price + live
+                  // Category pill — top-left
                   Positioned(
                     top: 12, left: 12,
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _HeaderPill(
-                          icon: meta.icon,
-                          label: meta.name,
-                          color: meta.color,
-                          bg: Colors.white,
-                        ),
-                        _HeaderPill(
-                          icon: s.type == SborType.online
-                              ? PhosphorIcons.globe()
-                              : PhosphorIcons.mapPin(),
-                          label: s.type == SborType.online ? 'Онлайн' : 'Оффлайн',
-                          color: c.ink2,
-                          bg: Colors.white.withValues(alpha: 0.75),
-                        ),
-                        if (s.price > 0)
-                          _HeaderPill(
-                            label: '${s.price} ₸',
-                            color: SeeUColors.accent,
-                            bg: SeeUColors.accentSoft,
-                          ),
-                        if (s.live)
-                          _HeaderPill(
-                            icon: null,
-                            label: '● СЕЙЧАС',
-                            color: Colors.white,
-                            bg: Colors.redAccent.withValues(alpha: 0.85),
-                          ),
-                      ],
-                    ),
-                  ),
-                  // Date chip (top-right)
-                  Positioned(
-                    top: 12, right: 12,
                     child: Container(
-                      height: 30,
-                      padding: const EdgeInsets.symmetric(horizontal: 11),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.92),
+                        color: Colors.black.withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(999),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.12),
-                            blurRadius: 8, offset: const Offset(0, 2),
-                          ),
-                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(PhosphorIcons.calendarBlank(), size: 12, color: meta.color),
+                          Icon(meta.icon, size: 11, color: Colors.white),
                           const SizedBox(width: 5),
-                          Text(
-                            s.when,
-                            style: const TextStyle(
-                              fontSize: 12.5, fontWeight: FontWeight.w700,
-                              color: Color(0xFF161310),
+                          Text(meta.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                          if (s.live) ...[
+                            const SizedBox(width: 6),
+                            const Text('● LIVE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.redAccent)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Bookmark — top-right (tappable, stops propagation to card)
+                  Positioned(
+                    top: 12, right: 12,
+                    child: GestureDetector(
+                      onTap: _toggleBookmark,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        width: 34, height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _bookmarkLoading
+                            ? const Padding(
+                                padding: EdgeInsets.all(9),
+                                child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
+                              )
+                            : Icon(
+                                _bookmarked
+                                    ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                                    : PhosphorIcons.bookmarkSimple(),
+                                size: 17,
+                                color: _bookmarked ? SeeUColors.amber : Colors.white,
+                              ),
+                      ),
+                    ),
+                  ),
+                  // Location pill — bottom-left
+                  Positioned(
+                    bottom: 12, left: 12,
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 140),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            s.type == SborType.online ? PhosphorIcons.globe() : PhosphorIcons.mapPin(),
+                            size: 11, color: Colors.white,
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              s.type == SborType.online ? 'Онлайн' : (s.place.isNotEmpty ? s.place : 'Оффлайн'),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
+                  // Status pill — bottom-right
+                  if (statusPill != null)
+                    Positioned(bottom: 12, right: 12, child: statusPill),
                 ],
               ),
             ),
@@ -1001,90 +1077,47 @@ class SborCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title
-                  Text(
-                    s.title,
-                    style: const TextStyle(
-                      fontFamily: 'Fraunces',
-                      fontSize: 21, fontWeight: FontWeight.w500,
-                      letterSpacing: -0.3, height: 1.18,
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  // Meta: place + dot + distance/whenSub
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        s.type == SborType.online
-                            ? PhosphorIcons.headphones()
-                            : PhosphorIcons.mapPinLine(),
-                        size: 14, color: c.ink3,
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
+                      Expanded(
                         child: Text(
-                          s.place.isNotEmpty ? s.place : 'Онлайн',
-                          style: TextStyle(fontSize: 13, color: c.ink2),
-                          overflow: TextOverflow.ellipsis,
+                          s.title,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.2),
                         ),
                       ),
-                      if ((s.distance ?? s.whenSub) != null) ...[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Container(
-                            width: 3, height: 3,
-                            decoration: BoxDecoration(color: c.ink4, shape: BoxShape.circle),
-                          ),
+                      const SizedBox(width: 8),
+                      Text(
+                        s.price == 0 ? 'Бесплатно' : '${s.price} ₸',
+                        style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700,
+                          color: s.price == 0 ? SeeUColors.success : c.ink,
                         ),
-                        Text(
-                          s.distance ?? s.whenSub!,
-                          style: TextStyle(fontSize: 13, color: c.ink3),
-                        ),
-                      ],
+                      ),
                     ],
                   ),
-                  // Divider + footer
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(PhosphorIcons.calendarBlank(), size: 13, color: c.ink3),
+                      const SizedBox(width: 5),
+                      Text(s.when, style: TextStyle(fontSize: 13, color: c.ink3)),
+                    ],
+                  ),
                   Padding(
-                    padding: const EdgeInsets.only(top: 14, bottom: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Container(height: 1, color: c.line),
                   ),
                   Row(
                     children: [
                       SboryAvatarStack(names: s.memberNames, avatarUrls: s.memberAvatarUrls, size: 26),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              s.max != null
-                                  ? '${s.joined} из ${s.max}'
-                                  : '${s.joined} чел.',
-                              style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600, color: c.ink,
-                              ),
-                            ),
-                            Text(
-                              s.isFull
-                                  ? 'мест нет'
-                                  : s.max != null
-                                      ? 'нужно ещё ${s.remaining}'
-                                      : 'открытый сбор',
-                              style: TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.w500,
-                                color: s.isFull ? c.ink3 : SeeUColors.accent,
-                              ),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(width: 8),
+                      Text(
+                        s.max != null ? '${s.joined}/${s.max} идёт' : '${s.joined} идёт',
+                        style: TextStyle(fontSize: 12, color: c.ink3),
                       ),
-                      const SizedBox(width: 10),
-                      _JoinBtn(
-                        isFull: s.isFull,
-                        isJoined: s.isJoined,
-                        requestStatus: s.myRequestStatus,
-                        c: c,
-                      ),
+                      const Spacer(),
+                      _CardAction(sbor: s, c: c),
                     ],
                   ),
                 ],
@@ -1263,99 +1296,79 @@ class SborHeroCard extends StatelessWidget {
   }
 }
 
-// ─── Small helpers ───────────────────────────────────────────────
+// ─── Status pill (cover overlay) ─────────────────────────────────
 
-class _HeaderPill extends StatelessWidget {
-  final IconData? icon;
-  final String label;
-  final Color color;
+class _StatusPill extends StatelessWidget {
   final Color bg;
-
-  const _HeaderPill({
-    this.icon,
-    required this.label,
-    required this.color,
-    required this.bg,
-  });
+  final Color fg;
+  final IconData icon;
+  final String label;
+  const _StatusPill({required this.bg, required this.fg, required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 26,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 12, color: color),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-          ),
+          Icon(icon, size: 12, color: fg),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
         ],
       ),
     );
   }
 }
 
-class _JoinBtn extends StatelessWidget {
-  final bool isFull;
-  final bool isJoined;
-  final String requestStatus;
-  final SeeUThemeColors c;
+// ─── Card footer action ───────────────────────────────────────────
 
-  const _JoinBtn({
-    required this.isFull,
-    required this.isJoined,
-    required this.requestStatus,
-    required this.c,
-  });
+class _CardAction extends StatelessWidget {
+  final Sbor sbor;
+  final SeeUThemeColors c;
+  const _CardAction({required this.sbor, required this.c});
 
   @override
   Widget build(BuildContext context) {
-    // Already a member
-    if (isJoined) {
-      return _pill(SeeUColors.accentSoft, 'Я иду', SeeUColors.accent);
+    final s = sbor;
+    if (s.myRole == SborRole.organizer) {
+      if (s.pendingRequestsCount > 0) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: SeeUColors.accent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${s.pendingRequestsCount}',
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Text('заявок', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: SeeUColors.accent)),
+          ],
+        );
+      }
+      return const SizedBox.shrink();
     }
-    // Full — no slots
-    if (isFull) {
-      return _pill(c.surface2, 'Нет мест', c.ink3);
+    if (s.isJoined || s.myRequestStatus == 'pending' || s.isFull) {
+      return const SizedBox.shrink();
     }
-    // Pending request
-    if (requestStatus == 'pending') {
-      return _pill(c.surface2, 'Ждём', c.ink3);
-    }
-    // Default: can join / re-apply
-    return _pill(SeeUColors.accent, 'Участвую', Colors.white);
-  }
-
-  Widget _pill(Color bg, String label, Color textColor) {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: bg == SeeUColors.accent
-            ? [BoxShadow(
-                color: SeeUColors.accent.withValues(alpha: 0.25),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              )]
-            : null,
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: textColor),
-        ),
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Подать заявку', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: SeeUColors.accent)),
+        const SizedBox(width: 3),
+        Icon(PhosphorIcons.arrowRight(), size: 13, color: SeeUColors.accent),
+      ],
     );
   }
 }

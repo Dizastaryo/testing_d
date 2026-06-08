@@ -53,19 +53,41 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       ),
       error: (e, _) {
         final isNotFound = e is DioException && e.response?.statusCode == 404;
+        final c = context.seeuColors;
         return Scaffold(
-          backgroundColor: context.seeuColors.bg,
-          appBar: AppBar(backgroundColor: Colors.transparent),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                isNotFound
-                    ? 'Сбор не найден или был отменён'
-                    : 'Ошибка: $e',
-                style: TextStyle(color: context.seeuColors.ink2, fontSize: 15),
-                textAlign: TextAlign.center,
-              ),
+          backgroundColor: c.bg,
+          body: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Icon(
+                          PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                          size: 20, color: c.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Text(
+                        isNotFound
+                            ? 'Сбор не найден или был отменён'
+                            : 'Ошибка: $e',
+                        style: TextStyle(color: c.ink2, fontSize: 15),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -89,6 +111,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           CustomScrollView(
             slivers: [
               SliverToBoxAdapter(child: SafeArea(child: _buildHero(context, s, meta, c))),
+              SliverToBoxAdapter(child: _buildStatusBanner(c, s)),
               SliverToBoxAdapter(child: _buildInfoGrid(c, s)),
               SliverToBoxAdapter(child: _buildDescription(c, s)),
               SliverToBoxAdapter(child: _buildParticipants(c, s)),
@@ -266,85 +289,225 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   }
 
   Widget _buildInfoGrid(SeeUThemeColors c, Sbor s) {
-    final items = [
-      (PhosphorIcons.calendarBlank(), 'Когда', s.when, s.whenSub ?? ''),
-      (
-        PhosphorIcons.mapPinLine(),
-        'Где',
-        s.place,
-        s.distance ?? '',
-      ),
-      (
-        PhosphorIcons.usersThree(),
-        'Состав',
-        s.max != null ? '${s.joined}/${s.max}' : '${s.joined} чел.',
-        s.isFull ? 'мест нет' : s.max != null ? 'нужно ещё ${s.remaining}' : '',
-      ),
-      (
-        PhosphorIcons.wallet(),
-        'Стоимость',
-        s.price == 0 ? 'Бесплатно' : '${s.price} ₸',
-        s.price == 0 ? '' : 'взнос',
-      ),
-    ];
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.75,
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: c.line, width: 0.5),
         ),
-        itemCount: items.length,
-        itemBuilder: (context, i) {
-          final (icon, label, value, sub) = items[i];
-          return Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: c.line, width: 0.5),
+        child: Column(
+          children: [
+            _infoRow(c, PhosphorIcons.calendarBlank(), 'Когда', s.when, sub: s.whenSub ?? ''),
+            Divider(height: 1, color: c.line, indent: 68, endIndent: 0),
+            _infoRow(c, PhosphorIcons.mapPinLine(), 'Где', s.place, sub: s.distance ?? ''),
+            Divider(height: 1, color: c.line, indent: 68, endIndent: 0),
+            _infoRowSlots(c, s),
+            Divider(height: 1, color: c.line, indent: 68, endIndent: 0),
+            _infoRow(
+              c,
+              PhosphorIcons.wallet(),
+              'Стоимость',
+              s.price == 0 ? 'Бесплатно' : '${s.price} ₸',
+              sub: s.price == 0 ? '' : 'взнос',
+              valueColor: s.price == 0 ? SeeUColors.success : null,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(
+    SeeUThemeColors c,
+    IconData icon,
+    String label,
+    String value, {
+    String sub = '',
+    Color? valueColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: c.surface2,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 19, color: SeeUColors.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 32, height: 32,
-                  decoration: BoxDecoration(
-                    color: SeeUColors.accentSoft,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, size: 16, color: SeeUColors.accent),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  label.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.w600,
-                    letterSpacing: 0.6, color: c.ink3,
-                  ),
-                ),
-                const SizedBox(height: 3),
+                Text(label, style: TextStyle(fontSize: 12, color: c.ink3)),
+                const SizedBox(height: 2),
                 Text(
                   value,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.ink),
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                ),
-                if (sub.isNotEmpty)
-                  Text(
-                    sub,
-                    style: TextStyle(fontSize: 11, color: c.ink3),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600,
+                    color: valueColor ?? c.ink,
                   ),
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                ),
+                if (sub.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(sub, style: TextStyle(fontSize: 12, color: c.ink3)),
+                ],
               ],
             ),
-          );
-        },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRowSlots(SeeUThemeColors c, Sbor s) {
+    final label = s.isFull ? 'Состав · мест нет' : 'Состав';
+    final count = s.max != null ? '${s.joined}/${s.max}' : '${s.joined} чел.';
+    final progress = (s.max != null && s.max! > 0)
+        ? (s.joined / s.max!).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: c.surface2,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(PhosphorIcons.usersThree(), size: 19, color: SeeUColors.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(label, style: TextStyle(fontSize: 12, color: c.ink3)),
+                    const Spacer(),
+                    Text(
+                      count,
+                      style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600,
+                        color: s.isFull ? c.ink3 : SeeUColors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                if (s.max != null) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 4,
+                      backgroundColor: c.line,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        s.isFull ? c.ink3 : SeeUColors.accent,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBanner(SeeUThemeColors c, Sbor s) {
+    final isOrganizer = s.myRole == SborRole.organizer;
+    final status = s.myRequestStatus;
+
+    Color? bg;
+    Color? fg;
+    IconData? icon;
+    String? title;
+    String? sub;
+    bool showCancel = false;
+
+    if (isOrganizer) {
+      bg = SeeUColors.accent.withValues(alpha: 0.12);
+      fg = SeeUColors.accent;
+      icon = PhosphorIcons.crownSimple(PhosphorIconsStyle.fill);
+      title = 'Вы организатор';
+      sub = s.pendingRequestsCount > 0
+          ? '${s.pendingRequestsCount} заявок ждут вашего решения'
+          : 'Это ваш сбор';
+    } else if (s.isJoined) {
+      bg = SeeUColors.success.withValues(alpha: 0.12);
+      fg = SeeUColors.success;
+      icon = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
+      title = 'Вы идёте';
+      sub = 'Подтверждено';
+    } else if (status == 'pending') {
+      bg = const Color(0xFFFFF8E1);
+      fg = const Color(0xFF9A6B00);
+      icon = PhosphorIcons.hourglassMedium();
+      title = 'Заявка на рассмотрении';
+      sub = 'Организатор обычно отвечает в течение часа';
+      showCancel = true;
+    } else if (s.isFull) {
+      bg = c.surface2;
+      fg = c.ink3;
+      icon = PhosphorIcons.lockSimple();
+      title = 'Все места заняты';
+      sub = 'Можно встать в лист ожидания';
+    }
+
+    if (bg == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+        ),
+        child: Row(
+          children: [
+            Icon(icon!, size: 24, color: fg),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title!,
+                    style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700, color: fg,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(sub!, style: TextStyle(fontSize: 12, color: c.ink3)),
+                ],
+              ),
+            ),
+            if (showCancel)
+              GestureDetector(
+                onTap: _joining ? null : () => _cancelRequest(s),
+                child: Text(
+                  'Отменить',
+                  style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600,
+                    color: SeeUColors.error,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

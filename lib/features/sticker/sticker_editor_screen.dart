@@ -192,107 +192,110 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
       child: Scaffold(
         backgroundColor: c.surface2,
         resizeToAvoidBottomInset: true,
-        appBar: _buildAppBar(c, state),
-        body: Column(
-          children: [
-            // ── Холст (занимает всё свободное пространство) ──────
-            Expanded(
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: RepaintBoundary(
-                      key: _boundaryKey,
-                      child: StickerCanvas(
-                        backgroundImage: NetworkImage(absUrl),
-                        onEditText: (_) => _focusNode.requestFocus(),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── Шапка ────────────────────────────────────────────
+              _buildHeader(c, state),
+              Divider(height: 1, color: c.line),
+
+              // ── Холст (занимает всё свободное пространство) ──────
+              Expanded(
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: RepaintBoundary(
+                        key: _boundaryKey,
+                        child: StickerCanvas(
+                          backgroundImage: NetworkImage(absUrl),
+                          onEditText: (_) => _focusNode.requestFocus(),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
 
-            // ── Поле ввода (видно только при активном слое) ───────
-            AnimatedSize(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              child: activeLayer != null
-                  ? _TextInputRow(
-                      controller: _textCtrl,
-                      focusNode: _focusNode,
-                      onDone: () {
-                        _focusNode.unfocus();
-                        ref.read(stickerEditorProvider.notifier)
-                          ..commitGesture()
-                          ..setActive(null);
-                      },
-                    )
-                  : const SizedBox.shrink(),
-            ),
+              // ── Поле ввода (видно только при активном слое) ───────
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                child: activeLayer != null
+                    ? _TextInputRow(
+                        controller: _textCtrl,
+                        focusNode: _focusNode,
+                        onDone: () {
+                          _focusNode.unfocus();
+                          ref.read(stickerEditorProvider.notifier)
+                            ..commitGesture()
+                            ..setActive(null);
+                        },
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
-            // ── Нижняя панель инструментов ────────────────────────
-            EditorBottomBar(
-              onAddText: ref.read(stickerEditorProvider.notifier).addLayer,
-            ),
-          ],
+              // ── Нижняя панель инструментов ────────────────────────
+              EditorBottomBar(
+                onAddText: ref.read(stickerEditorProvider.notifier).addLayer,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(SeeUThemeColors c, StickerEditorState state) {
+  Widget _buildHeader(SeeUThemeColors c, StickerEditorState state) {
     final notifier = ref.read(stickerEditorProvider.notifier);
-    return AppBar(
-      backgroundColor: c.surface,
-      elevation: 0,
-      leading: IconButton(
-        icon: Icon(PhosphorIconsRegular.x, color: c.ink),
-        onPressed: _saving ? null : _onClose,
-      ),
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Row(
         children: [
+          // X — закрыть
           GestureDetector(
-            onTap: notifier.canUndo ? notifier.undo : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Icon(
-                PhosphorIconsRegular.arrowCounterClockwise,
-                size: 22,
-                color: notifier.canUndo ? c.ink2 : c.ink4,
-              ),
-            ),
+            onTap: _saving ? null : _onClose,
+            child: Icon(PhosphorIcons.x(), size: 20, color: _saving ? c.ink4 : c.ink),
           ),
-          GestureDetector(
-            onTap: notifier.canRedo ? notifier.redo : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Icon(
-                PhosphorIconsRegular.arrowClockwise,
-                size: 22,
-                color: notifier.canRedo ? c.ink2 : c.ink4,
+          const Spacer(),
+          // Undo / Redo
+          Row(
+            children: [
+              GestureDetector(
+                onTap: notifier.canUndo ? notifier.undo : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Icon(
+                    PhosphorIconsRegular.arrowCounterClockwise,
+                    size: 22,
+                    color: notifier.canUndo ? c.ink2 : c.ink4,
+                  ),
+                ),
               ),
-            ),
+              GestureDetector(
+                onTap: notifier.canRedo ? notifier.redo : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: Icon(
+                    PhosphorIconsRegular.arrowClockwise,
+                    size: 22,
+                    color: notifier.canRedo ? c.ink2 : c.ink4,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      centerTitle: true,
-      actions: [
-        if (_saving)
-          const Padding(
-            padding: EdgeInsets.all(14),
-            child: SizedBox(
+          const Spacer(),
+          // Готово
+          if (_saving)
+            const SizedBox(
               width: 20,
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 9, 12, 9),
-            child: GestureDetector(
+            )
+          else
+            GestureDetector(
               onTap: _save,
               child: Container(
                 height: 36,
@@ -312,8 +315,8 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
                 ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

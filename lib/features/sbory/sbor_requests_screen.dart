@@ -70,35 +70,25 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
           children: [
             // ── Custom header ──────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 16, 14),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
               child: Row(
                 children: [
                   GestureDetector(
                     onTap: () => context.pop(),
-                    child: Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        shape: BoxShape.circle,
-                        boxShadow: SeeUShadows.sm,
-                      ),
-                      child: Icon(
-                        PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-                        size: 16, color: c.ink,
-                      ),
+                    child: Icon(
+                      PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                      size: 20, color: c.ink,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          count != null ? 'Заявки ($count)' : 'Заявки',
+                          'Заявки',
                           style: TextStyle(
-                            fontFamily: 'Fraunces',
-                            fontSize: 22, fontWeight: FontWeight.w500,
-                            letterSpacing: -0.2, height: 1.1, color: c.ink,
+                            fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
                           ),
                         ),
                         Text(
@@ -108,9 +98,28 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
                       ],
                     ),
                   ),
+                  if (count != null && count > 0)
+                    Container(
+                      height: 22,
+                      constraints: const BoxConstraints(minWidth: 22),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
+            Divider(height: 1, color: c.line),
             // ── Body ───────────────────────────────────────────────
             Expanded(
               child: _requests == null
@@ -174,9 +183,9 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
       onRefresh: _refresh,
       color: SeeUColors.accent,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        padding: const EdgeInsets.only(bottom: 32),
         itemCount: requests.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, __) => Divider(height: 1, color: c.line),
         itemBuilder: (context, i) => _RequestCard(
           request: requests[i],
           isLoading: _loading.contains(requests[i].id),
@@ -259,13 +268,8 @@ class _RequestCard extends StatelessWidget {
     final seed = name.isNotEmpty ? (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length : 0;
     final pal = SeeUColors.avatarPalettes[seed];
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.line, width: 0.5),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       child: Row(
         children: [
           // Avatar
@@ -342,14 +346,15 @@ class _RequestCard extends StatelessWidget {
                 GestureDetector(
                   onTap: onReject,
                   child: Container(
-                    width: 38, height: 38,
+                    width: 40, height: 36,
                     decoration: BoxDecoration(
-                      color: SeeUColors.error.withValues(alpha: 0.10),
-                      shape: BoxShape.circle,
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: c.line),
                     ),
                     child: Icon(
                       PhosphorIcons.x(PhosphorIconsStyle.bold),
-                      size: 16, color: SeeUColors.error,
+                      size: 15, color: SeeUColors.error,
                     ),
                   ),
                 ),
@@ -358,14 +363,28 @@ class _RequestCard extends StatelessWidget {
                 GestureDetector(
                   onTap: onApprove,
                   child: Container(
-                    width: 38, height: 38,
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: SeeUColors.success.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
+                      color: SeeUColors.accent,
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(
-                      PhosphorIcons.check(PhosphorIconsStyle.bold),
-                      size: 16, color: SeeUColors.success,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.check(PhosphorIconsStyle.bold),
+                          size: 13, color: Colors.white,
+                        ),
+                        const SizedBox(width: 5),
+                        const Text(
+                          'Принять',
+                          style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -139,26 +139,14 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                         HapticFeedback.selectionClick();
                         context.push('/chat/calls');
                       },
-                      child: Container(
-                        width: 40, height: 40,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: c.surface, shape: BoxShape.circle,
-                          border: Border.all(color: c.line, width: 0.5),
-                        ),
-                        child: Icon(PhosphorIconsRegular.phone, size: 18, color: c.ink),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Icon(PhosphorIconsRegular.phone, size: 22, color: c.ink),
                       ),
                     ),
                     GestureDetector(
                       onTap: _showNewChatPicker,
-                      child: Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          color: c.surface, shape: BoxShape.circle,
-                          border: Border.all(color: c.line, width: 0.5),
-                        ),
-                        child: Icon(PhosphorIconsRegular.pencilSimple, size: 18, color: c.ink),
-                      ),
+                      child: Icon(PhosphorIconsRegular.pencilSimple, size: 22, color: c.ink),
                     ),
                   ] else
                     GestureDetector(
@@ -207,7 +195,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                   const SizedBox(width: 8),
                   _TabChip(
                     label: 'Комнаты',
-                    icon: PhosphorIcons.speakerHigh(PhosphorIconsStyle.fill),
+                    icon: PhosphorIcons.usersThree(PhosphorIconsStyle.fill),
                     active: _showRooms,
                     c: c,
                     onTap: () {
@@ -358,40 +346,79 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   Widget _buildRoomsEmpty(SeeUThemeColors c) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(PhosphorIcons.speakerHigh(), size: 48, color: c.ink4),
-          const SizedBox(height: 12),
-          Text('Комнат пока нет', style: SeeUTypography.subtitle.copyWith(color: c.ink)),
-          const SizedBox(height: 6),
-          Text(
-            'Создайте комнату и пригласите участников',
-            style: TextStyle(fontSize: 13, color: c.ink3),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: _showNewRoomPicker,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: SeeUColors.accent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 16, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Создать комнату',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
-                  ),
-                ],
-              ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72, height: 72,
+              decoration: BoxDecoration(color: c.surface2, shape: BoxShape.circle),
+              child: Icon(PhosphorIcons.usersThree(PhosphorIconsStyle.fill), size: 34, color: c.ink4),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              'Пока нет комнат',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: c.ink),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Комната — это общий чат с голосовым каналом. Создайте свою или присоединитесь по ссылке.',
+              style: TextStyle(fontSize: 13, color: c.ink3, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Secondary: join by link
+                GestureDetector(
+                  onTap: _showNewRoomPicker,
+                  child: Container(
+                    height: 46,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    decoration: BoxDecoration(
+                      color: c.surface2,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: c.line),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(PhosphorIcons.linkSimple(), size: 15, color: c.ink2),
+                        const SizedBox(width: 7),
+                        Text('По ссылке', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Gradient: create
+                GestureDetector(
+                  onTap: _showNewRoomPicker,
+                  child: Container(
+                    height: 46,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF5A3C), Color(0xFFFF3B6B)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 15, color: Colors.white),
+                        const SizedBox(width: 7),
+                        const Text('Создать', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -595,13 +622,22 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             Text(
               hasSearch
                   ? 'Попробуйте другой запрос'
-                  : 'Начните общение с друзьями.\nНажмите карандаш чтобы написать первое сообщение!',
+                  : 'Начните общение с друзьями.\nНажмите карандаш, чтобы написать первое сообщение.',
               textAlign: TextAlign.center,
               style: SeeUTypography.body.copyWith(
                 color: c.ink2,
                 height: 1.5,
               ),
             ),
+            if (!hasSearch) ...[
+              const SizedBox(height: 20),
+              SeeUButton(
+                label: 'Написать',
+                onTap: _showNewChatPicker,
+                icon: PhosphorIconsRegular.pencilSimple,
+                width: 160,
+              ),
+            ],
           ],
         ),
       ),

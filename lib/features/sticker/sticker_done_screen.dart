@@ -23,73 +23,88 @@ class StickerDoneScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(PhosphorIconsBold.caretLeft, color: c.ink),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-        title: Text(
-          'Стикер готов',
-          style: SeeUTypography.subtitle.copyWith(color: c.ink),
-        ),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Шапка ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+              child: Row(
                 children: [
-                  // ── Preview ───────────────────────────────────────
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 14, bottom: 22),
-                      child: _StickerPreview(imageUrl: imageUrl),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(false),
+                    child: Icon(
+                      PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+                      size: 20,
+                      color: c.ink,
                     ),
                   ),
-
-                  // ── Section label ─────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      'Добавить в набор',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: c.ink2,
-                        letterSpacing: 0.4,
-                      ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Стикер готов',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: c.ink,
                     ),
                   ),
-
-                  // ── Pack card ─────────────────────────────────────
-                  _PackCard(stickerCount: stickerCount, c: c),
                 ],
               ),
             ),
-          ),
-          _BottomBar(
-            c: c,
-            onDownload: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Ссылка скопирована',
-                    style: SeeUTypography.body.copyWith(color: Colors.white),
-                  ),
-                  backgroundColor: c.ink,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
+            Divider(height: 1, color: c.line),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Preview ─────────────────────────────────────
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 14, bottom: 22),
+                        child: _StickerPreview(imageUrl: imageUrl),
+                      ),
+                    ),
+
+                    // ── Section label ───────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        'Добавить в набор',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: c.ink2,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+
+                    // ── Pack card ───────────────────────────────────
+                    _PackCard(stickerCount: stickerCount, c: c),
+                  ],
                 ),
-              );
-            },
-            onSaveAndSend: () => Navigator.of(context).pop(true),
-          ),
-        ],
+              ),
+            ),
+            _BottomBar(
+              c: c,
+              onDownload: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Ссылка скопирована',
+                      style: SeeUTypography.body.copyWith(color: Colors.white),
+                    ),
+                    backgroundColor: c.ink,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              onSaveAndSend: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        ),
       ),
     );
   }

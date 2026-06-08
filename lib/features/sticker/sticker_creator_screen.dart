@@ -260,9 +260,14 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   }
 
   void _goBackFromResult() {
-    setState(() {
-      _bgRemovedUrl = null;
-    });
+    final isVideoFrame = _mode == _Mode.video && _bgRemovedUrl == null && !_isRemoving;
+    if (isVideoFrame) {
+      _disposeVideo().then((_) {
+        if (mounted) setState(() => _mode = _Mode.none);
+      });
+    } else {
+      setState(() => _bgRemovedUrl = null);
+    }
   }
 
   String _formatDuration(Duration d) {
@@ -279,10 +284,11 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: _buildAppBar(c),
       body: SafeArea(
         child: Column(
           children: [
+            _buildHeader(c),
+            Divider(height: 1, color: c.line),
             if (_error != null)
               Container(
                 width: double.infinity,
@@ -302,38 +308,73 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
     );
   }
 
-  PreferredSizeWidget _buildAppBar(SeeUThemeColors c) {
+  Widget _buildHeader(SeeUThemeColors c) {
     final bool isResult =
         _mode == _Mode.photo && _bgRemovedUrl != null && !_removingBg;
     final bool isVideoResult =
         _mode == _Mode.video && _bgRemovedUrl != null && !_isRemoving;
     final bool canGoBack = isResult || isVideoResult;
     final bool isProcessing = _removingBg || _isRemoving;
+    final bool isVideoFrame = _mode == _Mode.video && !isVideoResult && !_isRemoving;
 
     String title = 'Новый стикер';
-    if (_mode == _Mode.video) title = 'Выбор кадра';
-    if (_removingBg) title = 'Удаление фона';
-    if (isResult) title = 'Удаление фона';
+    if (isVideoFrame) title = 'Выбор кадра';
+    if (_removingBg || _isRemoving) title = 'Удаление фона';
+    if (isResult || isVideoResult) title = 'Удаление фона';
 
-    return AppBar(
-      backgroundColor: c.surface,
-      elevation: 0,
-      leading: isProcessing
-          ? const SizedBox.shrink()
-          : canGoBack
-              ? IconButton(
-                  icon: Icon(PhosphorIconsBold.caretLeft, color: c.ink),
-                  onPressed: _goBackFromResult,
-                )
-              : IconButton(
-                  icon: Icon(PhosphorIconsRegular.x, color: c.ink),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-      title: Text(
-        title,
-        style: SeeUTypography.subtitle.copyWith(color: c.ink),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Row(
+        children: [
+          if (!isProcessing)
+            GestureDetector(
+              onTap: canGoBack || isVideoFrame
+                  ? _goBackFromResult
+                  : () => Navigator.of(context).pop(),
+              child: Icon(
+                canGoBack || isVideoFrame
+                    ? PhosphorIcons.caretLeft(PhosphorIconsStyle.bold)
+                    : PhosphorIcons.x(),
+                size: 20,
+                color: c.ink,
+              ),
+            )
+          else
+            const SizedBox(width: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: c.ink,
+              ),
+            ),
+          ),
+          if (!isProcessing && !canGoBack && !isVideoResult)
+            isVideoFrame
+                ? Text('из видео', style: TextStyle(fontSize: 13, color: c.ink3))
+                : GestureDetector(
+                    onTap: () {},
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Недавние',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: c.ink2,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(PhosphorIcons.caretDown(), size: 13, color: c.ink2),
+                      ],
+                    ),
+                  ),
+        ],
       ),
-      centerTitle: true,
     );
   }
 
@@ -676,6 +717,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                       color: c.ink3,
                     ),
                   ),
+                  // "Фон удалён" bottom-left
                   Positioned(
                     bottom: 12,
                     left: 12,
@@ -700,6 +742,30 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // "До ↔ После" top-right
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        boxShadow: SeeUShadows.sm,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('До', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(PhosphorIconsRegular.arrowsLeftRight, size: 11, color: c.ink3),
+                          ),
+                          Text('После', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
                         ],
                       ),
                     ),
@@ -891,6 +957,32 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                         ],
                       ),
                     ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Builder(builder: (ctx) {
+                      final c = ctx.seeuColors;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                          boxShadow: SeeUShadows.sm,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('До', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Icon(PhosphorIconsRegular.arrowsLeftRight, size: 11, color: c.ink3),
+                            ),
+                            Text('После', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
+                          ],
+                        ),
+                      );
+                    }),
                   ),
                 ],
               ),

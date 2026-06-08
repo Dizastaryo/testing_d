@@ -767,24 +767,62 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Grabber
                 Container(
-                  width: 40,
-                  height: 4,
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: c.ink3.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(height: 16),
+                // Person header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: c.surface2,
+                        backgroundImage: (p.user.avatarUrl?.isNotEmpty ?? false)
+                            ? CachedNetworkImageProvider(p.user.avatarUrl!)
+                            : null,
+                        child: (p.user.avatarUrl?.isEmpty ?? true)
+                            ? Icon(PhosphorIcons.user(), color: c.ink3, size: 18)
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.user.fullName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              color: c.ink,
+                            ),
+                          ),
+                          Text(
+                            isAdmin ? 'Администратор' : 'Участник',
+                            style: TextStyle(fontSize: 12, color: c.ink3),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: c.line),
+                // Admin toggle
                 ListTile(
                   leading: Icon(
-                    isAdmin
-                        ? PhosphorIcons.userMinus()
-                        : PhosphorIcons.userPlus(),
+                    PhosphorIcons.crownSimple(),
                     color: SeeUColors.accent,
                   ),
                   title: Text(
-                    isAdmin ? 'Снять админа' : 'Сделать админом',
+                    isAdmin
+                        ? 'Снять права администратора'
+                        : 'Назначить администратором',
                     style: SeeUTypography.subtitle,
                   ),
                   onTap: () {
@@ -792,12 +830,37 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                     _changeRole(p, isAdmin ? 'member' : 'admin');
                   },
                 ),
+                // Write message
                 ListTile(
-                  leading: Icon(PhosphorIcons.x(), color: SeeUColors.error),
+                  leading: Icon(PhosphorIcons.chatCircle(), color: c.ink),
+                  title: Text('Написать сообщение', style: SeeUTypography.subtitle),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    final chatId = await ref
+                        .read(chatListProvider.notifier)
+                        .getOrCreateChat(p.user.id);
+                    if (!mounted || chatId == null) return;
+                    context.push('/chat/$chatId');
+                  },
+                ),
+                // Block
+                ListTile(
+                  leading: Icon(PhosphorIcons.prohibit(), color: c.ink),
+                  title: Text('Заблокировать', style: SeeUTypography.subtitle),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Скоро')),
+                    );
+                  },
+                ),
+                Divider(height: 1, color: c.line),
+                // Remove
+                ListTile(
+                  leading: Icon(PhosphorIcons.userMinus(), color: SeeUColors.error),
                   title: Text(
                     'Удалить из группы',
-                    style: SeeUTypography.subtitle
-                        .copyWith(color: SeeUColors.error),
+                    style: SeeUTypography.subtitle.copyWith(color: SeeUColors.error),
                   ),
                   onTap: () {
                     Navigator.pop(sheetCtx);

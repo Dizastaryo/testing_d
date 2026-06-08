@@ -428,7 +428,7 @@ class _MemberTile extends StatelessWidget {
         member.fullName.isNotEmpty ? member.fullName[0].toUpperCase() : '?';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       child: Row(
         children: [
           // Avatar
@@ -484,28 +484,15 @@ class _MemberTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        isSelf ? '${member.fullName} (вы)' : member.fullName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: c.ink,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (member.isCreator) ...[
-                      const SizedBox(width: 6),
-                      _roleBadge('Создатель', SeeUColors.accent),
-                    ] else if (member.isAdmin) ...[
-                      const SizedBox(width: 6),
-                      _roleBadge('Админ', SeeUColors.accent),
-                    ],
-                  ],
+                Text(
+                  isSelf ? '${member.fullName} (вы)' : member.fullName,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -515,6 +502,11 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
           ),
+          // Role pill — right-aligned
+          if (member.isCreator)
+            _roleBadge('Создатель', SeeUColors.accent)
+          else if (member.isAdmin)
+            _roleBadge('Админ', SeeUColors.accent),
           // Toggle admin button (creator only, non-self, non-creator target)
           if (canToggleAdmin)
             GestureDetector(
@@ -564,15 +556,15 @@ class _MemberTile extends StatelessWidget {
 
   Widget _roleBadge(String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(SeeURadii.pill),
       ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: FontWeight.w700,
           color: color,
         ),

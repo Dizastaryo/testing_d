@@ -121,43 +121,28 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
 
   Widget _buildHeader(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
           GestureDetector(
             onTap: () => context.pop(),
-            child: Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                shape: BoxShape.circle,
-                boxShadow: SeeUShadows.sm,
-              ),
-              child: Icon(
-                PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-                size: 16, color: c.ink,
+            child: Icon(
+              PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
+              size: 20, color: c.ink,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              'Новый сбор',
+              style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w600, color: c.ink,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Новый сбор',
-                  style: const TextStyle(
-                    fontFamily: 'Fraunces',
-                    fontSize: 22, fontWeight: FontWeight.w500,
-                    letterSpacing: -0.2, height: 1.1,
-                  ),
-                ),
-                Text(
-                  'Заполни — займёт минуту',
-                  style: TextStyle(fontSize: 12, color: c.ink3),
-                ),
-              ],
-            ),
+          Text(
+            'Шаг 1/2',
+            style: TextStyle(fontSize: 13, color: c.ink3),
           ),
         ],
       ),

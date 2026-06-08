@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +17,6 @@ import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/room_provider.dart';
 import '../../core/services/voice_room_service.dart';
-import '../../widgets/speaking_rings.dart';
 import 'room_members_screen.dart';
 import 'widgets/emoji_sticker_panel.dart';
 
@@ -448,22 +446,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final isCreator = room.creatorId == myId;
     final isAdmin = room.isAdmin || isCreator;
 
-    Widget backBtn = GestureDetector(
-      onTap: () => Navigator.of(context).pop(),
-      child: Container(
-        width: 36, height: 36,
-        decoration: BoxDecoration(
-          color: c.surface,
-          shape: BoxShape.circle,
-          boxShadow: SeeUShadows.sm,
-        ),
-        child: Icon(
-          PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-          size: 16, color: c.ink,
-        ),
-      ),
-    );
-
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       decoration: BoxDecoration(
@@ -472,8 +454,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       ),
       child: Row(
         children: [
-          backBtn,
-          const SizedBox(width: 10),
+          // Back — bare
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), size: 22, color: c.ink),
+            ),
+          ),
           if (_isSearching) ...[
             Expanded(
               child: TextField(
@@ -497,14 +485,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 _searchQuery = '';
                 _searchCtrl.clear();
               }),
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  shape: BoxShape.circle,
-                  boxShadow: SeeUShadows.sm,
-                ),
-                child: Icon(PhosphorIconsRegular.x, size: 16, color: c.ink),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(PhosphorIconsRegular.x, size: 20, color: c.ink),
               ),
             ),
           ] else ...[
@@ -516,22 +499,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 children: [
                   Text(
                     room.name,
-                    style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700,
-                      fontFamily: 'Fraunces', color: c.ink,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.ink),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     '${room.participantCount} участников',
-                    style: TextStyle(fontSize: 11, color: c.ink3),
+                    style: TextStyle(fontSize: 12, color: c.ink3),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            // Members button
+            // Members — bare
             GestureDetector(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
@@ -541,42 +520,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   ),
                 ),
               ),
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  shape: BoxShape.circle,
-                  boxShadow: SeeUShadows.sm,
-                ),
-                child: Icon(PhosphorIcons.users(), size: 18, color: c.ink),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(PhosphorIcons.users(), size: 22, color: c.ink),
               ),
             ),
-            const SizedBox(width: 8),
-            // Search button
+            // Search — bare
             GestureDetector(
               onTap: () => setState(() => _isSearching = true),
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  shape: BoxShape.circle,
-                  boxShadow: SeeUShadows.sm,
-                ),
-                child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 18, color: c.ink),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 22, color: c.ink),
               ),
             ),
-            const SizedBox(width: 8),
-            // Overflow menu
+            // Overflow — bare
             GestureDetector(
               onTap: () => _showRoomMenu(c, room, isAdmin, isCreator),
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  shape: BoxShape.circle,
-                  boxShadow: SeeUShadows.sm,
-                ),
-                child: Icon(PhosphorIcons.dotsThreeVertical(), size: 18, color: c.ink),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(PhosphorIcons.dotsThreeVertical(), size: 22, color: c.ink),
               ),
             ),
           ],
@@ -596,7 +558,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return Container(
       width: 36, height: 36,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        borderRadius: BorderRadius.circular(11),
         gradient: hasCover ? null : LinearGradient(colors: palette),
       ),
       clipBehavior: Clip.antiAlias,
@@ -707,155 +669,116 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final voiceUsers = room.voiceParticipants;
     final voiceCount = room.voiceCount;
 
+    final String subtitle;
+    if (voiceCount == 0) {
+      subtitle = 'Никого нет в эфире';
+    } else {
+      final names = voiceUsers.take(2).map((p) => p.fullName.split(' ').first).join(', ');
+      subtitle = '$names · $voiceCount в голосе';
+    }
+
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(SeeURadii.medium),
         border: Border.all(color: c.line, width: 0.5),
         boxShadow: SeeUShadows.sm,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          // Header row
-          Row(
-            children: [
-              // Voice icon container (ve-ic style)
-              Container(
-                width: 38, height: 38,
-                decoration: BoxDecoration(
-                  color: voiceCount > 0 ? SeeUColors.accentSoft : c.surface2,
-                  borderRadius: BorderRadius.circular(11),
+          // Mic icon container
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: voiceCount > 0 ? c.accentSoft : c.surface2,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+              size: 20,
+              color: voiceCount > 0 ? SeeUColors.accent : c.ink3,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Title + subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Голосовой канал',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink),
                 ),
-                child: Icon(
-                  PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-                  size: 18,
-                  color: voiceCount > 0 ? SeeUColors.accent : c.ink3,
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 12, color: c.ink3),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          // Avatar stack
+          if (voiceUsers.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            _VoiceAvatarStack(participants: voiceUsers, c: c),
+          ],
+          // Actions (only for joined & active)
+          if (room.isJoined && room.isActive) ...[
+            const SizedBox(width: 8),
+            // Mute toggle (only when in voice)
+            if (inVoice) ...[
+              GestureDetector(
+                onTap: () => _toggleMute(room),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: room.isMuted
+                        ? c.surface2
+                        : SeeUColors.success.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    room.isMuted
+                        ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
+                        : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                    size: 16,
+                    color: room.isMuted ? c.ink3 : SeeUColors.success,
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
-              Text(
-                voiceCount > 0
-                    ? 'ГОЛОСОВОЙ · $voiceCount'
-                    : 'ГОЛОСОВОЙ',
-                style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: voiceCount > 0 ? SeeUColors.accent : c.ink3,
-                ),
-              ),
-              const Spacer(),
-              if (room.isJoined && room.isActive) ...[
-                // Mute button (only visible when in voice)
-                if (inVoice)
-                  GestureDetector(
-                    onTap: () => _toggleMute(room),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: room.isMuted ? c.surface2 : SeeUColors.accent,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            room.isMuted
-                                ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                                : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-                            size: 13,
-                            color: room.isMuted ? c.ink3 : Colors.white,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            room.isMuted ? 'Выкл.' : 'Вкл.',
-                            style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600,
-                              color: room.isMuted ? c.ink3 : Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                // Join / Leave voice button
-                GestureDetector(
-                  onTap: inVoice ? _leaveVoice : _joinVoice,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: inVoice ? null : SeeUGradients.heroOrange,
-                      color: inVoice
-                          ? SeeUColors.error.withValues(alpha: 0.12)
-                          : null,
-                      borderRadius: BorderRadius.circular(999),
-                      border: inVoice
-                          ? Border.all(color: SeeUColors.error.withValues(alpha: 0.4))
-                          : null,
-                      boxShadow: inVoice ? null : [
-                        BoxShadow(
-                          color: SeeUColors.accent.withValues(alpha: 0.32),
-                          offset: const Offset(0, 6),
-                          blurRadius: 18,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          inVoice
-                              ? PhosphorIconsFill.phoneSlash
-                              : PhosphorIconsFill.phone,
-                          size: 13,
-                          color: inVoice ? SeeUColors.error : Colors.white,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          inVoice ? 'Выйти' : 'Войти',
-                          style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600,
-                            color: inVoice ? SeeUColors.error : Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
             ],
-          ),
-          // Participants in voice (only shown if anyone is in voice)
-          if (voiceUsers.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 72,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: voiceUsers.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (ctx, i) {
-                  final isMe = voiceUsers[i].userId == myId;
-                  return _ParticipantBubble(
-                    participant: voiceUsers[i],
-                    isMe: isMe,
-                    c: c,
-                    audioLevelListenable: isMe ? _myAudioLevel : null,
-                  );
-                },
+            // Join / Leave
+            GestureDetector(
+              onTap: inVoice ? _leaveVoice : _joinVoice,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  gradient: inVoice ? null : SeeUGradients.heroOrange,
+                  color: inVoice ? SeeUColors.error.withValues(alpha: 0.10) : null,
+                  shape: BoxShape.circle,
+                  border: inVoice
+                      ? Border.all(color: SeeUColors.error.withValues(alpha: 0.3))
+                      : null,
+                  boxShadow: inVoice ? null : [
+                    BoxShadow(
+                      color: SeeUColors.accent.withValues(alpha: 0.30),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  inVoice ? PhosphorIconsFill.phoneSlash : PhosphorIconsFill.phone,
+                  size: 18,
+                  color: inVoice ? SeeUColors.error : Colors.white,
+                ),
               ),
-            ),
-          ] else if (!inVoice && room.isJoined) ...[
-            // #M-7: подсказку показываем только участникам (не гостям)
-            const SizedBox(height: 8),
-            Text(
-              'Нажми «Войти», чтобы подключиться к голосовому',
-              style: TextStyle(fontSize: 12, color: c.ink3),
             ),
           ],
         ],
@@ -1034,98 +957,76 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   }
 }
 
-// ─── Participant bubble (voice panel) ─────────────────────────────
+// ─── Voice avatar stack ───────────────────────────────────────────
 
-class _ParticipantBubble extends StatelessWidget {
-  final RoomParticipant participant;
-  final bool isMe;
+class _VoiceAvatarStack extends StatelessWidget {
+  final List<RoomParticipant> participants;
   final SeeUThemeColors c;
-  /// Передаётся только для текущего пользователя (isMe == true).
-  /// null = не показываем кольца.
-  final ValueListenable<double>? audioLevelListenable;
-
-  const _ParticipantBubble({
-    required this.participant,
-    required this.isMe,
-    required this.c,
-    this.audioLevelListenable,
-  });
+  const _VoiceAvatarStack({required this.participants, required this.c});
 
   @override
   Widget build(BuildContext context) {
-    final seed = (participant.fullName.isNotEmpty
-        ? participant.fullName.codeUnitAt(0) + participant.fullName.length
-        : 0) %
-        SeeUColors.avatarPalettes.length;
-    final pal = SeeUColors.avatarPalettes[seed];
-    final initial = participant.fullName.isNotEmpty ? participant.fullName[0].toUpperCase() : '?';
-
-    Widget avatarStack = Stack(
-      children: [
-        Container(
-          width: 44, height: 44,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: pal),
-            shape: BoxShape.circle,
-            border: isMe
-                ? Border.all(color: SeeUColors.accent, width: 2)
-                : null,
-          ),
-          child: Center(
-            child: Text(
-              initial,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
-            ),
-          ),
-        ),
-        // Mute indicator
-        Positioned(
-          right: 0, bottom: 0,
-          child: Container(
-            width: 16, height: 16,
-            decoration: BoxDecoration(
-              color: participant.isMuted ? c.surface2 : SeeUColors.success,
-              shape: BoxShape.circle,
-              border: Border.all(color: c.bg, width: 2),
-            ),
-            child: Icon(
-              participant.isMuted
-                  ? PhosphorIcons.microphoneSlash(PhosphorIconsStyle.fill)
-                  : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
-              size: 7,
-              color: participant.isMuted ? c.ink3 : Colors.white,
-            ),
-          ),
-        ),
-      ],
-    );
-
-    // Оборачиваем в SpeakingRings только для себя и только если не мут
-    if (audioLevelListenable != null && !participant.isMuted) {
-      avatarStack = ValueListenableBuilder<double>(
-        valueListenable: audioLevelListenable!,
-        builder: (_, level, ch) => SpeakingRings(
-          audioLevel: level,
-          size: 44,
-          color: SeeUColors.success,
-          child: ch!,
-        ),
-        child: avatarStack,
-      );
-    }
+    const double size = 22;
+    const double overlap = 8;
+    final shown = participants.take(3).toList();
+    final extra = participants.length - shown.length;
+    final itemCount = shown.length + (extra > 0 ? 1 : 0);
+    final totalWidth = size + (itemCount - 1) * (size - overlap);
 
     return SizedBox(
-      width: 60, // немного шире чтобы кольца не обрезались
-      child: Column(
+      width: totalWidth,
+      height: size,
+      child: Stack(
         children: [
-          avatarStack,
-          const SizedBox(height: 4),
-          Text(
-            isMe ? 'Вы' : participant.fullName.split(' ').first,
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: c.ink2),
-            maxLines: 1, overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
+          ...shown.asMap().entries.map((e) {
+            final idx = e.key;
+            final p = e.value;
+            final seed = (p.fullName.isNotEmpty
+                    ? p.fullName.codeUnitAt(0) + p.fullName.length
+                    : 0) %
+                SeeUColors.avatarPalettes.length;
+            final pal = SeeUColors.avatarPalettes[seed];
+            final initial = p.fullName.isNotEmpty ? p.fullName[0].toUpperCase() : '?';
+            return Positioned(
+              left: idx * (size - overlap),
+              child: Container(
+                width: size, height: size,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: pal),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: c.surface, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+          if (extra > 0)
+            Positioned(
+              left: shown.length * (size - overlap),
+              child: Container(
+                width: size, height: size,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: c.surface, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    '+$extra',
+                    style: TextStyle(
+                      color: c.ink3, fontSize: 8, fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
