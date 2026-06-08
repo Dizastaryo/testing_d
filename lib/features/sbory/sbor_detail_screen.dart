@@ -313,8 +313,15 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 16, color: s.categoryMeta.color.withValues(alpha: 0.75)),
-                const SizedBox(height: 5),
+                Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 16, color: SeeUColors.accent),
+                ),
+                const SizedBox(height: 8),
                 Text(
                   label.toUpperCase(),
                   style: TextStyle(
@@ -1375,8 +1382,9 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       text.toUpperCase(),
       style: TextStyle(
-        fontSize: 11, fontWeight: FontWeight.w600,
-        letterSpacing: 0.8, color: c.ink3,
+        fontFamily: 'JetBrains Mono',
+        fontSize: 10, fontWeight: FontWeight.w600,
+        letterSpacing: 1.0, color: c.ink3,
       ),
     );
   }

@@ -75,7 +75,8 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
       height: 360,
       decoration: BoxDecoration(
         color: c.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
+        border: Border(top: BorderSide(color: c.line, width: 0.5)),
       ),
       child: Column(
         children: [
@@ -91,19 +92,33 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
               ),
             ),
           ),
-          // Tab bar
-          TabBar(
-            controller: _tabController,
-            labelColor: SeeUColors.accent,
-            unselectedLabelColor: c.ink3,
-            indicatorColor: SeeUColors.accent,
-            indicatorSize: TabBarIndicatorSize.label,
-            tabs: const [
-              Tab(text: 'Эмодзи'),
-              Tab(text: 'Стикеры'),
-            ],
+          // Tab chips
+          AnimatedBuilder(
+            animation: _tabController,
+            builder: (context, _) {
+              final idx = _tabController.index;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                child: Row(
+                  children: [
+                    _PanelTabChip(
+                      label: 'Эмодзи',
+                      active: idx == 0,
+                      c: c,
+                      onTap: () => _tabController.animateTo(0),
+                    ),
+                    const SizedBox(width: 8),
+                    _PanelTabChip(
+                      label: 'Стикеры',
+                      active: idx == 1,
+                      c: c,
+                      onTap: () => _tabController.animateTo(1),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-          const SizedBox(height: 4),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -409,5 +424,50 @@ class _StickerTab extends ConsumerWidget {
         ),
       ),
     ).whenComplete(isDeleting.dispose);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel tab chip
+// ---------------------------------------------------------------------------
+
+class _PanelTabChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final SeeUThemeColors c;
+  final VoidCallback onTap;
+
+  const _PanelTabChip({
+    required this.label,
+    required this.active,
+    required this.c,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: active ? c.ink : c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(color: active ? c.ink : c.line, width: 0.5),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: active ? c.bg : c.ink2,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

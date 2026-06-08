@@ -679,7 +679,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         decoration: BoxDecoration(
           color: c.bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

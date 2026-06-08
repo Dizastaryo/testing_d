@@ -263,7 +263,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
-        color: c.surface,
+        color: c.bg,
         border: Border(top: BorderSide(color: c.line, width: 0.5)),
       ),
       child: SafeArea(
