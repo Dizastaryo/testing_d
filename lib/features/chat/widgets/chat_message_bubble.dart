@@ -59,20 +59,24 @@ class ChatDateSeparator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
-        children: [
-          Expanded(child: Container(height: 0.5, color: c.line)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              label,
-              style: SeeUTypography.micro.copyWith(color: c.ink3, fontSize: 11),
-            ),
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border.all(color: c.line, width: 0.5),
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          boxShadow: SeeUShadows.sm,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: c.ink3,
           ),
-          Expanded(child: Container(height: 0.5, color: c.line)),
-        ],
+        ),
       ),
     );
   }
@@ -348,7 +352,6 @@ class ChatMessageBubble extends StatelessWidget {
       decoration: isVoice || isSticker
           ? null
           : BoxDecoration(
-              // B1: gradient for own, B2: surface2 no border for other
               gradient: mine
                   ? const LinearGradient(
                       begin: Alignment.topLeft,
@@ -356,8 +359,12 @@ class ChatMessageBubble extends StatelessWidget {
                       colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
                     )
                   : null,
-              color: mine ? null : c.surface2,
+              color: mine ? null : c.surface,
               borderRadius: bubbleRadius,
+              border: mine
+                  ? null
+                  : Border.all(color: c.line, width: 0.5),
+              boxShadow: mine ? null : SeeUShadows.sm,
             ),
       child: Column(
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,

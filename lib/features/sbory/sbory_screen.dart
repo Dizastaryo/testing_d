@@ -490,7 +490,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         ? '${_dateFilter!.start.day}.${_dateFilter!.start.month}–${_dateFilter!.end.day}.${_dateFilter!.end.month}'
         : 'Дата';
     return SizedBox(
-      height: 40,
+      height: 44,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         scrollDirection: Axis.horizontal,
@@ -522,24 +522,27 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                 if (range != null) setState(() => _dateFilter = range);
               },
               child: Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   color: dateActive ? SeeUColors.accent : c.surface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: dateActive ? null : Border.all(color: c.line),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  border: Border.all(
+                    color: dateActive ? SeeUColors.accent : c.line,
+                    width: 0.5,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(PhosphorIcons.calendarBlank(), size: 14,
                         color: dateActive ? Colors.white : c.ink2),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     Text(
                       dateLabel,
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: dateActive ? FontWeight.w600 : FontWeight.w500,
                         color: dateActive ? Colors.white : c.ink2,
                       ),
                     ),
@@ -559,23 +562,26 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               }
             },
             child: Container(
-              height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: active ? c.ink : c.surface,
-                borderRadius: BorderRadius.circular(999),
-                border: active ? null : Border.all(color: c.line),
+                color: active ? SeeUColors.accent : c.surface,
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
+                border: Border.all(
+                  color: active ? SeeUColors.accent : c.line,
+                  width: 0.5,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(icon, size: 14, color: active ? Colors.white : c.ink2),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 6),
                   Text(
                     label,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                       color: active ? Colors.white : c.ink2,
                     ),
                   ),
@@ -766,14 +772,14 @@ class _TypeChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: active ? color.ink : color.surface,
-          borderRadius: BorderRadius.circular(999),
-          border: active ? null : Border.all(color: color.line),
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(color: active ? color.ink : color.line, width: 0.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 13, color: active ? Colors.white : color.ink2),
+              Icon(icon, size: 13, color: active ? color.bg : color.ink2),
               const SizedBox(width: 5),
             ],
             Text(
@@ -781,7 +787,7 @@ class _TypeChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                color: active ? Colors.white : color.ink2,
+                color: active ? color.bg : color.ink2,
               ),
             ),
           ],
@@ -852,7 +858,7 @@ class SborCard extends StatelessWidget {
     final s = sbor;
     final meta = s.categoryMeta;
     final coverUrl = _resolvedCoverUrl(s);
-    final headerH = coverUrl != null ? 140.0 : 96.0;
+    final headerH = coverUrl != null ? 150.0 : 96.0;
 
     return GestureDetector(
       onTap: onTap,

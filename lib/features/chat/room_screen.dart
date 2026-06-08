@@ -711,19 +711,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            SeeUColors.accent.withValues(alpha: inVoice ? 0.10 : 0.05),
-            SeeUColors.accent.withValues(alpha: 0.02),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: SeeUColors.accent.withValues(alpha: inVoice ? 0.3 : 0.15),
-          width: 1,
-        ),
+        color: c.surface,
+        borderRadius: BorderRadius.circular(SeeURadii.medium),
+        border: Border.all(color: c.line, width: 0.5),
+        boxShadow: SeeUShadows.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -731,15 +722,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           // Header row
           Row(
             children: [
-              // Pulse dot — orange when any user in voice, grey when empty
+              // Voice icon container (ve-ic style)
               Container(
-                width: 8, height: 8,
+                width: 38, height: 38,
                 decoration: BoxDecoration(
-                  color: voiceCount > 0 ? SeeUColors.accent : c.ink4,
-                  shape: BoxShape.circle,
-                  boxShadow: voiceCount > 0
-                      ? [BoxShadow(color: SeeUColors.accentSoft, blurRadius: 0, spreadRadius: 3)]
-                      : null,
+                  color: voiceCount > 0 ? SeeUColors.accentSoft : c.surface2,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                  size: 18,
+                  color: voiceCount > 0 ? SeeUColors.accent : c.ink3,
                 ),
               ),
               const SizedBox(width: 6),
@@ -796,13 +789,21 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
+                      gradient: inVoice ? null : SeeUGradients.heroOrange,
                       color: inVoice
                           ? SeeUColors.error.withValues(alpha: 0.12)
-                          : SeeUColors.accent,
+                          : null,
                       borderRadius: BorderRadius.circular(999),
                       border: inVoice
                           ? Border.all(color: SeeUColors.error.withValues(alpha: 0.4))
                           : null,
+                      boxShadow: inVoice ? null : [
+                        BoxShadow(
+                          color: SeeUColors.accent.withValues(alpha: 0.32),
+                          offset: const Offset(0, 6),
+                          blurRadius: 18,
+                        ),
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

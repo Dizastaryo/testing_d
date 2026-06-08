@@ -1675,7 +1675,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (_replyingTo != null) _buildReplyBanner(_replyingTo!),
         Container(
           decoration: BoxDecoration(
-            color: c.surface,
+            color: c.bg,
             border: Border(
               top: BorderSide(
                 color: c.line,
@@ -1694,11 +1694,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   GestureDetector(
                     onTap: _isUploading ? null : _showAttachMenu,
                     child: Container(
-                      width: 44,
-                      height: 44,
+                      width: 46,
+                      height: 46,
                       decoration: BoxDecoration(
                         color: c.surface2,
                         shape: BoxShape.circle,
+                        border: Border.all(color: c.line, width: 0.5),
                       ),
                       child: _isUploading
                           ? Padding(
@@ -1721,13 +1722,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   GestureDetector(
                     onTap: _showTtlPicker,
                     child: Container(
-                      width: 44,
-                      height: 44,
+                      width: 46,
+                      height: 46,
                       decoration: BoxDecoration(
                         color: _ttlSeconds != null
                             ? SeeUColors.accent.withValues(alpha: 0.15)
                             : c.surface2,
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _ttlSeconds != null
+                              ? SeeUColors.accent.withValues(alpha: 0.35)
+                              : c.line,
+                          width: 0.5,
+                        ),
                       ),
                       child: Stack(
                         alignment: Alignment.center,
@@ -1774,14 +1781,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       duration: const Duration(milliseconds: 180),
                       constraints: const BoxConstraints(maxHeight: 120),
                       decoration: BoxDecoration(
-                        color: c.surface2,
+                        color: c.surface,
                         borderRadius: BorderRadius.circular(SeeURadii.pill),
                         border: Border.all(
                           color: _focusNode.hasFocus
                               ? SeeUColors.accent.withValues(alpha: 0.4)
-                              : c.line.withValues(alpha: 0.5),
-                          width: 1,
+                              : c.line,
+                          width: 0.5,
                         ),
+                        boxShadow: SeeUShadows.sm,
                       ),
                       child: TextField(
                         controller: _textController,
@@ -1833,11 +1841,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ? _sendMessage
                         : () => setState(() => _recording = true),
                     child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: const BoxDecoration(
-                        color: SeeUColors.accent,
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        gradient: _hasText ? null : SeeUGradients.heroOrange,
+                        color: _hasText ? SeeUColors.accent : null,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: SeeUColors.accent.withValues(alpha: 0.32),
+                            offset: const Offset(0, 6),
+                            blurRadius: 18,
+                          ),
+                        ],
                       ),
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),

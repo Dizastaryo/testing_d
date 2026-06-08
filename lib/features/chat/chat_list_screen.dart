@@ -164,10 +164,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                     GestureDetector(
                       onTap: _showNewRoomPicker,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         decoration: BoxDecoration(
                           color: SeeUColors.accent,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                          boxShadow: SeeUShadows.sm,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -717,7 +719,7 @@ class _ChatTile extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 3),
                                 const Text(
-                                  'сбор',
+                                  'СБОР',
                                   style: TextStyle(
                                     fontSize: 9,
                                     fontWeight: FontWeight.w700,
@@ -847,13 +849,15 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 6),
       child: Text(
-        label,
-        style: SeeUTypography.caption.copyWith(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontFamily: 'JetBrains Mono',
+          fontSize: 10,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 1.0,
           color: c.ink3,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
         ),
       ),
     );
@@ -1576,23 +1580,24 @@ class _TabChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: active ? c.ink : c.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: active ? null : Border.all(color: c.line),
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(color: active ? c.ink : c.line, width: 0.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: active ? Colors.white : c.ink2),
+            Icon(icon, size: 14, color: active ? c.bg : c.ink2),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                color: active ? Colors.white : c.ink2,
+                fontSize: 14,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                color: active ? c.bg : c.ink2,
               ),
             ),
           ],
@@ -1623,19 +1628,7 @@ class _RoomCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: c.line, width: 0.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8, offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         child: Row(
           children: [
             // Cover / icon container
@@ -1653,7 +1646,7 @@ class _RoomCard extends StatelessWidget {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(17),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: hasCover
