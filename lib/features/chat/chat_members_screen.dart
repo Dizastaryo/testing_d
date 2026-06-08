@@ -39,6 +39,14 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
   bool _loading = true;
   String? _error;
   List<_Participant> _members = [];
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -479,175 +487,195 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
       });
     });
 
+    final q = _searchQuery.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? _members
+        : _members.where((m) =>
+            m.user.fullName.toLowerCase().contains(q) ||
+            m.user.username.toLowerCase().contains(q)).toList();
+
+    final admins = filtered.where((m) => m.role == 'admin').toList();
+    final regular = filtered.where((m) => m.role != 'admin').toList();
+
+    Widget sectionHeader(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+      child: Text(label, style: TextStyle(
+        fontFamily: 'JetBrains Mono', fontSize: 11,
+        fontWeight: FontWeight.w600, letterSpacing: 0.5, color: c.ink3,
+      )),
+    );
+
+    Widget memberRow(_Participant p) {
+      final isSelf = p.user.id == myId;
+      final canKick = isMeAdmin && !isSelf;
+      return GestureDetector(
+        onTap: () => context.push('/profile/${p.user.username}'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: c.surface2,
+                backgroundImage: (p.user.avatarUrl?.isNotEmpty ?? false)
+                    ? CachedNetworkImageProvider(p.user.avatarUrl!) : null,
+                child: (p.user.avatarUrl?.isEmpty ?? true)
+                    ? Icon(PhosphorIcons.user(), color: c.ink3, size: 18) : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(child: Text(
+                        isSelf ? 'Вы' : p.user.fullName,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink),
+                        overflow: TextOverflow.ellipsis,
+                      )),
+                    ]),
+                    Text('@${p.user.username}', style: TextStyle(fontSize: 12, color: c.ink3)),
+                  ],
+                ),
+              ),
+              if (p.role == 'admin')
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  ),
+                  child: Text('Админ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: SeeUColors.accent)),
+                )
+              else if (canKick)
+                GestureDetector(
+                  onTap: () => _showMemberMenu(p),
+                  child: Icon(PhosphorIcons.dotsThreeVertical(), color: c.ink3, size: 18),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
         child: Column(
           children: [
+            // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), size: 22, color: c.ink),
                   ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      'Участники · ${_members.length}',
-                      style: SeeUTypography.title.copyWith(color: c.ink),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Участники', style: SeeUTypography.title.copyWith(fontSize: 17, color: c.ink)),
+                        Text('${_members.length} человека', style: TextStyle(fontSize: 12, color: c.ink3)),
+                      ],
                     ),
                   ),
+                  if (isMeAdmin)
+                    GestureDetector(
+                      onTap: _addMember,
+                      child: Icon(PhosphorIcons.userPlus(), size: 22, color: c.ink),
+                    ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Search
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  style: TextStyle(fontSize: 14, color: c.ink),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск по имени',
+                    hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 8),
+                      child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 16, color: c.ink3),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
               ),
             ),
             Expanded(
               child: _loading
                   ? const SeeUListSkeleton()
                   : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(_error != null ? friendlyError(_error!) : '',
-                                style: TextStyle(color: c.ink2)),
-                          ),
-                        )
+                      ? Center(child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(friendlyError(_error!), style: TextStyle(color: c.ink2)),
+                        ))
                       : ListView(
                           children: [
+                    // Add member + edit group rows
                     if (isMeAdmin) ...[
-                      ListTile(
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: SeeUColors.accent.withValues(alpha: 0.10),
-                            border: Border.all(
-                              color: SeeUColors.accent
-                                  .withValues(alpha: 0.30),
-                              width: 1,
-                            ),
-                          ),
-                          child: Icon(
-                            PhosphorIcons.pencilSimple(),
-                            color: SeeUColors.accent,
-                            size: 20,
-                          ),
-                        ),
-                        title: Text('Изменить группу',
-                            style: SeeUTypography.subtitle.copyWith(
-                              color: SeeUColors.accent,
-                              fontWeight: FontWeight.w600,
-                            )),
-                        subtitle: Text('Название и обложка',
-                            style: SeeUTypography.caption
-                                .copyWith(color: c.ink3)),
-                        onTap: _showEditGroupSheet,
-                      ),
-                      ListTile(
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: SeeUColors.accent.withValues(alpha: 0.10),
-                            border: Border.all(
-                              color: SeeUColors.accent
-                                  .withValues(alpha: 0.30),
-                              width: 1,
-                            ),
-                          ),
-                          child: Icon(
-                            PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                            color: SeeUColors.accent,
-                            size: 20,
-                          ),
-                        ),
-                        title: Text('Добавить участника',
-                            style: SeeUTypography.subtitle.copyWith(
-                              color: SeeUColors.accent,
-                              fontWeight: FontWeight.w600,
-                            )),
+                      GestureDetector(
                         onTap: _addMember,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          child: Row(children: [
+                            Container(
+                              width: 44, height: 44,
+                              decoration: const BoxDecoration(shape: BoxShape.circle, color: SeeUColors.accentSoft),
+                              child: Icon(PhosphorIcons.userPlus(), color: SeeUColors.accent, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Text('Добавить участников', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: SeeUColors.accent)),
+                          ]),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _showEditGroupSheet,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          child: Row(children: [
+                            Container(
+                              width: 44, height: 44,
+                              decoration: BoxDecoration(shape: BoxShape.circle, color: c.surface2),
+                              child: Icon(PhosphorIcons.pencilSimple(), color: c.ink2, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Text('Изменить группу', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink)),
+                          ]),
+                        ),
                       ),
                     ],
-                    ..._members.map((p) {
-                      final isSelf = p.user.id == myId;
-                      final canKick = isMeAdmin && !isSelf;
-                      return ListTile(
-                        onTap: () =>
-                            context.push('/profile/${p.user.username}'),
-                        leading: CircleAvatar(
-                          radius: 22,
-                          backgroundColor: c.surface2,
-                          backgroundImage:
-                              (p.user.avatarUrl?.isNotEmpty ?? false)
-                                  ? CachedNetworkImageProvider(
-                                      p.user.avatarUrl!)
-                                  : null,
-                          child: (p.user.avatarUrl?.isEmpty ?? true)
-                              ? Icon(PhosphorIcons.user(),
-                                  color: c.ink3, size: 18)
-                              : null,
-                        ),
-                        title: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                isSelf ? 'Вы' : p.user.fullName,
-                                style: SeeUTypography.subtitle,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (p.role == 'admin') ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  gradient: SeeUGradients.heroOrange,
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Text(
-                                  'admin',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        subtitle: Text('@${p.user.username}',
-                            style: SeeUTypography.caption
-                                .copyWith(color: c.ink3)),
-                        trailing: canKick
-                            ? IconButton(
-                                onPressed: () => _showMemberMenu(p),
-                                icon: Icon(
-                                    PhosphorIcons.dotsThreeVertical(),
-                                    color: c.ink3,
-                                    size: 18),
-                                tooltip: 'Действия',
-                              )
-                            : null,
-                      );
-                    }),
+                    if (admins.isNotEmpty) sectionHeader('АДМИНИСТРАТОРЫ'),
+                    ...admins.map(memberRow),
+                    if (regular.isNotEmpty) sectionHeader('УЧАСТНИКИ'),
+                    ...regular.map(memberRow),
                     const Divider(height: 32),
-                    ListTile(
-                      leading: Icon(PhosphorIcons.signOut(),
-                          color: SeeUColors.error),
-                      title: Text(
-                        'Покинуть группу',
-                        style: SeeUTypography.subtitle.copyWith(
-                          color: SeeUColors.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    GestureDetector(
                       onTap: _confirmLeave,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        child: Row(children: [
+                          Icon(PhosphorIcons.signOut(), color: SeeUColors.error, size: 20),
+                          const SizedBox(width: 12),
+                          Text('Покинуть группу', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: SeeUColors.error)),
+                        ]),
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],

@@ -39,6 +39,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   Timer? _searchDebounce;
 
   XFile? _coverImage;
+  bool _isPublic = true;
 
   final Set<String> _selectedIds = {};
   final Map<String, User> _selectedUsers = {};
@@ -175,6 +176,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
         'name': _nameCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         if (coverUrl.isNotEmpty) 'cover_url': coverUrl,
+        'is_public': _isPublic,
       });
       final data = resp.data is Map && resp.data.containsKey('data')
           ? resp.data['data'] as Map<String, dynamic>
@@ -219,7 +221,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
             _buildHeader(c),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
                 children: [
                   _buildRoomInfoSection(c),
                   const SizedBox(height: 28),
@@ -227,6 +229,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                 ],
               ),
             ),
+            _buildBottomCta(c),
           ],
         ),
       ),
@@ -235,48 +238,35 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
 
   Widget _buildHeader(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Row(
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: c.surface,
-                shape: BoxShape.circle,
-                boxShadow: SeeUShadows.sm,
-              ),
-              child: Icon(PhosphorIcons.x(), size: 18, color: c.ink),
-            ),
+            child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), size: 22, color: c.ink),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Text('Новая комната', style: SeeUTypography.title.copyWith(color: c.ink)),
           ),
-          GestureDetector(
-            onTap: _canCreate ? _create : null,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-              decoration: BoxDecoration(
-                color: _canCreate ? SeeUColors.accent : c.surface2,
-                borderRadius: BorderRadius.circular(12),
+          AnimatedOpacity(
+            opacity: _canCreate ? 1.0 : 0.45,
+            duration: const Duration(milliseconds: 150),
+            child: GestureDetector(
+              onTap: _canCreate ? _create : null,
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Создать',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
               ),
-              child: _creating
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : Text(
-                      'Создать',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _canCreate ? Colors.white : c.ink3,
-                      ),
-                    ),
             ),
           ),
         ],
@@ -288,103 +278,195 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildCoverPicker(c),
+        const SizedBox(height: 20),
         _SectionLabel('НАЗВАНИЕ'),
         const SizedBox(height: 8),
         _InputField(
           controller: _nameCtrl,
-          hintText: 'Например: «Вечерний джем»',
-          maxLength: 120,
+          hintText: 'Например, «Flutter Казахстан»',
+          maxLength: 40,
           autofocus: true,
           onChanged: (_) => setState(() {}),
           c: c,
+          showCounter: true,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         _SectionLabel('ОПИСАНИЕ'),
         const SizedBox(height: 8),
         _InputField(
           controller: _descCtrl,
-          hintText: 'О чём эта комната...',
+          hintText: 'О чём эта комната?',
           maxLength: 500,
-          maxLines: 2,
+          maxLines: 3,
+          fieldHeight: 52,
           c: c,
         ),
+        const SizedBox(height: 16),
+        // Info card
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(PhosphorIconsRegular.info, size: 19, color: SeeUColors.accent),
+              const SizedBox(width: 11),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: TextStyle(fontSize: 12.5, color: c.ink2, height: 1.5),
+                    children: [
+                      const TextSpan(text: 'Внутри сразу появятся '),
+                      TextSpan(text: 'текстовый чат', style: TextStyle(color: c.ink, fontWeight: FontWeight.w700)),
+                      const TextSpan(text: ' и '),
+                      TextSpan(text: 'голосовой канал', style: TextStyle(color: c.ink, fontWeight: FontWeight.w700)),
+                      const TextSpan(text: ' с демонстрацией экрана — настраивать ничего не нужно.'),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
-        // Cover image picker
-        _buildCoverPicker(c),
+        _SectionLabel('КТО МОЖЕТ ВОЙТИ'),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _PrivacyCard(
+                icon: PhosphorIconsRegular.globe,
+                title: 'Открытая',
+                subtitle: 'Видна в поиске и по ссылке',
+                selected: _isPublic,
+                onTap: () => setState(() => _isPublic = true),
+                c: c,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _PrivacyCard(
+                icon: PhosphorIconsRegular.lockSimple,
+                title: 'Закрытая',
+                subtitle: 'Только по приглашению',
+                selected: !_isPublic,
+                onTap: () => setState(() => _isPublic = false),
+                c: c,
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
 
   Widget _buildCoverPicker(SeeUThemeColors c) {
-    return GestureDetector(
-      onTap: _pickCoverImage,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        height: 100,
-        decoration: BoxDecoration(
-          color: _coverImage != null
-              ? Colors.transparent
-              : SeeUColors.accent.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: _coverImage != null
-                ? SeeUColors.accent
-                : SeeUColors.accent.withValues(alpha: 0.22),
-            width: _coverImage != null ? 1.5 : 1,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: _coverImage != null
-            ? Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.file(File(_coverImage!.path), fit: BoxFit.cover),
-                  Positioned(
-                    top: 8, right: 8,
-                    child: GestureDetector(
-                      onTap: () => setState(() => _coverImage = null),
-                      child: Container(
-                        width: 28, height: 28,
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(PhosphorIconsBold.x, size: 13, color: Colors.white),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Thumb
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onTap: _pickCoverImage,
+                  child: Container(
+                    width: 78, height: 78,
+                    decoration: BoxDecoration(
+                      gradient: _coverImage == null ? SeeUGradients.heroOrange : null,
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: SeeUShadows.md,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _coverImage != null
+                        ? Image.file(File(_coverImage!.path), fit: BoxFit.cover)
+                        : Center(
+                            child: Icon(
+                              PhosphorIcons.usersThree(PhosphorIconsStyle.bold),
+                              size: 27,
+                              color: Colors.white.withValues(alpha: 0.92),
+                            ),
+                          ),
+                  ),
+                ),
+                Positioned(
+                  right: -4, bottom: -4,
+                  child: GestureDetector(
+                    onTap: _coverImage != null
+                        ? () => setState(() => _coverImage = null)
+                        : _pickCoverImage,
+                    child: Container(
+                      width: 30, height: 30,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.bg, width: 3),
+                      ),
+                      child: Icon(
+                        _coverImage != null ? PhosphorIconsBold.x : PhosphorIconsRegular.camera,
+                        size: 13, color: Colors.white,
                       ),
                     ),
                   ),
-                ],
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      color: SeeUColors.accent.withValues(alpha: 0.10),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      PhosphorIcons.image(PhosphorIconsStyle.duotone),
-                      size: 22, color: SeeUColors.accent,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Добавить обложку',
-                    style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600,
-                      color: SeeUColors.accent,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'необязательно',
-                    style: TextStyle(fontSize: 11, color: c.ink3),
-                  ),
+                  Text('Обложка комнаты', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink)),
+                  const SizedBox(height: 4),
+                  Text('Загрузите фото или выберите тему', style: TextStyle(fontSize: 12, color: c.ink3, height: 1.45)),
                 ],
               ),
-      ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'ГАЛЕРЕЯ · ТЕМЫ',
+          style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, letterSpacing: 1.0, color: c.ink3),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _pickCoverImage,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 50, height: 50,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: SeeUColors.accent, width: 1.5),
+                ),
+                child: Icon(PhosphorIconsRegular.imageSquare, size: 21, color: SeeUColors.accent),
+              ),
+              Positioned(
+                right: -4, bottom: -4,
+                child: Container(
+                  width: 18, height: 18,
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: c.bg, width: 2),
+                  ),
+                  child: Icon(PhosphorIconsRegular.plus, size: 9, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -502,9 +584,10 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       text,
       style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.8,
+        fontFamily: 'JetBrains Mono',
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 1.0,
         color: c.ink3,
       ),
     );
@@ -517,6 +600,8 @@ class _InputField extends StatelessWidget {
   final int maxLength;
   final int maxLines;
   final bool autofocus;
+  final bool showCounter;
+  final double? fieldHeight;
   final ValueChanged<String>? onChanged;
   final SeeUThemeColors c;
 
@@ -526,6 +611,8 @@ class _InputField extends StatelessWidget {
     required this.maxLength,
     this.maxLines = 1,
     this.autofocus = false,
+    this.showCounter = false,
+    this.fieldHeight,
     this.onChanged,
     required this.c,
   });
@@ -533,24 +620,128 @@ class _InputField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: fieldHeight,
       decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.line),
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.line, width: 0.5),
       ),
-      child: TextField(
-        controller: controller,
-        autofocus: autofocus,
-        maxLength: maxLength,
-        maxLines: maxLines,
-        style: TextStyle(fontSize: 15, color: c.ink),
-        onChanged: onChanged,
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: TextStyle(fontSize: 15, color: c.ink3),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          counterText: '',
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              autofocus: autofocus,
+              maxLength: maxLength,
+              maxLines: maxLines,
+              style: TextStyle(fontSize: 15, color: c.ink),
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: TextStyle(fontSize: 15, color: c.ink3),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                counterText: '',
+              ),
+            ),
+          ),
+          if (showCounter)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                '${controller.text.length}/$maxLength',
+                style: TextStyle(fontSize: 12, color: c.ink3),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// Bottom CTA is part of _RoomCreateScreenState
+extension _RoomCreateBottomCta on _RoomCreateScreenState {
+  Widget _buildBottomCta(SeeUThemeColors c) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: c.line, width: 0.5)),
+      ),
+      child: GestureDetector(
+        onTap: _canCreate ? _create : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: _canCreate ? SeeUGradients.heroOrange : null,
+            color: _canCreate ? null : c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.small),
+            boxShadow: _canCreate
+                ? [BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.32), offset: const Offset(0, 6), blurRadius: 18)]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: _creating
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIcons.usersThree(PhosphorIconsStyle.regular), size: 20, color: _canCreate ? Colors.white : c.ink3),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Создать комнату',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _canCreate ? Colors.white : c.ink3),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  final SeeUThemeColors c;
+
+  const _PrivacyCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? SeeUColors.accentSoft : c.surface,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          border: Border.all(
+            color: selected ? SeeUColors.accent : c.line,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 22, color: selected ? SeeUColors.accent : c.ink2),
+            const SizedBox(height: 6),
+            Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.ink)),
+            const SizedBox(height: 2),
+            Text(subtitle, style: TextStyle(fontSize: 11, color: c.ink3, height: 1.35)),
+          ],
         ),
       ),
     );

@@ -225,9 +225,9 @@ class _ChatCreateGroupScreenState
               padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(PhosphorIcons.x(), size: 22, color: c.ink),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), size: 22, color: c.ink),
                   ),
                   Expanded(
                     child: Text('Новая группа', style: SeeUTypography.title.copyWith(color: c.ink)),
@@ -261,26 +261,50 @@ class _ChatCreateGroupScreenState
             ),
             // Title input
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: TextField(
-                controller: _titleCtrl,
-                onChanged: (_) => setState(() {}),
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Название группы',
-                  filled: true,
-                  fillColor: c.surface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: c.line, width: 0.5),
                 ),
-                style: SeeUTypography.subtitle,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _titleCtrl,
+                        onChanged: (_) => setState(() {}),
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: 'Название группы',
+                          hintStyle: TextStyle(color: c.ink3),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                          counterText: '',
+                        ),
+                        maxLength: 40,
+                        style: SeeUTypography.subtitle,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Text(
+                        '${_titleCtrl.text.length}/40',
+                        style: TextStyle(fontSize: 12, color: c.ink3),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            // Cover picker row: «нет обложки» + «своя фото» + 5 seed-пресетов
+            // MONO label + cover picker row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 6),
+              child: Text(
+                'ФОТО ГРУППЫ · ТЕМЫ',
+                style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 10, letterSpacing: 1.0, color: c.ink3),
+              ),
+            ),
             SizedBox(
               height: 80,
               child: ListView.separated(
@@ -403,14 +427,15 @@ class _ChatCreateGroupScreenState
             if (_selectedUsers.isNotEmpty) const SizedBox(height: 8),
             // УЧАСТНИКИ label + счётчик
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
               child: Row(
                 children: [
                   Text(
-                    'УЧАСТНИКИ',
+                    'КОНТАКТЫ',
                     style: TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8, color: c.ink3,
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 10, fontWeight: FontWeight.w600,
+                      letterSpacing: 1.0, color: c.ink3,
                     ),
                   ),
                   if (_selectedIds.isNotEmpty) ...[
@@ -434,24 +459,30 @@ class _ChatCreateGroupScreenState
             ),
             // Search
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: _onSearch,
-                decoration: InputDecoration(
-                  hintText: 'Поиск пользователей',
-                  prefixIcon: Icon(PhosphorIcons.magnifyingGlass(),
-                      size: 18, color: c.ink3),
-                  filled: true,
-                  fillColor: c.surface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                  border: Border.all(color: c.line, width: 0.5),
                 ),
-                style: SeeUTypography.body,
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: _onSearch,
+                  style: TextStyle(fontSize: 14, color: c.ink),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск участников',
+                    hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 8),
+                      child: Icon(PhosphorIconsRegular.magnifyingGlass, size: 16, color: c.ink3),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
               ),
             ),
             // Подсказка валидации

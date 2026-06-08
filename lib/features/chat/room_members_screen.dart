@@ -68,56 +68,30 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        shape: BoxShape.circle,
-                        boxShadow: SeeUShadows.sm,
-                      ),
-                      child: Icon(
-                        PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-                        size: 16, color: c.ink,
-                      ),
-                    ),
+                    child: Icon(PhosphorIcons.caretLeft(PhosphorIconsStyle.bold), size: 22, color: c.ink),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      'Участники · ${membersState.members.length}',
-                      style: SeeUTypography.title.copyWith(color: c.ink),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Участники', style: SeeUTypography.title.copyWith(color: c.ink, fontSize: 17)),
+                        Text(
+                          '${membersState.members.length} участников',
+                          style: TextStyle(fontSize: 12, color: c.ink3),
+                        ),
+                      ],
                     ),
                   ),
                   if (isAdmin)
                     GestureDetector(
                       onTap: () => _showInvitePicker(c),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: SeeUColors.accent,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(PhosphorIcons.userPlus(), size: 14, color: Colors.white),
-                            const SizedBox(width: 5),
-                            const Text(
-                              'Добавить',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      child: Icon(PhosphorIcons.userPlus(), size: 22, color: c.ink),
                     ),
                 ],
               ),
@@ -203,34 +177,55 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     bool isCreator,
     bool isAdmin,
   ) {
+    final admins = members.where((m) => m.isCreator || m.isAdmin).toList();
+    final regular = members.where((m) => !m.isCreator && !m.isAdmin).toList();
+
+    Widget sectionHeader(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'JetBrains Mono',
+          fontSize: 11, fontWeight: FontWeight.w600,
+          letterSpacing: 0.5, color: c.ink3,
+        ),
+      ),
+    );
+
+    final items = <Widget>[
+      if (admins.isNotEmpty) sectionHeader('АДМИНИСТРАТОРЫ · ${admins.length}'),
+      ...admins.map((m) {
+        final isSelf = m.userId == myId;
+        final canRemove = isAdmin && !isSelf && !m.isCreator && isCreator;
+        final canToggleAdmin = isCreator && !isSelf && !m.isCreator;
+        return _MemberTile(
+          member: m, isSelf: isSelf,
+          canRemove: canRemove, canToggleAdmin: canToggleAdmin,
+          onRemove: canRemove ? () => _confirmRemove(c, m) : null,
+          onToggleAdmin: canToggleAdmin ? () => _confirmToggleAdmin(c, m) : null,
+          c: c,
+        );
+      }),
+      if (regular.isNotEmpty) sectionHeader('УЧАСТНИКИ · ${regular.length}'),
+      ...regular.map((m) {
+        final isSelf = m.userId == myId;
+        final canRemove = isAdmin && !isSelf && !m.isCreator && (isCreator || !m.isAdmin);
+        return _MemberTile(
+          member: m, isSelf: isSelf,
+          canRemove: canRemove, canToggleAdmin: false,
+          onRemove: canRemove ? () => _confirmRemove(c, m) : null,
+          c: c,
+        );
+      }),
+    ];
+
     return RefreshIndicator(
       onRefresh: () => ref.read(roomMembersProvider(widget.roomId).notifier).load(),
       color: SeeUColors.accent,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 100),
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        itemCount: members.length,
-        separatorBuilder: (_, __) => Divider(color: c.line, height: 1),
-        itemBuilder: (_, i) {
-          final m = members[i];
-          final isSelf = m.userId == myId;
-          // Can remove: admins can remove non-admins; creator can remove admins too
-          final canRemove = isAdmin && !isSelf && !m.isCreator &&
-              (isCreator || !m.isAdmin);
-          // Only creator can toggle admin status on others
-          final canToggleAdmin = isCreator && !isSelf && !m.isCreator;
-          return _MemberTile(
-            member: m,
-            isSelf: isSelf,
-            canRemove: canRemove,
-            canToggleAdmin: canToggleAdmin,
-            onRemove: canRemove ? () => _confirmRemove(c, m) : null,
-            onToggleAdmin: canToggleAdmin
-                ? () => _confirmToggleAdmin(c, m)
-                : null,
-            c: c,
-          );
-        },
+        children: items,
       ),
     );
   }
@@ -508,7 +503,7 @@ class _MemberTile extends StatelessWidget {
                       _roleBadge('Создатель', SeeUColors.accent),
                     ] else if (member.isAdmin) ...[
                       const SizedBox(width: 6),
-                      _roleBadge('Админ', const Color(0xFF6C63FF)),
+                      _roleBadge('Админ', SeeUColors.accent),
                     ],
                   ],
                 ),
@@ -530,7 +525,7 @@ class _MemberTile extends StatelessWidget {
                 margin: const EdgeInsets.only(left: 6),
                 decoration: BoxDecoration(
                   color: member.isAdmin
-                      ? const Color(0xFF6C63FF).withValues(alpha: 0.12)
+                      ? SeeUColors.accent.withValues(alpha: 0.12)
                       : c.surface2,
                   shape: BoxShape.circle,
                 ),
@@ -539,7 +534,7 @@ class _MemberTile extends StatelessWidget {
                       ? PhosphorIcons.shieldSlash()
                       : PhosphorIcons.shieldStar(),
                   size: 16,
-                  color: member.isAdmin ? const Color(0xFF6C63FF) : c.ink3,
+                  color: member.isAdmin ? SeeUColors.accent : c.ink3,
                 ),
               ),
             ),
