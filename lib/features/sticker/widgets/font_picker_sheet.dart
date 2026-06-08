@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
 import '../models/text_layer.dart';
@@ -18,30 +17,35 @@ class FontPickerSheet extends ConsumerWidget {
     final currentFont = activeLayer?.fontFamily ?? 'Roboto';
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.45,
       decoration: BoxDecoration(
         color: c.bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(SeeURadii.sheet),
+        ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SheetHandle(c: c),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             child: Text(
               'Шрифт',
               style: SeeUTypography.subtitle.copyWith(color: c.ink),
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+          SizedBox(
+            height: 52,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
               itemCount: kStickerFonts.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (ctx, i) {
                 final font = kStickerFonts[i];
                 final isActive = currentFont == font;
-                return _FontTile(
+                return _FontChip(
                   font: font,
                   isActive: isActive,
                   onTap: () {
@@ -58,20 +62,20 @@ class FontPickerSheet extends ConsumerWidget {
               },
             ),
           ),
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 24),
         ],
       ),
     );
   }
 }
 
-class _FontTile extends StatelessWidget {
+class _FontChip extends StatelessWidget {
   final String font;
   final bool isActive;
   final VoidCallback onTap;
   final SeeUThemeColors c;
 
-  const _FontTile({
+  const _FontChip({
     required this.font,
     required this.isActive,
     required this.onTap,
@@ -83,36 +87,22 @@ class _FontTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        constraints: const BoxConstraints(minWidth: 52),
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: isActive
-              ? SeeUColors.accent.withValues(alpha: 0.1)
-              : c.surface,
-          borderRadius: BorderRadius.circular(SeeURadii.medium),
-          border: Border.all(
-            color: isActive ? SeeUColors.accent : Colors.transparent,
-            width: 1.5,
-          ),
+          color: isActive ? SeeUColors.accent : c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.small),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                font,
-                style: _previewStyle(font).copyWith(
-                  fontSize: 20,
-                  color: isActive ? SeeUColors.accent : c.ink,
-                ),
-              ),
+        child: Center(
+          child: Text(
+            'Aa',
+            style: _previewStyle(font).copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              color: isActive ? Colors.white : c.ink2,
             ),
-            if (isActive)
-              Icon(
-                PhosphorIconsRegular.checkCircle,
-                color: SeeUColors.accent,
-                size: 20,
-              ),
-          ],
+          ),
         ),
       ),
     );

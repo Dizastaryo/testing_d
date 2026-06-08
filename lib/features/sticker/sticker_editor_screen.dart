@@ -166,7 +166,9 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
       }
     });
 
-    final activeLayer = ref.watch(stickerEditorProvider).activeLayer;
+    final c = context.seeuColors;
+    final state = ref.watch(stickerEditorProvider);
+    final activeLayer = state.activeLayer;
     final absUrl = AppConfig.absUrl(widget.imageUrl);
 
     return PopScope(
@@ -175,9 +177,9 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
         if (!didPop) _onClose();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: c.surface2,
         resizeToAvoidBottomInset: true,
-        appBar: _buildAppBar(),
+        appBar: _buildAppBar(c, state),
         body: Column(
           children: [
             // ── Холст (занимает всё свободное пространство) ──────
@@ -227,17 +229,41 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
+  PreferredSizeWidget _buildAppBar(SeeUThemeColors c, StickerEditorState state) {
+    final notifier = ref.read(stickerEditorProvider.notifier);
     return AppBar(
-      backgroundColor: const Color(0xFF111111),
+      backgroundColor: c.surface,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(PhosphorIconsRegular.x, color: Colors.white),
+        icon: Icon(PhosphorIconsRegular.x, color: c.ink),
         onPressed: _saving ? null : _onClose,
       ),
-      title: Text(
-        'Редактор стикера',
-        style: SeeUTypography.subtitle.copyWith(color: Colors.white),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: notifier.canUndo ? notifier.undo : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Icon(
+                PhosphorIconsRegular.arrowCounterClockwise,
+                size: 22,
+                color: notifier.canUndo ? c.ink2 : c.ink4,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: notifier.canRedo ? notifier.redo : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Icon(
+                PhosphorIconsRegular.arrowClockwise,
+                size: 22,
+                color: notifier.canRedo ? c.ink2 : c.ink4,
+              ),
+            ),
+          ),
+        ],
       ),
       centerTitle: true,
       actions: [
@@ -247,18 +273,30 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
             child: SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
           )
         else
-          TextButton(
-            onPressed: _save,
-            child: Text(
-              'Готово',
-              style: SeeUTypography.subtitle.copyWith(
-                color: SeeUColors.accent,
-                fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 9, 12, 9),
+            child: GestureDetector(
+              onTap: _save,
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                ),
+                child: Center(
+                  child: Text(
+                    'Готово',
+                    style: SeeUTypography.body.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

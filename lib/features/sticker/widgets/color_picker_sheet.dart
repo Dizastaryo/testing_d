@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
 import '../models/text_layer.dart';
@@ -120,7 +119,7 @@ class _ColorPickerSheetState extends ConsumerState<ColorPickerSheet> {
       height: MediaQuery.of(context).size.height * 0.55,
       decoration: BoxDecoration(
         color: c.bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,33 +425,37 @@ class _ColorPaletteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 10,
+      runSpacing: 10,
       children: colors.map((color) {
-        final isSelected =
-            color.toARGB32() == selected.toARGB32();
+        final isSelected = color.toARGB32() == selected.toARGB32();
         return GestureDetector(
           onTap: () => onSelect(color),
           child: Container(
-            width: 32,
-            height: 32,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
-              color: color,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected ? SeeUColors.accent : Colors.white24,
-                width: isSelected ? 2.5 : 1,
-              ),
+              // double ring: white 2px inner gap + accent 4px outer when selected
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: Colors.white,
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: SeeUColors.accent,
+                        spreadRadius: 4,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: const Color(0xFFE0D8CC),
+                        spreadRadius: 1,
+                      ),
+                    ],
+              color: color,
             ),
-            child: isSelected
-                ? Icon(
-                    PhosphorIconsBold.check,
-                    size: 14,
-                    color: color.toARGB32() == Colors.white.toARGB32()
-                        ? Colors.black
-                        : Colors.white,
-                  )
-                : null,
           ),
         );
       }).toList(),

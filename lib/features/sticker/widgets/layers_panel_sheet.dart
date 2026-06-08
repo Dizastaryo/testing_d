@@ -22,7 +22,7 @@ class LayersPanelSheet extends ConsumerWidget {
       height: MediaQuery.of(context).size.height * 0.50,
       decoration: BoxDecoration(
         color: c.bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
       ),
       child: Column(
         children: [
@@ -144,40 +144,37 @@ class _LayerItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final preview = layer.text.isEmpty
         ? '(пустой)'
-        : layer.text.length > 30
-            ? '${layer.text.substring(0, 30)}…'
+        : layer.text.length > 28
+            ? '${layer.text.substring(0, 28)}…'
             : layer.text;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 11),
         decoration: BoxDecoration(
-          color: isActive
-              ? SeeUColors.accent.withValues(alpha: 0.1)
-              : c.surface,
-          borderRadius: BorderRadius.circular(SeeURadii.medium),
-          border: Border.all(
-            color: isActive ? SeeUColors.accent : Colors.transparent,
-            width: 1.5,
-          ),
+          color: isActive ? c.surface2 : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
-            // ── Цветной кружок ─────────────────────────────
-            Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: layer.color,
-                shape: BoxShape.circle,
-                border: Border.all(color: c.line, width: 1),
+            // ── Drag handle ────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Icon(
+                PhosphorIconsRegular.dotsSixVertical,
+                color: c.ink4,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
 
-            // ── Предпросмотр текста ─────────────────────────
+            // ── Checker thumbnail ──────────────────────────
+            _LayerThumb(layer: layer),
+            const SizedBox(width: 12),
+
+            // ── Название + шрифт ────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,9 +182,8 @@ class _LayerItem extends StatelessWidget {
                   Text(
                     preview,
                     style: SeeUTypography.body.copyWith(
-                      color: isActive ? SeeUColors.accent : c.ink,
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isActive ? c.ink : c.ink,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -200,31 +196,49 @@ class _LayerItem extends StatelessWidget {
               ),
             ),
 
-            // ── Действия ────────────────────────────────────
-            _IconBtn(
-              icon: PhosphorIconsRegular.arrowUp,
-              enabled: canMoveUp,
-              onTap: onMoveUp,
-              c: c,
+            // ── Видимость ────────────────────────────────────
+            GestureDetector(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  PhosphorIconsRegular.eye,
+                  color: c.ink3,
+                  size: 18,
+                ),
+              ),
             ),
-            _IconBtn(
-              icon: PhosphorIconsRegular.arrowDown,
-              enabled: canMoveDown,
-              onTap: onMoveDown,
-              c: c,
-            ),
-            _IconBtn(
-              icon: PhosphorIconsRegular.copy,
-              enabled: true,
-              onTap: onDuplicate,
-              c: c,
-            ),
-            _IconBtn(
-              icon: PhosphorIconsRegular.trash,
-              enabled: true,
-              onTap: onDelete,
-              c: c,
-              danger: true,
+
+            // ── Меню ─────────────────────────────────────────
+            PopupMenuButton<String>(
+              icon: Icon(
+                PhosphorIconsRegular.dotsThreeVertical,
+                color: c.ink3,
+                size: 18,
+              ),
+              padding: EdgeInsets.zero,
+              onSelected: (value) {
+                if (value == 'up') {
+                  onMoveUp();
+                } else if (value == 'down') {
+                  onMoveDown();
+                } else if (value == 'dup') {
+                  onDuplicate();
+                } else if (value == 'del') {
+                  onDelete();
+                }
+              },
+              itemBuilder: (ctx) => [
+                if (canMoveUp)
+                  const PopupMenuItem(value: 'up', child: Text('Переместить выше')),
+                if (canMoveDown)
+                  const PopupMenuItem(value: 'down', child: Text('Переместить ниже')),
+                const PopupMenuItem(value: 'dup', child: Text('Дублировать')),
+                PopupMenuItem(
+                  value: 'del',
+                  child: Text('Удалить', style: TextStyle(color: Colors.red.shade400)),
+                ),
+              ],
             ),
           ],
         ),
@@ -233,37 +247,62 @@ class _LayerItem extends StatelessWidget {
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onTap;
-  final SeeUThemeColors c;
-  final bool danger;
+// ─── Checker thumbnail ────────────────────────────────────────────
 
-  const _IconBtn({
-    required this.icon,
-    required this.enabled,
-    required this.onTap,
-    required this.c,
-    this.danger = false,
-  });
+class _LayerThumb extends StatelessWidget {
+  final TextLayer layer;
+  const _LayerThumb({required this.layer});
 
   @override
   Widget build(BuildContext context) {
-    final color = !enabled
-        ? c.ink4
-        : danger
-            ? Colors.red.shade400
-            : c.ink2;
+    final thumbText = layer.text.isEmpty
+        ? 'Aa'
+        : layer.text.substring(0, layer.text.length.clamp(0, 2)).toUpperCase();
 
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(icon, size: 18, color: color),
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE0D8CC), width: 0.5),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: CustomPaint(
+        painter: _CheckerPainter(),
+        child: Center(
+          child: Text(
+            thumbText,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: layer.color,
+              shadows: const [
+                Shadow(color: Colors.black38, blurRadius: 3, offset: Offset(0, 1)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _CheckerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double cellSize = 8;
+    final paint = Paint();
+    for (double y = 0; y < size.height; y += cellSize) {
+      for (double x = 0; x < size.width; x += cellSize) {
+        final isLight = ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
+        paint.color = isLight ? Colors.white : const Color(0xFFE8E8E8);
+        canvas.drawRect(Rect.fromLTWH(x, y, cellSize, cellSize), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─── Handle ───────────────────────────────────────────────────────
