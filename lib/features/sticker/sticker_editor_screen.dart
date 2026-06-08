@@ -9,6 +9,7 @@ import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/sticker_provider.dart';
 import 'providers/sticker_editor_provider.dart';
+import 'sticker_done_screen.dart';
 import 'widgets/editor_bottom_bar.dart';
 import 'widgets/sticker_canvas.dart';
 
@@ -97,15 +98,27 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
       final sticker =
           await ref.read(stickerListProvider.notifier).saveSticker(pngBytes);
 
-      if (mounted) Navigator.of(context).pop(sticker.url);
+      if (!mounted) return;
+      setState(() => _saving = false);
+
+      // Показываем экран «Стикер готов» и ждём подтверждения.
+      final confirmed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute<bool>(
+          builder: (_) => StickerDoneScreen(imageUrl: sticker.url),
+        ),
+      );
+
+      if (confirmed == true && mounted) {
+        Navigator.of(context).pop(sticker.url);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ошибка сохранения: $e')),
         );
+        setState(() => _saving = false);
       }
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
   }
 
