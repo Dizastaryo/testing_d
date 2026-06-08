@@ -153,6 +153,7 @@ class ApiEndpoints {
   // Сборы
   static const String sbory = '/sbory';
   static const String mySbory = '/sbory/me';
+  static const String mySboryHistory = '/sbory/me?past=true';
   static const String bookmarkedSbory = '/sbory/bookmarked';
   static String sborById(String id) => '/sbory/$id';
   // POST /sbory/:id/join → join; DELETE /sbory/:id/join → leave (same path, different method)

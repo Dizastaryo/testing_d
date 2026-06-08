@@ -46,6 +46,16 @@ final _mySboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
       .toList();
 });
 
+final _sborHistoryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
+  ref.watch(sborRefreshProvider);
+  final api = ref.read(apiClientProvider);
+  final r = await api.get(ApiEndpoints.mySboryHistory);
+  final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+  return (data as List<dynamic>)
+      .map((e) => Sbor.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
 final _bookmarkedSboryProvider = FutureProvider.autoDispose<List<Sbor>>((ref) async {
   ref.watch(sborRefreshProvider);
   final api = ref.read(apiClientProvider);
@@ -303,8 +313,11 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                           s.scheduledAt!.isBefore(endOfDay);
                     }).toList();
                   }
-                  if (filtered.isEmpty) {
+                  if (filtered.isEmpty && !_showMine) {
                     return _buildEmpty(c);
+                  }
+                  if (_showMine) {
+                    return _buildMineWithHistory(c, filtered);
                   }
                   return _buildList(c, filtered);
                 },
@@ -620,6 +633,107 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             child: SborCard(sbor: s, onTap: () => _openDetail(s.id)),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildMineWithHistory(SeeUThemeColors c, List<Sbor> upcoming) {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: SeeUColors.accent,
+      child: CustomScrollView(
+        slivers: [
+          // Upcoming
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            sliver: upcoming.isEmpty
+                ? SliverToBoxAdapter(child: _buildMineEmptyUpcoming(c))
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: SborCard(sbor: upcoming[i], onTap: () => _openDetail(upcoming[i].id)),
+                      ),
+                      childCount: upcoming.length,
+                    ),
+                  ),
+          ),
+          // History section
+          SliverToBoxAdapter(
+            child: Consumer(builder: (ctx, ref2, _) {
+              final histAsync = ref2.watch(_sborHistoryProvider);
+              return histAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (history) {
+                  if (history.isEmpty) return const SizedBox(height: 24);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+                        child: Row(
+                          children: [
+                            Icon(PhosphorIcons.clockCounterClockwise(), size: 14, color: c.ink3),
+                            const SizedBox(width: 6),
+                            Text(
+                              'ИСТОРИЯ',
+                              style: TextStyle(
+                                fontFamily: 'JetBrains Mono',
+                                fontSize: 11, fontWeight: FontWeight.w600,
+                                letterSpacing: 0.8, color: c.ink3,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: c.surface2,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${history.length}',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.ink3),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ...history.map((s) => Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                        child: Opacity(
+                          opacity: 0.65,
+                          child: SborCard(sbor: s, onTap: () => _openDetail(s.id)),
+                        ),
+                      )),
+                      const SizedBox(height: 24),
+                    ],
+                  );
+                },
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMineEmptyUpcoming(SeeUThemeColors c) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIcons.usersThree(), size: 48, color: c.ink4),
+          const SizedBox(height: 12),
+          Text('Нет предстоящих сборов', style: SeeUTypography.subtitle.copyWith(color: c.ink)),
+          const SizedBox(height: 6),
+          Text(
+            'Вы ещё не вступали в сборы или все уже прошли',
+            style: TextStyle(fontSize: 13, color: c.ink3),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
