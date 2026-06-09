@@ -52,10 +52,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasText = false;
   bool _isUploading = false;
   bool _recording = false;
-  // Round video message (Telegram-style): double-tap mic → switch to camera mode,
-  // long-press camera icon → record circular video message.
+  // Round video message: double-tap mic → switch to camera mode,
+  // tap camera icon → open round camera overlay.
   bool _videoMsgMode = false;
-  bool _recordingVideoMsg = false;
+  bool _roundCameraOpen = false;   // overlay visible (camera initialized)
+  bool _recordingVideoMsg = false; // recording in progress
+  bool _usingFrontCamera = true;
   int _recordingSeconds = 0;
   Timer? _recordingTimer;
   CameraController? _videoCamController;
@@ -1518,7 +1520,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ], // Column children
               ), // Column
               // Round video message overlay
-              if (_recordingVideoMsg) _buildRoundVideoOverlay(),
+              if (_roundCameraOpen) _buildRoundVideoOverlay(),
             ], // Stack children
           ), // Stack
         ), // close A1 gradient Container
@@ -1684,7 +1686,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  // ─── Round video message (Telegram-style) ──────────────────────────────────
+  // ─── Round video message ───────────────────────────────────────────────────
 
   String _fmtRecordingTime(int sec) {
     final m = (sec ~/ 60).toString().padLeft(2, '0');
@@ -1692,64 +1694,141 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return '$m:$s';
   }
 
-  Future<void> _startVideoRecording() async {
-    if (_recordingVideoMsg) return;
+  /// Открывает overlay с круглым превью — ещё не записываем.
+  Future<void> _openRoundCamera() async {
+    if (_roundCameraOpen) return;
     HapticFeedback.mediumImpact();
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) return;
-      final front = cameras.firstWhere(
+      final target = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
       );
+      _usingFrontCamera = target.lensDirection == CameraLensDirection.front;
       final ctrl = CameraController(
-        front,
+        target,
         ResolutionPreset.medium,
         enableAudio: true,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
       await ctrl.initialize();
-      if (!mounted) {
-        ctrl.dispose();
-        return;
-      }
+      if (!mounted) { ctrl.dispose(); return; }
       _videoCamController = ctrl;
-      setState(() {
-        _recordingVideoMsg = true;
-        _recordingSeconds = 0;
-      });
-      await ctrl.startVideoRecording();
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() => _recordingSeconds++);
-        if (_recordingSeconds >= 60) _stopVideoRecording(); // max 60s
-      });
+      setState(() => _roundCameraOpen = true);
     } catch (_) {
       _videoCamController?.dispose();
       _videoCamController = null;
-      if (mounted) setState(() => _recordingVideoMsg = false);
     }
   }
 
-  Future<void> _stopVideoRecording() async {
+  /// Закрывает overlay без отправки.
+  Future<void> _closeRoundCamera() async {
     _recordingTimer?.cancel();
     _recordingTimer = null;
     final ctrl = _videoCamController;
     _videoCamController = null;
-    if (mounted) setState(() => _recordingVideoMsg = false);
-    if (ctrl == null) return;
+    setState(() {
+      _roundCameraOpen = false;
+      _recordingVideoMsg = false;
+      _recordingSeconds = 0;
+    });
     try {
-      if (ctrl.value.isRecordingVideo) {
-        final file = await ctrl.stopVideoRecording();
-        ctrl.dispose();
-        if (_recordingSeconds < 1) return; // too short — discard
-        await _uploadAndSendVideoMsg(file.path);
-      } else {
-        ctrl.dispose();
+      if (ctrl?.value.isRecordingVideo == true) {
+        await ctrl!.stopVideoRecording(); // discard
       }
-    } catch (_) {
-      ctrl.dispose();
+      ctrl?.dispose();
+    } catch (_) { ctrl?.dispose(); }
+  }
+
+  /// Тап на кнопку записи: если не пишем — начать, если пишем — остановить и отправить.
+  Future<void> _toggleRecording() async {
+    HapticFeedback.mediumImpact();
+    if (!_recordingVideoMsg) {
+      // Начать запись
+      try {
+        await _videoCamController?.startVideoRecording();
+        setState(() {
+          _recordingVideoMsg = true;
+          _recordingSeconds = 0;
+        });
+        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          setState(() => _recordingSeconds++);
+          if (_recordingSeconds >= 60) _toggleRecording(); // auto stop at 60s
+        });
+      } catch (_) {}
+    } else {
+      // Остановить и отправить
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      final ctrl = _videoCamController;
+      _videoCamController = null;
+      final int seconds = _recordingSeconds;
+      setState(() {
+        _roundCameraOpen = false;
+        _recordingVideoMsg = false;
+        _recordingSeconds = 0;
+      });
+      try {
+        if (ctrl?.value.isRecordingVideo == true) {
+          final file = await ctrl!.stopVideoRecording();
+          ctrl.dispose();
+          if (seconds >= 1) await _uploadAndSendVideoMsg(file.path);
+        } else {
+          ctrl?.dispose();
+        }
+      } catch (_) { ctrl?.dispose(); }
     }
+  }
+
+  /// Переключает переднюю / заднюю камеру.
+  Future<void> _flipCamera() async {
+    HapticFeedback.selectionClick();
+    final cameras = await availableCameras();
+    if (cameras.length < 2) return;
+    _usingFrontCamera = !_usingFrontCamera;
+
+    final wasRecording = _videoCamController?.value.isRecordingVideo ?? false;
+    XFile? savedFile;
+
+    if (wasRecording) {
+      try { savedFile = await _videoCamController?.stopVideoRecording(); } catch (_) {}
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+    }
+    await _videoCamController?.dispose();
+
+    final target = cameras.firstWhere(
+      (c) => _usingFrontCamera
+          ? c.lensDirection == CameraLensDirection.front
+          : c.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    final ctrl = CameraController(
+      target,
+      ResolutionPreset.medium,
+      enableAudio: true,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    await ctrl.initialize();
+    if (!mounted) { ctrl.dispose(); return; }
+    _videoCamController = ctrl;
+
+    if (wasRecording) {
+      // Продолжаем запись на новой камере
+      await ctrl.startVideoRecording();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= 60) _toggleRecording();
+      });
+      // discard the tiny fragment from before flip
+      if (savedFile != null) {
+        try { File(savedFile.path).deleteSync(); } catch (_) {}
+      }
+    }
+    setState(() {});
   }
 
   Future<void> _uploadAndSendVideoMsg(String filePath) async {
@@ -1791,99 +1870,217 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildRoundVideoOverlay() {
     final ctrl = _videoCamController;
     final initialized = ctrl?.value.isInitialized == true;
+    final isRec = _recordingVideoMsg;
+
     return Positioned.fill(
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.88),
-        child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Recording timer
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFF3B3B),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _fmtRecordingTime(_recordingSeconds),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              // Circular camera preview with progress ring
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Progress ring (max 60s)
-                  SizedBox(
-                    width: 276,
-                    height: 276,
-                    child: CircularProgressIndicator(
-                      value: _recordingSeconds / 60.0,
-                      strokeWidth: 4,
-                      backgroundColor: Colors.white.withValues(alpha: 0.15),
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF5A3C)),
-                    ),
-                  ),
-                  // Circle camera preview
-                  Container(
-                    width: 260,
-                    height: 260,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.25),
-                        width: 2,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.80),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // ── Top bar ──────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: Row(
+                    children: [
+                      // X — закрыть
+                      GestureDetector(
+                        onTap: _closeRoundCamera,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          child: Icon(
+                            PhosphorIcons.x(PhosphorIconsStyle.bold),
+                            size: 15,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                    ),
-                    child: ClipOval(
-                      child: initialized
-                          ? CameraPreview(ctrl!)
-                          : Container(
-                              color: const Color(0xFF1A1A1A),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.white54,
-                                  strokeWidth: 2,
-                                ),
+                      const Spacer(),
+                      // Таймер (видно только при записи)
+                      AnimatedOpacity(
+                        opacity: isRec ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 250),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFFF3B3B),
+                                shape: BoxShape.circle,
                               ),
                             ),
-                    ),
+                            const SizedBox(width: 7),
+                            Text(
+                              _fmtRecordingTime(_recordingSeconds),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // Переключить камеру
+                      GestureDetector(
+                        onTap: _flipCamera,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.cameraRotate,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 36),
-              // Hint
-              Text(
-                'Отпустите для отправки',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Макс. 60 секунд',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 12,
+
+                const Spacer(),
+
+                // ── Круглое превью ───────────────────────────────
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Кольцо прогресса (только при записи)
+                    if (isRec)
+                      SizedBox(
+                        width: 284,
+                        height: 284,
+                        child: CircularProgressIndicator(
+                          value: _recordingSeconds / 60.0,
+                          strokeWidth: 3.5,
+                          backgroundColor: Colors.white.withValues(alpha: 0.10),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFFFF5A3C)),
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                    // Превью
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: 264,
+                      height: 264,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isRec
+                              ? const Color(0xFFFF5A3C)
+                              : Colors.white.withValues(alpha: 0.20),
+                          width: isRec ? 2.5 : 1.5,
+                        ),
+                        boxShadow: isRec
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFFF5A3C)
+                                      .withValues(alpha: 0.30),
+                                  blurRadius: 24,
+                                  spreadRadius: 4,
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: ClipOval(
+                        child: initialized
+                            ? CameraPreview(ctrl!)
+                            : Container(
+                                color: const Color(0xFF111111),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white38,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+
+                const Spacer(),
+
+                // ── Кнопка записи + подсказка ────────────────────
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isRec
+                          ? 'Нажмите  для отправки'
+                          : 'Нажмите  для начала записи',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    GestureDetector(
+                      onTap: _toggleRecording,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Внешнее кольцо
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isRec ? 84 : 78,
+                            height: isRec ? 84 : 78,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isRec
+                                    ? const Color(0xFFFF3B3B)
+                                    : Colors.white.withValues(alpha: 0.55),
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          // Внутренний кружок / квадрат стоп
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isRec ? 32 : 58,
+                            height: isRec ? 32 : 58,
+                            decoration: BoxDecoration(
+                              color: isRec
+                                  ? const Color(0xFFFF3B3B)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                  isRec ? 8 : 29),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isRec
+                                          ? const Color(0xFFFF3B3B)
+                                          : Colors.white)
+                                      .withValues(alpha: 0.35),
+                                  blurRadius: 16,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2102,14 +2299,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   if (!_hasText) ...[
                     const SizedBox(width: 4),
                     if (_videoMsgMode)
-                      // Camera icon: long-press → record round video, double-tap → back to mic
+                      // Camera icon: tap → open round camera, double-tap → back to mic
                       GestureDetector(
+                        onTap: _openRoundCamera,
                         onDoubleTap: () {
                           HapticFeedback.selectionClick();
                           setState(() => _videoMsgMode = false);
                         },
-                        onLongPressStart: (_) => _startVideoRecording(),
-                        onLongPressEnd: (_) => _stopVideoRecording(),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           width: 40,
