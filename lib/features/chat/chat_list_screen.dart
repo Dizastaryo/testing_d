@@ -432,20 +432,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
     final items = <Widget>[];
 
-    if (pinned.isNotEmpty) {
-      items.add(_SectionHeader(label: 'Закреплённые'));
-      for (final chat in pinned) {
-        items.add(_buildSwipableTile(chat, currentUsername));
-      }
-      if (unpinned.isNotEmpty) {
-        items.add(_SectionHeader(label: 'Все чаты'));
-      }
-    }
-    for (final chat in unpinned) {
-      items.add(_buildSwipableTile(chat, currentUsername));
-    }
-
-    // Archive tile at the bottom (only if there are archived chats)
+    // Archive tile at the top (only if there are archived chats)
     if (archivedCount > 0) {
       items.add(
         GestureDetector(
@@ -485,6 +472,19 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
           ),
         ),
       );
+    }
+
+    if (pinned.isNotEmpty) {
+      items.add(_SectionHeader(label: 'Закреплённые'));
+      for (final chat in pinned) {
+        items.add(_buildSwipableTile(chat, currentUsername));
+      }
+      if (unpinned.isNotEmpty) {
+        items.add(_SectionHeader(label: 'Все чаты'));
+      }
+    }
+    for (final chat in unpinned) {
+      items.add(_buildSwipableTile(chat, currentUsername));
     }
 
     return SeeURadarRefresh(
