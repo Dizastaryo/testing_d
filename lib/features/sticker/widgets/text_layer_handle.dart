@@ -181,7 +181,10 @@ class _TextContent extends StatelessWidget {
           : null,
     );
 
+    // Empty fontFamily = emoji layer — use system default so emoji glyphs render.
+    // Wrapping with GoogleFonts overrides fontFamily and breaks emoji fallback.
     return switch (layer.fontFamily) {
+      ''           => base,
       'Pacifico'   => GoogleFonts.pacifico(textStyle: base),
       'Bebas Neue' => GoogleFonts.bebasNeue(textStyle: base),
       'Oswald'     => GoogleFonts.oswald(textStyle: base),

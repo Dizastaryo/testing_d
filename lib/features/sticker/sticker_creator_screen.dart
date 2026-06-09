@@ -13,6 +13,7 @@ import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/sticker_provider.dart';
 import 'sticker_editor_screen.dart';
+import 'sticker_touchup_screen.dart';
 
 class StickerCreatorResult {
   final String url;
@@ -249,6 +250,22 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _removingBg = false);
+    }
+  }
+
+  Future<void> _openTouchup() async {
+    final String? url = _bgRemovedUrl;
+    if (url == null) return;
+    final absUrl = AppConfig.absUrl(url);
+    final String? newUrl = await Navigator.push<String>(
+      context,
+      MaterialPageRoute<String>(
+        fullscreenDialog: true,
+        builder: (_) => StickerTouchupScreen(imageUrl: absUrl),
+      ),
+    );
+    if (newUrl != null && mounted) {
+      setState(() => _bgRemovedUrl = newUrl);
     }
   }
 
@@ -802,7 +819,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
                 child: _SecondaryBtn(
                   icon: PhosphorIconsRegular.eraser,
                   label: 'Подправить',
-                  onTap: null,
+                  onTap: _openTouchup,
                   c: c,
                 ),
               ),
@@ -974,7 +991,16 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+          child: _SecondaryBtn(
+            icon: PhosphorIconsRegular.eraser,
+            label: 'Подправить',
+            onTap: _openTouchup,
+            c: c,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
           child: GestureDetector(
             onTap: _proceedVideoToEditor,
             child: Container(

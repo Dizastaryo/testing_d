@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -20,6 +21,55 @@ class EditorBottomBar extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => sheet,
+    );
+  }
+
+  void _showEmojiPicker(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => Container(
+        height: 360,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(SeeURadii.sheet)),
+          border: Border(top: BorderSide(color: c.line, width: 0.5)),
+        ),
+        child: EmojiPicker(
+          onEmojiSelected: (_, emoji) {
+            Navigator.of(sheetCtx).pop();
+            ref.read(stickerEditorProvider.notifier).addEmojiLayer(emoji.emoji);
+          },
+          config: Config(
+            checkPlatformCompatibility: true,
+            emojiViewConfig: EmojiViewConfig(
+              columns: 8,
+              emojiSizeMax: 32,
+              backgroundColor: c.surface,
+              buttonMode: ButtonMode.MATERIAL,
+              noRecents: Text('Нет недавних',
+                  style: TextStyle(fontSize: 14, color: c.ink3),
+                  textAlign: TextAlign.center),
+              recentsLimit: 30,
+            ),
+            categoryViewConfig: CategoryViewConfig(
+              initCategory: Category.RECENT,
+              indicatorColor: SeeUColors.accent,
+              iconColor: c.ink3,
+              iconColorSelected: SeeUColors.accent,
+              backgroundColor: isDark ? c.surface : const Color(0xFFF7F7F7),
+              dividerColor: Colors.transparent,
+            ),
+            bottomActionBarConfig: BottomActionBarConfig(
+              enabled: false,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -87,7 +137,7 @@ class EditorBottomBar extends ConsumerWidget {
                     icon: PhosphorIconsRegular.smiley,
                     label: 'Эмодзи',
                     c: c,
-                    onTap: () {},
+                    onTap: () => _showEmojiPicker(context, ref),
                   ),
                 ],
               ),
