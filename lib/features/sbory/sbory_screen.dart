@@ -81,6 +81,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   bool _showBookmarked = false;
   SborCategory? _catFilter;
   DateTimeRange? _dateFilter;
+  String? _datePreset;
   String _searchQuery = '';
   bool _showSearch = false;
   final _searchController = TextEditingController();
@@ -494,7 +495,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
     ];
     final dateActive = _dateFilter != null;
     final dateLabel = dateActive
-        ? '${_dateFilter!.start.day}.${_dateFilter!.start.month}–${_dateFilter!.end.day}.${_dateFilter!.end.month}'
+        ? (_datePreset ?? _fmtDateRange(_dateFilter!))
         : 'Дата';
     return SizedBox(
       height: 44,
@@ -508,25 +509,18 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
           if (i == chips.length) {
             return GestureDetector(
               onTap: () async {
-                if (dateActive) {
-                  setState(() => _dateFilter = null);
-                  return;
-                }
-                final range = await showDateRangePicker(
+                final result = await showModalBottomSheet<SboryDateResult>(
                   context: context,
-                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                  initialDateRange: _dateFilter,
-                  builder: (ctx, child) => Theme(
-                    data: Theme.of(ctx).copyWith(
-                      colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                        primary: SeeUColors.accent,
-                      ),
-                    ),
-                    child: child!,
-                  ),
+                  backgroundColor: Colors.transparent,
+                  isScrollControlled: true,
+                  builder: (_) => SboryDateFilterSheet(initialRange: _dateFilter),
                 );
-                if (range != null) setState(() => _dateFilter = range);
+                if (result != null) {
+                  setState(() {
+                    _dateFilter  = result.range;
+                    _datePreset  = result.presetLabel;
+                  });
+                }
               },
               child: Container(
                 height: 34,
@@ -744,14 +738,33 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
 
   void _resetFilters() {
     setState(() {
-      _catFilter = null;
-      _typeFilter = null;
-      _showMine = false;
+      _catFilter      = null;
+      _typeFilter     = null;
+      _showMine       = false;
       _showBookmarked = false;
-      _dateFilter = null;
-      _searchQuery = '';
+      _dateFilter     = null;
+      _datePreset     = null;
+      _searchQuery    = '';
       _searchController.clear();
     });
+  }
+
+  static const _shortMonthsRu = [
+    'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+  ];
+
+  String _fmtDateRange(DateTimeRange r) {
+    final s  = r.start;
+    final e  = r.end;
+    final sm = _shortMonthsRu[s.month - 1];
+    if (s.day == e.day && s.month == e.month && s.year == e.year) {
+      return '${s.day} $sm';
+    }
+    if (s.month == e.month && s.year == e.year) {
+      return '${s.day}–${e.day} $sm';
+    }
+    return '${s.day} $sm – ${e.day} ${_shortMonthsRu[e.month - 1]}';
   }
 
   Widget _buildEmpty(SeeUThemeColors c) {

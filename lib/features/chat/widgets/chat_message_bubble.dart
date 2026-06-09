@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/chat_provider.dart';
+import 'video_bubble.dart';
 import 'voice_bubble.dart';
 
 // ---------------------------------------------------------------------------
@@ -327,6 +328,10 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     final isVoice = msg.kind == 'voice' || msg.kind == 'audio';
+    final isVideoNote = (msg.kind == 'video' || msg.kind == 'video_note') &&
+        (msg.attachedMediaType == 'video_note' || msg.kind == 'video_note');
+    final isVideo = (msg.kind == 'video' || msg.kind == 'video_note') &&
+        msg.attachedMediaUrl.isNotEmpty;
     final isSticker =
         msg.kind == 'image' && msg.attachedMediaType == 'sticker';
     final isMedia = (msg.kind == 'shared_post' && msg.attachedPost != null) ||
@@ -336,7 +341,7 @@ class ChatMessageBubble extends StatelessWidget {
         ? EdgeInsets.zero
         : isMedia
             ? const EdgeInsets.all(4)
-            : isVoice
+            : (isVoice || isVideo)
                 ? EdgeInsets.zero
                 : const EdgeInsets.fromLTRB(12, 8, 12, 4); // B5: compact
 
@@ -349,7 +354,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     return Container(
       padding: bubblePadding,
-      decoration: isVoice || isSticker
+      decoration: isVoice || isSticker || isVideo
           ? null
           : BoxDecoration(
               gradient: mine
@@ -379,8 +384,8 @@ class ChatMessageBubble extends StatelessWidget {
             const SizedBox(height: 4),
           ],
           _buildBubbleContent(msg, mine, c, time),
-          // B4: inline time + receipts inside bubble (для голосовых — внутри VoiceBubble)
-          if (!isVoice)
+          // B4: inline time + receipts inside bubble (для голосовых и видео — внутри их виджетов)
+          if (!isVoice && !isVideoNote)
             Padding(
               padding: isSticker
                   ? const EdgeInsets.fromLTRB(4, 2, 4, 0)
@@ -556,6 +561,29 @@ class ChatMessageBubble extends StatelessWidget {
         url: message.attachedMediaUrl,
         isMine: isMine,
         trailingText: message.text,
+      );
+    }
+    if ((message.kind == 'video' || message.kind == 'video_note') &&
+        message.attachedMediaUrl.isNotEmpty) {
+      final url = message.attachedMediaUrl.startsWith('http')
+          ? message.attachedMediaUrl
+          : '${AppConfig.apiOrigin}${message.attachedMediaUrl}';
+      if (message.attachedMediaType == 'video_note' ||
+          message.kind == 'video_note') {
+        return VideoNoteBubble(
+          videoUrl: url,
+          isMine: isMine,
+          sentTimeLabel: time,
+          isRead: message.isRead,
+          isDelivered: message.isDelivered,
+        );
+      }
+      return VideoBubble(
+        videoUrl: url,
+        isMine: isMine,
+        sentTimeLabel: time,
+        isRead: message.isRead,
+        isDelivered: message.isDelivered,
       );
     }
     if ((message.kind == 'voice' || message.kind == 'audio') &&

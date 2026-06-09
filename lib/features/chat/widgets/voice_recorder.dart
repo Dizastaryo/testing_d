@@ -11,16 +11,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:record/record.dart';
 
 import '../../../core/design/design.dart';
+import 'voice_bubble.dart' show VoiceWavePainter;
 
 enum _RecState { recording, preview }
 
 /// Inline recorder bar — заменяет input-bar во время записи голосового.
 ///
 /// Поток:
-///  1. Показывается сразу с началом записи.
-///  2. Запись: [🗑 отменить] [● таймер ~~~waveform~~~] [✓ остановить]
-///  3. Preview: [✕ отменить] [▶ play] [~~~waveform~~~ длит.] [🔄 перезаписать] [➤ отправить]
-///     — юзер может сразу нажать ➤ без прослушивания, либо прослушать ▶ затем ➤.
+///  1. Сразу показывается с началом записи.
+///  2. Запись: [🗑 отменить] [● таймер ~~~live-waveform~~~] [✓ готово]
+///     — прогресс-полоска снизу показывает сколько из 60с записано.
+///  3. Preview: [✕] [▶] [seekable waveform + позиция/speed] [↺ перезаписать] [➤ отправить]
+///     — вейвформа показывает прогресс и поддерживает seek-перемотку.
 ///  4. onSubmit(filePath, durationSec, samples) → родитель грузит на сервер.
 ///  5. onCancel() → возврат к обычному input.
 class VoiceRecorderBar extends StatefulWidget {
@@ -48,15 +50,24 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   final List<double> _liveWindow = [];
 
   _RecState _recState = _RecState.recording;
+
+  // Preview state
   AudioPlayer? _previewPlayer;
+  StreamSubscription? _previewPosSub;
+  StreamSubscription? _previewDurSub;
   String? _previewPath;
   int _previewDurationSec = 0;
   List<double> _previewSamples = [];
   bool _previewPlaying = false;
+  Duration _previewPosition = Duration.zero;
+  Duration _previewDuration = Duration.zero;
+  double? _previewSeekIndicator;
+  double _previewSpeed = 1.0;
 
   static const _maxDuration = Duration(seconds: 60);
   static const _liveWindowSize = 32;
   static const _finalSampleCount = 48;
+  static const _speedCycle = [1.0, 1.5, 2.0];
 
   @override
   void initState() {
@@ -86,9 +97,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
           .listen(_onAmp);
       _tick = Timer.periodic(const Duration(milliseconds: 200), (_) {
         if (!mounted) return;
-        setState(() {
-          _elapsed += const Duration(milliseconds: 200);
-        });
+        setState(() => _elapsed += const Duration(milliseconds: 200));
         if (_elapsed >= _maxDuration) _stopToPreview();
       });
     } catch (e) {
@@ -108,14 +117,10 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     final normalized = ((db.clamp(-50.0, 0.0) + 50.0) / 50.0).clamp(0.0, 1.0);
     _samples.add(normalized);
     _liveWindow.add(normalized);
-    if (_liveWindow.length > _liveWindowSize) {
-      _liveWindow.removeAt(0);
-    }
+    if (_liveWindow.length > _liveWindowSize) _liveWindow.removeAt(0);
     if (mounted) setState(() {});
   }
 
-  /// Останавливает запись и переходит в preview-режим.
-  /// Кнопка ✓ (checkmark) — не отправка, а завершение записи.
   Future<void> _stopToPreview() async {
     final p = await _recorder.stop();
     _ampSub?.cancel();
@@ -138,6 +143,14 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     _previewSamples = _downsample(_samples, _finalSampleCount);
 
     _previewPlayer = AudioPlayer();
+
+    // Position + duration streams for seekable waveform
+    _previewPosSub = _previewPlayer!.positionStream.listen((pos) {
+      if (mounted) setState(() => _previewPosition = pos);
+    });
+    _previewDurSub = _previewPlayer!.durationStream.listen((d) {
+      if (d != null && mounted) setState(() => _previewDuration = d);
+    });
     _previewPlayer!.playerStateStream.listen((s) {
       if (s.processingState == ProcessingState.completed) {
         _previewPlayer?.seek(Duration.zero);
@@ -146,6 +159,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
         if (mounted) setState(() => _previewPlaying = s.playing);
       }
     });
+
     if (!kIsWeb) {
       try {
         await _previewPlayer!.setFilePath(pathFinal);
@@ -154,7 +168,6 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     if (mounted) setState(() => _recState = _RecState.preview);
   }
 
-  /// Отправляет записанный файл сразу без ожидания.
   void _sendNow() {
     HapticFeedback.heavyImpact();
     _previewPlayer?.stop();
@@ -165,12 +178,18 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
 
   Future<void> _reRecord() async {
     await _previewPlayer?.stop();
+    _previewPosSub?.cancel();
+    _previewDurSub?.cancel();
     _previewPlayer?.dispose();
     _previewPlayer = null;
     _deleteFile(_previewPath);
     _previewPath = null;
     _previewSamples = [];
     _previewPlaying = false;
+    _previewPosition = Duration.zero;
+    _previewDuration = Duration.zero;
+    _previewSeekIndicator = null;
+    _previewSpeed = 1.0;
     _elapsed = Duration.zero;
     _samples.clear();
     _liveWindow.clear();
@@ -181,6 +200,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
 
   Future<void> _togglePreviewPlay() async {
     if (_previewPlayer == null) return;
+    HapticFeedback.lightImpact();
     if (_previewPlaying) {
       await _previewPlayer!.pause();
     } else {
@@ -188,7 +208,14 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     }
   }
 
-  /// Отмена из режима ЗАПИСИ — удаляем временный файл.
+  Future<void> _cyclePreviewSpeed() async {
+    HapticFeedback.selectionClick();
+    final idx = _speedCycle.indexOf(_previewSpeed);
+    final next = _speedCycle[(idx + 1) % _speedCycle.length];
+    setState(() => _previewSpeed = next);
+    try { await _previewPlayer?.setSpeed(next); } catch (_) {}
+  }
+
   Future<void> _cancelRecording() async {
     HapticFeedback.lightImpact();
     await _recorder.stop();
@@ -198,10 +225,11 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     widget.onCancel();
   }
 
-  /// Отмена из режима PREVIEW — удаляем файл, возвращаем к обычному вводу.
   Future<void> _discardPreview() async {
     HapticFeedback.lightImpact();
     await _previewPlayer?.stop();
+    _previewPosSub?.cancel();
+    _previewDurSub?.cancel();
     _previewPlayer?.dispose();
     _previewPlayer = null;
     _deleteFile(_previewPath);
@@ -223,6 +251,17 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     widget.onCancel();
   }
 
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  String _fmtSpeed(double s) {
+    final n = s.toInt();
+    return s == n.toDouble() ? '$n×' : '$s×';
+  }
+
   List<double> _downsample(List<double> input, int target) {
     if (input.isEmpty) return List.filled(target, 0.4);
     if (input.length <= target) {
@@ -242,16 +281,12 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     return out;
   }
 
-  String _fmtDuration(Duration d) {
-    final m = d.inMinutes.toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
   @override
   void dispose() {
     _ampSub?.cancel();
     _tick?.cancel();
+    _previewPosSub?.cancel();
+    _previewDurSub?.cancel();
     _recorder.dispose();
     _previewPlayer?.dispose();
     super.dispose();
@@ -261,118 +296,133 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
         color: c.bg,
         border: Border(top: BorderSide(color: c.line, width: 0.5)),
       ),
       child: SafeArea(
         top: false,
-        child: _recState == _RecState.preview
-            ? _buildPreviewRow(c)
-            : GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  if ((details.primaryVelocity ?? 0) < -200) _cancelRecording();
-                },
-                child: _buildRecordingRow(c),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+              child: _recState == _RecState.preview
+                  ? _buildPreviewRow(c)
+                  : GestureDetector(
+                      onHorizontalDragEnd: (details) {
+                        if ((details.primaryVelocity ?? 0) < -200) {
+                          _cancelRecording();
+                        }
+                      },
+                      child: _buildRecordingRow(c),
+                    ),
+            ),
+            // Recording max-duration progress bar (only in recording mode)
+            if (_recState == _RecState.recording)
+              LinearProgressIndicator(
+                value: _elapsed.inMilliseconds / _maxDuration.inMilliseconds,
+                minHeight: 2,
+                backgroundColor: c.line,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  SeeUColors.accent.withValues(alpha: 0.7),
+                ),
               ),
+          ],
+        ),
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Режим записи: [🗑] [● 00:15 ~~~waveform~~~] [✓]
-  // ---------------------------------------------------------------------------
+  // ── Режим ЗАПИСИ ─────────────────────────────────────────────────────────
+
   Widget _buildRecordingRow(SeeUThemeColors c) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Отмена записи — иконка корзины
-            GestureDetector(
-              onTap: _cancelRecording,
-              child: SizedBox(
-                width: 44,
-                height: 44,
-                child: Icon(
-                  PhosphorIcons.trash(),
-                  color: SeeUColors.error,
-                  size: 22,
-                ),
-              ),
-            ),
-            // Пульсирующая красная точка
-            const _PulsingDot(),
-            const SizedBox(width: 6),
-            // Таймер
-            Text(
-              _fmtDuration(_elapsed),
-              style: TextStyle(
-                fontFeatures: const [FontFeature.tabularFigures()],
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: c.ink,
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Живая waveform
-            Expanded(
-              child: SizedBox(
-                height: 36,
-                child: CustomPaint(
-                  painter: _LiveWavePainter(_liveWindow),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Остановить запись → перейти в preview (✓ checkmark)
-            GestureDetector(
-              onTap: _stopToPreview,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: SeeUGradients.heroOrange,
-                ),
-                child: const Icon(
-                  PhosphorIconsBold.check,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-            ),
-          ],
+        // Отмена — корзина
+        GestureDetector(
+          onTap: _cancelRecording,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(PhosphorIcons.trash(), color: SeeUColors.error, size: 22),
+          ),
         ),
-        // Swipe hint
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+        const SizedBox(width: 4),
+        // Пульсирующая точка + таймер
+        const _PulsingDot(),
+        const SizedBox(width: 6),
+        Text(
+          _fmtDuration(_elapsed),
+          style: TextStyle(
+            fontFeatures: const [FontFeature.tabularFigures()],
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            color: c.ink,
+          ),
+        ),
+        const SizedBox(width: 10),
+        // Живая waveform + swipe-hint
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(PhosphorIconsRegular.caretLeft, size: 13, color: c.ink3),
-              const SizedBox(width: 4),
-              Text(
-                'Смахните, чтобы отменить',
-                style: TextStyle(fontSize: 12, color: c.ink3),
+              SizedBox(
+                height: 40,
+                child: CustomPaint(painter: _LiveWavePainter(_liveWindow)),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(PhosphorIconsRegular.caretLeft,
+                      size: 11, color: c.ink4),
+                  const SizedBox(width: 3),
+                  Text(
+                    'смахните для отмены',
+                    style: TextStyle(fontSize: 11, color: c.ink4),
+                  ),
+                ],
               ),
             ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        // Остановить запись → preview
+        GestureDetector(
+          onTap: _stopToPreview,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SeeUGradients.heroOrange,
+            ),
+            child: const Icon(PhosphorIconsBold.check,
+                color: Colors.white, size: 22),
           ),
         ),
       ],
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Режим preview: [✕] [▶] [~~~waveform~~~ длит.] [🔄] [➤]
-  // ---------------------------------------------------------------------------
+  // ── Режим PREVIEW ─────────────────────────────────────────────────────────
+
   Widget _buildPreviewRow(SeeUThemeColors c) {
+    final totalDur = _previewDuration.inMilliseconds > 0
+        ? _previewDuration
+        : Duration(seconds: _previewDurationSec);
+    final previewProgress = totalDur.inMilliseconds == 0
+        ? 0.0
+        : _previewPosition.inMilliseconds / totalDur.inMilliseconds;
+    final showKnob =
+        _previewPlaying || _previewPosition > Duration.zero;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Отменить и выбросить запись
+        // Отменить (X)
         GestureDetector(
           onTap: _discardPreview,
           child: SizedBox(
@@ -382,12 +432,12 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
           ),
         ),
         const SizedBox(width: 4),
-        // Play / pause для прослушивания перед отправкой
+        // Play / pause
         GestureDetector(
           onTap: _togglePreviewPlay,
           child: Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: SeeUColors.accent.withValues(alpha: 0.12),
@@ -397,54 +447,117 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
                   ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
                   : PhosphorIcons.play(PhosphorIconsStyle.fill),
               color: SeeUColors.accent,
-              size: 18,
+              size: 20,
             ),
           ),
         ),
         const SizedBox(width: 8),
-        // Waveform + длительность
+        // Waveform (seekable) + bottom row
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                height: 32,
-                child: CustomPaint(
-                  painter: _LiveWavePainter(_previewSamples),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  _fmtDuration(Duration(seconds: _previewDurationSec)),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: c.ink2,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+              LayoutBuilder(builder: (_, cst) {
+                final w = cst.maxWidth;
+                return GestureDetector(
+                  onTapUp: (details) {
+                    final ratio =
+                        (details.localPosition.dx / w).clamp(0.0, 1.0);
+                    _previewPlayer?.seek(Duration(
+                        milliseconds:
+                            (totalDur.inMilliseconds * ratio).round()));
+                    setState(() => _previewSeekIndicator = null);
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    final ratio =
+                        (details.localPosition.dx / w).clamp(0.0, 1.0);
+                    setState(() => _previewSeekIndicator = ratio);
+                  },
+                  onHorizontalDragEnd: (_) {
+                    if (_previewSeekIndicator != null) {
+                      _previewPlayer?.seek(Duration(
+                          milliseconds: (totalDur.inMilliseconds *
+                                  _previewSeekIndicator!)
+                              .round()));
+                      setState(() => _previewSeekIndicator = null);
+                    }
+                  },
+                  child: SizedBox(
+                    height: 36,
+                    child: CustomPaint(
+                      painter: VoiceWavePainter(
+                        samples: _previewSamples,
+                        progress: _previewSeekIndicator ?? previewProgress,
+                        colorBase: c.ink3,
+                        colorPlayed: SeeUColors.accent,
+                        seekIndicator: _previewSeekIndicator,
+                        showPlaybackKnob: showKnob,
+                      ),
+                    ),
                   ),
-                ),
+                );
+              }),
+              const SizedBox(height: 3),
+              // Position/total + speed pill
+              Row(
+                children: [
+                  Text(
+                    _previewPosition > Duration.zero
+                        ? _fmtDuration(_previewPosition)
+                        : _fmtDuration(totalDur),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: c.ink2,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Speed pill
+                  GestureDetector(
+                    onTap: _cyclePreviewSpeed,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _previewSpeed != 1.0
+                            ? SeeUColors.accent
+                            : SeeUColors.accent.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        _fmtSpeed(_previewSpeed),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _previewSpeed != 1.0
+                              ? Colors.white
+                              : SeeUColors.accent,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(width: 4),
-        // Перезаписать (иконка стрелки-перезагрузки)
+        const SizedBox(width: 6),
+        // Перезаписать
         GestureDetector(
           onTap: _reRecord,
           child: SizedBox(
             width: 40,
             height: 44,
-            child: Icon(
-              PhosphorIcons.arrowCounterClockwise(),
-              color: c.ink2,
-              size: 20,
-            ),
+            child: Icon(PhosphorIcons.arrowCounterClockwise(),
+                color: c.ink2, size: 20),
           ),
         ),
         const SizedBox(width: 4),
-        // Отправить сразу — paper plane, не стрелка вверх
+        // Отправить
         GestureDetector(
           onTap: _sendNow,
           child: Container(
@@ -466,9 +579,9 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Live waveform painter
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// Живая waveform (recording mode) — анимированные полосы амплитуды
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _LiveWavePainter extends CustomPainter {
   final List<double> samples;
@@ -503,15 +616,12 @@ class _LiveWavePainter extends CustomPainter {
   }
 
   @override
-  // Всегда перерисовываем — живая waveform меняется постоянно.
-  // (Старый код проверял samples.length, что замораживало картинку когда
-  // окно из 32 баров было заполнено — длина не менялась.)
   bool shouldRepaint(covariant _LiveWavePainter old) => true;
 }
 
-// ---------------------------------------------------------------------------
-// Pulsing red dot
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// Pulsing red dot (recording indicator)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _PulsingDot extends StatefulWidget {
   const _PulsingDot();

@@ -11,17 +11,10 @@ import '../../../core/design/design.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/providers/chat_provider.dart';
 
-/// Voice-message bubble — обёртка вокруг play/pause-кнопки + waveform-prerender'а.
+/// Voice-message bubble — play/pause + waveform + speed control.
 ///
-/// Получает [audioUrl] (full URL до ogg/m4a/webm), [durationSec] (от сервера —
-/// уже probed ffprobe'ом или клиентом до отправки) и опциональный
-/// [waveformSamples] (список 0..1, длиной около 48). Если samples нет —
-/// рисуется ровная полоска.
-///
-/// Если переданы [chatId] и [messageId], bubble участвует в auto-next-play
-/// (CHAT-7): после завершения текущего voice'а через `chatMessagesProvider`
-/// ищется следующий voice-message в том же чате, его id кладётся в
-/// `voiceAutoPlayQueueProvider`, и соответствующий bubble стартует play.
+/// Speed pill is stacked directly below the play button for easy access.
+/// Waveform is seekable via tap or horizontal drag.
 class VoiceBubble extends ConsumerStatefulWidget {
   final String audioUrl;
   final int durationSec;
@@ -29,7 +22,6 @@ class VoiceBubble extends ConsumerStatefulWidget {
   final bool isMine;
   final String? chatId;
   final String? messageId;
-  /// Время отправки в формате "HH:MM" для отображения внутри бабла.
   final String? sentTimeLabel;
   final bool isRead;
   final bool isDelivered;
@@ -52,19 +44,14 @@ class VoiceBubble extends ConsumerStatefulWidget {
 }
 
 class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
-  // Один shared плеер для всех VoiceBubble не делаем — у каждой своя
-  // позиция, и чаще нужен только один играющий за раз. Если будет issue
-  // с одновременным воспроизведением — добавим coordinator-провайдер.
   final _player = AudioPlayer();
   bool _loaded = false;
   bool _loading = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  // Playback rate цикл: 1.0 → 1.5 → 2.0 → 1.0. Тап на pill справа.
-  // just_audio поддерживает stable до 2.0× без артефактов pitch'а.
   double _speed = 1.0;
   static const _speedCycle = [1.0, 1.5, 2.0];
-  double? _seekIndicator; // 0..1, normalised drag position
+  double? _seekIndicator;
 
   ProviderSubscription<String?>? _queueSub;
   ProviderSubscription<String?>? _coordinatorSub;
@@ -81,9 +68,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     });
     _player.playerStateStream.listen((s) {
       if (s.processingState == ProcessingState.completed) {
-        // По окончанию — сбрасываем позицию + pause для возможности replay
-        // и триггерим auto-next (CHAT-7). Также освобождаем coordinator —
-        // следующий voice claim'ит сам (CHAT-6.1).
         _player.seek(Duration.zero);
         _player.pause();
         _releaseCoordinatorIfMine();
@@ -92,7 +76,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
       if (mounted) setState(() {});
     });
 
-    // Слушаем queue — если pushнули наш id, автозапуск (CHAT-7).
     if (widget.chatId != null && widget.messageId != null) {
       _queueSub = ref.listenManual<String?>(
         voiceAutoPlayQueueProvider,
@@ -103,10 +86,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
           }
         },
       );
-
-      // CHAT-6.1: coordinator — если кто-то другой claim'нул playback,
-      // pause'имся (если играли). Идемпотент: own claim не триггерит
-      // self-pause (next == widget.messageId).
       _coordinatorSub = ref.listenManual<String?>(
         currentlyPlayingVoiceProvider,
         (prev, next) {
@@ -118,8 +97,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     }
   }
 
-  /// Помечает voice как прослушанный (CHAT-7.1) — auto-next пропустит его.
-  /// No-op если widget без messageId (legacy/single-message сценарий).
   void _markListened() {
     final mid = widget.messageId;
     if (mid == null) return;
@@ -128,16 +105,12 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     ref.read(listenedVoiceIdsProvider.notifier).state = {...cur, mid};
   }
 
-  /// Claim'им экcклюзивный playback (CHAT-6.1) — другие voice-bubble'ы
-  /// получат event и pause'ятся.
   void _claimCoordinator() {
     final mid = widget.messageId;
     if (mid == null) return;
     ref.read(currentlyPlayingVoiceProvider.notifier).state = mid;
   }
 
-  /// Отпускаем coordinator если он сейчас на нас. Вызывается при manual
-  /// pause + при playback-completed. Идемпотент.
   void _releaseCoordinatorIfMine() {
     final mid = widget.messageId;
     if (mid == null) return;
@@ -147,10 +120,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     }
   }
 
-  /// Поиск next voice-message в чате и установка его id в queue.
-  /// Используется при completion текущего voice'а. CHAT-7.1: пропускаем
-  /// voice'ы которые юзер уже слушал в этой сессии (filter через
-  /// `listenedVoiceIdsProvider`).
   void _triggerAutoNext() {
     final cid = widget.chatId;
     final mid = widget.messageId;
@@ -162,13 +131,12 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     for (var i = idx + 1; i < messages.length; i++) {
       final m = messages[i];
       if (m.kind != 'voice' && m.kind != 'audio') continue;
-      if (listened.contains(m.id)) continue; // CHAT-7.1: skip прослушанные
+      if (listened.contains(m.id)) continue;
       ref.read(voiceAutoPlayQueueProvider.notifier).state = m.id;
       return;
     }
   }
 
-  /// Like _toggle but always starts play (used by auto-next).
   Future<void> _autoPlay() async {
     await _ensureLoaded();
     if (!_player.playing) {
@@ -208,8 +176,6 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
       await _player.pause();
       _releaseCoordinatorIfMine();
     } else {
-      // CHAT-6.1: claim перед play — другие voice'ы получат event и pause'ятся.
-      // CHAT-7.1: помечаем как прослушанный — auto-next пропустит при возврате.
       _claimCoordinator();
       _markListened();
       await _player.play();
@@ -223,14 +189,9 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
     setState(() => _speed = next);
     try {
       await _player.setSpeed(next);
-    } catch (_) {
-      // На некоторых платформах setSpeed может бросать до первого load'а.
-      // Игнорируем — следующий load применит сохранённый _speed (см.
-      // _ensureLoaded ниже).
-    }
+    } catch (_) {}
   }
 
-  /// Форматирование label'а: "1×" / "1.5×" / "2×". Без trailing ".0".
   String _fmtSpeed(double s) {
     final n = s.toInt();
     return s == n.toDouble() ? '$n×' : '$s×';
@@ -248,9 +209,10 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final progress =
-        _duration.inMilliseconds == 0 ? 0.0 : _position.inMilliseconds / _duration.inMilliseconds;
-    // #26: пауза когда bubble уходит из viewport — аудио не должно играть невидимо.
+    final progress = _duration.inMilliseconds == 0
+        ? 0.0
+        : _position.inMilliseconds / _duration.inMilliseconds;
+
     return VisibilityDetector(
       key: Key('vb-${widget.messageId ?? widget.audioUrl}'),
       onVisibilityChanged: (info) {
@@ -260,206 +222,227 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
         }
       },
       child: Container(
-      // #23: уменьшили minWidth 200→160 — меньше overflow на узких экранах
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
-      padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
-      decoration: BoxDecoration(
-        gradient: widget.isMine ? SeeUGradients.heroOrange : null,
-        color: widget.isMine ? null : c.surface2,
-        // #37: асимметричный radius как у текстовых баблов — «хвост» указывает
-        // на отправителя (правый нижний для своих, левый нижний для чужих)
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(20),
-          topRight: const Radius.circular(20),
-          bottomLeft: Radius.circular(widget.isMine ? 20 : 8),
-          bottomRight: Radius.circular(widget.isMine ? 8 : 20),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Play/pause
-          GestureDetector(
-            onTap: _toggle,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.isMine
-                    ? Colors.white.withValues(alpha: 0.20)
-                    : SeeUColors.accent.withValues(alpha: 0.10),
-              ),
-              child: _loading
-                  ? Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color:
-                            widget.isMine ? Colors.white : SeeUColors.accent,
-                      ),
-                    )
-                  : Icon(
-                      _player.playing
-                          ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.play(PhosphorIconsStyle.fill),
-                      color:
-                          widget.isMine ? Colors.white : SeeUColors.accent,
-                      size: 18,
-                    ),
-            ),
+        constraints: const BoxConstraints(minWidth: 210, maxWidth: 300),
+        padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+        decoration: BoxDecoration(
+          gradient: widget.isMine ? SeeUGradients.heroOrange : null,
+          color: widget.isMine ? null : c.surface2,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(widget.isMine ? 20 : 8),
+            bottomRight: Radius.circular(widget.isMine ? 8 : 20),
           ),
-          const SizedBox(width: 10),
-          // Waveform + duration
-          Expanded(
-            child: Column(
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Left: play button + speed pill stacked ────────────────
+            Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LayoutBuilder(
-                  builder: (_, constraints) {
-                    final w = constraints.maxWidth;
+                _buildPlayButton(c),
+                const SizedBox(height: 5),
+                _buildSpeedPill(c),
+              ],
+            ),
+            const SizedBox(width: 10),
+            // ── Right: waveform + bottom row ──────────────────────────
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(builder: (_, cst) {
+                    final w = cst.maxWidth;
                     return GestureDetector(
                       onTapUp: (details) {
-                        final ratio =
-                            (details.localPosition.dx / w).clamp(0.0, 1.0);
+                        final ratio = (details.localPosition.dx / w).clamp(0.0, 1.0);
                         _player.seek(Duration(
-                            milliseconds:
-                                (_duration.inMilliseconds * ratio).round()));
+                            milliseconds: (_duration.inMilliseconds * ratio).round()));
                         if (mounted) setState(() => _seekIndicator = null);
                       },
                       onHorizontalDragUpdate: (details) {
-                        final ratio =
-                            (details.localPosition.dx / w).clamp(0.0, 1.0);
+                        final ratio = (details.localPosition.dx / w).clamp(0.0, 1.0);
                         if (mounted) setState(() => _seekIndicator = ratio);
                       },
                       onHorizontalDragEnd: (_) {
                         if (_seekIndicator != null) {
                           _player.seek(Duration(
-                              milliseconds: (_duration.inMilliseconds *
-                                      _seekIndicator!)
-                                  .round()));
+                              milliseconds:
+                                  (_duration.inMilliseconds * _seekIndicator!).round()));
                           if (mounted) setState(() => _seekIndicator = null);
                         }
                       },
                       child: SizedBox(
                         width: double.infinity,
-                        height: 40,
+                        height: 44,
                         child: CustomPaint(
-                          size: Size(w, 40),
-                          painter: _StaticWavePainter(
+                          size: Size(w, 44),
+                          painter: VoiceWavePainter(
                             samples: widget.waveformSamples ?? const [],
                             progress: _seekIndicator ?? progress,
                             colorBase: widget.isMine
-                                ? Colors.white.withValues(alpha: 0.65)
+                                ? Colors.white.withValues(alpha: 0.50)
                                 : c.ink3,
                             colorPlayed: widget.isMine
                                 ? Colors.white
                                 : SeeUColors.accent,
                             seekIndicator: _seekIndicator,
-                            showPlaybackKnob: _player.playing || _position > Duration.zero,
+                            showPlaybackKnob:
+                                _player.playing || _position > Duration.zero,
                           ),
                         ),
                       ),
                     );
-                  },
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    // Длительность / позиция воспроизведения
-                    Text(
-                      _position > Duration.zero
-                          ? formatDuration(_position)
-                          : formatDuration(_duration),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: widget.isMine ? Colors.white70 : c.ink2,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    const Spacer(),
-                    // Speed pill
-                    GestureDetector(
-                      onTap: _cycleSpeed,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _speed == 1.0
-                              ? (widget.isMine
-                                  ? Colors.white.withValues(alpha: 0.15)
-                                  : SeeUColors.accent.withValues(alpha: 0.10))
-                              : (widget.isMine
-                                  ? Colors.white
-                                  : SeeUColors.accent),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          _fmtSpeed(_speed),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: _speed == 1.0
-                                ? (widget.isMine
-                                    ? Colors.white
-                                    : SeeUColors.accent)
-                                : (widget.isMine
-                                    ? SeeUColors.accent
-                                    : Colors.white),
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Время отправки + галочки прочтения
-                    if (widget.sentTimeLabel != null) ...[
-                      const SizedBox(width: 6),
+                  }),
+                  const SizedBox(height: 3),
+                  // Duration left — sent time + check right
+                  Row(
+                    children: [
                       Text(
-                        widget.sentTimeLabel!,
+                        _position > Duration.zero
+                            ? formatDuration(_position)
+                            : formatDuration(_duration),
                         style: TextStyle(
-                          fontSize: 10,
-                          color: widget.isMine
-                              ? Colors.white.withValues(alpha: 0.6)
-                              : c.ink3,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: widget.isMine ? Colors.white70 : c.ink2,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
-                      if (widget.isMine) ...[
-                        const SizedBox(width: 3),
-                        Icon(
-                          (widget.isRead || widget.isDelivered)
-                              ? PhosphorIconsBold.checks
-                              : PhosphorIconsRegular.check,
-                          size: 12,
-                          color: widget.isRead
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.65),
+                      const Spacer(),
+                      if (widget.sentTimeLabel != null) ...[
+                        Text(
+                          widget.sentTimeLabel!,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: widget.isMine
+                                ? Colors.white.withValues(alpha: 0.60)
+                                : c.ink3,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
                         ),
+                        if (widget.isMine) ...[
+                          const SizedBox(width: 3),
+                          Icon(
+                            (widget.isRead || widget.isDelivered)
+                                ? PhosphorIconsBold.checks
+                                : PhosphorIconsRegular.check,
+                            size: 12,
+                            color: widget.isRead
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.65),
+                          ),
+                        ],
                       ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ), // Container (child of VisibilityDetector)
+    );
+  }
+
+  // ── Play / pause button (44×44 circle) ────────────────────────────────────
+
+  Widget _buildPlayButton(SeeUThemeColors c) {
+    final playing = _player.playing;
+    final iconColor = widget.isMine ? Colors.white : SeeUColors.accent;
+    return GestureDetector(
+      onTap: _toggle,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.isMine
+              ? Colors.white.withValues(alpha: playing ? 0.30 : 0.20)
+              : SeeUColors.accent.withValues(alpha: playing ? 0.20 : 0.12),
+          boxShadow: playing
+              ? [
+                  BoxShadow(
+                    color: (widget.isMine ? Colors.white : SeeUColors.accent)
+                        .withValues(alpha: 0.28),
+                    blurRadius: 14,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
+        ),
+        child: _loading
+            ? Padding(
+                padding: const EdgeInsets.all(12),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: iconColor,
+                ),
+              )
+            : Icon(
+                playing
+                    ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
+                    : PhosphorIcons.play(PhosphorIconsStyle.fill),
+                color: iconColor,
+                size: 20,
+              ),
+      ),
+    );
+  }
+
+  // ── Speed pill (44×26, stacked below play button) ─────────────────────────
+
+  Widget _buildSpeedPill(SeeUThemeColors c) {
+    final active = _speed != 1.0;
+    return GestureDetector(
+      onTap: _cycleSpeed,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 44,
+        height: 26,
+        decoration: BoxDecoration(
+          color: active
+              ? (widget.isMine ? Colors.white : SeeUColors.accent)
+              : (widget.isMine
+                  ? Colors.white.withValues(alpha: 0.18)
+                  : SeeUColors.accent.withValues(alpha: 0.12)),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          _fmtSpeed(_speed),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: active
+                ? (widget.isMine ? SeeUColors.accent : Colors.white)
+                : (widget.isMine ? Colors.white : SeeUColors.accent),
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _StaticWavePainter extends CustomPainter {
+// ─────────────────────────────────────────────────────────────────────────────
+// VoiceWavePainter — статические полосы формы волны с прогрессом воспроизведения.
+// Публичный класс — используется и в voice_recorder.dart (preview-режим).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class VoiceWavePainter extends CustomPainter {
   final List<double> samples;
-  final double progress; // 0..1, played-portion
+  final double progress; // 0..1 played portion
   final Color colorBase;
   final Color colorPlayed;
-  final double? seekIndicator; // 0..1, drag seek line
-  final bool showPlaybackKnob; // показывать кружок на текущей позиции
+  final double? seekIndicator; // 0..1 drag seek position
+  final bool showPlaybackKnob;
 
-  _StaticWavePainter({
+  const VoiceWavePainter({
     required this.samples,
     required this.progress,
     required this.colorBase,
@@ -468,11 +451,9 @@ class _StaticWavePainter extends CustomPainter {
     this.showPlaybackKnob = false,
   });
 
-  /// Генерирует естественную синусоидальную форму волны для случая когда
-  /// реальных samples нет — визуально напоминает голосовое сообщение.
+  /// Синусоидальная форма волны для fallback (без реальных samples).
   static double _fallbackSample(int i, int n) {
     final t = i / n;
-    // Несколько слоёв синусоид → органичный "voice-like" рисунок.
     final v = 0.25 +
         0.35 * math.sin(t * math.pi * 6.5 + 0.8) *
             math.sin(t * math.pi * 2.1) +
@@ -489,21 +470,21 @@ class _StaticWavePainter extends CustomPainter {
     final n = ((size.width + gap) / (barW + gap)).floor();
     if (n <= 0) return;
     final centerY = size.height / 2;
-    final progressF = progress * n; // fractional bar index
+    final progressF = progress * n;
     final playedBars = progressF.floor();
 
     for (var i = 0; i < n; i++) {
-      double v;
+      final double v;
       if (samples.isEmpty) {
         v = _fallbackSample(i, n);
       } else {
-        final idx = ((i / n) * samples.length).floor().clamp(0, samples.length - 1);
+        final idx =
+            ((i / n) * samples.length).floor().clamp(0, samples.length - 1);
         v = samples[idx];
       }
       final h = math.max(4.0, v * size.height * 0.90);
       final x = i * (barW + gap);
 
-      // Плавный переход на границе воспроизведения.
       final Color barColor;
       if (i < playedBars) {
         barColor = colorPlayed;
@@ -526,7 +507,7 @@ class _StaticWavePainter extends CustomPainter {
       );
     }
 
-    // Seek drag indicator: line + large circle knob.
+    // Seek drag indicator
     if (seekIndicator != null) {
       final x = (seekIndicator! * size.width).clamp(0.0, size.width);
       canvas.drawLine(
@@ -536,24 +517,15 @@ class _StaticWavePainter extends CustomPainter {
           ..color = colorPlayed.withValues(alpha: 0.75)
           ..strokeWidth = 1.5,
       );
-      canvas.drawCircle(
-        Offset(x, centerY),
-        5.5,
-        Paint()..color = colorPlayed,
-      );
+      canvas.drawCircle(Offset(x, centerY), 5.5, Paint()..color = colorPlayed);
     } else if (showPlaybackKnob && progress > 0) {
-      // Постоянный маленький кружок на текущей позиции воспроизведения.
       final x = (progress * size.width).clamp(0.0, size.width);
-      canvas.drawCircle(
-        Offset(x, centerY),
-        4.0,
-        Paint()..color = colorPlayed,
-      );
+      canvas.drawCircle(Offset(x, centerY), 4.0, Paint()..color = colorPlayed);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _StaticWavePainter old) =>
+  bool shouldRepaint(covariant VoiceWavePainter old) =>
       old.progress != progress ||
       old.samples != samples ||
       old.colorBase != colorBase ||
