@@ -328,14 +328,17 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     final isVoice = msg.kind == 'voice' || msg.kind == 'audio';
-    final isVideoNote = (msg.kind == 'video' || msg.kind == 'video_note') &&
-        (msg.attachedMediaType == 'video_note' || msg.kind == 'video_note');
-    final isVideo = (msg.kind == 'video' || msg.kind == 'video_note') &&
-        msg.attachedMediaUrl.isNotEmpty;
+    // Support both new (kind='video_note') and old (kind='image', type='video_note') msgs
+    final isVideoNote = msg.kind == 'video_note' ||
+        (msg.attachedMediaType == 'video_note' && msg.attachedMediaUrl.isNotEmpty);
+    final isVideo = (msg.kind == 'video') && msg.attachedMediaUrl.isNotEmpty;
     final isSticker =
         msg.kind == 'image' && msg.attachedMediaType == 'sticker';
     final isMedia = (msg.kind == 'shared_post' && msg.attachedPost != null) ||
-        (msg.kind == 'image' && msg.attachedMediaUrl.isNotEmpty);
+        (msg.kind == 'image' && msg.attachedMediaUrl.isNotEmpty &&
+            msg.attachedMediaType != 'video_note' &&
+            msg.attachedMediaType != 'video' &&
+            msg.attachedMediaType != 'sticker');
 
     final bubblePadding = isSticker
         ? EdgeInsets.zero
@@ -556,20 +559,13 @@ class ChatMessageBubble extends StatelessWidget {
             const SizedBox(width: 140, height: 140),
       );
     }
-    if (message.kind == 'image' && message.attachedMediaUrl.isNotEmpty) {
-      return ChatImageAttachment(
-        url: message.attachedMediaUrl,
-        isMine: isMine,
-        trailingText: message.text,
-      );
-    }
-    if ((message.kind == 'video' || message.kind == 'video_note') &&
-        message.attachedMediaUrl.isNotEmpty) {
+    if (message.attachedMediaUrl.isNotEmpty) {
       final url = message.attachedMediaUrl.startsWith('http')
           ? message.attachedMediaUrl
           : '${AppConfig.apiOrigin}${message.attachedMediaUrl}';
-      if (message.attachedMediaType == 'video_note' ||
-          message.kind == 'video_note') {
+      // video_note — round bubble (new kind='video_note' OR legacy kind='image' with type='video_note')
+      if (message.kind == 'video_note' ||
+          message.attachedMediaType == 'video_note') {
         return VideoNoteBubble(
           videoUrl: url,
           isMine: isMine,
@@ -578,13 +574,24 @@ class ChatMessageBubble extends StatelessWidget {
           isDelivered: message.isDelivered,
         );
       }
-      return VideoBubble(
-        videoUrl: url,
-        isMine: isMine,
-        sentTimeLabel: time,
-        isRead: message.isRead,
-        isDelivered: message.isDelivered,
-      );
+      // regular video file
+      if (message.kind == 'video') {
+        return VideoBubble(
+          videoUrl: url,
+          isMine: isMine,
+          sentTimeLabel: time,
+          isRead: message.isRead,
+          isDelivered: message.isDelivered,
+        );
+      }
+      // image (sticker handled above already)
+      if (message.kind == 'image' && message.attachedMediaType != 'sticker') {
+        return ChatImageAttachment(
+          url: message.attachedMediaUrl,
+          isMine: isMine,
+          trailingText: message.text,
+        );
+      }
     }
     if ((message.kind == 'voice' || message.kind == 'audio') &&
         message.attachedMediaUrl.isNotEmpty) {
