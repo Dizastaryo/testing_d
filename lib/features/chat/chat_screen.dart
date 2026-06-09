@@ -29,6 +29,7 @@ import 'widgets/swipe_to_reply.dart';
 import 'widgets/typing_dots.dart';
 import 'widgets/chat_search_sheet.dart';
 import 'widgets/emoji_sticker_panel.dart';
+import 'widgets/emoji_aware_controller.dart';
 import 'widgets/voice_recorder.dart';
 import '../sticker/sticker_creator_screen.dart';
 // Chat uses existing chat_provider; no MockService needed
@@ -62,7 +63,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
-  final _textController = TextEditingController();
+  final _textController = EmojiAwareController();
   // ScrollablePositionedList controllers (CHAT-3.1). reverse=true — index 0
   // в нижней части viewport'а (newest message). scroll-to-message работает
   // по индексу + alignment.

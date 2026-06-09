@@ -19,6 +19,7 @@ import '../../core/providers/room_provider.dart';
 import '../../core/services/voice_room_service.dart';
 import 'room_members_screen.dart';
 import 'widgets/emoji_sticker_panel.dart';
+import 'widgets/emoji_aware_controller.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -29,7 +30,7 @@ class RoomScreen extends ConsumerStatefulWidget {
 }
 
 class _RoomScreenState extends ConsumerState<RoomScreen> {
-  final _inputController = TextEditingController();
+  final _inputController = EmojiAwareController();
   final _scrollController = ScrollController();
   bool _sending = false;
   bool _atBottom = true;
@@ -1083,10 +1084,7 @@ class _MessageBubble extends StatelessWidget {
 
   Widget _buildText(String text) {
     if (searchQuery.isEmpty) {
-      return Text(
-        text,
-        style: TextStyle(fontSize: 14, height: 1.4, color: isMe ? Colors.white : c.ink),
-      );
+      return _buildMixedText(text);
     }
     final lower = text.toLowerCase();
     final q = searchQuery.toLowerCase();
@@ -1123,6 +1121,46 @@ class _MessageBubble extends StatelessWidget {
         children: spans,
       ),
     );
+  }
+
+  static final _emojiRegex = RegExp(
+    r'[\u{1F300}-\u{1FAFF}][\u{1F3FB}-\u{1F3FF}]?(?:\u{200D}[\u{1F300}-\u{1FAFF}][\u{1F3FB}-\u{1F3FF}]?)*'
+    r'|[\u{2600}-\u{27BF}]\u{FE0F}?'
+    r'|[\u{1F1E0}-\u{1F1FF}][\u{1F1E0}-\u{1F1FF}]'
+    r'|[\u{1F000}-\u{1F02F}]|[\u{1F0A0}-\u{1F0FF}]',
+    unicode: true,
+  );
+
+  Widget _buildMixedText(String text) {
+    final textColor = isMe ? Colors.white : c.ink;
+    if (text.runes.every((r) => r < 0x2194)) {
+      return Text(text, style: TextStyle(fontSize: 14, height: 1.4, color: textColor));
+    }
+    final spans = <InlineSpan>[];
+    int cursor = 0;
+    for (final m in _emojiRegex.allMatches(text)) {
+      if (m.start > cursor) {
+        spans.add(TextSpan(
+          text: text.substring(cursor, m.start),
+          style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+        ));
+      }
+      spans.add(TextSpan(
+        text: m.group(0),
+        style: TextStyle(fontSize: 18, height: 1.3, color: textColor),
+      ));
+      cursor = m.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(cursor),
+        style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+      ));
+    }
+    if (spans.length == 1 && (spans.first as TextSpan).style?.fontSize == 14) {
+      return Text(text, style: TextStyle(fontSize: 14, height: 1.4, color: textColor));
+    }
+    return RichText(text: TextSpan(children: spans), overflow: TextOverflow.clip);
   }
 
   Widget _buildBubble(String timeStr) {
