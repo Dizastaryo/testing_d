@@ -147,7 +147,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       isScrollControlled: true,
       builder: (_) => EmojiStickerPanel(
         onEmojiSelected: (emoji) {
-          Navigator.pop(context);
           final sel = _inputController.selection;
           final text = _inputController.text;
           final pos = sel.isValid ? sel.baseOffset : text.length;

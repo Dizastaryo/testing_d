@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -6,31 +7,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/sticker_provider.dart';
-
-// ---------------------------------------------------------------------------
-// Emoji category data
-// ---------------------------------------------------------------------------
-const _emojiCategories = {
-  'Эмоции': [
-    '😀', '😂', '🥲', '😍', '😎', '😭', '😡', '🤔', '🤩', '🥳',
-    '😴', '🥺', '😱', '😏', '🤗', '😐', '🫠', '🤭', '🫡', '😇',
-    '🤪', '😋', '🥴', '😤', '🫢', '😬', '🙃', '😑', '😶',
-    '🥰', '😘', '😜', '😅', '😉', '😊', '🤣', '☺️', '😌', '😔',
-    '🤯', '🤠', '🤓', '🤫', '😶‍🌫️',
-  ],
-  'Сердечки': [
-    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💖',
-    '💯', '✨', '💕', '💞', '💓', '💗', '❣️', '💝', '🫶',
-  ],
-  'Жесты': [
-    '👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👌', '✌️', '🤘',
-    '🫶', '🤜', '🤛', '👊', '✊', '🤙', '🫰', '🤞', '🫵',
-  ],
-  'Прочее': [
-    '🔥', '🎉', '🚀', '⭐', '⚡', '💀', '👀', '🎯', '💊', '🏆',
-    '🎁', '🫧', '🌈', '🍕', '🍔', '🎶', '🤡', '👾', '🧠',
-  ],
-};
 
 // ---------------------------------------------------------------------------
 // Public widget
@@ -72,7 +48,7 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
   Widget build(BuildContext context) {
     final SeeUThemeColors c = context.seeuColors;
     return Container(
-      height: 360,
+      height: 440,
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
@@ -115,11 +91,6 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
                       onTap: () => _tabController.animateTo(1),
                     ),
                     const Spacer(),
-                    Icon(
-                      PhosphorIconsRegular.magnifyingGlass,
-                      size: 20,
-                      color: c.ink3,
-                    ),
                   ],
                 ),
               );
@@ -144,7 +115,7 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
 }
 
 // ---------------------------------------------------------------------------
-// Emoji tab
+// Emoji tab — полный набор Unicode через emoji_picker_flutter
 // ---------------------------------------------------------------------------
 
 class _EmojiTab extends StatelessWidget {
@@ -154,82 +125,55 @@ class _EmojiTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final SeeUThemeColors c = context.seeuColors;
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      children: _emojiCategories.entries.map((entry) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                entry.key,
-                style: SeeUTypography.caption.copyWith(
-                  color: c.ink3,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            GridView.count(
-              crossAxisCount: 7,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
-              children: entry.value
-                  .map((emoji) => _EmojiTapButton(
-                        emoji: emoji,
-                        onTap: () => onSelected(emoji),
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 4),
-          ],
-        );
-      }).toList(),
-    );
-  }
-}
+    final c = context.seeuColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-// ---------------------------------------------------------------------------
-// Animated emoji tap button
-// ---------------------------------------------------------------------------
-
-class _EmojiTapButton extends StatefulWidget {
-  final String emoji;
-  final VoidCallback onTap;
-
-  const _EmojiTapButton({required this.emoji, required this.onTap});
-
-  @override
-  State<_EmojiTapButton> createState() => _EmojiTapButtonState();
-}
-
-class _EmojiTapButtonState extends State<_EmojiTapButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
-        widget.onTap();
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted) setState(() => _pressed = false);
-        });
-      },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 1.3 : 1.0,
-        duration: const Duration(milliseconds: 100),
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Center(
-            child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
+    return EmojiPicker(
+      onEmojiSelected: (_, emoji) => onSelected(emoji.emoji),
+      config: Config(
+        checkPlatformCompatibility: true,
+        emojiViewConfig: EmojiViewConfig(
+          columns: 8,
+          emojiSizeMax: 32,
+          verticalSpacing: 0,
+          horizontalSpacing: 0,
+          gridPadding: const EdgeInsets.symmetric(horizontal: 4),
+          backgroundColor: c.surface,
+          buttonMode: ButtonMode.MATERIAL,
+          noRecents: Text(
+            'Нет недавних',
+            style: TextStyle(fontSize: 14, color: c.ink3),
+            textAlign: TextAlign.center,
           ),
+          recentsLimit: 30,
+        ),
+        categoryViewConfig: CategoryViewConfig(
+          initCategory: Category.RECENT,
+          indicatorColor: SeeUColors.accent,
+          iconColor: c.ink3,
+          iconColorSelected: SeeUColors.accent,
+          backgroundColor: isDark ? c.surface : const Color(0xFFF7F7F7),
+          tabIndicatorAnimDuration: const Duration(milliseconds: 150),
+          dividerColor: Colors.transparent,
+        ),
+        bottomActionBarConfig: BottomActionBarConfig(
+          enabled: true,
+          showBackspaceButton: false,
+          showSearchViewButton: true,
+          backgroundColor: c.surface,
+          buttonColor: c.surface,
+          buttonIconColor: c.ink3,
+        ),
+        searchViewConfig: SearchViewConfig(
+          backgroundColor: c.surface,
+          buttonIconColor: c.ink3,
+          hintText: 'Поиск эмодзи...',
+          hintTextStyle: TextStyle(fontSize: 14, color: c.ink3),
+        ),
+        skinToneConfig: SkinToneConfig(
+          enabled: true,
+          dialogBackgroundColor: c.surface,
+          indicatorColor: c.ink3,
         ),
       ),
     );

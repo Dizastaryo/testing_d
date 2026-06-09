@@ -505,7 +505,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       isScrollControlled: true,
       builder: (_) => EmojiStickerPanel(
         onEmojiSelected: (emoji) {
-          Navigator.pop(context);
           final sel = _textController.selection;
           final text = _textController.text;
           final pos = sel.isValid ? sel.baseOffset : text.length;
@@ -1852,7 +1851,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
             '',
             attachedMediaUrl: url,
-            attachedMediaType: 'video',
+            attachedMediaType: 'video_note',
             replyTo: reply,
           );
       if (reply != null && mounted) setState(() => _replyingTo = null);
