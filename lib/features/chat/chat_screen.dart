@@ -877,6 +877,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           durationSec: durationSec,
           cancelToken: cancelToken,
         ));
+    _scrollToBottom();
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -1585,8 +1586,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ],
                           ),
               ),
-              // Sending indicator for voice/video-note uploads
-              if (_sendingInfo != null) _buildUploadingBubble(_sendingInfo!),
               // Multi-select action bar replaces input bar when selecting
               if (_isSelecting)
                 _buildSelectionBar()
@@ -1693,6 +1692,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       items.addAll(entry.value);
     }
 
+    // Pending bubble (voice/video-note upload) lives inside the list as item 0
+    // so it appears at the bottom of the conversation like a real message.
+    final hasPending = _sendingInfo != null;
+    final extra = hasPending ? 1 : 0;
+
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
@@ -1703,14 +1707,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // reverse=true: index 0 рендерится в нижней части viewport'а
       // (newest message внизу — как в любом мессенджере).
       reverse: true,
-      itemCount: items.length,
+      itemCount: items.length + extra,
       itemBuilder: (context, index) {
-        final item = items[items.length - 1 - index]; // reverse mapping
+        // index 0 = visual bottom: show pending upload bubble while sending
+        if (hasPending && index == 0) return _buildUploadingBubble(_sendingInfo!);
+
+        final adjustedIndex = index - extra;
+        final item = items[items.length - 1 - adjustedIndex]; // reverse mapping
         if (item is String) return ChatDateSeparator(label: item);
 
         final msg = item as ChatMessage;
         final isMine = msg.senderId == myId;
-        final rawIdx = items.length - 1 - index;
+        final rawIdx = items.length - 1 - adjustedIndex;
         // showTail: следующий элемент — разделитель или другой отправитель
         final nextIdx = rawIdx + 1;
         final showTail = nextIdx >= items.length ||
@@ -1977,6 +1985,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           thumbnail: thumb,
           cancelToken: cancelToken,
         ));
+    _scrollToBottom();
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
