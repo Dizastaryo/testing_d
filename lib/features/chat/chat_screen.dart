@@ -106,6 +106,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final Set<String> _selectedIds = {};
   bool get _isSelecting => _selectedIds.isNotEmpty;
 
+  bool _emojiPanelOpen = false;
+
   int _messageCount = 0;
   bool _atBottom = true;
   bool _sendError = false;
@@ -116,7 +118,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     _textController.addListener(_onTextChanged);
     _focusNode.addListener(() {
-      if (mounted) setState(() {});
+      if (_focusNode.hasFocus && _emojiPanelOpen) {
+        setState(() => _emojiPanelOpen = false);
+      } else if (mounted) {
+        setState(() {});
+      }
     });
     _itemPositionsListener.itemPositions.addListener(_onScrollPositionsChanged);
     // Прокрутка вниз происходит через ref.listen когда грузятся первые сообщения.
@@ -527,33 +533,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return '$secondsс';
   }
 
-  /// Opens the emoji + sticker panel as a bottom sheet.
-  void _showEmojiStickerPanel() {
-    _focusNode.unfocus();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => EmojiStickerPanel(
-        onEmojiSelected: (emoji) {
-          final sel = _textController.selection;
-          final text = _textController.text;
-          final pos = sel.isValid ? sel.baseOffset : text.length;
-          final newText = text.substring(0, pos) + emoji + text.substring(pos);
-          _textController.value = TextEditingValue(
-            text: newText,
-            selection: TextSelection.collapsed(offset: pos + emoji.length),
-          );
-        },
-        onStickerSelected: (url) {
-          Navigator.pop(context);
-          _sendSticker(url);
-        },
-        onCreateSticker: () {
-          Navigator.pop(context);
-          _openStickerCreator();
-        },
-      ),
+  void _toggleEmojiPanel() {
+    if (_emojiPanelOpen) {
+      setState(() => _emojiPanelOpen = false);
+      _focusNode.requestFocus();
+    } else {
+      _focusNode.unfocus();
+      setState(() => _emojiPanelOpen = true);
+    }
+  }
+
+  void _insertEmoji(String emoji) {
+    final sel = _textController.selection;
+    final text = _textController.text;
+    final pos = sel.isValid ? sel.baseOffset : text.length;
+    final newText = text.substring(0, pos) + emoji + text.substring(pos);
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + emoji.length),
     );
   }
 
@@ -1595,6 +1592,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 _buildSelectionBar()
               else
                 _buildInputBar(),
+              // Inline emoji/sticker panel (replaces keyboard space)
+              if (_emojiPanelOpen && !_isSelecting)
+                EmojiStickerPanel(
+                  inline: true,
+                  onEmojiSelected: _insertEmoji,
+                  onStickerSelected: (url) {
+                    setState(() => _emojiPanelOpen = false);
+                    _sendSticker(url);
+                  },
+                  onCreateSticker: () {
+                    setState(() => _emojiPanelOpen = false);
+                    _openStickerCreator();
+                  },
+                ),
                 ], // Column children
               ), // Column
               // Round video message overlay
@@ -2814,13 +2825,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 )
                               : GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: _showEmojiStickerPanel,
+                                  onTap: _toggleEmojiPanel,
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 10),
                                     child: Icon(
-                                      PhosphorIconsRegular.smiley,
+                                      _emojiPanelOpen
+                                          ? PhosphorIconsRegular.keyboard
+                                          : PhosphorIconsRegular.smiley,
                                       size: 20,
-                                      color: c.ink2,
+                                      color: _emojiPanelOpen
+                                          ? SeeUColors.accent
+                                          : c.ink2,
                                     ),
                                   ),
                                 ),

@@ -16,12 +16,15 @@ class EmojiStickerPanel extends ConsumerStatefulWidget {
   final ValueChanged<String> onEmojiSelected;
   final ValueChanged<String> onStickerSelected;
   final VoidCallback onCreateSticker;
+  /// When true: встроен в Column (нет handle, нет скруглений сверху, фикс. высота 300).
+  final bool inline;
 
   const EmojiStickerPanel({
     super.key,
     required this.onEmojiSelected,
     required this.onStickerSelected,
     required this.onCreateSticker,
+    this.inline = false,
   });
 
   @override
@@ -48,26 +51,30 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
   Widget build(BuildContext context) {
     final SeeUThemeColors c = context.seeuColors;
     return Container(
-      height: 440,
+      height: widget.inline ? 300 : 440,
       decoration: BoxDecoration(
         color: c.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
+        borderRadius: widget.inline
+            ? BorderRadius.zero
+            : const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
         border: Border(top: BorderSide(color: c.line, width: 0.5)),
       ),
       child: Column(
         children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              decoration: BoxDecoration(
-                color: c.line,
-                borderRadius: BorderRadius.circular(2),
+          // Handle — только в modal режиме
+          if (!widget.inline)
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                decoration: BoxDecoration(
+                  color: c.line,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
+          if (widget.inline) const SizedBox(height: 8),
           // Tab chips
           AnimatedBuilder(
             animation: _tabController,

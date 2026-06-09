@@ -34,6 +34,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   final _scrollController = ScrollController();
   bool _sending = false;
   bool _atBottom = true;
+  bool _emojiPanelOpen = false;
 
   // ── Search ──────────────────────────────────────────────────────────────
   bool _isSearching = false;
@@ -140,29 +141,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
-  void _showEmojiStickerPanel() {
-    FocusScope.of(context).unfocus();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => EmojiStickerPanel(
-        onEmojiSelected: (emoji) {
-          final sel = _inputController.selection;
-          final text = _inputController.text;
-          final pos = sel.isValid ? sel.baseOffset : text.length;
-          final newText = text.substring(0, pos) + emoji + text.substring(pos);
-          _inputController.value = TextEditingValue(
-            text: newText,
-            selection: TextSelection.collapsed(offset: pos + emoji.length),
-          );
-        },
-        onStickerSelected: (url) {
-          Navigator.pop(context);
-          _sendSticker(url);
-        },
-        onCreateSticker: () => Navigator.pop(context),
-      ),
+  void _toggleEmojiPanel() {
+    if (_emojiPanelOpen) {
+      setState(() => _emojiPanelOpen = false);
+      FocusScope.of(context).requestFocus(FocusNode());
+    } else {
+      FocusScope.of(context).unfocus();
+      setState(() => _emojiPanelOpen = true);
+    }
+  }
+
+  void _insertEmoji(String emoji) {
+    final sel = _inputController.selection;
+    final text = _inputController.text;
+    final pos = sel.isValid ? sel.baseOffset : text.length;
+    final newText = text.substring(0, pos) + emoji + text.substring(pos);
+    _inputController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + emoji.length),
     );
   }
 
@@ -876,7 +872,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       borderRadius: BorderRadius.circular(22),
       borderSide: BorderSide(color: c.line, width: 0.5),
     );
-    return Container(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+    Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       decoration: BoxDecoration(
         color: c.bg,
@@ -887,16 +886,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         children: [
           // Emoji / sticker button
           GestureDetector(
-            onTap: _showEmojiStickerPanel,
+            onTap: _toggleEmojiPanel,
             child: Container(
               width: 38, height: 38,
               margin: const EdgeInsets.only(right: 8, bottom: 2),
               decoration: BoxDecoration(
-                color: c.surface,
+                color: _emojiPanelOpen
+                    ? SeeUColors.accent.withValues(alpha: 0.12)
+                    : c.surface,
                 shape: BoxShape.circle,
                 boxShadow: SeeUShadows.sm,
               ),
-              child: Icon(PhosphorIconsRegular.smiley, size: 20, color: c.ink3),
+              child: Icon(
+                _emojiPanelOpen
+                    ? PhosphorIconsRegular.keyboard
+                    : PhosphorIconsRegular.smiley,
+                size: 20,
+                color: _emojiPanelOpen ? SeeUColors.accent : c.ink3,
+              ),
             ),
           ),
           Expanded(
@@ -955,6 +962,18 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
         ],
       ),
+    ),
+    if (_emojiPanelOpen)
+      EmojiStickerPanel(
+        inline: true,
+        onEmojiSelected: _insertEmoji,
+        onStickerSelected: (url) {
+          setState(() => _emojiPanelOpen = false);
+          _sendSticker(url);
+        },
+        onCreateSticker: () => setState(() => _emojiPanelOpen = false),
+      ),
+      ],
     );
   }
 }
