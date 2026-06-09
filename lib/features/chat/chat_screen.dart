@@ -1999,7 +1999,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                       child: ClipOval(
                         child: initialized
-                            ? CameraPreview(ctrl!)
+                            ? FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  // previewSize is landscape; swap w/h to get portrait ratio
+                                  width: ctrl?.value.previewSize?.height ?? 264,
+                                  height: ctrl?.value.previewSize?.width ?? 264,
+                                  child: CameraPreview(ctrl!),
+                                ),
+                              )
                             : Container(
                                 color: const Color(0xFF111111),
                                 child: const Center(
