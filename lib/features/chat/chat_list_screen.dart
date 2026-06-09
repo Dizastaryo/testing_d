@@ -1670,15 +1670,19 @@ class _RoomCard extends StatelessWidget {
             // Cover / icon container
             Builder(builder: (_) {
               final hasCover = room.coverUrl != null && room.coverUrl!.isNotEmpty;
+              final palIdx = room.name.isEmpty
+                  ? 0
+                  : (room.name.codeUnitAt(0) + room.name.length) %
+                      SeeUColors.avatarPalettes.length;
+              final palette = SeeUColors.avatarPalettes[palIdx];
+              final initial = room.name.isNotEmpty ? room.name[0].toUpperCase() : '?';
               return Container(
                 width: 52, height: 52,
                 decoration: BoxDecoration(
                   gradient: hasCover
                       ? null
                       : LinearGradient(
-                          colors: isVoice
-                              ? [SeeUColors.accent, SeeUColors.accentSecondary]
-                              : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                          colors: palette,
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -1691,35 +1695,24 @@ class _RoomCard extends StatelessWidget {
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: isVoice
-                                  ? [SeeUColors.accent, SeeUColors.accentSecondary]
-                                  : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
-                            ),
+                            gradient: LinearGradient(colors: palette),
                           ),
                         ),
-                        errorWidget: (_, __, ___) => Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: isVoice
-                                  ? [SeeUColors.accent, SeeUColors.accentSecondary]
-                                  : [const Color(0xFF5DB1FF), const Color(0xFF3A8FE8)],
+                        errorWidget: (_, __, ___) => Center(
+                          child: Text(
+                            initial,
+                            style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white,
                             ),
-                          ),
-                          child: Icon(
-                            isVoice
-                                ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
-                                : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
-                            size: 22, color: Colors.white,
                           ),
                         ),
                       )
                     : Center(
-                        child: Icon(
-                          isVoice
-                              ? PhosphorIcons.microphone(PhosphorIconsStyle.fill)
-                              : PhosphorIcons.chatText(PhosphorIconsStyle.fill),
-                          size: 22, color: Colors.white,
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white,
+                          ),
                         ),
                       ),
               );
