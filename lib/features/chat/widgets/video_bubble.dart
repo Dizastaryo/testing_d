@@ -183,6 +183,10 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
   bool _playing = false;
   bool _loading = false;
 
+  static const double _size = 220;
+  static const double _ringGap = 6;
+  static const double _ringWidth = 3.5;
+
   @override
   void dispose() {
     _ctrl?.removeListener(_onUpdate);
@@ -197,10 +201,8 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
   }
 
   Future<void> _togglePlay() async {
-    HapticFeedback.lightImpact();
-
+    HapticFeedback.mediumImpact();
     if (_ctrl == null) {
-      // First tap: initialize + play
       setState(() => _loading = true);
       final url = AppConfig.absUrl(widget.videoUrl);
       final ctrl = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -235,134 +237,183 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    const double size = 186;
+    final ringSize = _size + _ringGap * 2 + _ringWidth * 2;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment:
-          widget.isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         GestureDetector(
           onTap: _togglePlay,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Progress ring (shown when playing)
-              if (_playing && _ctrl != null)
-                ValueListenableBuilder<VideoPlayerValue>(
-                  valueListenable: _ctrl!,
-                  builder: (_, val, __) {
-                    final progress = val.duration.inMilliseconds > 0
-                        ? (val.position.inMilliseconds /
-                                val.duration.inMilliseconds)
-                            .clamp(0.0, 1.0)
-                        : 0.0;
-                    return SizedBox(
-                      width: size + 8,
-                      height: size + 8,
-                      child: CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 3,
-                        backgroundColor:
-                            Colors.white.withValues(alpha: 0.15),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          SeeUColors.accent,
-                        ),
-                        strokeCap: StrokeCap.round,
-                      ),
-                    );
-                  },
-                )
-              else
-                // Static ring
+          child: SizedBox(
+            width: ringSize,
+            height: ringSize,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // ── Outer glow shadow ──────────────────────────────
                 Container(
-                  width: size + 8,
-                  height: size + 8,
+                  width: ringSize,
+                  height: ringSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: widget.isMine
-                          ? SeeUColors.accent.withValues(alpha: 0.35)
-                          : c.line,
-                      width: 2,
-                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 28,
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: SeeUColors.accent.withValues(alpha: 0.15),
+                        blurRadius: 20,
+                        spreadRadius: 0,
+                      ),
+                    ],
                   ),
                 ),
 
-              // Circular video or placeholder
-              ClipOval(
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: _initialized && _ctrl != null
-                      ? VideoPlayer(_ctrl!)
-                      : Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF1E3050), Color(0xFF0D1A35)],
+                // ── Progress ring ─────────────────────────────────
+                if (_playing && _ctrl != null)
+                  ValueListenableBuilder<VideoPlayerValue>(
+                    valueListenable: _ctrl!,
+                    builder: (_, val, __) {
+                      final progress = val.duration.inMilliseconds > 0
+                          ? (val.position.inMilliseconds /
+                                  val.duration.inMilliseconds)
+                              .clamp(0.0, 1.0)
+                          : 0.0;
+                      return SizedBox(
+                        width: ringSize,
+                        height: ringSize,
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: _ringWidth,
+                          backgroundColor: Colors.white.withValues(alpha: 0.15),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              SeeUColors.accent),
+                          strokeCap: StrokeCap.round,
+                        ),
+                      );
+                    },
+                  )
+                else
+                  // Idle ring — subtle
+                  SizedBox(
+                    width: ringSize,
+                    height: ringSize,
+                    child: CustomPaint(
+                      painter: _IdleRingPainter(ringWidth: _ringWidth),
+                    ),
+                  ),
+
+                // ── Circle video / placeholder ─────────────────────
+                ClipOval(
+                  child: SizedBox(
+                    width: _size,
+                    height: _size,
+                    child: _initialized && _ctrl != null
+                        ? FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _ctrl!.value.size.width,
+                              height: _ctrl!.value.size.height,
+                              child: VideoPlayer(_ctrl!),
+                            ),
+                          )
+                        : Container(
+                            decoration: const BoxDecoration(
+                              gradient: RadialGradient(
+                                center: Alignment(-0.3, -0.4),
+                                radius: 1.1,
+                                colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
+                              ),
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CustomPaint(
+                                  size: const Size.square(_size),
+                                  painter: _FilmGrainPainter(circular: true),
+                                ),
+                                Icon(
+                                  PhosphorIconsRegular.videoCamera,
+                                  size: 44,
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                ),
+                              ],
                             ),
                           ),
-                          child: CustomPaint(
-                            painter: _FilmGrainPainter(circular: true),
-                          ),
-                        ),
+                  ),
                 ),
-              ),
 
-              // Play/loading overlay (fades out when playing)
-              if (!_playing)
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withValues(alpha: 0.42),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      width: 1.5,
+                // ── Play / pause / loading overlay ────────────────
+                AnimatedOpacity(
+                  opacity: _playing ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: IgnorePointer(
+                    ignoring: _playing,
+                    child: Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.46),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: _loading
+                          ? const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              PhosphorIconsFill.play,
+                              color: Colors.white,
+                              size: 30,
+                            ),
                     ),
                   ),
-                  child: _loading
-                      ? const Padding(
-                          padding: EdgeInsets.all(18),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white70,
-                          ),
-                        )
-                      : const Icon(
-                          PhosphorIconsFill.play,
-                          color: Colors.white,
-                          size: 28,
-                        ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
 
-        const SizedBox(height: 5),
+        const SizedBox(height: 8),
 
-        // Time + receipts row
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+        // ── Time + receipts — centered dark pill ──────────────────
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.30),
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 widget.sentTimeLabel,
-                style: TextStyle(fontSize: 10, color: c.ink3),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               if (widget.isMine) ...[
-                const SizedBox(width: 3),
+                const SizedBox(width: 4),
                 Icon(
                   (widget.isRead || widget.isDelivered)
                       ? PhosphorIconsBold.checks
                       : PhosphorIconsRegular.check,
-                  size: 12,
-                  color: widget.isRead ? SeeUColors.accent : c.ink4,
+                  size: 13,
+                  color: widget.isRead
+                      ? SeeUColors.accent
+                      : Colors.white.withValues(alpha: 0.45),
                 ),
               ],
             ],
@@ -371,6 +422,37 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
       ],
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Idle ring painter — subtle gradient arc
+// ---------------------------------------------------------------------------
+
+class _IdleRingPainter extends CustomPainter {
+  final double ringWidth;
+  const _IdleRingPainter({required this.ringWidth});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = ringWidth
+      ..strokeCap = StrokeCap.round
+      ..shader = SweepGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.08),
+          Colors.white.withValues(alpha: 0.22),
+          Colors.white.withValues(alpha: 0.08),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final r = (size.width - ringWidth) / 2;
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), r, paint);
+  }
+
+  @override
+  bool shouldRepaint(_IdleRingPainter old) => old.ringWidth != ringWidth;
 }
 
 // ---------------------------------------------------------------------------

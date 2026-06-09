@@ -124,6 +124,22 @@ class ChatMessageBubble extends StatelessWidget {
     final time =
         '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
 
+    // Video notes are always centered regardless of sender
+    final isVideoNote = message.kind == 'video_note' ||
+        (message.attachedMediaType == 'video_note' &&
+            message.attachedMediaUrl.isNotEmpty);
+    if (isVideoNote) {
+      return Padding(
+        padding: EdgeInsets.only(
+          top: showTail ? 10 : 4,
+          bottom: allReactions.isNotEmpty ? 22 : 0,
+        ),
+        child: Center(
+          child: _buildBubbleContainer(message, isMine, c, time),
+        ),
+      );
+    }
+
     // B6: grouping — 8px between different authors, 4px same author
     return Padding(
       padding: EdgeInsets.only(
@@ -344,7 +360,7 @@ class ChatMessageBubble extends StatelessWidget {
         ? EdgeInsets.zero
         : isMedia
             ? const EdgeInsets.all(4)
-            : (isVoice || isVideo)
+            : (isVoice || isVideo || isVideoNote)
                 ? EdgeInsets.zero
                 : const EdgeInsets.fromLTRB(12, 8, 12, 4); // B5: compact
 
@@ -357,7 +373,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     return Container(
       padding: bubblePadding,
-      decoration: isVoice || isSticker || isVideo
+      decoration: isVoice || isSticker || isVideo || isVideoNote
           ? null
           : BoxDecoration(
               gradient: mine
