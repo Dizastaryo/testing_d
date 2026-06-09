@@ -40,7 +40,7 @@ import '../sticker/sticker_creator_screen.dart';
 // Uploading state — tracks what type of media is currently being sent
 // ---------------------------------------------------------------------------
 
-enum _UploadKind { voice, videoNote, image, video, audio, file }
+enum _UploadKind { voice, videoNote, image, video, audio, file, location }
 
 class _UploadingInfo {
   final _UploadKind kind;
@@ -823,6 +823,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick video file → upload → send as video message.
   Future<void> _attachVideo() async {
     if (_sendingInfo != null) return;
+    final messenger = ScaffoldMessenger.of(context);
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.video,
@@ -853,7 +854,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           cancelToken: cancelToken,
         ));
     _scrollToBottom();
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
       final FormData formData = (kIsWeb || file.bytes != null)
@@ -878,6 +878,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick audio file → upload → send as voice message.
   Future<void> _attachAudio() async {
     if (_sendingInfo != null) return;
+    final messenger = ScaffoldMessenger.of(context);
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
@@ -894,7 +895,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           cancelToken: cancelToken,
         ));
     _scrollToBottom();
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
       final FormData formData = (kIsWeb || file.bytes != null)
@@ -919,6 +919,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick any file (documents, PDFs, etc.) → upload → send as file message.
   Future<void> _attachGenericFile() async {
     if (_sendingInfo != null) return;
+    final messenger = ScaffoldMessenger.of(context);
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -939,7 +940,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           cancelToken: cancelToken,
         ));
     _scrollToBottom();
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
       final FormData formData = (kIsWeb || file.bytes != null)
@@ -961,38 +961,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  /// Get current GPS position → send as a location message (map link text).
+  /// Get current GPS position → send as a location message (Google Maps link).
   Future<void> _attachLocation() async {
     if (_sendingInfo != null) return;
-    HapticFeedback.selectionClick();
     final messenger = ScaffoldMessenger.of(context);
+    HapticFeedback.selectionClick();
 
-    // Check & request permission
+    // Check & request permission before showing any UI
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
     }
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('Нет доступа к геолокации')));
-      }
+      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Нет доступа к геолокации')));
       return;
     }
     if (!mounted) return;
 
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.file,  // reuse file bubble with location icon
-          fileName: 'Геолокация',
-          cancelToken: cancelToken,
-        ));
+    setState(() => _sendingInfo = _UploadingInfo(kind: _UploadKind.location));
     _scrollToBottom();
 
     try {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
-      if (!mounted) return;
+      // Guard: user may have pressed ✕ while GPS was running
+      if (!mounted || _sendingInfo == null) return;
       final lat = pos.latitude.toStringAsFixed(6);
       final lng = pos.longitude.toStringAsFixed(6);
       final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
@@ -2406,9 +2400,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _UploadKind.videoNote => _buildPendingVideoNote(info),
       _UploadKind.voice     => _buildPendingVoice(info, c),
       _UploadKind.image     => _buildPendingImage(info, c),
-      _UploadKind.video     => _buildPendingMedia(info, c),
+      _UploadKind.video     => _buildPendingVideo(info, c),
       _UploadKind.audio     => _buildPendingAudio(info, c),
       _UploadKind.file      => _buildPendingFile(info, c),
+      _UploadKind.location  => _buildPendingLocation(c),
     };
   }
 
@@ -2584,19 +2579,96 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildPendingMedia(_UploadingInfo info, SeeUThemeColors c) {
-    final icon = info.kind == _UploadKind.video
-        ? PhosphorIconsRegular.filmStrip
-        : PhosphorIconsRegular.image;
-    final label = info.kind == _UploadKind.video ? 'Видео' : 'Изображение';
+  /// Pending video bubble — shows thumbnail preview (same layout as image).
+  Widget _buildPendingVideo(_UploadingInfo info, SeeUThemeColors c) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            width: 220, height: 140,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Thumbnail or dark placeholder
+                info.thumbnail != null
+                    ? Image.memory(info.thumbnail!, fit: BoxFit.cover, gaplessPlayback: true)
+                    : Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF1E3050), Color(0xFF0D1A35)],
+                          ),
+                        ),
+                      ),
+                // Vignette
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.5)],
+                    ),
+                  ),
+                ),
+                // Film icon overlay
+                Center(
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.45),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    child: const Icon(PhosphorIconsRegular.filmStrip, color: Colors.white, size: 20),
+                  ),
+                ),
+                // Loading bar at bottom
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: SizedBox(
+                    height: 3,
+                    child: LinearProgressIndicator(
+                      color: SeeUColors.accent,
+                      backgroundColor: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                // Cancel button
+                Positioned(
+                  top: 8, right: 8,
+                  child: GestureDetector(
+                    onTap: _cancelSending,
+                    child: Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+                      ),
+                      child: const Icon(PhosphorIconsBold.x, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
+  /// Pending location bubble — shows map pin while GPS is being fetched.
+  Widget _buildPendingLocation(SeeUThemeColors c) {
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
       child: Align(
         alignment: Alignment.centerRight,
         child: Container(
-          constraints: const BoxConstraints(minWidth: 160, maxWidth: 240),
-          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           decoration: BoxDecoration(
             color: c.surface2,
             borderRadius: BorderRadius.circular(18),
@@ -2607,46 +2679,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 36,
+                width: 40, height: 40,
                 decoration: BoxDecoration(
-                  color: SeeUColors.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF8060), Color(0xFFFFB547)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                 ),
-                child: Icon(icon, size: 18, color: SeeUColors.accent),
+                child: const Icon(PhosphorIconsFill.mapPin, color: Colors.white, size: 20),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
-                    const SizedBox(height: 3),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: SizedBox(
-                        height: 3,
-                        child: LinearProgressIndicator(
-                          color: SeeUColors.accent,
-                          backgroundColor: SeeUColors.accent.withValues(alpha: 0.15),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Геолокация', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
+                  const SizedBox(height: 3),
+                  Text('Определяем...', style: TextStyle(fontSize: 11, color: c.ink3)),
+                ],
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: c.ink3),
+              ),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: _cancelSending,
-                child: Container(
-                  width: 28, height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: c.surface,
-                    border: Border.all(color: c.line),
-                  ),
-                  child: Icon(PhosphorIconsBold.x, size: 12, color: c.ink3),
-                ),
+                child: Icon(PhosphorIconsBold.x, size: 16, color: c.ink3),
               ),
             ],
           ),
