@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:camera/camera.dart';
@@ -2173,14 +2174,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          Icon(
-                            _ttlSeconds != null
-                                ? PhosphorIconsFill.timer
-                                : PhosphorIconsRegular.timer,
-                            size: 20,
-                            color: _ttlSeconds != null
-                                ? SeeUColors.accent
-                                : c.ink2,
+                          _VanishIcon(
+                            active: _ttlSeconds != null,
+                            color: _ttlSeconds != null ? SeeUColors.accent : c.ink2,
                           ),
                           if (_ttlSeconds != null)
                             Positioned(
@@ -2209,7 +2205,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // iMessage-style field: emoji left, send/camera right inside
+                  // Input field: text left, emoji/send right inside
                   Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
@@ -2241,29 +2237,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.only(
-                            left: 4,
+                            left: 14,
                             right: 4,
                             top: 9,
                             bottom: 9,
                           ),
-                          // Emoji/smiley icon — LEFT inside field
-                          prefixIcon: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: _showEmojiStickerPanel,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              child: Icon(
-                                PhosphorIconsRegular.smiley,
-                                size: 20,
-                                color: c.ink2,
-                              ),
-                            ),
-                          ),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 40,
-                            minHeight: 36,
-                          ),
-                          // Send button — only when typing
+                          // Emoji icon (right) when not typing, send button when typing
                           suffixIcon: _hasText
                               ? GestureDetector(
                                   behavior: HitTestBehavior.opaque,
@@ -2285,7 +2264,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     ),
                                   ),
                                 )
-                              : null,
+                              : GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _showEmojiStickerPanel,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    child: Icon(
+                                      PhosphorIconsRegular.smiley,
+                                      size: 20,
+                                      color: c.ink2,
+                                    ),
+                                  ),
+                                ),
                           suffixIconConstraints: const BoxConstraints(
                             minWidth: 40,
                             minHeight: 36,
@@ -2893,3 +2883,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 //       ChatSharedPostPreview, ChatImageAttachment, ChatIcebreakerChip,
 //       ChatDateSeparator, ChatTtlCountdown
 //   widgets/chat_search_sheet.dart  — ChatSearchSheet
+
+// ─── Vanish / disappearing-message icon ──────────────────────────────────────
+
+class _VanishIcon extends StatelessWidget {
+  final bool active;
+  final Color color;
+  const _VanishIcon({required this.active, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(22, 22),
+      painter: _VanishPainter(active: active, color: color),
+    );
+  }
+}
+
+class _VanishPainter extends CustomPainter {
+  final bool active;
+  final Color color;
+  const _VanishPainter({required this.active, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = active ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    // Ghost body: semicircle head → wavy bottom
+    final path = Path();
+    path.addArc(
+      Rect.fromLTWH(w * 0.05, h * 0.03, w * 0.90, h * 0.60),
+      math.pi, math.pi,
+    );
+    path.lineTo(w * 0.95, h * 0.82);
+    // Three wavy bumps left-to-right (right → middle → left)
+    path.cubicTo(w * 0.87, h * 1.03, w * 0.76, h * 0.90, w * 0.67, h * 0.79);
+    path.cubicTo(w * 0.57, h * 0.67, w * 0.43, h * 0.67, w * 0.33, h * 0.79);
+    path.cubicTo(w * 0.24, h * 0.90, w * 0.13, h * 1.03, w * 0.05, h * 0.82);
+    path.close();
+    canvas.drawPath(path, bodyPaint);
+
+    // Eyes — white when filled, same color when outlined
+    final eyePaint = Paint()
+      ..color = active ? Colors.white.withValues(alpha: 0.92) : color
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    final r = w * 0.072;
+    canvas.drawCircle(Offset(w * 0.36, h * 0.36), r, eyePaint);
+    canvas.drawCircle(Offset(w * 0.64, h * 0.36), r, eyePaint);
+  }
+
+  @override
+  bool shouldRepaint(_VanishPainter old) =>
+      old.active != active || old.color != color;
+}
