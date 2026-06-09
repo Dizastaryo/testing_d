@@ -6,7 +6,6 @@ import 'dart:ui';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http_parser/http_parser.dart';
 import 'package:flutter/material.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:flutter/services.dart';
@@ -20,7 +19,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
-import '../../core/utils/format.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
@@ -34,34 +32,8 @@ import 'widgets/emoji_sticker_panel.dart';
 import 'widgets/emoji_aware_controller.dart';
 import 'widgets/voice_recorder.dart';
 import '../sticker/sticker_creator_screen.dart';
+import '../../core/services/upload_queue.dart';
 // Chat uses existing chat_provider; no MockService needed
-
-// ---------------------------------------------------------------------------
-// Uploading state — tracks what type of media is currently being sent
-// ---------------------------------------------------------------------------
-
-enum _UploadKind { voice, videoNote, image, video, audio, file, location }
-
-class _UploadingInfo {
-  final _UploadKind kind;
-  final List<double> waveform;
-  final int durationSec;
-  final Uint8List? thumbnail;
-  final CancelToken? cancelToken;
-  final String fileName;   // for audio / file pending bubbles
-  final int fileBytes;     // for file size display
-  _UploadingInfo({
-    required this.kind,
-    this.waveform = const [],
-    this.durationSec = 0,
-    this.thumbnail,
-    this.cancelToken,
-    this.fileName = '',
-    this.fileBytes = 0,
-  });
-}
-
-// ---------------------------------------------------------------------------
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String chatId;
@@ -81,7 +53,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _itemPositionsListener = ItemPositionsListener.create();
   final _focusNode = FocusNode();
   bool _hasText = false;
-  _UploadingInfo? _sendingInfo;      // any upload in progress — shows pending bubble in list
+  bool _locationPending = false;     // GPS in progress — shows location pending bubble
   bool _recording = false;
   // Round video message: double-tap mic → switch to camera mode,
   // tap camera icon → open round camera overlay.
@@ -596,8 +568,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// Take photo with camera → upload → send as image message.
   Future<void> _attachFromCamera() async {
-    if (_sendingInfo != null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     HapticFeedback.selectionClick();
     final picker = ImagePicker();
     final XFile? picked = await picker.pickImage(
@@ -606,45 +577,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       imageQuality: 85,
     );
     if (picked == null || !mounted) return;
-
     final bytes = await picked.readAsBytes();
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.image,
-          thumbnail: bytes,
-          cancelToken: cancelToken,
-        ));
+    if (!mounted) return;
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.image,
+      thumbnail: bytes,
+      bytes: bytes,
+      fileName: picked.name,
+      mediaType: 'image',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-    try {
-      final api = ref.read(apiClientProvider);
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
-      });
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '',
-            attachedMediaUrl: url,
-            attachedMediaType: 'image',
-            replyTo: reply,
-          );
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
   /// Pick image from gallery → upload to /media/upload → send as image
   /// message. Caption is the current text input (sent + cleared).
   Future<void> _attachImage() async {
-    if (_sendingInfo != null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     HapticFeedback.selectionClick();
     final picker = ImagePicker();
     final XFile? picked = await picker.pickImage(
@@ -653,52 +607,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       imageQuality: 85,
     );
     if (picked == null || !mounted) return;
-
     final bytes = await picked.readAsBytes();
-    final cancelToken = CancelToken();
+    if (!mounted) return;
     final caption = _textController.text.trim();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.image,
-          thumbnail: bytes,
-          cancelToken: cancelToken,
-        ));
+    final reply = _replyingTo;
+    if (caption.isNotEmpty) _textController.clear();
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.image,
+      thumbnail: bytes,
+      bytes: bytes,
+      fileName: picked.name,
+      mediaType: 'image',
+      caption: caption,
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-
-    try {
-      final api = ref.read(apiClientProvider);
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
-      });
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            caption,
-            attachedMediaUrl: url,
-            attachedMediaType: 'image',
-            replyTo: reply,
-          );
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-
-      if (caption.isNotEmpty) _textController.clear();
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
-      ));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text('Не удалось отправить: ${friendlyError(e)}'),
-      ));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
   /// Показывает меню выбора вложения: 8 опций в 4-column grid.
   void _showAttachMenu() {
-    if (_sendingInfo != null) return;
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     _focusNode.unfocus();
     final c = context.seeuColors;
     showModalBottomSheet<void>(
@@ -822,8 +754,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// Pick video file → upload → send as video message.
   Future<void> _attachVideo() async {
-    if (_sendingInfo != null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.video,
@@ -832,7 +763,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (result == null || result.files.isEmpty || !mounted) return;
     final file = result.files.first;
 
-    // Generate thumbnail from local file
     Uint8List? thumb;
     if (!kIsWeb && file.path != null) {
       try {
@@ -845,40 +775,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.video,
-          thumbnail: thumb,
-          fileName: file.name,
-          fileBytes: file.size,
-          cancelToken: cancelToken,
-        ));
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.video,
+      thumbnail: thumb,
+      bytes: file.bytes,
+      filePath: file.path,
+      fileName: file.name,
+      fileBytes: file.size,
+      mediaType: 'video',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-    try {
-      final api = ref.read(apiClientProvider);
-      final FormData formData = (kIsWeb || file.bytes != null)
-          ? FormData.fromMap({'file': MultipartFile.fromBytes(file.bytes!, filename: file.name)})
-          : FormData.fromMap({'file': await MultipartFile.fromFile(file.path!, filename: file.name)});
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '', attachedMediaUrl: url, attachedMediaType: 'video', replyTo: reply);
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
   /// Pick audio file → upload → send as voice message.
   Future<void> _attachAudio() async {
-    if (_sendingInfo != null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
@@ -886,40 +803,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     if (result == null || result.files.isEmpty || !mounted) return;
     final file = result.files.first;
-
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.audio,
-          fileName: file.name,
-          fileBytes: file.size,
-          cancelToken: cancelToken,
-        ));
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.audio,
+      bytes: file.bytes,
+      filePath: file.path,
+      fileName: file.name,
+      fileBytes: file.size,
+      mediaType: 'audio',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-    try {
-      final api = ref.read(apiClientProvider);
-      final FormData formData = (kIsWeb || file.bytes != null)
-          ? FormData.fromMap({'file': MultipartFile.fromBytes(file.bytes!, filename: file.name)})
-          : FormData.fromMap({'file': await MultipartFile.fromFile(file.path!, filename: file.name)});
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '', attachedMediaUrl: url, attachedMediaType: 'audio', replyTo: reply);
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
   /// Pick any file (documents, PDFs, etc.) → upload → send as file message.
   Future<void> _attachGenericFile() async {
-    if (_sendingInfo != null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     HapticFeedback.selectionClick();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -931,43 +834,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     if (result == null || result.files.isEmpty || !mounted) return;
     final file = result.files.first;
-
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.file,
-          fileName: file.name,
-          fileBytes: file.size,
-          cancelToken: cancelToken,
-        ));
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.file,
+      bytes: file.bytes,
+      filePath: file.path,
+      fileName: file.name,
+      fileBytes: file.size,
+      mediaType: 'file',
+      caption: file.name,
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-    try {
-      final api = ref.read(apiClientProvider);
-      final FormData formData = (kIsWeb || file.bytes != null)
-          ? FormData.fromMap({'file': MultipartFile.fromBytes(file.bytes!, filename: file.name)})
-          : FormData.fromMap({'file': await MultipartFile.fromFile(file.path!, filename: file.name)});
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            file.name, attachedMediaUrl: url, attachedMediaType: 'file', replyTo: reply);
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
   /// Get current GPS position → send as a location message (Google Maps link).
   Future<void> _attachLocation() async {
-    if (_sendingInfo != null) return;
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     final messenger = ScaffoldMessenger.of(context);
     HapticFeedback.selectionClick();
 
-    // Check & request permission before showing any UI
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
@@ -978,7 +868,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     if (!mounted) return;
 
-    setState(() => _sendingInfo = _UploadingInfo(kind: _UploadKind.location));
+    setState(() => _locationPending = true);
     _scrollToBottom();
 
     try {
@@ -986,7 +876,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       // Guard: user may have pressed ✕ while GPS was running
-      if (!mounted || _sendingInfo == null) return;
+      if (!mounted || !_locationPending) return;
       final lat = pos.latitude.toStringAsFixed(6);
       final lng = pos.longitude.toStringAsFixed(6);
       final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
@@ -998,7 +888,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (_) {
       if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Не удалось получить геолокацию')));
     } finally {
-      if (mounted) setState(() => _sendingInfo = null);
+      if (mounted) setState(() => _locationPending = false);
     }
   }
 
@@ -1008,60 +898,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _uploadAndSendVoice(
       String filePath, int durationSec, List<double> samples) async {
     if (filePath.isEmpty) return;
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.voice,
-          waveform: samples,
-          durationSec: durationSec,
-          cancelToken: cancelToken,
-        ));
-    _scrollToBottom();
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final api = ref.read(apiClientProvider);
-      final FormData formData;
-      if (kIsWeb) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Голосовые сообщения пока недоступны в веб-версии'),
-        ));
-        return;
-      } else {
-        final filename = filePath.split('/').last;
-        formData = FormData.fromMap({
-          'file': await MultipartFile.fromFile(
-            filePath,
-            filename: filename,
-            contentType: MediaType('audio', 'mp4'),
-          ),
-        });
-      }
-      final upload = await api.post(ApiEndpoints.mediaUpload,
-          data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '',
-            attachedMediaUrl: url,
-            attachedMediaType: 'audio',
-            mediaDurationSeconds: durationSec,
-            waveform: samples,
-            replyTo: reply,
-            rethrowOnError: true,
-          );
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-      _scrollToBottom();
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Голосовые сообщения пока недоступны в веб-версии'),
       ));
-    } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('Не удалось отправить: ${friendlyError(e)}')));
-    } finally {
-      if (mounted) setState(() => _sendingInfo = null);
+      return;
     }
+    final reply = _replyingTo;
+    if (reply != null && mounted) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.voice,
+      filePath: filePath,
+      fileName: filePath.split('/').last,
+      waveform: samples,
+      durationSec: durationSec,
+      mediaType: 'audio',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
   }
 
   /// Расширенный emoji-picker. Не тащим heavy emoji_picker_flutter (300+ kb),
@@ -1830,10 +1687,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       items.addAll(entry.value);
     }
 
-    // Pending bubble (voice/video-note upload) lives inside the list as item 0
-    // so it appears at the bottom of the conversation like a real message.
-    final hasPending = _sendingInfo != null;
-    final extra = hasPending ? 1 : 0;
+    // Pending bubbles: upload queue tasks for this chat + optional location.
+    // reverse=true means index 0 = visual bottom (newest).
+    // Most-recently enqueued task appears at the bottom (index 0).
+    final tasks = ref.watch(uploadQueueProvider)
+        .where((t) => t.chatId == widget.chatId)
+        .toList();
+    final extra = tasks.length + (_locationPending ? 1 : 0);
+    final c = context.seeuColors;
 
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
@@ -1847,8 +1708,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       reverse: true,
       itemCount: items.length + extra,
       itemBuilder: (context, index) {
-        // index 0 = visual bottom: show pending upload bubble while sending
-        if (hasPending && index == 0) return _buildUploadingBubble(_sendingInfo!);
+        if (index < extra) {
+          // tasks are in enqueue order; reversed so newest = index 0 = visual bottom
+          final reversedIdx = tasks.length - 1 - index;
+          if (reversedIdx >= 0) return _buildUploadingBubble(tasks[reversedIdx]);
+          // reversedIdx == -1 means index == tasks.length → location pending
+          return _buildPendingLocation(c, _cancelLocation);
+        }
 
         final adjustedIndex = index - extra;
         final item = items[items.length - 1 - adjustedIndex]; // reverse mapping
@@ -2103,8 +1969,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _uploadAndSendVideoMsg(String filePath) async {
-    if (_sendingInfo != null) return;
-    // Generate thumbnail from local file before upload
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
     Uint8List? thumb;
     if (!kIsWeb) {
       try {
@@ -2117,51 +1982,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
-    final cancelToken = CancelToken();
-    setState(() => _sendingInfo = _UploadingInfo(
-          kind: _UploadKind.videoNote,
-          thumbnail: thumb,
-          cancelToken: cancelToken,
-        ));
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.videoNote,
+      thumbnail: thumb,
+      filePath: filePath,
+      fileName: filePath.split('/').last,
+      mediaType: 'video_note',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
     _scrollToBottom();
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final api = ref.read(apiClientProvider);
-      final filename = filePath.split('/').last;
-      final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          filePath,
-          filename: filename,
-          contentType: MediaType('video', 'mp4'),
-        ),
-      });
-      final upload = await api.post(ApiEndpoints.mediaUpload,
-          data: formData, cancelToken: cancelToken);
-      final url = upload.data['data']['url'] as String;
-      final reply = _replyingTo;
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '',
-            attachedMediaUrl: url,
-            attachedMediaType: 'video_note',
-            replyTo: reply,
-          );
-      if (reply != null && mounted) setState(() => _replyingTo = null);
-      _scrollToBottom();
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
-    } finally {
-      try { File(filePath).deleteSync(); } catch (_) {}
-      if (mounted) setState(() => _sendingInfo = null);
-    }
   }
 
-  void _cancelSending() {
+  void _cancelLocation() {
     HapticFeedback.lightImpact();
-    _sendingInfo?.cancelToken?.cancel();
-    setState(() => _sendingInfo = null);
+    setState(() => _locationPending = false);
   }
 
   Widget _buildRoundVideoOverlay() {
@@ -2394,20 +2233,48 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   // ── Pending bubble: looks identical to sent message + loading overlay + cancel ──
 
-  Widget _buildUploadingBubble(_UploadingInfo info) {
+  Widget _buildUploadingBubble(UploadTask task) {
     final c = context.seeuColors;
-    return switch (info.kind) {
-      _UploadKind.videoNote => _buildPendingVideoNote(info),
-      _UploadKind.voice     => _buildPendingVoice(info, c),
-      _UploadKind.image     => _buildPendingImage(info, c),
-      _UploadKind.video     => _buildPendingVideo(info, c),
-      _UploadKind.audio     => _buildPendingAudio(info, c),
-      _UploadKind.file      => _buildPendingFile(info, c),
-      _UploadKind.location  => _buildPendingLocation(c),
+    void onCancel() => ref.read(uploadQueueProvider.notifier).cancel(task.id);
+    if (task.errorMessage != null) return _buildErrorBubble(task, c, onCancel);
+    return switch (task.kind) {
+      UploadTaskKind.videoNote => _buildPendingVideoNote(task, onCancel),
+      UploadTaskKind.voice     => _buildPendingVoice(task, c, onCancel),
+      UploadTaskKind.image     => _buildPendingImage(task, c, onCancel),
+      UploadTaskKind.video     => _buildPendingVideo(task, c, onCancel),
+      UploadTaskKind.audio     => _buildPendingAudio(task, c, onCancel),
+      UploadTaskKind.file      => _buildPendingFile(task, c, onCancel),
     };
   }
 
-  Widget _buildPendingVideoNote(_UploadingInfo info) {
+  Widget _buildErrorBubble(UploadTask task, SeeUThemeColors c, VoidCallback onCancel) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFFF3B3B).withValues(alpha: 0.45), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(PhosphorIconsBold.warningCircle, color: Color(0xFFFF3B3B), size: 18),
+              const SizedBox(width: 8),
+              Flexible(child: Text(task.errorMessage!, style: const TextStyle(fontSize: 13, color: Color(0xFFFF3B3B)))),
+              const SizedBox(width: 8),
+              GestureDetector(onTap: onCancel, child: Icon(PhosphorIconsBold.x, size: 14, color: c.ink3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingVideoNote(UploadTask info, VoidCallback onCancel) {
     const double size = 220;
     const double ringSize = size + 14;
     const double cancelSz = 34.0;
@@ -2474,7 +2341,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               top: (ringSize - size) / 2,
               right: (ringSize - size) / 2,
               child: GestureDetector(
-                onTap: _cancelSending,
+                onTap: onCancel,
                 child: Container(
                   width: cancelSz, height: cancelSz,
                   decoration: BoxDecoration(
@@ -2492,7 +2359,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildPendingVoice(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingVoice(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
     final dur = info.durationSec;
     final mm = dur ~/ 60;
     final ss = (dur % 60).toString().padLeft(2, '0');
@@ -2562,7 +2429,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               const SizedBox(width: 8),
               // Cancel button
               GestureDetector(
-                onTap: _cancelSending,
+                onTap: onCancel,
                 child: Container(
                   width: 28, height: 28,
                   decoration: BoxDecoration(
@@ -2580,7 +2447,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// Pending video bubble — shows thumbnail preview (same layout as image).
-  Widget _buildPendingVideo(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingVideo(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
       child: Align(
@@ -2641,7 +2508,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Positioned(
                   top: 8, right: 8,
                   child: GestureDetector(
-                    onTap: _cancelSending,
+                    onTap: onCancel,
                     child: Container(
                       width: 28, height: 28,
                       decoration: BoxDecoration(
@@ -2662,7 +2529,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// Pending location bubble — shows map pin while GPS is being fetched.
-  Widget _buildPendingLocation(SeeUThemeColors c) {
+  Widget _buildPendingLocation(SeeUThemeColors c, VoidCallback onCancel) {
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
       child: Align(
@@ -2707,7 +2574,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               const SizedBox(width: 4),
               GestureDetector(
-                onTap: _cancelSending,
+                onTap: onCancel,
                 child: Icon(PhosphorIconsBold.x, size: 16, color: c.ink3),
               ),
             ],
@@ -2718,7 +2585,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// Pending image bubble — shows actual image preview + progress overlay.
-  Widget _buildPendingImage(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingImage(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
       child: Align(
@@ -2759,7 +2626,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Positioned(
                   top: 8, right: 8,
                   child: GestureDetector(
-                    onTap: _cancelSending,
+                    onTap: onCancel,
                     child: Container(
                       width: 28, height: 28,
                       decoration: BoxDecoration(
@@ -2780,7 +2647,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// Pending audio bubble — shows filename + waveform placeholder + progress.
-  Widget _buildPendingAudio(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingAudio(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
     final name = info.fileName.isNotEmpty ? info.fileName : 'Аудио';
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
@@ -2844,7 +2711,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: _cancelSending,
+                onTap: onCancel,
                 child: Icon(PhosphorIconsBold.x, size: 16, color: Colors.white.withValues(alpha: 0.7)),
               ),
             ],
@@ -2855,7 +2722,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// Pending generic file bubble — shows filename + file icon + progress.
-  Widget _buildPendingFile(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingFile(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
     final name = info.fileName.isNotEmpty ? info.fileName : 'Файл';
     final ext = name.contains('.') ? name.split('.').last.toUpperCase() : '';
     final sizeStr = info.fileBytes > 0 ? _formatBytes(info.fileBytes) : '';
@@ -2920,7 +2787,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: _cancelSending,
+                onTap: onCancel,
                 child: Container(
                   width: 28, height: 28,
                   decoration: BoxDecoration(
@@ -3144,14 +3011,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 children: [
                   // Attach button: opens menu.
                   GestureDetector(
-                    onTap: _sendingInfo != null ? null : _showAttachMenu,
+                    onTap: _showAttachMenu,
                     child: SizedBox(
                       width: 40,
                       height: 40,
                       child: Icon(
                         PhosphorIcons.plus(PhosphorIconsStyle.bold),
                         size: 22,
-                        color: _sendingInfo != null ? c.ink4 : c.ink2,
+                        color: c.ink2,
                       ),
                     ),
                   ),
