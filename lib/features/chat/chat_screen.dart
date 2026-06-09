@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import 'package:image_picker/image_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
@@ -44,10 +45,12 @@ class _UploadingInfo {
   final _UploadKind kind;
   final List<double> waveform;
   final int durationSec;
+  final Uint8List? thumbnail;
   const _UploadingInfo({
     required this.kind,
     this.waveform = const [],
     this.durationSec = 0,
+    this.thumbnail,
   });
 }
 
@@ -1860,7 +1863,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _uploadAndSendVideoMsg(String filePath) async {
     if (_sendingInfo != null) return;
-    setState(() => _sendingInfo = const _UploadingInfo(kind: _UploadKind.videoNote));
+    // Generate thumbnail from local file before upload
+    Uint8List? thumb;
+    if (!kIsWeb) {
+      try {
+        thumb = await vt.VideoThumbnail.thumbnailData(
+          video: filePath,
+          imageFormat: vt.ImageFormat.JPEG,
+          maxHeight: 320,
+          quality: 82,
+        );
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _sendingInfo = _UploadingInfo(
+          kind: _UploadKind.videoNote,
+          thumbnail: thumb,
+        ));
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -1989,11 +2008,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     // Кольцо прогресса (только при записи)
                     if (isRec)
                       SizedBox(
-                        width: 284,
-                        height: 284,
+                        width: 332,
+                        height: 332,
                         child: CircularProgressIndicator(
                           value: _recordingSeconds / 60.0,
-                          strokeWidth: 3.5,
+                          strokeWidth: 4,
                           backgroundColor: Colors.white.withValues(alpha: 0.10),
                           valueColor: const AlwaysStoppedAnimation<Color>(
                               Color(0xFFFF5A3C)),
@@ -2003,8 +2022,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     // Превью
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
-                      width: 264,
-                      height: 264,
+                      width: 310,
+                      height: 310,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
@@ -2030,8 +2049,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 fit: BoxFit.cover,
                                 child: SizedBox(
                                   // previewSize is landscape; swap w/h to get portrait ratio
-                                  width: ctrl?.value.previewSize?.height ?? 264,
-                                  height: ctrl?.value.previewSize?.width ?? 264,
+                                  width: ctrl?.value.previewSize?.height ?? 310,
+                                  height: ctrl?.value.previewSize?.width ?? 310,
                                   child: CameraPreview(ctrl!),
                                 ),
                               )
@@ -2131,7 +2150,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         alignment: Alignment.centerRight,
         child: switch (info.kind) {
           _UploadKind.voice => _buildVoiceUploadBubble(info, c),
-          _UploadKind.videoNote => _buildVideoNoteUploadBubble(c),
+          _UploadKind.videoNote => _buildVideoNoteUploadBubble(c, thumbnail: info.thumbnail),
           _UploadKind.image || _UploadKind.video => _buildMediaUploadBubble(info, c),
         },
       ),
@@ -2200,41 +2219,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildVideoNoteUploadBubble(SeeUThemeColors c) {
+  Widget _buildVideoNoteUploadBubble(SeeUThemeColors c, {Uint8List? thumbnail}) {
+    const double sz = 76;
     return SizedBox(
-      width: 78,
-      height: 78,
+      width: sz + 8,
+      height: sz + 8,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Background circle
-          Container(
-            width: 70,
-            height: 70,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [Color(0xFF333333), Color(0xFF111111)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
           // Spinning progress ring
           SizedBox(
-            width: 70, height: 70,
+            width: sz + 8, height: sz + 8,
             child: CircularProgressIndicator(
               strokeWidth: 3,
               color: SeeUColors.accent,
-              backgroundColor: Colors.white.withValues(alpha: 0.15),
+              backgroundColor: Colors.white.withValues(alpha: 0.12),
+              strokeCap: StrokeCap.round,
             ),
           ),
-          // Camera icon
-          Icon(
-            PhosphorIconsBold.videoCamera,
-            size: 22,
-            color: Colors.white,
+          // Circle with thumbnail or dark placeholder
+          ClipOval(
+            child: SizedBox(
+              width: sz, height: sz,
+              child: thumbnail != null
+                  ? Stack(fit: StackFit.expand, children: [
+                      Image.memory(thumbnail, fit: BoxFit.cover, gaplessPlayback: true),
+                      ColoredBox(color: Colors.black.withValues(alpha: 0.30)),
+                    ])
+                  : Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                    ),
+            ),
           ),
+          // Camera icon overlay
+          Icon(PhosphorIconsBold.videoCamera, size: 20, color: Colors.white),
         ],
       ),
     );

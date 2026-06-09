@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/design/design.dart';
@@ -182,10 +184,31 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
   bool _initialized = false;
   bool _playing = false;
   bool _loading = false;
+  Uint8List? _thumbnail;
 
   static const double _size = 220;
   static const double _ringGap = 6;
   static const double _ringWidth = 3.5;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThumbnail();
+  }
+
+  Future<void> _loadThumbnail() async {
+    if (kIsWeb) return;
+    try {
+      final url = AppConfig.absUrl(widget.videoUrl);
+      final bytes = await VideoThumbnail.thumbnailData(
+        video: url,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 320,
+        quality: 82,
+      );
+      if (mounted && bytes != null) setState(() => _thumbnail = bytes);
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -306,12 +329,13 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
                     ),
                   ),
 
-                // ── Circle video / placeholder ─────────────────────
+                // ── Circle: video player / thumbnail / placeholder ─
                 ClipOval(
                   child: SizedBox(
                     width: _size,
                     height: _size,
                     child: _initialized && _ctrl != null
+                        // Playing: actual video
                         ? FittedBox(
                             fit: BoxFit.cover,
                             child: SizedBox(
@@ -320,29 +344,53 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
                               child: VideoPlayer(_ctrl!),
                             ),
                           )
-                        : Container(
-                            decoration: const BoxDecoration(
-                              gradient: RadialGradient(
-                                center: Alignment(-0.3, -0.4),
-                                radius: 1.1,
-                                colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
+                        : _thumbnail != null
+                            // Thumbnail loaded — show it with dark vignette
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.memory(
+                                    _thumbnail!,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                  ),
+                                  // Subtle dark vignette so play button pops
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: RadialGradient(
+                                        center: Alignment.center,
+                                        radius: 0.8,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black.withValues(alpha: 0.35),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            // Placeholder while thumbnail loads
+                            : Container(
+                                decoration: const BoxDecoration(
+                                  gradient: RadialGradient(
+                                    center: Alignment(-0.3, -0.4),
+                                    radius: 1.1,
+                                    colors: [
+                                      Color(0xFF2D3F5A),
+                                      Color(0xFF0A1220),
+                                    ],
+                                  ),
+                                ),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 24, height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CustomPaint(
-                                  size: const Size.square(_size),
-                                  painter: _FilmGrainPainter(circular: true),
-                                ),
-                                Icon(
-                                  PhosphorIconsRegular.videoCamera,
-                                  size: 44,
-                                  color: Colors.white.withValues(alpha: 0.22),
-                                ),
-                              ],
-                            ),
-                          ),
                   ),
                 ),
 
@@ -736,8 +784,7 @@ class _CtrlBtn extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _FilmGrainPainter extends CustomPainter {
-  final bool circular;
-  const _FilmGrainPainter({this.circular = false});
+  const _FilmGrainPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
