@@ -46,11 +46,13 @@ class _UploadingInfo {
   final List<double> waveform;
   final int durationSec;
   final Uint8List? thumbnail;
-  const _UploadingInfo({
+  final CancelToken? cancelToken;
+  _UploadingInfo({
     required this.kind,
     this.waveform = const [],
     this.durationSec = 0,
     this.thumbnail,
+    this.cancelToken,
   });
 }
 
@@ -300,6 +302,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _leaveGroup({String? sborId, bool isOrganizer = false}) async {
     final c = context.seeuColors;
     final isSbor = sborId != null;
@@ -866,26 +869,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _uploadAndSendVoice(
       String filePath, int durationSec, List<double> samples) async {
     if (filePath.isEmpty) return;
+    final cancelToken = CancelToken();
     setState(() => _sendingInfo = _UploadingInfo(
           kind: _UploadKind.voice,
           waveform: samples,
           durationSec: durationSec,
+          cancelToken: cancelToken,
         ));
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
       final FormData formData;
       if (kIsWeb) {
-        // На вебе record возвращает blob URL — прямая загрузка через fromFile
-        // невозможна. Показываем ошибку.
         messenger.showSnackBar(const SnackBar(
           content: Text('Голосовые сообщения пока недоступны в веб-версии'),
         ));
         return;
       } else {
         final filename = filePath.split('/').last;
-        // Явно указываем audio/mp4 (m4a контейнер) чтобы бэкенд
-        // корректно определил тип без fallback на extension.
         formData = FormData.fromMap({
           'file': await MultipartFile.fromFile(
             filePath,
@@ -894,7 +895,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         });
       }
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final upload = await api.post(ApiEndpoints.mediaUpload,
+          data: formData, cancelToken: cancelToken);
       final url = upload.data['data']['url'] as String;
 
       final reply = _replyingTo;
@@ -910,6 +912,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (reply != null && mounted) setState(() => _replyingTo = null);
       _scrollToBottom();
     } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
       messenger.showSnackBar(SnackBar(
         content: Text('Не удалось отправить: ${apiErrorMessage(e)}'),
       ));
@@ -1473,7 +1476,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             // Для группы: звонок + видео прямо в хедере (как у direct)
                             if (chat?.isGroup == true) ...[
                               _groupCallHeaderButton(c, chat!, CallKind.voice),
-                              _groupCallHeaderButton(c, chat!, CallKind.video),
+                              _groupCallHeaderButton(c, chat, CallKind.video),
                             ],
                           ],
                         ),
@@ -1876,9 +1879,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
+    final cancelToken = CancelToken();
     setState(() => _sendingInfo = _UploadingInfo(
           kind: _UploadKind.videoNote,
           thumbnail: thumb,
+          cancelToken: cancelToken,
         ));
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -1891,7 +1896,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           contentType: MediaType('video', 'mp4'),
         ),
       });
-      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final upload = await api.post(ApiEndpoints.mediaUpload,
+          data: formData, cancelToken: cancelToken);
       final url = upload.data['data']['url'] as String;
       final reply = _replyingTo;
       await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
@@ -1903,14 +1909,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (reply != null && mounted) setState(() => _replyingTo = null);
       _scrollToBottom();
     } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
       messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
     } finally {
-      // Clean up temp file
       try { File(filePath).deleteSync(); } catch (_) {}
       if (mounted) setState(() => _sendingInfo = null);
     }
+  }
+
+  void _cancelSending() {
+    HapticFeedback.lightImpact();
+    _sendingInfo?.cancelToken?.cancel();
+    setState(() => _sendingInfo = null);
   }
 
   Widget _buildRoundVideoOverlay() {
@@ -2141,192 +2153,256 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // ── Pending bubble: looks identical to sent message + loading overlay + cancel ──
+
   Widget _buildUploadingBubble(_UploadingInfo info) {
     final c = context.seeuColors;
+    return switch (info.kind) {
+      _UploadKind.videoNote => _buildPendingVideoNote(info),
+      _UploadKind.voice    => _buildPendingVoice(info, c),
+      _UploadKind.image || _UploadKind.video => _buildPendingMedia(info, c),
+    };
+  }
+
+  Widget _buildPendingVideoNote(_UploadingInfo info) {
+    const double size = 220;
+    const double ringSize = size + 14;
+    const double cancelSz = 34.0;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(60, 6, 12, 0),
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: switch (info.kind) {
-          _UploadKind.voice => _buildVoiceUploadBubble(info, c),
-          _UploadKind.videoNote => _buildVideoNoteUploadBubble(c, thumbnail: info.thumbnail),
-          _UploadKind.image || _UploadKind.video => _buildMediaUploadBubble(info, c),
-        },
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      child: Center(
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            // Glow
+            Container(
+              width: ringSize, height: ringSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 24, spreadRadius: 2),
+                  BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.18), blurRadius: 20),
+                ],
+              ),
+            ),
+            // Indeterminate loading ring (orange)
+            SizedBox(
+              width: ringSize, height: ringSize,
+              child: CircularProgressIndicator(
+                strokeWidth: 3.5,
+                color: SeeUColors.accent,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+                strokeCap: StrokeCap.round,
+              ),
+            ),
+            // Circle: thumbnail or dark placeholder
+            ClipOval(
+              child: SizedBox(
+                width: size, height: size,
+                child: info.thumbnail != null
+                    ? Stack(fit: StackFit.expand, children: [
+                        Image.memory(info.thumbnail!, fit: BoxFit.cover, gaplessPlayback: true),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              colors: [Colors.transparent, Colors.black.withValues(alpha: 0.35)],
+                              radius: 0.8,
+                            ),
+                          ),
+                        ),
+                      ])
+                    : Container(
+                        decoration: const BoxDecoration(
+                          gradient: RadialGradient(
+                            center: Alignment(-0.3, -0.4),
+                            radius: 1.1,
+                            colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
+                          ),
+                        ),
+                        child: Icon(PhosphorIconsRegular.videoCamera, size: 44,
+                            color: Colors.white.withValues(alpha: 0.22)),
+                      ),
+              ),
+            ),
+            // Cancel button — top-right of the circle
+            Positioned(
+              top: (ringSize - size) / 2,
+              right: (ringSize - size) / 2,
+              child: GestureDetector(
+                onTap: _cancelSending,
+                child: Container(
+                  width: cancelSz, height: cancelSz,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.65),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+                  ),
+                  child: Icon(PhosphorIconsBold.x, size: 13, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildVoiceUploadBubble(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingVoice(_UploadingInfo info, SeeUThemeColors c) {
     final dur = info.durationSec;
     final mm = dur ~/ 60;
     final ss = (dur % 60).toString().padLeft(2, '0');
-    final samples = info.waveform;
 
-    return Container(
-      height: 52,
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFF6A48), Color(0xFFFF3D1F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: SeeUColors.accent.withValues(alpha: 0.30),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Pulsing mic icon
-          SizedBox(
-            width: 18, height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.8,
-              color: Colors.white.withValues(alpha: 0.8),
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 210, maxWidth: 300),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFF6B4A), Color(0xFFFF4A30)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+              bottomRight: Radius.circular(8),
+            ),
+            boxShadow: [
+              BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.28), blurRadius: 12, offset: const Offset(0, 4)),
+            ],
           ),
-          const SizedBox(width: 10),
-          // Mini waveform
-          if (samples.isNotEmpty) ...[
-            SizedBox(
-              width: 80,
-              height: 22,
-              child: CustomPaint(
-                painter: _WaveformPainter(samples: samples, color: Colors.white.withValues(alpha: 0.85)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Spinner (same size as play button in VoiceBubble)
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          // Duration
-          Text(
-            '$mm:$ss',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoNoteUploadBubble(SeeUThemeColors c, {Uint8List? thumbnail}) {
-    const double sz = 76;
-    return SizedBox(
-      width: sz + 8,
-      height: sz + 8,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Spinning progress ring
-          SizedBox(
-            width: sz + 8, height: sz + 8,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: SeeUColors.accent,
-              backgroundColor: Colors.white.withValues(alpha: 0.12),
-              strokeCap: StrokeCap.round,
-            ),
-          ),
-          // Circle with thumbnail or dark placeholder
-          ClipOval(
-            child: SizedBox(
-              width: sz, height: sz,
-              child: thumbnail != null
-                  ? Stack(fit: StackFit.expand, children: [
-                      Image.memory(thumbnail, fit: BoxFit.cover, gaplessPlayback: true),
-                      ColoredBox(color: Colors.black.withValues(alpha: 0.30)),
-                    ])
-                  : Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+              const SizedBox(width: 10),
+              // Waveform + duration
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (info.waveform.isNotEmpty)
+                      SizedBox(
+                        height: 28,
+                        child: CustomPaint(
+                          painter: _WaveformPainter(
+                              samples: info.waveform,
+                              color: Colors.white.withValues(alpha: 0.80)),
+                          size: const Size(double.infinity, 28),
                         ),
                       ),
-                    ),
-            ),
+                    const SizedBox(height: 4),
+                    Text('$mm:$ss',
+                        style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Cancel button
+              GestureDetector(
+                onTap: _cancelSending,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.28),
+                  ),
+                  child: Icon(PhosphorIconsBold.x, size: 12, color: Colors.white),
+                ),
+              ),
+            ],
           ),
-          // Camera icon overlay
-          Icon(PhosphorIconsBold.videoCamera, size: 20, color: Colors.white),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildMediaUploadBubble(_UploadingInfo info, SeeUThemeColors c) {
+  Widget _buildPendingMedia(_UploadingInfo info, SeeUThemeColors c) {
     final icon = info.kind == _UploadKind.video
         ? PhosphorIconsRegular.filmStrip
         : PhosphorIconsRegular.image;
     final label = info.kind == _UploadKind.video ? 'Видео' : 'Изображение';
 
-    return Container(
-      height: 52,
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 240),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: c.line, width: 0.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 160, maxWidth: 240),
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: c.line, width: 0.5),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: SeeUColors.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 18, color: SeeUColors.accent),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
-              const SizedBox(height: 2),
-              SizedBox(
-                width: 70,
-                height: 3,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    color: SeeUColors.accent,
-                    backgroundColor: SeeUColors.accent.withValues(alpha: 0.18),
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: SeeUColors.accent),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
+                    const SizedBox(height: 3),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 3,
+                        child: LinearProgressIndicator(
+                          color: SeeUColors.accent,
+                          backgroundColor: SeeUColors.accent.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: _cancelSending,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.surface,
+                    border: Border.all(color: c.line),
                   ),
+                  child: Icon(PhosphorIconsBold.x, size: 12, color: c.ink3),
                 ),
               ),
             ],
           ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.5,
-              color: SeeUColors.accent,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

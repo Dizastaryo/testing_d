@@ -182,13 +182,15 @@ class ApiClient {
     Options? options,
     ProgressCallback? onSendProgress,
     ProgressCallback? onReceiveProgress,
+    CancelToken? cancelToken,
   }) {
     return _dio.post<T>(path,
         data: data,
         queryParameters: queryParameters,
         options: options,
         onSendProgress: onSendProgress,
-        onReceiveProgress: onReceiveProgress);
+        onReceiveProgress: onReceiveProgress,
+        cancelToken: cancelToken);
   }
 
   Future<Response<T>> put<T>(

@@ -129,13 +129,17 @@ class ChatMessageBubble extends StatelessWidget {
         (message.attachedMediaType == 'video_note' &&
             message.attachedMediaUrl.isNotEmpty);
     if (isVideoNote) {
-      return Padding(
-        padding: EdgeInsets.only(
-          top: showTail ? 10 : 4,
-          bottom: allReactions.isNotEmpty ? 22 : 0,
-        ),
-        child: Center(
-          child: _buildBubbleContainer(message, isMine, c, time),
+      return GestureDetector(
+        onLongPress: onLongPress,
+        onDoubleTap: onDoubleTap,
+        child: Padding(
+          padding: EdgeInsets.only(
+            top: showTail ? 10 : 4,
+            bottom: allReactions.isNotEmpty ? 22 : 0,
+          ),
+          child: Center(
+            child: _buildBubbleContainer(message, isMine, c, time),
+          ),
         ),
       );
     }
