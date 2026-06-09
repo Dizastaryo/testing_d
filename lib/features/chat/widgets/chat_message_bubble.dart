@@ -604,13 +604,62 @@ class ChatMessageBubble extends StatelessWidget {
         isDelivered: message.isDelivered,
       );
     }
-    return Text(
+    return _buildMixedText(
       message.text,
-      style: SeeUTypography.body.copyWith(
-        fontSize: 14,
-        color: isMine ? Colors.white : c.ink,
-        height: 1.4,
-      ),
+      textColor: isMine ? Colors.white : c.ink,
+    );
+  }
+
+  /// Renders text with emojis slightly larger (18px) than surrounding text (14px).
+  static Widget _buildMixedText(String text, {required Color textColor}) {
+    // Fast path: ASCII-only, no emojis
+    if (text.runes.every((r) => r < 0x2194)) {
+      return Text(
+        text,
+        style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+      );
+    }
+
+    // Matches emoji sequences: base + optional skin tone + ZWJ chains + flags
+    final emojiRegex = RegExp(
+      r'[\u{1F300}-\u{1FAFF}][\u{1F3FB}-\u{1F3FF}]?(?:\u{200D}[\u{1F300}-\u{1FAFF}][\u{1F3FB}-\u{1F3FF}]?)*'
+      r'|[\u{2600}-\u{27BF}]\u{FE0F}?'
+      r'|[\u{1F1E0}-\u{1F1FF}][\u{1F1E0}-\u{1F1FF}]'
+      r'|[\u{1F000}-\u{1F02F}]|[\u{1F0A0}-\u{1F0FF}]',
+      unicode: true,
+    );
+
+    final spans = <InlineSpan>[];
+    int cursor = 0;
+    for (final m in emojiRegex.allMatches(text)) {
+      if (m.start > cursor) {
+        spans.add(TextSpan(
+          text: text.substring(cursor, m.start),
+          style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+        ));
+      }
+      spans.add(TextSpan(
+        text: m.group(0),
+        style: TextStyle(fontSize: 18, height: 1.3, color: textColor),
+      ));
+      cursor = m.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(cursor),
+        style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+      ));
+    }
+
+    if (spans.length == 1 && spans.first is TextSpan &&
+        (spans.first as TextSpan).style?.fontSize == 14) {
+      // No emoji found by regex
+      return Text(text, style: TextStyle(fontSize: 14, color: textColor, height: 1.4));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+      overflow: TextOverflow.clip,
     );
   }
 
