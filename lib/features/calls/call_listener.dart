@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
@@ -36,6 +37,7 @@ class CallListener extends ConsumerStatefulWidget {
 class _CallListenerState extends ConsumerState<CallListener> {
   bool _open = false;
   bool _groupOpen = false;
+  bool _roomOpen = false;
 
   @override
   void initState() {
@@ -54,6 +56,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     GroupCallService.instance.session.addListener(_onGroupSession);
     GroupCallService.instance.minimized.addListener(_onGroupMinimized);
     GroupCallService.instance.lastError.addListener(_onGroupCallError);
+    VoiceRoomService.instance.minimized.addListener(_onVoiceRoomMinimized);
   }
 
   @override
@@ -64,6 +67,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     GroupCallService.instance.session.removeListener(_onGroupSession);
     GroupCallService.instance.minimized.removeListener(_onGroupMinimized);
     GroupCallService.instance.lastError.removeListener(_onGroupCallError);
+    VoiceRoomService.instance.minimized.removeListener(_onVoiceRoomMinimized);
     super.dispose();
   }
 
@@ -136,6 +140,24 @@ class _CallListenerState extends ConsumerState<CallListener> {
     if (!isMin && GroupCallService.instance.session.value != null && !_groupOpen) {
       _pushGroupCallScreen();
     }
+  }
+
+  /// Пользователь тапнул по mini-overlay голосового канала → возвращаем на страницу комнаты.
+  void _onVoiceRoomMinimized() {
+    final isMin = VoiceRoomService.instance.minimized.value;
+    final roomId = VoiceRoomService.instance.activeRoomId.value;
+    if (!isMin && roomId != null && !_roomOpen) {
+      _goToRoom(roomId);
+    }
+  }
+
+  void _goToRoom(String roomId) {
+    final ctx = widget.navigatorKey.currentContext;
+    if (ctx == null) return;
+    _roomOpen = true;
+    ctx.push('/room/$roomId').then((_) {
+      _roomOpen = false;
+    });
   }
 
   void _pushCallScreen() {
@@ -248,19 +270,29 @@ class _CallListenerState extends ConsumerState<CallListener> {
           valueListenable: VoiceRoomService.instance.activeRoomId,
           builder: (_, roomId, __) {
             if (roomId == null) return const SizedBox.shrink();
-            return ValueListenableBuilder<String>(
-              valueListenable: VoiceRoomService.instance.activeRoomName,
-              builder: (_, roomName, __) {
-                return _MiniVoiceRoomOverlay(
-                  roomId: roomId,
-                  roomName: roomName,
-                  onLeave: () async {
-                    VoiceRoomService.instance.leave();
-                    try {
-                      await ref
-                          .read(apiClientProvider)
-                          .delete(ApiEndpoints.roomVoice(roomId));
-                    } catch (_) {}
+            return ValueListenableBuilder<bool>(
+              valueListenable: VoiceRoomService.instance.minimized,
+              builder: (_, isMin, __) {
+                if (!isMin) return const SizedBox.shrink();
+                return ValueListenableBuilder<String>(
+                  valueListenable: VoiceRoomService.instance.activeRoomName,
+                  builder: (_, roomName, __) {
+                    return _MiniVoiceRoomOverlay(
+                      roomId: roomId,
+                      roomName: roomName,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        VoiceRoomService.instance.minimized.value = false;
+                      },
+                      onLeave: () async {
+                        VoiceRoomService.instance.leave();
+                        try {
+                          await ref
+                              .read(apiClientProvider)
+                              .delete(ApiEndpoints.roomVoice(roomId));
+                        } catch (_) {}
+                      },
+                    );
                   },
                 );
               },
@@ -673,11 +705,13 @@ class _MiniGroupCallOverlayState extends State<_MiniGroupCallOverlay> {
 class _MiniVoiceRoomOverlay extends StatelessWidget {
   final String roomId;
   final String roomName;
+  final VoidCallback onTap;
   final Future<void> Function() onLeave;
 
   const _MiniVoiceRoomOverlay({
     required this.roomId,
     required this.roomName,
+    required this.onTap,
     required this.onLeave,
   });
 
@@ -687,11 +721,13 @@ class _MiniVoiceRoomOverlay extends StatelessWidget {
     return Positioned(
       left: 12,
       bottom: media.padding.bottom + 80,
-      child: Material(
-        elevation: 12,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: Container(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Material(
+          elevation: 12,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -771,6 +807,7 @@ class _MiniVoiceRoomOverlay extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

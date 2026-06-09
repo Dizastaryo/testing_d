@@ -13,13 +13,20 @@ class VoiceRoomService {
   /// Название комнаты — для display в overlay.
   final ValueNotifier<String> activeRoomName = ValueNotifier('');
 
+  /// true = RoomScreen закрыт, mini-overlay виден.
+  /// false = RoomScreen открыт, mini-overlay скрыт.
+  /// Аналогично CallService.minimized / GroupCallService.minimized.
+  final ValueNotifier<bool> minimized = ValueNotifier(false);
+
   void join(String roomId, String roomName) {
     activeRoomId.value = roomId;
     activeRoomName.value = roomName;
+    minimized.value = false; // только что вошли — экран открыт
   }
 
   void leave() {
     activeRoomId.value = null;
     activeRoomName.value = '';
+    minimized.value = false; // сброс
   }
 }

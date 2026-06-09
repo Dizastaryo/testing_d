@@ -56,6 +56,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // Мы открыли страницу комнаты — overlay должен быть скрыт.
+    VoiceRoomService.instance.minimized.value = false;
   }
 
   @override
@@ -67,6 +69,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _stopMicMonitoring();
     _micMonitor.dispose();
     _myAudioLevel.dispose();
+    // Уходим со страницы — если ещё в голосовом, показываем overlay.
+    if (VoiceRoomService.instance.activeRoomId.value == widget.roomId) {
+      VoiceRoomService.instance.minimized.value = true;
+    }
     super.dispose();
   }
 
