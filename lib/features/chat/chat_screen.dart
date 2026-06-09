@@ -33,6 +33,25 @@ import 'widgets/voice_recorder.dart';
 import '../sticker/sticker_creator_screen.dart';
 // Chat uses existing chat_provider; no MockService needed
 
+// ---------------------------------------------------------------------------
+// Uploading state — tracks what type of media is currently being sent
+// ---------------------------------------------------------------------------
+
+enum _UploadKind { voice, videoNote, image, video }
+
+class _UploadingInfo {
+  final _UploadKind kind;
+  final List<double> waveform;
+  final int durationSec;
+  const _UploadingInfo({
+    required this.kind,
+    this.waveform = const [],
+    this.durationSec = 0,
+  });
+}
+
+// ---------------------------------------------------------------------------
+
 class ChatScreen extends ConsumerStatefulWidget {
   final String chatId;
 
@@ -51,8 +70,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _itemPositionsListener = ItemPositionsListener.create();
   final _focusNode = FocusNode();
   bool _hasText = false;
-  bool _isUploading = false;     // attach-menu uploads only (shows spinner on "+")
-  bool _isSendingMedia = false;  // voice/video-note (shows banner above input)
+  bool _isUploading = false;         // attach-menu uploads only (shows spinner on "+")
+  _UploadingInfo? _sendingInfo;      // voice/video-note (shows rich bubble above input)
   bool _recording = false;
   // Round video message: double-tap mic → switch to camera mode,
   // tap camera icon → open round camera overlay.
@@ -843,7 +862,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _uploadAndSendVoice(
       String filePath, int durationSec, List<double> samples) async {
     if (filePath.isEmpty) return;
-    setState(() => _isSendingMedia = true);
+    setState(() => _sendingInfo = _UploadingInfo(
+          kind: _UploadKind.voice,
+          waveform: samples,
+          durationSec: durationSec,
+        ));
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -890,7 +913,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       messenger.showSnackBar(
           SnackBar(content: Text('Не удалось отправить: ${friendlyError(e)}')));
     } finally {
-      if (mounted) setState(() => _isSendingMedia = false);
+      if (mounted) setState(() => _sendingInfo = null);
     }
   }
 
@@ -1517,7 +1540,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
               ),
               // Sending indicator for voice/video-note uploads
-              if (_isSendingMedia) _buildSendingMediaBanner(),
+              if (_sendingInfo != null) _buildUploadingBubble(_sendingInfo!),
               // Input bar
               _buildInputBar(),
                 ], // Column children
@@ -1835,8 +1858,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _uploadAndSendVideoMsg(String filePath) async {
-    if (_isSendingMedia) return;
-    setState(() => _isSendingMedia = true);
+    if (_sendingInfo != null) return;
+    setState(() => _sendingInfo = const _UploadingInfo(kind: _UploadKind.videoNote));
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -1866,7 +1889,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } finally {
       // Clean up temp file
       try { File(filePath).deleteSync(); } catch (_) {}
-      if (mounted) setState(() => _isSendingMedia = false);
+      if (mounted) setState(() => _sendingInfo = null);
     }
   }
 
@@ -2098,26 +2121,185 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildSendingMediaBanner() {
+  Widget _buildUploadingBubble(_UploadingInfo info) {
     final c = context.seeuColors;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(60, 6, 12, 0),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: switch (info.kind) {
+          _UploadKind.voice => _buildVoiceUploadBubble(info, c),
+          _UploadKind.videoNote => _buildVideoNoteUploadBubble(c),
+          _UploadKind.image || _UploadKind.video => _buildMediaUploadBubble(info, c),
+        },
+      ),
+    );
+  }
+
+  Widget _buildVoiceUploadBubble(_UploadingInfo info, SeeUThemeColors c) {
+    final dur = info.durationSec;
+    final mm = dur ~/ 60;
+    final ss = (dur % 60).toString().padLeft(2, '0');
+    final samples = info.waveform;
+
     return Container(
-      height: 28,
-      color: c.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: 52,
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF6A48), Color(0xFFFF3D1F)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: SeeUColors.accent.withValues(alpha: 0.30),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // Pulsing mic icon
           SizedBox(
-            width: 12, height: 12,
+            width: 18, height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.8,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Mini waveform
+          if (samples.isNotEmpty) ...[
+            SizedBox(
+              width: 80,
+              height: 22,
+              child: CustomPaint(
+                painter: _WaveformPainter(samples: samples, color: Colors.white.withValues(alpha: 0.85)),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          // Duration
+          Text(
+            '$mm:$ss',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoNoteUploadBubble(SeeUThemeColors c) {
+    return SizedBox(
+      width: 78,
+      height: 78,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Background circle
+          Container(
+            width: 70,
+            height: 70,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Color(0xFF333333), Color(0xFF111111)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          // Spinning progress ring
+          SizedBox(
+            width: 70, height: 70,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: SeeUColors.accent,
+              backgroundColor: Colors.white.withValues(alpha: 0.15),
+            ),
+          ),
+          // Camera icon
+          Icon(
+            PhosphorIconsBold.videoCamera,
+            size: 22,
+            color: Colors.white,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaUploadBubble(_UploadingInfo info, SeeUThemeColors c) {
+    final icon = info.kind == _UploadKind.video
+        ? PhosphorIconsRegular.filmStrip
+        : PhosphorIconsRegular.image;
+    final label = info.kind == _UploadKind.video ? 'Видео' : 'Изображение';
+
+    return Container(
+      height: 52,
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 240),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: c.line, width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: SeeUColors.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: SeeUColors.accent),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
+              const SizedBox(height: 2),
+              SizedBox(
+                width: 70,
+                height: 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    color: SeeUColors.accent,
+                    backgroundColor: SeeUColors.accent.withValues(alpha: 0.18),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 16, height: 16,
             child: CircularProgressIndicator(
               strokeWidth: 1.5,
               color: SeeUColors.accent,
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Отправка...',
-            style: TextStyle(fontSize: 12, color: c.ink3),
           ),
         ],
       ),
@@ -2981,4 +3163,42 @@ class _VanishPainter extends CustomPainter {
   @override
   bool shouldRepaint(_VanishPainter old) =>
       old.active != active || old.color != color;
+}
+
+// ---------------------------------------------------------------------------
+// Waveform painter for uploading voice bubble
+// ---------------------------------------------------------------------------
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> samples;
+  final Color color;
+  const _WaveformPainter({required this.samples, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.fill;
+
+    final barCount = math.min(samples.length, 28);
+    final barWidth = (size.width - barCount * 1.5) / barCount;
+    final maxH = size.height;
+
+    for (int i = 0; i < barCount; i++) {
+      final idx = (i / barCount * samples.length).toInt().clamp(0, samples.length - 1);
+      final h = math.max(3.0, samples[idx] * maxH);
+      final x = i * (barWidth + 1.5);
+      final y = (maxH - h) / 2;
+      final rr = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y, barWidth, h),
+        const Radius.circular(1.5),
+      );
+      canvas.drawRRect(rr, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPainter old) => old.samples != samples;
 }
