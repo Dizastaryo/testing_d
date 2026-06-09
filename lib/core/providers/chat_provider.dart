@@ -935,11 +935,16 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     String forwardedFromSender = '',
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
-    // attachedMediaType=='audio' → kind='voice' (бэк-нормализация).
+    // Derive kind from attachedMediaType for correct optimistic bubble.
     final kind = attachedPostId != null
         ? 'shared_post'
         : hasMedia
-            ? (attachedMediaType == 'audio' ? 'voice' : 'image')
+            ? switch (attachedMediaType) {
+                'audio' => 'voice',
+                'video_note' => 'video_note',
+                'video' => 'video',
+                _ => 'image',
+              }
             : 'text';
 
     // Optimistic UI: add message locally (no preview yet — server fills it).

@@ -51,7 +51,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _itemPositionsListener = ItemPositionsListener.create();
   final _focusNode = FocusNode();
   bool _hasText = false;
-  bool _isUploading = false;
+  bool _isUploading = false;     // attach-menu uploads only (shows spinner on "+")
+  bool _isSendingMedia = false;  // voice/video-note (shows banner above input)
   bool _recording = false;
   // Round video message: double-tap mic → switch to camera mode,
   // tap camera icon → open round camera overlay.
@@ -842,7 +843,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _uploadAndSendVoice(
       String filePath, int durationSec, List<double> samples) async {
     if (filePath.isEmpty) return;
-    setState(() => _isUploading = true);
+    setState(() => _isSendingMedia = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -889,7 +890,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       messenger.showSnackBar(
           SnackBar(content: Text('Не удалось отправить: ${friendlyError(e)}')));
     } finally {
-      if (mounted) setState(() => _isUploading = false);
+      if (mounted) setState(() => _isSendingMedia = false);
     }
   }
 
@@ -1515,6 +1516,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ],
                           ),
               ),
+              // Sending indicator for voice/video-note uploads
+              if (_isSendingMedia) _buildSendingMediaBanner(),
               // Input bar
               _buildInputBar(),
                 ], // Column children
@@ -1832,8 +1835,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _uploadAndSendVideoMsg(String filePath) async {
-    if (_isUploading) return;
-    setState(() => _isUploading = true);
+    if (_isSendingMedia) return;
+    setState(() => _isSendingMedia = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
@@ -1863,7 +1866,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } finally {
       // Clean up temp file
       try { File(filePath).deleteSync(); } catch (_) {}
-      if (mounted) setState(() => _isUploading = false);
+      if (mounted) setState(() => _isSendingMedia = false);
     }
   }
 
@@ -2091,6 +2094,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSendingMediaBanner() {
+    final c = context.seeuColors;
+    return Container(
+      height: 28,
+      color: c.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 12, height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: SeeUColors.accent,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Отправка...',
+            style: TextStyle(fontSize: 12, color: c.ink3),
+          ),
+        ],
       ),
     );
   }
