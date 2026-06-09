@@ -37,48 +37,146 @@ class EditorBottomBar extends ConsumerWidget {
           top: Radius.circular(SeeURadii.sheet),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: SafeArea(
         top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _ToolButton(
-              icon: PhosphorIconsRegular.textAa,
-              label: 'Текст',
-              active: true,
-              c: c,
-              onTap: onAddText,
-            ),
-            _ToolButton(
-              icon: PhosphorIconsRegular.textT,
-              label: 'Шрифт',
-              enabled: hasActive,
-              c: c,
-              onTap: () => _showSheet(context, const FontPickerSheet()),
-            ),
-            _ToolButton(
-              icon: PhosphorIconsRegular.palette,
-              label: 'Цвет',
-              enabled: hasActive,
-              c: c,
-              onTap: () => _showSheet(context, const ColorPickerSheet()),
-            ),
-            _ToolButton(
-              icon: PhosphorIconsRegular.stack,
-              label: 'Слои',
-              badge: state.layers.isNotEmpty ? '${state.layers.length}' : null,
-              c: c,
-              onTap: () => _showSheet(context, const LayersPanelSheet()),
-            ),
-            _ToolButton(
-              icon: PhosphorIconsRegular.smiley,
-              label: 'Эмодзи',
-              c: c,
-              onTap: () {},
+            // Active layer quick-access row
+            if (hasActive) ...[
+              _ActiveLayerBar(c: c),
+              Divider(height: 1, color: c.line),
+            ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _ToolButton(
+                    icon: PhosphorIconsRegular.textAa,
+                    label: 'Текст',
+                    active: true,
+                    c: c,
+                    onTap: onAddText,
+                  ),
+                  _ToolButton(
+                    icon: PhosphorIconsRegular.textT,
+                    label: 'Шрифт',
+                    enabled: hasActive,
+                    c: c,
+                    onTap: () => _showSheet(context, const FontPickerSheet()),
+                  ),
+                  _ToolButton(
+                    icon: PhosphorIconsRegular.palette,
+                    label: 'Цвет',
+                    enabled: hasActive,
+                    c: c,
+                    onTap: () => _showSheet(context, const ColorPickerSheet()),
+                  ),
+                  _ToolButton(
+                    icon: PhosphorIconsRegular.stack,
+                    label: 'Слои',
+                    badge: state.layers.isNotEmpty
+                        ? '${state.layers.length}'
+                        : null,
+                    c: c,
+                    onTap: () =>
+                        _showSheet(context, const LayersPanelSheet()),
+                  ),
+                  _ToolButton(
+                    icon: PhosphorIconsRegular.smiley,
+                    label: 'Эмодзи',
+                    c: c,
+                    onTap: () {},
+                  ),
+                ],
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Быстрая панель активного слоя ───────────────────────────────
+
+class _ActiveLayerBar extends ConsumerWidget {
+  final SeeUThemeColors c;
+
+  const _ActiveLayerBar({required this.c});
+
+  static const _fonts = [
+    'Roboto', 'Montserrat', 'Pacifico', 'Oswald', 'Caveat', 'Bebas Neue',
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final layer = ref.watch(stickerEditorProvider).activeLayer;
+    if (layer == null) return const SizedBox.shrink();
+    final notifier = ref.read(stickerEditorProvider.notifier);
+
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        children: [
+          // Color swatch — opens ColorPickerSheet
+          GestureDetector(
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (_) => const ColorPickerSheet(),
+            ),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: layer.color,
+                shape: BoxShape.circle,
+                border: Border.all(color: c.line, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: layer.color.withValues(alpha: 0.4),
+                    blurRadius: 6,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Font pills
+          ..._fonts.map((font) {
+            final isActive = layer.fontFamily == font ||
+                (font == 'Roboto' && layer.fontFamily.isEmpty);
+            return GestureDetector(
+              onTap: () => notifier.updateLayer(
+                layer.id,
+                layer.copyWith(fontFamily: font),
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: isActive ? SeeUColors.accent : c.surface2,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  font,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? Colors.white : c.ink2,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

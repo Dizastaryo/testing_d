@@ -29,8 +29,8 @@ class StickerCreatorScreen extends ConsumerStatefulWidget {
 
 enum _Mode { none, photo, video }
 
-
-class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
+class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
+    with SingleTickerProviderStateMixin {
   _Mode _mode = _Mode.none;
   int _gallerySegment = 0; // 0 = photo, 1 = video
 
@@ -38,6 +38,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   bool _removingBg = false;
   String? _error;
   String? _bgRemovedUrl;
+  bool _showOriginal = false; // before/after toggle
 
   // Video
   VideoPlayerController? _controller;
@@ -47,10 +48,27 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   bool _videoReady = false;
   int _removeRequestId = 0;
 
+  // Pulse animation for processing screen
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
   final _picker = ImagePicker();
 
   @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.18, end: 0.52).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
   void dispose() {
+    _pulseCtrl.dispose();
     _controller?.removeListener(_syncVideoSlider);
     _controller?.dispose();
     super.dispose();
@@ -75,6 +93,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _bgRemovedUrl = null;
       _removingBg = false;
       _error = null;
+      _showOriginal = false;
     });
   }
 
@@ -91,6 +110,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _videoReady = false;
       _isRemoving = false;
       _error = null;
+      _showOriginal = false;
     });
     await _initVideoPlayer(file.path);
   }
@@ -109,6 +129,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _videoReady = false;
       _isRemoving = false;
       _error = null;
+      _showOriginal = false;
     });
 
     await _initVideoPlayer(file.path);
@@ -169,6 +190,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _bgRemovedUrl = null;
       _isRemoving = false;
       _error = null;
+      _showOriginal = false;
     });
   }
 
@@ -180,6 +202,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
     setState(() {
       _isRemoving = true;
       _error = null;
+      _showOriginal = false;
     });
 
     try {
@@ -215,6 +238,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _removingBg = true;
       _bgRemovedUrl = null;
       _error = null;
+      _showOriginal = false;
     });
     try {
       final String url =
@@ -263,13 +287,17 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   }
 
   void _goBackFromResult() {
-    final isVideoFrame = _mode == _Mode.video && _bgRemovedUrl == null && !_isRemoving;
+    final isVideoFrame =
+        _mode == _Mode.video && _bgRemovedUrl == null && !_isRemoving;
     if (isVideoFrame) {
       _disposeVideo().then((_) {
         if (mounted) setState(() => _mode = _Mode.none);
       });
     } else {
-      setState(() => _bgRemovedUrl = null);
+      setState(() {
+        _bgRemovedUrl = null;
+        _showOriginal = false;
+      });
     }
   }
 
@@ -295,7 +323,8 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
             if (_error != null)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 color: c.accentSoft,
                 child: Text(
                   _error!,
@@ -318,9 +347,15 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
         _mode == _Mode.video && _bgRemovedUrl != null && !_isRemoving;
     final bool canGoBack = isResult || isVideoResult;
     final bool isProcessing = _removingBg || _isRemoving;
-    final bool isVideoFrame = _mode == _Mode.video && !isVideoResult && !_isRemoving;
+    final bool isVideoFrame =
+        _mode == _Mode.video && !isVideoResult && !_isRemoving;
+    final bool isPhotoSelected = _mode == _Mode.photo &&
+        _sourceBytes != null &&
+        _bgRemovedUrl == null &&
+        !_removingBg;
 
     String title = 'Новый стикер';
+    if (isPhotoSelected) title = 'Фото выбрано';
     if (isVideoFrame) title = 'Выбор кадра';
     if (_removingBg || _isRemoving) title = 'Удаление фона…';
     if (isResult || isVideoResult) title = 'Фон удалён';
@@ -333,9 +368,14 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
             GestureDetector(
               onTap: canGoBack || isVideoFrame
                   ? _goBackFromResult
-                  : () => Navigator.of(context).pop(),
+                  : isPhotoSelected
+                      ? () => setState(() {
+                            _mode = _Mode.none;
+                            _sourceBytes = null;
+                          })
+                      : () => Navigator.of(context).pop(),
               child: Icon(
-                canGoBack || isVideoFrame
+                canGoBack || isVideoFrame || isPhotoSelected
                     ? PhosphorIcons.caretLeft(PhosphorIconsStyle.bold)
                     : PhosphorIcons.x(),
                 size: 20,
@@ -355,8 +395,44 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
               ),
             ),
           ),
-          if (!isProcessing && !canGoBack && !isVideoResult && isVideoFrame)
-            Text('из видео', style: TextStyle(fontSize: 13, color: c.ink3)),
+          // Before/after toggle — shown only when result is displayed
+          if (isResult || isVideoResult)
+            GestureDetector(
+              onTap: () => setState(() => _showOriginal = !_showOriginal),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _showOriginal ? c.surface2 : c.accentSoft,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  border: Border.all(
+                    color: _showOriginal
+                        ? c.line
+                        : SeeUColors.accent.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _showOriginal ? 'До' : 'После',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _showOriginal ? c.ink2 : SeeUColors.accent,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      PhosphorIconsRegular.arrowsLeftRight,
+                      size: 11,
+                      color: _showOriginal ? c.ink3 : SeeUColors.accent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -366,11 +442,102 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
     if (_mode == _Mode.video) return _buildVideoFlow(c);
     if (_removingBg) return _buildBgProcessing(c);
     if (_mode == _Mode.photo && _bgRemovedUrl != null) return _buildBgRemoval(c);
-    // Source picker — also shows when photo is picked but not yet processed
+    if (_mode == _Mode.photo && _sourceBytes != null) {
+      return _buildPhotoPreviewMode(c);
+    }
+    return _buildSourcePicker(c);
+  }
+
+  // ── 0. Photo preview mode (photo selected, not yet processed) ──
+
+  Widget _buildPhotoPreviewMode(SeeUThemeColors c) {
     return Column(
       children: [
-        Expanded(child: _buildSourcePicker(c)),
-        _buildSourceBottomBar(c),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(SeeURadii.medium),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(_sourceBytes!, fit: BoxFit.contain),
+                  // "Другое фото" overlay button
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: GestureDetector(
+                      onTap: () => _pickPhoto(),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIconsRegular.images,
+                                color: Colors.white, size: 14),
+                            const SizedBox(width: 5),
+                            const Text(
+                              'Другое',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+          child: GestureDetector(
+            onTap: _startBgRemoval,
+            child: Container(
+              width: double.infinity,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: SeeUGradients.heroOrange,
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
+                boxShadow: [
+                  BoxShadow(
+                    color: SeeUColors.accent.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsRegular.magicWand,
+                        color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Убрать фон',
+                      style: SeeUTypography.body.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -392,12 +559,14 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
       child: Row(
         children: [
-          Icon(PhosphorIconsRegular.magicWand, color: SeeUColors.accent, size: 18),
+          Icon(PhosphorIconsRegular.magicWand,
+              color: SeeUColors.accent, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Фон уберём автоматически — выберите фото или кадр видео',
-              style: SeeUTypography.caption.copyWith(color: c.ink2, fontSize: 13),
+              style:
+                  SeeUTypography.caption.copyWith(color: c.ink2, fontSize: 13),
             ),
           ),
         ],
@@ -442,18 +611,17 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       child: Column(
         children: [
-          // Camera card
           _PickerCard(
             icon: PhosphorIconsRegular.camera,
             title: isVideo ? 'Снять видео' : 'Сфотографировать',
             subtitle: 'Открыть камеру',
+            accent: true,
             onTap: isVideo
                 ? _pickVideoFromCamera
                 : () => _pickPhoto(source: ImageSource.camera),
             c: c,
           ),
           const SizedBox(height: 12),
-          // Gallery card
           _PickerCard(
             icon: isVideo
                 ? PhosphorIconsRegular.filmStrip
@@ -468,86 +636,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
     );
   }
 
-  Widget _buildSourceBottomBar(SeeUThemeColors c) {
-    if (_sourceBytes == null) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: BoxDecoration(
-        color: c.bg,
-        border: Border(top: BorderSide(color: c.line, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              image: DecorationImage(
-                image: MemoryImage(_sourceBytes!),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Фото выбрано',
-                  style: SeeUTypography.body.copyWith(
-                    color: c.ink,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  'Готово к удалению фона',
-                  style: SeeUTypography.caption.copyWith(color: c.ink3),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: _startBgRemoval,
-            child: Container(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 22),
-              decoration: BoxDecoration(
-                color: SeeUColors.accent,
-                borderRadius: BorderRadius.circular(SeeURadii.pill),
-                boxShadow: [
-                  BoxShadow(
-                    color: SeeUColors.accent.withValues(alpha: 0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Далее',
-                    style: SeeUTypography.body.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(PhosphorIconsRegular.arrowRight,
-                      color: Colors.white, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── 2a. BG Processing screen ───────────────────────────────────
 
   Widget _buildBgProcessing(SeeUThemeColors c) {
@@ -555,56 +643,69 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(SeeURadii.medium),
-              ),
-              child: Center(
-                child: _sourceBytes != null
-                    ? Opacity(
-                        opacity: 0.4,
-                        child: Image.memory(
-                          _sourceBytes!,
-                          width: 200,
-                          height: 200,
-                          fit: BoxFit.contain,
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(SeeURadii.medium),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Pulsing original image
+                  if (_sourceBytes != null)
+                    AnimatedBuilder(
+                      animation: _pulseAnim,
+                      builder: (_, child) =>
+                          Opacity(opacity: _pulseAnim.value, child: child),
+                      child: Image.memory(_sourceBytes!, fit: BoxFit.contain),
+                    )
+                  else
+                    Container(color: c.surface2),
+                  // Animated orange scan line
+                  AnimatedBuilder(
+                    animation: _pulseCtrl,
+                    builder: (_, __) {
+                      final t = _pulseCtrl.value;
+                      return Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(0, -1 + t * 2),
+                            end: Alignment(0, -1 + t * 2 + 0.35),
+                            colors: [
+                              Colors.transparent,
+                              SeeUColors.accent.withValues(alpha: 0.22),
+                              Colors.transparent,
+                            ],
+                          ),
                         ),
-                      )
-                    : const SizedBox(height: 200),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(bottom: 32, top: 16),
+          padding: const EdgeInsets.only(bottom: 40, top: 20),
           child: Column(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: SeeUColors.accent,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Убираем фон…',
-                    style: SeeUTypography.body.copyWith(
-                      color: SeeUColors.accent,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: SeeUColors.accent,
+                ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
+              Text(
+                'Убираем фон…',
+                style: SeeUTypography.body.copyWith(
+                  color: SeeUColors.accent,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 4),
               Text(
                 'Обычно занимает пару секунд',
                 style: SeeUTypography.caption.copyWith(color: c.ink3),
@@ -624,77 +725,61 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(SeeURadii.medium),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CustomPaint(painter: _CheckerPainter()),
-                  CachedNetworkImage(
-                    imageUrl: AppConfig.absUrl(url),
-                    fit: BoxFit.contain,
-                    placeholder: (_, __) =>
-                        const Center(child: CircularProgressIndicator()),
-                    errorWidget: (_, __, ___) => Icon(
-                      PhosphorIconsRegular.image,
-                      size: 40,
-                      color: c.ink3,
-                    ),
-                  ),
-                  // "Фон удалён" bottom-left
-                  Positioned(
-                    bottom: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2FA84F).withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                  if (_showOriginal)
+                    // Show original image
+                    _sourceBytes != null
+                        ? Image.memory(_sourceBytes!, fit: BoxFit.contain)
+                        : Container(color: c.surface2)
+                  else ...[
+                    CustomPaint(painter: _CheckerPainter()),
+                    CachedNetworkImage(
+                      imageUrl: AppConfig.absUrl(url),
+                      fit: BoxFit.contain,
+                      placeholder: (_, __) =>
+                          const Center(child: CircularProgressIndicator()),
+                      errorWidget: (_, __, ___) => Icon(
+                        PhosphorIconsRegular.image,
+                        size: 40,
+                        color: c.ink3,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(PhosphorIconsBold.checkCircle,
-                              color: Color(0xFF2FA84F), size: 14),
-                          const SizedBox(width: 5),
-                          const Text(
-                            'Фон удалён',
-                            style: TextStyle(
-                              color: Color(0xFF2FA84F),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                    ),
+                  ],
+                  // "Фон удалён" badge (only on result)
+                  if (!_showOriginal)
+                    Positioned(
+                      bottom: 12,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2FA84F).withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(PhosphorIconsBold.checkCircle,
+                                color: Color(0xFF2FA84F), size: 14),
+                            const SizedBox(width: 5),
+                            const Text(
+                              'Фон удалён',
+                              style: TextStyle(
+                                color: Color(0xFF2FA84F),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  // "До ↔ После" top-right
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: c.surface,
-                        borderRadius: BorderRadius.circular(SeeURadii.pill),
-                        boxShadow: SeeUShadows.sm,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('До', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(PhosphorIconsRegular.arrowsLeftRight, size: 11, color: c.ink3),
-                          ),
-                          Text('После', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
-                        ],
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -730,15 +815,15 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
             onTap: _proceedPhotoToEditor,
             child: Container(
               width: double.infinity,
-              height: 50,
+              height: 52,
               decoration: BoxDecoration(
-                color: SeeUColors.accent,
+                gradient: SeeUGradients.heroOrange,
                 borderRadius: BorderRadius.circular(SeeURadii.pill),
                 boxShadow: [
                   BoxShadow(
-                    color: SeeUColors.accent.withValues(alpha: 0.3),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
+                    color: SeeUColors.accent.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -746,17 +831,17 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(PhosphorIconsRegular.pencilSimple,
+                        color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
                     Text(
-                      'Продолжить',
+                      'Добавить текст и эффекты',
                       style: SeeUTypography.body.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                        fontSize: 15,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(PhosphorIconsRegular.arrowRight,
-                        color: Colors.white, size: 18),
                   ],
                 ),
               ),
@@ -837,7 +922,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(SeeURadii.medium),
               child: Stack(
@@ -883,32 +968,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Builder(builder: (ctx) {
-                      final c = ctx.seeuColors;
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: c.surface,
-                          borderRadius: BorderRadius.circular(SeeURadii.pill),
-                          boxShadow: SeeUShadows.sm,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('До', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Icon(PhosphorIconsRegular.arrowsLeftRight, size: 11, color: c.ink3),
-                            ),
-                            Text('После', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.ink)),
-                          ],
-                        ),
-                      );
-                    }),
-                  ),
                 ],
               ),
             ),
@@ -920,15 +979,15 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
             onTap: _proceedVideoToEditor,
             child: Container(
               width: double.infinity,
-              height: 50,
+              height: 52,
               decoration: BoxDecoration(
-                color: SeeUColors.accent,
+                gradient: SeeUGradients.heroOrange,
                 borderRadius: BorderRadius.circular(SeeURadii.pill),
                 boxShadow: [
                   BoxShadow(
-                    color: SeeUColors.accent.withValues(alpha: 0.3),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
+                    color: SeeUColors.accent.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -936,17 +995,17 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(PhosphorIconsRegular.pencilSimple,
+                        color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
                     Text(
-                      'Продолжить',
+                      'Добавить текст и эффекты',
                       style: SeeUTypography.body.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                        fontSize: 15,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const Icon(PhosphorIconsRegular.arrowRight,
-                        color: Colors.white, size: 18),
                   ],
                 ),
               ),
@@ -1016,7 +1075,6 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                   'кадр ${_formatDuration(position)}',
                   style: SeeUTypography.caption.copyWith(
                     color: c.ink3,
-                    fontFamily: 'JetBrains Mono',
                     fontSize: 12,
                   ),
                 ),
@@ -1097,10 +1155,7 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '0:00',
-                style: TextStyle(fontSize: 11, color: c.ink4),
-              ),
+              Text('0:00', style: TextStyle(fontSize: 11, color: c.ink4)),
               Text(
                 _formatDuration(position),
                 style: TextStyle(
@@ -1109,10 +1164,8 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
                   color: SeeUColors.accent,
                 ),
               ),
-              Text(
-                _formatDuration(duration),
-                style: TextStyle(fontSize: 11, color: c.ink4),
-              ),
+              Text(_formatDuration(duration),
+                  style: TextStyle(fontSize: 11, color: c.ink4)),
             ],
           ),
         ),
@@ -1162,11 +1215,7 @@ class _SegTab extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: active ? c.ink : c.ink3,
-              ),
+              Icon(icon, size: 16, color: active ? c.ink : c.ink3),
               const SizedBox(width: 5),
               Text(
                 label,
@@ -1239,6 +1288,7 @@ class _PickerCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   final SeeUThemeColors c;
+  final bool accent;
 
   const _PickerCard({
     required this.icon,
@@ -1246,6 +1296,7 @@ class _PickerCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     required this.c,
+    this.accent = false,
   });
 
   @override
@@ -1253,23 +1304,44 @@ class _PickerCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 76,
+        height: 84,
         decoration: BoxDecoration(
-          color: c.surface,
+          color: accent ? c.accentSoft : c.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: c.line, width: 0.5),
+          border: Border.all(
+            color: accent
+                ? SeeUColors.accent.withValues(alpha: 0.25)
+                : c.line,
+            width: 0.5,
+          ),
         ),
         child: Row(
           children: [
             const SizedBox(width: 16),
             Container(
-              width: 44,
-              height: 44,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
-                color: c.surface2,
-                borderRadius: BorderRadius.circular(12),
+                gradient: accent
+                    ? SeeUGradients.heroOrange
+                    : null,
+                color: accent ? null : c.surface2,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: accent
+                    ? [
+                        BoxShadow(
+                          color: SeeUColors.accent.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
               ),
-              child: Icon(icon, size: 22, color: c.ink),
+              child: Icon(
+                icon,
+                size: 22,
+                color: accent ? Colors.white : c.ink,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1282,7 +1354,7 @@ class _PickerCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: c.ink,
+                      color: accent ? SeeUColors.accent : c.ink,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -1293,7 +1365,11 @@ class _PickerCard extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
+            Icon(
+              PhosphorIcons.caretRight(),
+              size: 16,
+              color: accent ? SeeUColors.accent : c.ink4,
+            ),
             const SizedBox(width: 16),
           ],
         ),

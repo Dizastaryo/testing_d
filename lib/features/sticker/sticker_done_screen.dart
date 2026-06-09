@@ -58,10 +58,36 @@ class StickerDoneScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ── Success banner ────────────────────────────────
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8, top: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2FA84F).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(SeeURadii.medium),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(PhosphorIconsBold.checkCircle,
+                              color: Color(0xFF2FA84F), size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Стикер готов — добавьте в набор и отправьте!',
+                            style: SeeUTypography.caption.copyWith(
+                              color: const Color(0xFF2FA84F),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     // ── Preview ─────────────────────────────────────
                     Center(
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 14, bottom: 22),
+                        padding: const EdgeInsets.only(top: 10, bottom: 22),
                         child: _StickerPreview(imageUrl: imageUrl),
                       ),
                     ),
@@ -118,16 +144,22 @@ class _StickerPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size.width * 0.66;
     return Container(
-      width: 200,
-      height: 200,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(SeeURadii.medium),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 36,
-            offset: const Offset(0, 12),
+            color: SeeUColors.accent.withValues(alpha: 0.18),
+            blurRadius: 40,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -144,7 +176,7 @@ class _StickerPreview extends StatelessWidget {
             ),
             errorWidget: (_, __, ___) => const Icon(
               PhosphorIconsRegular.image,
-              size: 48,
+              size: 56,
               color: Colors.grey,
             ),
           ),

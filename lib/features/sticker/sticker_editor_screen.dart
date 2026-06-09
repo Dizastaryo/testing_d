@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -205,13 +206,41 @@ class _StickerEditorScreenState extends ConsumerState<StickerEditorScreen> {
                   child: AspectRatio(
                     aspectRatio: 1,
                     child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: RepaintBoundary(
-                        key: _boundaryKey,
-                        child: StickerCanvas(
-                          backgroundImage: NetworkImage(absUrl),
-                          onEditText: (_) => _focusNode.requestFocus(),
-                        ),
+                      padding: const EdgeInsets.all(12),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // Boundary indicator shadow/glow
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: SeeUColors.accent.withValues(alpha: 0.18),
+                                  blurRadius: 20,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Actual sticker canvas
+                          RepaintBoundary(
+                            key: _boundaryKey,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: StickerCanvas(
+                                backgroundImage: NetworkImage(absUrl),
+                                onEditText: (_) => _focusNode.requestFocus(),
+                              ),
+                            ),
+                          ),
+                          // Dashed boundary frame on top
+                          IgnorePointer(
+                            child: CustomPaint(
+                              painter: _BoundaryPainter(),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -336,9 +365,13 @@ class _TextInputRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.seeuColors;
     return Container(
-      color: const Color(0xFF1A1A1A),
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line, width: 0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: SafeArea(
         top: false,
         child: Row(
@@ -347,17 +380,17 @@ class _TextInputRow extends StatelessWidget {
               child: TextField(
                 controller: controller,
                 focusNode: focusNode,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+                style: SeeUTypography.body.copyWith(color: c.ink, fontSize: 16),
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => onDone(),
                 decoration: InputDecoration(
-                  hintText: 'Введите текст...',
-                  hintStyle: const TextStyle(
-                    color: Colors.white38,
+                  hintText: 'Введите текст…',
+                  hintStyle: SeeUTypography.body.copyWith(
+                    color: c.ink4,
                     fontSize: 16,
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF2A2A2A),
+                  fillColor: c.surface2,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -369,13 +402,21 @@ class _TextInputRow extends StatelessWidget {
                 ),
               ),
             ),
-            TextButton(
-              onPressed: onDone,
-              child: Text(
-                'Готово',
-                style: TextStyle(
+            GestureDetector(
+              onTap: onDone,
+              child: Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
                   color: SeeUColors.accent,
-                  fontWeight: FontWeight.w700,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Готово',
+                  style: SeeUTypography.body.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -384,4 +425,43 @@ class _TextInputRow extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Sticker boundary dashed painter ─────────────────────────────
+
+class _BoundaryPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const radius = Radius.circular(16);
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final rrect = RRect.fromRectAndRadius(rect, radius);
+
+    final paint = Paint()
+      ..color = SeeUColors.accent.withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    // Draw dashed rounded rectangle
+    const dashLen = 6.0;
+    const gapLen = 5.0;
+    final path = Path()..addRRect(rrect);
+    final metrics = path.computeMetrics().toList();
+
+    for (final metric in metrics) {
+      double distance = 0;
+      bool draw = true;
+      while (distance < metric.length) {
+        final step = draw ? dashLen : gapLen;
+        final end = math.min(distance + step, metric.length);
+        if (draw) {
+          canvas.drawPath(metric.extractPath(distance, end), paint);
+        }
+        distance = end;
+        draw = !draw;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
