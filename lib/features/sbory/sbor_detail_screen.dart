@@ -435,7 +435,6 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     IconData? icon;
     String? title;
     String? sub;
-    bool showCancel = false;
 
     if (isOrganizer) {
       bg = SeeUColors.accent.withValues(alpha: 0.12);
@@ -457,7 +456,6 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       icon = PhosphorIcons.hourglassMedium();
       title = 'Заявка на рассмотрении';
       sub = 'Организатор обычно отвечает в течение часа';
-      showCancel = true;
     } else if (s.isFull) {
       bg = c.surface2;
       fg = c.ink3;
@@ -495,17 +493,6 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 ],
               ),
             ),
-            if (showCancel)
-              GestureDetector(
-                onTap: _joining ? null : () => _cancelRequest(s),
-                child: Text(
-                  'Отменить',
-                  style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600,
-                    color: SeeUColors.error,
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -792,10 +779,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 ),
                 const SizedBox(height: 10),
                 // ── Joined: secondary action row ──
-                if (isOrganizer)
+                if (isOrganizer) ...[
+                  // Organizer: [Заявки] [Редактировать] в ряд
                   Row(
                     children: [
-                      // Заявки на вступление (всегда видна организатору)
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
@@ -803,7 +790,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                             if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
                           },
                           child: Container(
-                            height: 44,
+                            height: 46,
                             decoration: BoxDecoration(
                               color: s.pendingRequestsCount > 0
                                   ? SeeUColors.accent.withValues(alpha: 0.10)
@@ -820,7 +807,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                               children: [
                                 Icon(
                                   PhosphorIcons.usersThree(),
-                                  size: 15,
+                                  size: 16,
                                   color: s.pendingRequestsCount > 0 ? SeeUColors.accent : c.ink2,
                                 ),
                                 const SizedBox(width: 6),
@@ -829,7 +816,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                                       ? 'Заявки · ${s.pendingRequestsCount}'
                                       : 'Заявки',
                                   style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600,
+                                    fontSize: 14, fontWeight: FontWeight.w600,
                                     color: s.pendingRequestsCount > 0 ? SeeUColors.accent : c.ink2,
                                   ),
                                 ),
@@ -838,8 +825,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      // Редактировать
+                      const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
@@ -847,7 +833,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                             if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
                           },
                           child: Container(
-                            height: 44,
+                            height: 46,
                             decoration: BoxDecoration(
                               color: c.surface,
                               borderRadius: BorderRadius.circular(14),
@@ -856,46 +842,12 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(PhosphorIcons.pencilSimple(), size: 15, color: c.ink2),
+                                Icon(PhosphorIcons.pencilSimple(), size: 16, color: c.ink2),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Редактировать',
                                   style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600, color: c.ink2,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // Отменить сбор
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _cancelSbor(s),
-                          child: Container(
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: SeeUColors.error.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: SeeUColors.error.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  PhosphorIcons.prohibit(),
-                                  size: 15, color: SeeUColors.error,
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'Отменить сбор',
-                                  style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600,
-                                    color: SeeUColors.error,
+                                    fontSize: 14, fontWeight: FontWeight.w600, color: c.ink2,
                                   ),
                                 ),
                               ],
@@ -904,39 +856,42 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                         ),
                       ),
                     ],
-                  )
-                else
-                  // Participant: "Выйти из сбора" secondary button
+                  ),
+                  const SizedBox(height: 2),
+                  // Отменить сбор — деструктивная текст-кнопка
                   GestureDetector(
-                    onTap: () => _leaveSbor(s),
-                    child: Container(
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: SeeUColors.error.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: SeeUColors.error.withValues(alpha: 0.3),
+                    onTap: () => _cancelSbor(s),
+                    child: SizedBox(
+                      height: 36,
+                      child: Center(
+                        child: Text(
+                          'Отменить сбор',
+                          style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                            color: SeeUColors.error,
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            PhosphorIcons.signOut(),
-                            size: 15, color: SeeUColors.error,
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Выйти из сбора',
-                            style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600,
-                              color: SeeUColors.error,
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ),
+                ] else ...[
+                  // Участник: "Выйти из сбора" текст-кнопка
+                  GestureDetector(
+                    onTap: () => _leaveSbor(s),
+                    child: SizedBox(
+                      height: 36,
+                      child: Center(
+                        child: Text(
+                          'Выйти из сбора',
+                          style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                            color: SeeUColors.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ] else ...[
                 // ── Not joined: request flow ──
                 _buildJoinRequestButton(c, s),
@@ -959,37 +914,54 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     }
 
     if (status == 'pending') {
-      return GestureDetector(
-        onTap: _joining ? null : () => _cancelRequest(s),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          height: 52,
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: c.line),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_joining)
-                const SizedBox(
-                  width: 18, height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else ...[
-                Icon(PhosphorIcons.hourglassMedium(), size: 18, color: c.ink2),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Статус-карточка (не кнопка)
+          Container(
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(PhosphorIcons.hourglassMedium(), size: 18, color: const Color(0xFF9A6B00)),
                 const SizedBox(width: 8),
-                Text(
-                  'Заявка отправлена · отозвать',
+                const Text(
+                  'Заявка на рассмотрении',
                   style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: c.ink2,
+                    fontSize: 14, fontWeight: FontWeight.w600,
+                    color: Color(0xFF9A6B00),
                   ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 2),
+          // Отозвать заявку — деструктивная текст-кнопка
+          GestureDetector(
+            onTap: _joining ? null : () => _cancelRequest(s),
+            child: SizedBox(
+              height: 36,
+              child: Center(
+                child: _joining
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        'Отозвать заявку',
+                        style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600,
+                          color: SeeUColors.error,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
