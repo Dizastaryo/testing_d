@@ -115,6 +115,19 @@ class StickerListNotifier
     return sticker;
   }
 
+  /// Uploads PNG [bytes] to media storage and returns the URL (no sticker registration).
+  Future<String> uploadMedia(Uint8List bytes) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        bytes,
+        filename: 'touchup.png',
+        contentType: MediaType('image', 'png'),
+      ),
+    });
+    final resp = await _api.post(ApiEndpoints.mediaUpload, data: form);
+    return resp.data['data']['url'] as String;
+  }
+
   Future<void> deleteSticker(String id) async {
     await _api.delete(ApiEndpoints.stickerById(id));
     final current = state.valueOrNull ?? [];

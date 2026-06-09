@@ -94,6 +94,24 @@ class StickerEditorNotifier extends StateNotifier<StickerEditorState> {
     ));
   }
 
+  /// Добавляет слой с одним эмодзи — большой размер, без обводки.
+  void addEmojiLayer(String emoji) {
+    final layer = TextLayer(
+      id: _newId(),
+      text: emoji,
+      fontSize: 56.0,
+      fontFamily: '',
+      color: Colors.white,
+      hasStroke: false,
+      hasShadow: false,
+      position: const Offset(0.5, 0.5),
+    );
+    _commit(state.copyWith(
+      layers: [...state.layers, layer],
+      activeLayerId: layer.id,
+    ));
+  }
+
   void setActive(String? id) {
     // Смена активного слоя не попадает в историю.
     state = state.copyWith(activeLayerId: id);
