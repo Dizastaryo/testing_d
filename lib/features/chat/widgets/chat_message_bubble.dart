@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/design/design.dart';
@@ -636,6 +638,20 @@ class ChatMessageBubble extends StatelessWidget {
         isDelivered: message.isDelivered,
       );
     }
+    if (message.kind == 'file' && message.attachedMediaUrl.isNotEmpty) {
+      final fileUrl = message.attachedMediaUrl.startsWith('http')
+          ? message.attachedMediaUrl
+          : '${AppConfig.apiOrigin}${message.attachedMediaUrl}';
+      // filename: prefer message text (we send it as text), fallback to URL path
+      final fileName = message.text.isNotEmpty
+          ? message.text
+          : fileUrl.split('/').last;
+      return _ChatFileBubble(
+        fileName: fileName,
+        fileUrl: fileUrl,
+        isMine: isMine,
+      );
+    }
     return _buildMixedText(
       message.text,
       textColor: isMine ? Colors.white : c.ink,
@@ -1074,6 +1090,125 @@ class _ChatTtlCountdownState extends ConsumerState<ChatTtlCountdown> {
         ),
         const SizedBox(width: 3),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File attachment bubble
+// ---------------------------------------------------------------------------
+
+class _ChatFileBubble extends StatelessWidget {
+  final String fileName;
+  final String fileUrl;
+  final bool isMine;
+
+  const _ChatFileBubble({
+    required this.fileName,
+    required this.fileUrl,
+    required this.isMine,
+  });
+
+  String get _ext {
+    final dot = fileName.lastIndexOf('.');
+    return dot >= 0 ? fileName.substring(dot + 1).toUpperCase() : 'FILE';
+  }
+
+  Future<void> _open(BuildContext context) async {
+    HapticFeedback.lightImpact();
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = Uri.parse(fileUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Не удалось открыть файл')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final ext = _ext;
+
+    return GestureDetector(
+      onTap: () => _open(context),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // File icon with extension label
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: isMine
+                  ? Colors.white.withValues(alpha: 0.20)
+                  : SeeUColors.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  PhosphorIconsRegular.file,
+                  size: 26,
+                  color: isMine ? Colors.white : SeeUColors.accent,
+                ),
+                if (ext.isNotEmpty)
+                  Positioned(
+                    bottom: 7,
+                    child: Text(
+                      ext.length > 4 ? ext.substring(0, 4) : ext,
+                      style: TextStyle(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w800,
+                        color: isMine ? Colors.white : SeeUColors.accent,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isMine ? Colors.white : c.ink,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      PhosphorIconsRegular.arrowSquareOut,
+                      size: 12,
+                      color: isMine ? Colors.white70 : c.ink3,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Открыть',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isMine ? Colors.white70 : c.ink3,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
