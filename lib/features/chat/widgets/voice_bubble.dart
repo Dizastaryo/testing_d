@@ -342,13 +342,15 @@ class _VoiceBubbleState extends ConsumerState<VoiceBubble> {
                         }
                       },
                       child: SizedBox(
+                        width: double.infinity,
                         height: 40,
                         child: CustomPaint(
+                          size: Size(w, 40),
                           painter: _StaticWavePainter(
                             samples: widget.waveformSamples ?? const [],
                             progress: _seekIndicator ?? progress,
                             colorBase: widget.isMine
-                                ? Colors.white.withValues(alpha: 0.45)
+                                ? Colors.white.withValues(alpha: 0.65)
                                 : c.ink3,
                             colorPlayed: widget.isMine
                                 ? Colors.white
@@ -466,11 +468,26 @@ class _StaticWavePainter extends CustomPainter {
     this.showPlaybackKnob = false,
   });
 
+  /// Генерирует естественную синусоидальную форму волны для случая когда
+  /// реальных samples нет — визуально напоминает голосовое сообщение.
+  static double _fallbackSample(int i, int n) {
+    final t = i / n;
+    // Несколько слоёв синусоид → органичный "voice-like" рисунок.
+    final v = 0.25 +
+        0.35 * math.sin(t * math.pi * 6.5 + 0.8) *
+            math.sin(t * math.pi * 2.1) +
+        0.15 * math.sin(t * math.pi * 13.0 + 1.2) +
+        0.10 * math.sin(t * math.pi * 3.7 + 0.4);
+    return v.clamp(0.08, 1.0);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
     const barW = 3.0;
     const gap = 2.0;
     final n = ((size.width + gap) / (barW + gap)).floor();
+    if (n <= 0) return;
     final centerY = size.height / 2;
     final progressF = progress * n; // fractional bar index
     final playedBars = progressF.floor();
@@ -478,13 +495,12 @@ class _StaticWavePainter extends CustomPainter {
     for (var i = 0; i < n; i++) {
       double v;
       if (samples.isEmpty) {
-        // Плоская линия — не вводим юзера в заблуждение.
-        v = 0.35;
+        v = _fallbackSample(i, n);
       } else {
         final idx = ((i / n) * samples.length).floor().clamp(0, samples.length - 1);
         v = samples[idx];
       }
-      final h = math.max(3.0, v * size.height * 0.95);
+      final h = math.max(4.0, v * size.height * 0.90);
       final x = i * (barW + gap);
 
       // Плавный переход на границе воспроизведения.

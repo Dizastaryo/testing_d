@@ -29,20 +29,6 @@ class StickerCreatorScreen extends ConsumerStatefulWidget {
 
 enum _Mode { none, photo, video }
 
-// Gradient palettes for gallery grid decoration cells.
-const List<List<Color>> _kGradients = [
-  [Color(0xFFFF8060), Color(0xFFC04CFD)],
-  [Color(0xFF5DB1FF), Color(0xFF1AC8B8)],
-  [Color(0xFFFFB547), Color(0xFFFF5A3C)],
-  [Color(0xFF2FA84F), Color(0xFF5DB1FF)],
-  [Color(0xFFC04CFD), Color(0xFFFF3B6B)],
-  [Color(0xFF7B61FF), Color(0xFF5DB1FF)],
-  [Color(0xFF1AC8B8), Color(0xFFFFB547)],
-  [Color(0xFFFF3B6B), Color(0xFFFFB547)],
-  [Color(0xFFFF5A3C), Color(0xFFFFB547)],
-  [Color(0xFF5DB1FF), Color(0xFFC04CFD)],
-  [Color(0xFF2FA84F), Color(0xFF1AC8B8)],
-];
 
 class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   _Mode _mode = _Mode.none;
@@ -90,6 +76,23 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
       _removingBg = false;
       _error = null;
     });
+  }
+
+  Future<void> _pickVideoFromCamera() async {
+    final XFile? file = await _picker.pickVideo(source: ImageSource.camera);
+    if (file == null || !mounted) return;
+    setState(() {
+      _mode = _Mode.video;
+      _sourceBytes = null;
+      _bgRemovedUrl = null;
+      _removingBg = false;
+      _videoPath = file.path;
+      _videoSliderValue = 0;
+      _videoReady = false;
+      _isRemoving = false;
+      _error = null;
+    });
+    await _initVideoPlayer(file.path);
   }
 
   Future<void> _pickVideo() async {
@@ -319,8 +322,8 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
 
     String title = 'Новый стикер';
     if (isVideoFrame) title = 'Выбор кадра';
-    if (_removingBg || _isRemoving) title = 'Удаление фона';
-    if (isResult || isVideoResult) title = 'Удаление фона';
+    if (_removingBg || _isRemoving) title = 'Удаление фона…';
+    if (isResult || isVideoResult) title = 'Фон удалён';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
@@ -352,27 +355,8 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
               ),
             ),
           ),
-          if (!isProcessing && !canGoBack && !isVideoResult)
-            isVideoFrame
-                ? Text('из видео', style: TextStyle(fontSize: 13, color: c.ink3))
-                : GestureDetector(
-                    onTap: () {},
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Недавние',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: c.ink2,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(PhosphorIcons.caretDown(), size: 13, color: c.ink2),
-                      ],
-                    ),
-                  ),
+          if (!isProcessing && !canGoBack && !isVideoResult && isVideoFrame)
+            Text('из видео', style: TextStyle(fontSize: 13, color: c.ink3)),
         ],
       ),
     );
@@ -454,92 +438,33 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
 
   Widget _buildGalleryGrid(SeeUThemeColors c) {
     final bool isVideo = _gallerySegment == 1;
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      physics: const ClampingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 3,
-        mainAxisSpacing: 3,
-      ),
-      itemCount: 12,
-      itemBuilder: (ctx, i) {
-        // Camera cell
-        if (i == 0) {
-          return GestureDetector(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      child: Column(
+        children: [
+          // Camera card
+          _PickerCard(
+            icon: PhosphorIconsRegular.camera,
+            title: isVideo ? 'Снять видео' : 'Сфотографировать',
+            subtitle: 'Открыть камеру',
             onTap: isVideo
-                ? _pickVideo
+                ? _pickVideoFromCamera
                 : () => _pickPhoto(source: ImageSource.camera),
-            child: Container(
-              color: c.ink,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(PhosphorIconsBold.camera, color: Colors.white, size: 26),
-                  const SizedBox(height: 4),
-                  Text(
-                    isVideo ? 'Снять' : 'Камера',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        // Selected photo cell (index 1)
-        final bool isSelected = i == 1 && _sourceBytes != null;
-        final int gradIdx = (i - 1) % _kGradients.length;
-
-        return GestureDetector(
-          onTap: isVideo ? _pickVideo : _pickPhoto,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (isSelected && _sourceBytes != null)
-                Image.memory(_sourceBytes!, fit: BoxFit.cover)
-              else
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: _kGradients[gradIdx],
-                    ),
-                  ),
-                ),
-              if (isSelected)
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: SeeUColors.accent, width: 3),
-                  ),
-                ),
-              if (isSelected)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    width: 21,
-                    height: 21,
-                    decoration: BoxDecoration(
-                      color: SeeUColors.accent,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Center(
-                      child: Icon(PhosphorIconsBold.check,
-                          color: Colors.white, size: 11),
-                    ),
-                  ),
-                ),
-            ],
+            c: c,
           ),
-        );
-      },
+          const SizedBox(height: 12),
+          // Gallery card
+          _PickerCard(
+            icon: isVideo
+                ? PhosphorIconsRegular.filmStrip
+                : PhosphorIconsRegular.images,
+            title: isVideo ? 'Видео из галереи' : 'Фото из галереи',
+            subtitle: 'Выбрать из медиатеки',
+            onTap: isVideo ? _pickVideo : () => _pickPhoto(),
+            c: c,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1146,70 +1071,52 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen> {
   }
 
   Widget _buildVideoTimeline(SeeUThemeColors c) {
-    return SizedBox(
-      height: 48,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Colored segments
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Row(
-              children: List.generate(_kGradients.length, (i) {
-                return Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          _kGradients[i][0],
-                          _kGradients[i][0].withValues(alpha: 0.6),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
+    final duration = _controller!.value.duration;
+    final position = Duration(
+      milliseconds: (duration.inMilliseconds * _videoSliderValue).round(),
+    );
+    return Column(
+      children: [
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            activeTrackColor: SeeUColors.accent,
+            inactiveTrackColor: c.line,
+            thumbColor: Colors.white,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayColor: SeeUColors.accent.withValues(alpha: 0.12),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
           ),
-          // Drag handle
-          Positioned(
-            left: _videoSliderValue.clamp(0.01, 0.99) *
-                    (MediaQuery.of(context).size.width - 32) -
-                3,
-            top: -3,
-            bottom: -3,
-            child: GestureDetector(
-              onHorizontalDragUpdate: (details) {
-                final double width =
-                    MediaQuery.of(context).size.width - 32;
-                final double delta = details.delta.dx / width;
-                final double next = (_videoSliderValue + delta).clamp(0.0, 1.0);
-                _onVideoSliderChanged(next);
-              },
-              child: Container(
-                width: 5,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: SeeUColors.accent,
-                      spreadRadius: 2,
-                    ),
-                    const BoxShadow(
-                      color: Color(0x4D000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+          child: Slider(
+            value: _videoSliderValue,
+            onChanged: _onVideoSliderChanged,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '0:00',
+                style: TextStyle(fontSize: 11, color: c.ink4),
+              ),
+              Text(
+                _formatDuration(position),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SeeUColors.accent,
                 ),
               ),
-            ),
+              Text(
+                _formatDuration(duration),
+                style: TextStyle(fontSize: 11, color: c.ink4),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1318,6 +1225,77 @@ class _SecondaryBtn extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Picker card ─────────────────────────────────────────────────
+
+class _PickerCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final SeeUThemeColors c;
+
+  const _PickerCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 76,
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: c.line, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: c.surface2,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 22, color: c.ink),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: c.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: c.ink3),
+                  ),
+                ],
+              ),
+            ),
+            Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
+            const SizedBox(width: 16),
+          ],
         ),
       ),
     );

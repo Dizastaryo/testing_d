@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
+import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/material.dart';
@@ -50,6 +52,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasText = false;
   bool _isUploading = false;
   bool _recording = false;
+  // Round video message (Telegram-style): double-tap mic → switch to camera mode,
+  // long-press camera icon → record circular video message.
+  bool _videoMsgMode = false;
+  bool _recordingVideoMsg = false;
+  int _recordingSeconds = 0;
+  Timer? _recordingTimer;
+  CameraController? _videoCamController;
   ReplyPreview? _replyingTo;
   String? _editingMessageId;
   // Оригинальный текст редактируемого сообщения — показывается в edit-банере,
@@ -91,6 +100,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _itemPositionsListener.itemPositions
         .removeListener(_onScrollPositionsChanged);
     _flashTimer?.cancel();
+    _recordingTimer?.cancel();
+    _videoCamController?.dispose();
     _textController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -211,92 +222,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Bottom-sheet с поиском по этому чату (CHAT-3). Debounced API + результаты.
   /// CHAT-3.1: тап на результат закрывает sheet, прокручивает chat к
   /// сообщению через ScrollablePositionedList + flash-highlight 2 сек.
-  void _showChatMenu(SeeUThemeColors c) {
-    final chats = ref.read(chatListProvider).chats;
-    final chat = chats
-        .where((ch) => ch.id == widget.chatId)
-        .cast<Chat?>()
-        .firstWhere((_) => true, orElse: () => null);
-    final isGroup = chat?.isGroup ?? false;
-
-    // Для group-чата: звонки + выйти. Поиск убран (есть отдельная кнопка).
-    if (!isGroup) return;
-    final me = ref.read(authProvider).user;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: c.line,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Голосовой звонок
-            if (me != null)
-              ListTile(
-                leading: Icon(PhosphorIconsRegular.phone, color: c.ink),
-                title: const Text('Голосовой звонок'),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  HapticFeedback.mediumImpact();
-                  GroupCallService.instance.startGroupCall(
-                    chatId: widget.chatId,
-                    chatTitle: chat!.title,
-                    myId: me.id,
-                    myUsername: me.username,
-                    kind: CallKind.voice,
-                  );
-                },
-              ),
-            // Видеозвонок
-            if (me != null)
-              ListTile(
-                leading: Icon(PhosphorIconsRegular.videoCamera, color: c.ink),
-                title: const Text('Видеозвонок'),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  HapticFeedback.mediumImpact();
-                  GroupCallService.instance.startGroupCall(
-                    chatId: widget.chatId,
-                    chatTitle: chat!.title,
-                    myId: me.id,
-                    myUsername: me.username,
-                    kind: CallKind.video,
-                  );
-                },
-              ),
-            Divider(height: 1, color: c.line),
-            ListTile(
-              leading: const Icon(PhosphorIconsRegular.signOut,
-                  color: SeeUColors.error),
-              title: Text(
-                chat?.isOrganizer == true
-                    ? 'Отменить сбор'
-                    : chat?.sborId != null
-                        ? 'Выйти из сбора'
-                        : 'Выйти из группы',
-                style: const TextStyle(color: SeeUColors.error),
-              ),
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                _leaveGroup(
-                    sborId: chat?.sborId,
-                    isOrganizer: chat?.isOrganizer == true);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+  // Кнопка звонка для group-чата в хедере.
+  Widget _groupCallHeaderButton(SeeUThemeColors c, Chat chat, CallKind kind) {
+    final isVoice = kind == CallKind.voice;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        final me = ref.read(authProvider).user;
+        if (me == null) return;
+        GroupCallService.instance.startGroupCall(
+          chatId: widget.chatId,
+          chatTitle: chat.title,
+          myId: me.id,
+          myUsername: me.username,
+          kind: kind,
+        );
+      },
+      child: SizedBox(
+        width: 44, height: 44,
+        child: Icon(
+          isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+          size: 22, color: c.ink,
         ),
       ),
     );
@@ -375,11 +321,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
       }
       if (mounted) {
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go('/chat');
-        }
+        _focusNode.unfocus();
+        context.go('/chat');
       }
     } catch (e) {
       if (!mounted) return;
@@ -389,6 +332,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _showSearchSheet() {
+    _focusNode.unfocus();
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -471,6 +415,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Bottom-sheet выбора TTL (CHAT-11). Опции: off / 1h / 24h / 7d.
   void _showTtlPicker() {
     HapticFeedback.selectionClick();
+    _focusNode.unfocus();
     final c = context.seeuColors;
     showModalBottomSheet<void>(
       context: context,
@@ -708,6 +653,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Показывает меню выбора вложения: 8 опций в 4-column grid.
   void _showAttachMenu() {
     if (_isUploading) return;
+    _focusNode.unfocus();
     final c = context.seeuColors;
     showModalBottomSheet<void>(
       context: context,
@@ -968,6 +914,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   };
 
   void _showExpandedEmojiPicker(String messageId) {
+    _focusNode.unfocus();
     final c = context.seeuColors;
     showModalBottomSheet<void>(
       context: context,
@@ -1045,6 +992,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _onMessageLongPress(String messageId) {
     HapticFeedback.mediumImpact();
+    _focusNode.unfocus();
     final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
     ChatMessage? msg;
     for (final m in messages) {
@@ -1279,8 +1227,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               colors: [c.bg, c.surface2.withValues(alpha: 0.5)],
             ),
           ),
-          child: Column(
+          child: Stack(
             children: [
+              Column(
+                children: [
               // A2: frosted glass header
               ClipRect(
                 child: BackdropFilter(
@@ -1305,6 +1255,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             GestureDetector(
                               onTap: () {
                                 HapticFeedback.selectionClick();
+                                _focusNode.unfocus();
                                 if (context.canPop()) {
                                   context.pop();
                                 } else {
@@ -1489,20 +1440,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               _callHeaderButton(c, otherUser, CallKind.voice),
                               _callHeaderButton(c, otherUser, CallKind.video),
                             ],
-                            // Для группы: только ⋮ (звонки перенесены внутрь меню)
-                            if (chat?.isGroup == true)
-                              GestureDetector(
-                                onTap: () => _showChatMenu(c),
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    PhosphorIconsRegular.dotsThreeVertical,
-                                    size: 22,
-                                    color: c.ink,
-                                  ),
-                                ),
-                              ),
+                            // Для группы: звонок + видео прямо в хедере (как у direct)
+                            if (chat?.isGroup == true) ...[
+                              _groupCallHeaderButton(c, chat!, CallKind.voice),
+                              _groupCallHeaderButton(c, chat!, CallKind.video),
+                            ],
                           ],
                         ),
                       ),
@@ -1573,8 +1515,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               // Input bar
               _buildInputBar(),
-            ],
-          ),
+                ], // Column children
+              ), // Column
+              // Round video message overlay
+              if (_recordingVideoMsg) _buildRoundVideoOverlay(),
+            ], // Stack children
+          ), // Stack
         ), // close A1 gradient Container
       ),
     );
@@ -1735,6 +1681,212 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           child: bubble,
         );
       },
+    );
+  }
+
+  // ─── Round video message (Telegram-style) ──────────────────────────────────
+
+  String _fmtRecordingTime(int sec) {
+    final m = (sec ~/ 60).toString().padLeft(2, '0');
+    final s = (sec % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  Future<void> _startVideoRecording() async {
+    if (_recordingVideoMsg) return;
+    HapticFeedback.mediumImpact();
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+      final front = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final ctrl = CameraController(
+        front,
+        ResolutionPreset.medium,
+        enableAudio: true,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await ctrl.initialize();
+      if (!mounted) {
+        ctrl.dispose();
+        return;
+      }
+      _videoCamController = ctrl;
+      setState(() {
+        _recordingVideoMsg = true;
+        _recordingSeconds = 0;
+      });
+      await ctrl.startVideoRecording();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= 60) _stopVideoRecording(); // max 60s
+      });
+    } catch (_) {
+      _videoCamController?.dispose();
+      _videoCamController = null;
+      if (mounted) setState(() => _recordingVideoMsg = false);
+    }
+  }
+
+  Future<void> _stopVideoRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    final ctrl = _videoCamController;
+    _videoCamController = null;
+    if (mounted) setState(() => _recordingVideoMsg = false);
+    if (ctrl == null) return;
+    try {
+      if (ctrl.value.isRecordingVideo) {
+        final file = await ctrl.stopVideoRecording();
+        ctrl.dispose();
+        if (_recordingSeconds < 1) return; // too short — discard
+        await _uploadAndSendVideoMsg(file.path);
+      } else {
+        ctrl.dispose();
+      }
+    } catch (_) {
+      ctrl.dispose();
+    }
+  }
+
+  Future<void> _uploadAndSendVideoMsg(String filePath) async {
+    if (_isUploading) return;
+    setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      final filename = filePath.split('/').last;
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          filePath,
+          filename: filename,
+          contentType: MediaType('video', 'mp4'),
+        ),
+      });
+      final upload = await api.post(ApiEndpoints.mediaUpload, data: formData);
+      final url = upload.data['data']['url'] as String;
+      final reply = _replyingTo;
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'video',
+            replyTo: reply,
+          );
+      if (reply != null && mounted) setState(() => _replyingTo = null);
+      _scrollToBottom();
+    } on DioException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${apiErrorMessage(e)}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Не удалось: ${friendlyError(e)}')));
+    } finally {
+      // Clean up temp file
+      try { File(filePath).deleteSync(); } catch (_) {}
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Widget _buildRoundVideoOverlay() {
+    final ctrl = _videoCamController;
+    final initialized = ctrl?.value.isInitialized == true;
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.88),
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Recording timer
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFF3B3B),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _fmtRecordingTime(_recordingSeconds),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              // Circular camera preview with progress ring
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Progress ring (max 60s)
+                  SizedBox(
+                    width: 276,
+                    height: 276,
+                    child: CircularProgressIndicator(
+                      value: _recordingSeconds / 60.0,
+                      strokeWidth: 4,
+                      backgroundColor: Colors.white.withValues(alpha: 0.15),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF5A3C)),
+                    ),
+                  ),
+                  // Circle camera preview
+                  Container(
+                    width: 260,
+                    height: 260,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 2,
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: initialized
+                          ? CameraPreview(ctrl!)
+                          : Container(
+                              color: const Color(0xFF1A1A1A),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white54,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 36),
+              // Hint
+              Text(
+                'Отпустите для отправки',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Макс. 60 секунд',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1914,7 +2066,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             minWidth: 40,
                             minHeight: 36,
                           ),
-                          // Camera (empty) or Send (typing) — RIGHT inside field
+                          // Send button — only when typing
                           suffixIcon: _hasText
                               ? GestureDetector(
                                   behavior: HitTestBehavior.opaque,
@@ -1936,18 +2088,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     ),
                                   ),
                                 )
-                              : GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: _attachFromCamera,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    child: Icon(
-                                      PhosphorIconsRegular.camera,
-                                      size: 20,
-                                      color: c.ink2,
-                                    ),
-                                  ),
-                                ),
+                              : null,
                           suffixIconConstraints: const BoxConstraints(
                             minWidth: 40,
                             minHeight: 36,
@@ -1957,21 +2098,51 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                     ),
                   ),
-                  // External mic — only when not typing
+                  // External mic / video-msg button — only when not typing
                   if (!_hasText) ...[
                     const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () => setState(() => _recording = true),
-                      child: SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: Icon(
-                          PhosphorIconsRegular.microphone,
-                          size: 22,
-                          color: c.ink2,
+                    if (_videoMsgMode)
+                      // Camera icon: long-press → record round video, double-tap → back to mic
+                      GestureDetector(
+                        onDoubleTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _videoMsgMode = false);
+                        },
+                        onLongPressStart: (_) => _startVideoRecording(),
+                        onLongPressEnd: (_) => _stopVideoRecording(),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: SeeUColors.accent.withValues(alpha: 0.12),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.videoCamera,
+                            size: 22,
+                            color: SeeUColors.accent,
+                          ),
+                        ),
+                      )
+                    else
+                      // Mic icon: tap → voice record, double-tap → switch to video mode
+                      GestureDetector(
+                        onTap: () => setState(() => _recording = true),
+                        onDoubleTap: () {
+                          HapticFeedback.mediumImpact();
+                          setState(() => _videoMsgMode = true);
+                        },
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Icon(
+                            PhosphorIconsRegular.microphone,
+                            size: 22,
+                            color: c.ink2,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ],
               ),
@@ -2229,6 +2400,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _showForwardPicker(ChatMessage m) {
+    _focusNode.unfocus();
     final c = context.seeuColors;
     final api = ref.read(apiClientProvider);
     showModalBottomSheet<void>(

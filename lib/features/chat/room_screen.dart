@@ -491,38 +491,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               ),
             ),
           ] else ...[
-            _buildRoomAvatar(c, room),
-            const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    room.name,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.ink),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    '${room.participantCount} участников',
-                    style: TextStyle(fontSize: 12, color: c.ink3),
-                  ),
-                ],
-              ),
-            ),
-            // Members — bare
-            GestureDetector(
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => RoomMembersScreen(
-                    roomId: room.id,
-                    creatorId: room.creatorId,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RoomMembersScreen(
+                      roomId: room.id,
+                      creatorId: room.creatorId,
+                    ),
                   ),
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Icon(PhosphorIcons.users(), size: 22, color: c.ink),
+                child: Row(
+                  children: [
+                    _buildRoomAvatar(c, room),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            room.name,
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.ink),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${room.participantCount} участников',
+                            style: TextStyle(fontSize: 12, color: c.ink3),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             // Search — bare

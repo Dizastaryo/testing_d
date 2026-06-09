@@ -795,42 +795,50 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 if (isOrganizer)
                   Row(
                     children: [
-                      // Заявки на вступление
-                      if (s.pendingRequestsCount > 0) ...[
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () async {
-                              await context.push('/sbory/${s.id}/requests');
-                              if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
-                            },
-                            child: Container(
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: SeeUColors.accent.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: SeeUColors.accent.withValues(alpha: 0.35),
+                      // Заявки на вступление (всегда видна организатору)
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await context.push('/sbory/${s.id}/requests');
+                            if (mounted) ref.invalidate(_sborDetailProvider(widget.sborId));
+                          },
+                          child: Container(
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: s.pendingRequestsCount > 0
+                                  ? SeeUColors.accent.withValues(alpha: 0.10)
+                                  : c.surface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: s.pendingRequestsCount > 0
+                                    ? SeeUColors.accent.withValues(alpha: 0.35)
+                                    : c.line,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.usersThree(),
+                                  size: 15,
+                                  color: s.pendingRequestsCount > 0 ? SeeUColors.accent : c.ink2,
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(PhosphorIcons.usersThree(), size: 15, color: SeeUColors.accent),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Заявки · ${s.pendingRequestsCount}',
-                                    style: const TextStyle(
-                                      fontSize: 13, fontWeight: FontWeight.w600,
-                                      color: SeeUColors.accent,
-                                    ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  s.pendingRequestsCount > 0
+                                      ? 'Заявки · ${s.pendingRequestsCount}'
+                                      : 'Заявки',
+                                  style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600,
+                                    color: s.pendingRequestsCount > 0 ? SeeUColors.accent : c.ink2,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                      ],
+                      ),
+                      const SizedBox(width: 10),
                       // Редактировать
                       Expanded(
                         child: GestureDetector(
@@ -1379,7 +1387,14 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   void _openChat(Sbor s) {
     HapticFeedback.mediumImpact();
     if (s.chatId != null) {
-      context.go('/chat/${s.chatId}');
+      final chatId = s.chatId!;
+      // Go to chat list first so it's the parent in the stack,
+      // then push the specific chat room on top.
+      // This ensures: back from chat → chat list (no black screen).
+      context.go('/chat');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.push('/chat/$chatId');
+      });
     }
   }
 

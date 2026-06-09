@@ -434,12 +434,38 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     if (me == null) return;
     final myMembership = _members.where((m) => m.user.id == me.id);
     if (myMembership.isEmpty) return;
+
+    final chats = ref.read(chatListProvider).chats;
+    final chat = chats
+        .where((c) => c.id == widget.chatId)
+        .cast<Chat?>()
+        .firstWhere((_) => true, orElse: () => null);
+    final isSbor = chat?.sborId != null;
+    final isOrganizer = chat?.isOrganizer == true;
+
+    final String title, content, confirmLabel, successMsg;
+    if (isOrganizer) {
+      title = 'Отменить сбор?';
+      content = 'Сбор будет отменён для всех участников.';
+      confirmLabel = 'Отменить сбор';
+      successMsg = 'Сбор отменён';
+    } else if (isSbor) {
+      title = 'Выйти из сбора?';
+      content = 'Ты покинешь сбор и его групповой чат.';
+      confirmLabel = 'Выйти';
+      successMsg = 'Вы вышли из сбора';
+    } else {
+      title = 'Покинуть группу?';
+      content = 'Вы перестанете получать сообщения и обновления этой группы.';
+      confirmLabel = 'Покинуть';
+      successMsg = 'Вы вышли из группы';
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Покинуть группу?'),
-        content: const Text(
-            'Вы перестанете получать сообщения и обновления этой группы.'),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -447,13 +473,31 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: SeeUColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Покинуть'),
+            child: Text(confirmLabel),
           ),
         ],
       ),
     );
-    if (ok == true) {
-      _removeMember(myMembership.first, selfLeave: true);
+    if (ok != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(apiClientProvider);
+      if (isOrganizer && chat?.sborId != null) {
+        await api.delete(ApiEndpoints.cancelSbor(chat!.sborId!));
+      } else if (isSbor && chat?.sborId != null) {
+        await api.delete(ApiEndpoints.leaveSbor(chat!.sborId!));
+      } else {
+        await api.delete(ApiEndpoints.chatMember(widget.chatId, me.id));
+      }
+      ref.read(chatListProvider.notifier).load(silent: true);
+      if (!mounted) return;
+      context.go('/chat');
+      messenger.showSnackBar(SnackBar(content: Text(successMsg)));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Не удалось: ${friendlyError(e)}')),
+      );
     }
   }
 
@@ -464,6 +508,19 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     final myId = me?.id;
     final myMember = _members.where((m) => m.user.id == myId);
     final isMeAdmin = myMember.isNotEmpty && myMember.first.role == 'admin';
+
+    final chats = ref.watch(chatListProvider).chats;
+    final chat = chats
+        .where((ch) => ch.id == widget.chatId)
+        .cast<Chat?>()
+        .firstWhere((_) => true, orElse: () => null);
+    final isSbor = chat?.sborId != null;
+    final isOrganizer = chat?.isOrganizer == true;
+    final leaveLabel = isOrganizer
+        ? 'Отменить сбор'
+        : isSbor
+            ? 'Выйти из сбора'
+            : 'Покинуть группу';
 
     // Live update: при WS-event'ах об изменении состава этой группы — refetch.
     // Не запускаем _load() напрямую из listener'а (анти-паттерн setState в build):
@@ -582,11 +639,6 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                       ],
                     ),
                   ),
-                  if (isMeAdmin)
-                    GestureDetector(
-                      onTap: _addMember,
-                      child: Icon(PhosphorIcons.userPlus(), size: 22, color: c.ink),
-                    ),
                 ],
               ),
             ),
@@ -673,7 +725,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                         child: Row(children: [
                           Icon(PhosphorIcons.signOut(), color: SeeUColors.error, size: 20),
                           const SizedBox(width: 12),
-                          Text('Покинуть группу', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: SeeUColors.error)),
+                          Text(leaveLabel, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: SeeUColors.error)),
                         ]),
                       ),
                     ),

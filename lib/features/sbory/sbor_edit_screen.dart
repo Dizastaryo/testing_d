@@ -217,131 +217,72 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
   Widget _buildCoverPicker(SeeUThemeColors c) {
     final hasExisting = _resolvedCoverUrl != null && !_deleteCover && _coverImage == null;
     final hasNew = _coverImage != null;
-    final isEmpty = !hasExisting && !hasNew;
+    final hasAny = hasExisting || hasNew;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            _label('Обложка сбора'),
-            const SizedBox(width: 6),
-            Text('необязательно', style: TextStyle(fontSize: 11, color: c.ink4)),
-          ],
+    Widget thumb;
+    if (hasNew) {
+      thumb = Image.file(File(_coverImage!.path), width: 48, height: 48, fit: BoxFit.cover);
+    } else if (hasExisting) {
+      thumb = CachedNetworkImage(
+        imageUrl: _resolvedCoverUrl!,
+        width: 48, height: 48,
+        fit: BoxFit.cover,
+        errorWidget: (_, __, ___) => Icon(PhosphorIcons.image(), size: 20, color: c.ink4),
+      );
+    } else {
+      thumb = Container(
+        width: 48, height: 48,
+        color: c.surface2,
+        child: Icon(PhosphorIcons.image(), size: 20, color: c.ink4),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _pickCoverImage,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.line),
         ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _pickCoverImage,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 150,
-            decoration: BoxDecoration(
-              color: isEmpty
-                  ? SeeUColors.accentSoft.withValues(alpha: 0.35)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isEmpty
-                    ? SeeUColors.accent.withValues(alpha: 0.25)
-                    : SeeUColors.accent,
-                width: isEmpty ? 1 : 1.5,
+        child: Row(
+          children: [
+            ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Обложка сбора',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c.ink),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasAny ? 'Нажмите, чтобы заменить' : 'Необязательно',
+                    style: TextStyle(fontSize: 12, color: c.ink3),
+                  ),
+                ],
               ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: hasNew
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.file(File(_coverImage!.path), fit: BoxFit.cover),
-                      Positioned(
-                        top: 8, right: 8,
-                        child: GestureDetector(
-                          onTap: () => setState(() => _coverImage = null),
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : hasExisting
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            imageUrl: _resolvedCoverUrl!,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                          ),
-                          // Overlay hint to tap and replace
-                          Positioned(
-                            bottom: 8, right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Text(
-                                'Заменить',
-                                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                          // Delete button
-                          Positioned(
-                            top: 8, right: 8,
-                            child: GestureDetector(
-                              onTap: () => setState(() => _deleteCover = true),
-                              child: Container(
-                                width: 28, height: 28,
-                                decoration: const BoxDecoration(
-                                  color: Colors.black54,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 48, height: 48,
-                            decoration: BoxDecoration(
-                              color: SeeUColors.accent.withValues(alpha: 0.10),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              PhosphorIcons.image(PhosphorIconsStyle.duotone),
-                              size: 24, color: SeeUColors.accent,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Добавить обложку',
-                            style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w600,
-                              color: SeeUColors.accent,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Обложка сбора и чата',
-                            style: TextStyle(fontSize: 12, color: c.ink3),
-                          ),
-                        ],
-                      ),
-          ),
+            if (hasAny)
+              GestureDetector(
+                onTap: () => setState(() {
+                  _coverImage = null;
+                  _deleteCover = true;
+                }),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold), size: 16, color: c.ink3),
+                ),
+              )
+            else
+              Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
+          ],
         ),
-      ],
+      ),
     );
   }
 

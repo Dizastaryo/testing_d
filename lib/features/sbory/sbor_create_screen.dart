@@ -31,7 +31,6 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
 
   SborType _type = SborType.offline;
   SborCategory? _category;
-  String? _customCatLabel; // used when _category == SborCategory.other via "своё"
   int _slots = 8;
   bool _flexibleTime = false;
   bool _noLimit = false;
@@ -249,7 +248,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
               final meta = kSborCategories[cat]!;
               final active = _category == cat;
               return GestureDetector(
-                onTap: () => setState(() { _category = cat; _customCatLabel = null; }),
+                onTap: () => setState(() { _category = cat; }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
                   height: 34,
@@ -276,34 +275,6 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                 ),
               );
             }),
-            GestureDetector(
-              onTap: () => _pickCustomCategory(c),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: _customCatLabel != null ? c.ink : c.surface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: _customCatLabel != null ? null : Border.all(color: c.ink4, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 12,
-                        color: _customCatLabel != null ? Colors.white : c.ink3),
-                    const SizedBox(width: 6),
-                    Text(
-                      _customCatLabel ?? 'своё',
-                      style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500,
-                        color: _customCatLabel != null ? Colors.white : c.ink3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ],
@@ -473,88 +444,59 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   }
 
   Widget _buildCoverPicker(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            _label('Обложка сбора'),
-            const SizedBox(width: 6),
-            Text('необязательно', style: TextStyle(fontSize: 11, color: c.ink4)),
-          ],
+    final hasImage = _coverImage != null;
+    return GestureDetector(
+      onTap: _pickCoverImage,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.line),
         ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _pickCoverImage,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 150,
-            decoration: BoxDecoration(
-              color: _coverImage != null
-                  ? Colors.transparent
-                  : SeeUColors.accentSoft.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: _coverImage != null
-                    ? SeeUColors.accent
-                    : SeeUColors.accent.withValues(alpha: 0.25),
-                width: _coverImage != null ? 1.5 : 1,
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: hasImage
+                  ? Image.file(File(_coverImage!.path), width: 48, height: 48, fit: BoxFit.cover)
+                  : Container(
+                      width: 48, height: 48,
+                      color: c.surface2,
+                      child: Icon(PhosphorIcons.image(), size: 20, color: c.ink4),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Обложка сбора',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c.ink),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasImage ? 'Нажмите, чтобы заменить' : 'Необязательно',
+                    style: TextStyle(fontSize: 12, color: c.ink3),
+                  ),
+                ],
               ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: _coverImage != null
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.file(File(_coverImage!.path), fit: BoxFit.cover),
-                      Positioned(
-                        top: 8, right: 8,
-                        child: GestureDetector(
-                          onTap: () => setState(() => _coverImage = null),
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(PhosphorIconsBold.x, size: 14, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(
-                          color: SeeUColors.accent.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          PhosphorIcons.image(PhosphorIconsStyle.duotone),
-                          size: 24, color: SeeUColors.accent,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Добавить обложку',
-                        style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w600,
-                          color: SeeUColors.accent,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Станет обложкой сбора и чата',
-                        style: TextStyle(fontSize: 12, color: c.ink3),
-                      ),
-                    ],
-                  ),
-          ),
+            if (hasImage)
+              GestureDetector(
+                onTap: () => setState(() => _coverImage = null),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold), size: 16, color: c.ink3),
+                ),
+              )
+            else
+              Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -753,44 +695,6 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _pickCustomCategory(SeeUThemeColors c) async {
-    final ctrl = TextEditingController(text: _customCatLabel);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text('Своя категория', style: TextStyle(color: c.ink, fontSize: 17)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: TextStyle(color: c.ink),
-          decoration: InputDecoration(
-            hintText: 'Например, Танцы, Волейбол...',
-            hintStyle: TextStyle(color: c.ink4),
-          ),
-          onSubmitted: (_) => Navigator.pop(ctx, ctrl.text.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Отмена', style: TextStyle(color: c.ink3)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Готово', style: TextStyle(color: SeeUColors.accent)),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (result != null && result.isNotEmpty) {
-      setState(() {
-        _customCatLabel = result;
-        _category = SborCategory.other;
-      });
-    }
   }
 
   Future<void> _pickDate(BuildContext context) async {
