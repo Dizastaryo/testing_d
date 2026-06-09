@@ -41,17 +41,17 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
   DateTime? _scheduledDate;
   TimeOfDay? _scheduledTime;
 
-  static const _catOptions = [
-    (SborCategory.basketball, '⚽', 'Спорт'),
-    (SborCategory.games, '🎮', 'Игры'),
-    (SborCategory.hike, '🏕️', 'Природа'),
-    (SborCategory.draw, '🎨', 'Творчество'),
-    (SborCategory.board, '🎲', 'Настолки'),
-    (SborCategory.cinema, '🎬', 'Кино'),
-    (SborCategory.music, '🎶', 'Музыка'),
-    (SborCategory.food, '🍳', 'Готовим'),
-    (SborCategory.read, '📖', 'Книги'),
-    (SborCategory.other, '✨', 'Другое'),
+  static const _catOrder = [
+    SborCategory.basketball,
+    SborCategory.games,
+    SborCategory.hike,
+    SborCategory.draw,
+    SborCategory.board,
+    SborCategory.cinema,
+    SborCategory.music,
+    SborCategory.food,
+    SborCategory.read,
+    SborCategory.other,
   ];
 
   @override
@@ -59,6 +59,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     super.initState();
     _titleCtrl.addListener(() => setState(() {}));
     _placeCtrl.addListener(() => setState(() {}));
+    _priceCtrl.addListener(() => setState(() {}));
   }
 
   @override
@@ -70,634 +71,45 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
+  // ─── Validation ────────────────────────────────────────────────────────────
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                _buildHeader(c),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTypeToggle(c),
-                        const SizedBox(height: 18),
-                        _buildTitleField(c),
-                        const SizedBox(height: 18),
-                        _buildCategoryPicker(c),
-                        const SizedBox(height: 18),
-                        _buildWhenSection(c),
-                        const SizedBox(height: 16),
-                        _buildPlaceField(c),
-                        const SizedBox(height: 16),
-                        _buildSlotsSection(c),
-                        const SizedBox(height: 16),
-                        _buildPriceField(c),
-                        const SizedBox(height: 16),
-                        _buildCoverPicker(c),
-                        const SizedBox(height: 16),
-                        _buildDescField(c),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            _buildStickyBottom(context, c),
-          ],
-        ),
-      ),
-    );
+  bool get _canSubmit =>
+      _titleCtrl.text.trim().length >= 3 &&
+      _category != null &&
+      (_flexibleTime || _scheduledDate != null) &&
+      _placeCtrl.text.trim().isNotEmpty &&
+      (!_isPaid || (int.tryParse(_priceCtrl.text.trim()) ?? 0) > 0) &&
+      !_submitting;
+
+  String? get _validationHint {
+    if (_titleCtrl.text.trim().length < 3) {
+      return 'Введите название (мин. 3 символа)';
+    }
+    if (_category == null) return 'Выберите категорию';
+    if (!_flexibleTime && _scheduledDate == null) {
+      return 'Укажите дату или отметьте «гибко»';
+    }
+    if (_placeCtrl.text.trim().isEmpty) return 'Укажите место встречи';
+    if (_isPaid && (int.tryParse(_priceCtrl.text.trim()) ?? 0) <= 0) {
+      return 'Введите сумму взноса';
+    }
+    return null;
   }
 
-  Widget _buildHeader(SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => context.pop(),
-            child: Icon(
-              PhosphorIcons.caretLeft(PhosphorIconsStyle.bold),
-              size: 20, color: c.ink,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              'Новый сбор',
-              style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.w600, color: c.ink,
-              ),
-            ),
-          ),
-          Text(
-            'Шаг 1/2',
-            style: TextStyle(fontSize: 13, color: c.ink3),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTypeToggle(SeeUThemeColors c) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          _typeTab(SborType.offline, PhosphorIcons.mapPin(PhosphorIconsStyle.fill), 'Оффлайн', c),
-          _typeTab(SborType.online, PhosphorIcons.globe(), 'Онлайн', c),
-        ],
-      ),
-    );
-  }
-
-  Widget _typeTab(SborType t, IconData icon, String label, SeeUThemeColors c) {
-    final active = _type == t;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _type = t),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: 36,
-          decoration: BoxDecoration(
-            color: active ? c.surface : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: active
-                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1))]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: active ? SeeUColors.accent : c.ink3),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: active ? c.ink : c.ink3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTitleField(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Название'),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: c.line),
-          ),
-          child: TextField(
-            controller: _titleCtrl,
-            style: const TextStyle(
-              fontFamily: 'Fraunces',
-              fontSize: 18, fontWeight: FontWeight.w500,
-              letterSpacing: -0.2,
-            ),
-            decoration: InputDecoration(
-              hintText: 'Например, стритбол в парке…',
-              hintStyle: TextStyle(
-                fontFamily: 'Fraunces',
-                fontSize: 18, fontWeight: FontWeight.w400,
-                color: c.ink4,
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCategoryPicker(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Что за активность'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            ..._catOptions.map((opt) {
-              final (cat, emoji, name) = opt;
-              final meta = kSborCategories[cat]!;
-              final active = _category == cat;
-              return GestureDetector(
-                onTap: () => setState(() { _category = cat; }),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  height: 34,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: active ? meta.color : c.surface,
-                    borderRadius: BorderRadius.circular(999),
-                    border: active ? null : Border.all(color: c.line),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(emoji, style: const TextStyle(fontSize: 14)),
-                      const SizedBox(width: 6),
-                      Text(
-                        name,
-                        style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500,
-                          color: active ? Colors.white : c.ink2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWhenSection(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Когда'),
-        const SizedBox(height: 8),
-        if (!_flexibleTime)
-          Row(
-            children: [
-              Expanded(
-                child: _FormField(
-                  icon: PhosphorIcons.calendarBlank(),
-                  value: _scheduledDate != null
-                      ? '${_scheduledDate!.day} ${_monthName(_scheduledDate!.month)}'
-                      : 'Выбрать дату',
-                  c: c,
-                  onTap: () => _pickDate(context),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: _FormField(
-                  icon: PhosphorIcons.clock(),
-                  value: _scheduledTime != null
-                      ? _scheduledTime!.format(context)
-                      : 'Время',
-                  c: c,
-                  onTap: () => _pickTime(context),
-                ),
-              ),
-            ],
-          ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: () => setState(() => _flexibleTime = !_flexibleTime),
-          child: Row(
-            children: [
-              Container(
-                width: 16, height: 16,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _flexibleTime ? SeeUColors.accent : c.ink4),
-                  color: _flexibleTime ? SeeUColors.accent : Colors.transparent,
-                ),
-                child: _flexibleTime
-                    ? const Icon(PhosphorIconsBold.check, size: 12, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'гибко — договоримся',
-                style: TextStyle(fontSize: 12, color: c.ink3),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPlaceField(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label(_type == SborType.online ? 'Платформа' : 'Место'),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: c.line),
-          ),
-          child: TextField(
-            controller: _placeCtrl,
-            style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
-            decoration: InputDecoration(
-              prefixIcon: Icon(
-                _type == SborType.online ? PhosphorIcons.globe() : PhosphorIcons.mapPinLine(),
-                size: 16, color: c.ink3,
-              ),
-              hintText: _type == SborType.online
-                  ? 'Steam, Discord, PlayStation…'
-                  : 'Парк Горького, корт №2',
-              hintStyle: TextStyle(fontSize: 15, color: c.ink4),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSlotsSection(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Сколько человек нужно'),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: c.line),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Всего мест', style: TextStyle(fontSize: 12, color: c.ink3)),
-                    const SizedBox(height: 2),
-                    Text(
-                      _noLimit ? '∞' : '$_slots',
-                      style: const TextStyle(
-                        fontFamily: 'Fraunces',
-                        fontSize: 26, fontWeight: FontWeight.w500, height: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (!_noLimit) ...[
-                _StepperBtn(
-                  icon: PhosphorIconsBold.minus,
-                  onTap: () => setState(() => _slots = (_slots - 1).clamp(2, 99)),
-                  c: c,
-                ),
-                const SizedBox(width: 4),
-                _StepperBtn(
-                  icon: PhosphorIconsBold.plus,
-                  onTap: () => setState(() => _slots = (_slots + 1).clamp(2, 99)),
-                  c: c,
-                ),
-              ],
-              const SizedBox(width: 8),
-              Container(width: 1, height: 32, color: c.line),
-              const SizedBox(width: 12),
-              Column(
-                children: [
-                  Text('или', style: TextStyle(fontSize: 12, color: c.ink3)),
-                  GestureDetector(
-                    onTap: () => setState(() => _noLimit = !_noLimit),
-                    child: Text(
-                      'без лимита',
-                      style: TextStyle(
-                        fontSize: 12, color: SeeUColors.accent, fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCoverPicker(SeeUThemeColors c) {
-    final hasImage = _coverImage != null;
-    return GestureDetector(
-      onTap: _pickCoverImage,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: c.line),
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: hasImage
-                  ? Image.file(File(_coverImage!.path), width: 48, height: 48, fit: BoxFit.cover)
-                  : Container(
-                      width: 48, height: 48,
-                      color: c.surface2,
-                      child: Icon(PhosphorIcons.image(), size: 20, color: c.ink4),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Обложка сбора',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c.ink),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    hasImage ? 'Нажмите, чтобы заменить' : 'Необязательно',
-                    style: TextStyle(fontSize: 12, color: c.ink3),
-                  ),
-                ],
-              ),
-            ),
-            if (hasImage)
-              GestureDetector(
-                onTap: () => setState(() => _coverImage = null),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold), size: 16, color: c.ink3),
-                ),
-              )
-            else
-              Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
-          ],
-        ),
-      ),
-    );
-  }
+  // ─── Pickers ───────────────────────────────────────────────────────────────
 
   Future<void> _pickCoverImage() async {
     HapticFeedback.selectionClick();
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
+    final file = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 1080,
       maxHeight: 1080,
       imageQuality: 85,
     );
-    if (file != null) {
-      setState(() => _coverImage = file);
-    }
+    if (file != null) setState(() => _coverImage = file);
   }
 
-  Widget _buildPriceField(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _label('Взнос'),
-        const SizedBox(height: 8),
-        // Toggle: Бесплатно / Платный
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              _priceTab(false, PhosphorIcons.gift(), 'Бесплатно', c),
-              _priceTab(true, PhosphorIcons.wallet(), 'Платный', c),
-            ],
-          ),
-        ),
-        if (_isPaid) ...[
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: c.line),
-            ),
-            child: TextField(
-              controller: _priceCtrl,
-              keyboardType: TextInputType.number,
-              style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
-              decoration: InputDecoration(
-                prefixIcon: Padding(
-                  padding: const EdgeInsets.only(left: 14, right: 8),
-                  child: Text(
-                    '₸',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.ink3),
-                  ),
-                ),
-                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                hintText: 'Сумма взноса',
-                hintStyle: TextStyle(fontSize: 15, color: c.ink4),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.fromLTRB(0, 14, 16, 14),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _priceTab(bool paid, IconData icon, String label, SeeUThemeColors c) {
-    final active = _isPaid == paid;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _isPaid = paid;
-          if (!paid) _priceCtrl.clear();
-        }),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: 36,
-          decoration: BoxDecoration(
-            color: active ? c.surface : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: active
-                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1))]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: active ? SeeUColors.accent : c.ink3),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: active ? c.ink : c.ink3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDescField(SeeUThemeColors c) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            _label('Пара слов о сборе'),
-            const SizedBox(width: 6),
-            Text('необязательно', style: TextStyle(fontSize: 11, color: c.ink4)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: c.line),
-          ),
-          child: TextField(
-            controller: _descCtrl,
-            minLines: 3,
-            maxLines: 6,
-            style: TextStyle(fontSize: 14, color: c.ink),
-            decoration: InputDecoration(
-              hintText: 'Уровень, снаряжение, планы после…',
-              hintStyle: TextStyle(fontSize: 14, color: c.ink4),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.all(16),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStickyBottom(BuildContext context, SeeUThemeColors c) {
-    final canCreate = _titleCtrl.text.trim().length >= 3 &&
-        _category != null &&
-        (_flexibleTime || _scheduledDate != null) &&
-        _placeCtrl.text.trim().isNotEmpty &&
-        (!_isPaid || (int.tryParse(_priceCtrl.text.trim()) ?? 0) > 0);
-
-    return Positioned(
-      left: 0, right: 0, bottom: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [c.bg, c.bg.withValues(alpha: 0)],
-            stops: const [0.6, 1.0],
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 34),
-        child: GestureDetector(
-          onTap: canCreate && !_submitting ? _submit : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 52,
-            decoration: BoxDecoration(
-              color: canCreate ? SeeUColors.accent : c.surface2,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_submitting)
-                  const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                  )
-                else ...[
-                  Text(
-                    'Создать сбор',
-                    style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600,
-                      color: canCreate ? Colors.white : c.ink3,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    PhosphorIcons.arrowRight(PhosphorIconsStyle.bold),
-                    size: 16, color: canCreate ? Colors.white : c.ink3,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickDate(BuildContext context) async {
+  Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
@@ -708,7 +120,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     if (picked != null) setState(() => _scheduledDate = picked);
   }
 
-  Future<void> _pickTime(BuildContext context) async {
+  Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
       initialTime: _scheduledTime ?? const TimeOfDay(hour: 14, minute: 0),
@@ -716,13 +128,15 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     if (picked != null) setState(() => _scheduledTime = picked);
   }
 
+  // ─── Submit ────────────────────────────────────────────────────────────────
+
   Future<void> _submit() async {
+    if (!_canSubmit) return;
     HapticFeedback.mediumImpact();
     setState(() => _submitting = true);
     try {
       final api = ref.read(apiClientProvider);
 
-      // Upload cover if selected
       String coverUrl = '';
       if (_coverImage != null) {
         final formData = FormData.fromMap({
@@ -731,22 +145,27 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
             filename: _coverImage!.name,
           ),
         });
-        final uploadRes = await api.post(ApiEndpoints.mediaUpload, data: formData);
-        final resData = uploadRes.data is Map ? uploadRes.data : {};
-        coverUrl = (resData['data']?['url'] ?? resData['url'] ?? '') as String;
+        final up = await api.post(ApiEndpoints.mediaUpload, data: formData);
+        final d = up.data is Map ? up.data : {};
+        coverUrl = (d['data']?['url'] ?? d['url'] ?? '') as String;
       }
 
       DateTime? dt;
       if (!_flexibleTime && _scheduledDate != null) {
         final t = _scheduledTime ?? const TimeOfDay(hour: 12, minute: 0);
         dt = DateTime(
-          _scheduledDate!.year, _scheduledDate!.month, _scheduledDate!.day,
-          t.hour, t.minute,
+          _scheduledDate!.year,
+          _scheduledDate!.month,
+          _scheduledDate!.day,
+          t.hour,
+          t.minute,
         );
       }
 
       final city = ref.read(sboryCityProvider);
-      final price = _isPaid ? (int.tryParse(_priceCtrl.text.trim()) ?? 0) : 0;
+      final price =
+          _isPaid ? (int.tryParse(_priceCtrl.text.trim()) ?? 0) : 0;
+
       await api.post(ApiEndpoints.sbory, data: {
         'title': _titleCtrl.text.trim(),
         'type': _type.name,
@@ -770,61 +189,1058 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       String msg = 'Ошибка: $e';
       if (e is DioException && e.response != null) {
         final d = e.response!.data;
-        final backendMsg = d is Map ? (d['error'] ?? d['message'] ?? d.toString()) : d?.toString();
-        final fields = d is Map && d['fields'] is Map ? ' (fields: ${d['fields']})' : '';
-        msg = 'Ошибка ${e.response!.statusCode}: $backendMsg$fields';
+        final backendMsg = d is Map
+            ? (d['error'] ?? d['message'] ?? d.toString())
+            : d?.toString();
+        msg = 'Ошибка ${e.response!.statusCode}: $backendMsg';
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
 
-  Widget _label(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 11, fontWeight: FontWeight.w600,
-        letterSpacing: 0.8, color: SeeUColors.textTertiary,
+  // ─── UI ────────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final city = ref.watch(sboryCityProvider);
+
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                _buildHeader(c, city),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: 130),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCoverHero(c),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTypeToggle(c),
+                              const SizedBox(height: 20),
+                              _buildTitleField(c),
+                              const SizedBox(height: 20),
+                              _buildCategoryPicker(c),
+                              const SizedBox(height: 20),
+                              _buildWhenSection(c),
+                              const SizedBox(height: 16),
+                              _buildPlaceField(c),
+                              const SizedBox(height: 16),
+                              _buildDetailsCard(c),
+                              const SizedBox(height: 16),
+                              _buildDescField(c),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            _buildStickyBottom(c),
+          ],
+        ),
       ),
     );
   }
 
+  // ─── Header ────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader(SeeUThemeColors c, String city) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 16, 6),
+      decoration: BoxDecoration(
+        color: c.bg,
+        border: Border(bottom: BorderSide(color: c.line, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => context.pop(),
+            icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold),
+                size: 20, color: c.ink),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Новый сбор',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: c.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.mapPin,
+                        size: 11, color: c.ink3),
+                    const SizedBox(width: 3),
+                    Text(
+                      city,
+                      style: TextStyle(fontSize: 11, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Category color indicator (shows selected category)
+          if (_category != null)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: kSborCategories[_category!]!.soft,
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(kSborCategories[_category!]!.icon,
+                      size: 12,
+                      color: kSborCategories[_category!]!.color),
+                  const SizedBox(width: 4),
+                  Text(
+                    kSborCategories[_category!]!.name,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: kSborCategories[_category!]!.color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Cover hero ────────────────────────────────────────────────────────────
+
+  Widget _buildCoverHero(SeeUThemeColors c) {
+    final hasCover = _coverImage != null;
+    // When category selected → tint the empty state with category soft color
+    final catColor = _category != null
+        ? kSborCategories[_category!]!.color
+        : SeeUColors.accent;
+    final catSoft = _category != null
+        ? kSborCategories[_category!]!.soft
+        : SeeUColors.accentSoft;
+
+    return GestureDetector(
+      onTap: hasCover ? null : _pickCoverImage,
+      child: SizedBox(
+        height: 190,
+        width: double.infinity,
+        child: hasCover
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(File(_coverImage!.path), fit: BoxFit.cover),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0x88000000)],
+                        stops: [0.45, 1.0],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 14,
+                    right: 14,
+                    child: GestureDetector(
+                      onTap: _pickCoverImage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 13, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.52),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              width: 0.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIconsRegular.camera,
+                                size: 13, color: Colors.white),
+                            const SizedBox(width: 5),
+                            const Text('Изменить',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 14,
+                    left: 14,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _coverImage = null),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.52),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              width: 0.5),
+                        ),
+                        child: Icon(PhosphorIconsBold.x,
+                            size: 13, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                color: catSoft,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: catColor.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _category != null
+                            ? kSborCategories[_category!]!.icon
+                            : PhosphorIconsRegular.camera,
+                        size: 24,
+                        color: catColor.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Добавить обложку',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: catColor.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Необязательно',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: catColor.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  // ─── Type toggle ───────────────────────────────────────────────────────────
+
+  Widget _buildTypeToggle(SeeUThemeColors c) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          _typeTab(SborType.offline,
+              PhosphorIcons.mapPin(PhosphorIconsStyle.fill), 'Оффлайн', c),
+          _typeTab(SborType.online, PhosphorIcons.globe(), 'Онлайн', c),
+        ],
+      ),
+    );
+  }
+
+  Widget _typeTab(
+      SborType t, IconData icon, String label, SeeUThemeColors c) {
+    final active = _type == t;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _type = t);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 38,
+          decoration: BoxDecoration(
+            color: active ? c.bg : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1))
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  size: 15,
+                  color: active ? SeeUColors.accent : c.ink3),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight:
+                      active ? FontWeight.w700 : FontWeight.w500,
+                  color: active ? c.ink : c.ink3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Title ─────────────────────────────────────────────────────────────────
+
+  Widget _buildTitleField(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('НАЗВАНИЕ'),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.line),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _titleCtrl,
+                  style: const TextStyle(
+                    fontFamily: 'Fraunces',
+                    fontSize: 19,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.2,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Например, стритбол в парке…',
+                    hintStyle: TextStyle(
+                      fontFamily: 'Fraunces',
+                      fontSize: 19,
+                      fontWeight: FontWeight.w400,
+                      color: c.ink4,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding:
+                        const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                    counterText: '',
+                  ),
+                  maxLength: 80,
+                ),
+              ),
+              if (_titleCtrl.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(
+                    '${_titleCtrl.text.length}/80',
+                    style: TextStyle(fontSize: 11, color: c.ink4),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Category ──────────────────────────────────────────────────────────────
+
+  Widget _buildCategoryPicker(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('КАТЕГОРИЯ'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _catOrder.map((cat) {
+            final meta = kSborCategories[cat]!;
+            final active = _category == cat;
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _category = active ? null : cat);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                decoration: BoxDecoration(
+                  color: active ? meta.color : meta.soft,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: active
+                      ? [
+                          BoxShadow(
+                            color: meta.color.withValues(alpha: 0.28),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          )
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      meta.icon,
+                      size: 15,
+                      color: active
+                          ? Colors.white
+                          : meta.color.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      meta.name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: active ? Colors.white : c.ink2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // ─── When ──────────────────────────────────────────────────────────────────
+
+  Widget _buildWhenSection(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('КОГДА'),
+        const SizedBox(height: 10),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 200),
+          crossFadeState: _flexibleTime
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: Row(
+            children: [
+              Expanded(
+                child: _DateTimeChip(
+                  icon: PhosphorIcons.calendarBlank(),
+                  value: _scheduledDate != null
+                      ? '${_scheduledDate!.day} ${_monthName(_scheduledDate!.month)}'
+                      : 'Дата',
+                  filled: _scheduledDate != null,
+                  onTap: _pickDate,
+                  c: c,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 100,
+                child: _DateTimeChip(
+                  icon: PhosphorIcons.clock(),
+                  value: _scheduledTime != null
+                      ? _scheduledTime!.format(context)
+                      : 'Время',
+                  filled: _scheduledTime != null,
+                  onTap: _pickTime,
+                  c: c,
+                ),
+              ),
+            ],
+          ),
+          secondChild: Container(
+            height: 46,
+            decoration: BoxDecoration(
+              color: SeeUColors.accent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                  color: SeeUColors.accent.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(PhosphorIconsRegular.handshake,
+                    size: 16, color: SeeUColors.accent),
+                const SizedBox(width: 8),
+                Text(
+                  'Время гибкое — договоримся',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: SeeUColors.accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _flexibleTime = !_flexibleTime;
+              if (_flexibleTime) {
+                _scheduledDate = null;
+                _scheduledTime = null;
+              }
+            });
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: _flexibleTime
+                        ? SeeUColors.accent
+                        : c.ink4,
+                    width: 1.5,
+                  ),
+                  color: _flexibleTime
+                      ? SeeUColors.accent
+                      : Colors.transparent,
+                ),
+                child: _flexibleTime
+                    ? const Icon(PhosphorIconsBold.check,
+                        size: 12, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Гибкое время — договоримся',
+                style: TextStyle(fontSize: 13, color: c.ink2),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Place ─────────────────────────────────────────────────────────────────
+
+  Widget _buildPlaceField(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(_type == SborType.online ? 'ПЛАТФОРМА' : 'МЕСТО'),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.line),
+          ),
+          child: TextField(
+            controller: _placeCtrl,
+            style: TextStyle(
+                fontSize: 15,
+                color: c.ink,
+                fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              prefixIcon: Padding(
+                padding:
+                    const EdgeInsets.only(left: 14, right: 10),
+                child: Icon(
+                  _type == SborType.online
+                      ? PhosphorIcons.globe()
+                      : PhosphorIcons.mapPinLine(),
+                  size: 17,
+                  color: c.ink3,
+                ),
+              ),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 0, minHeight: 0),
+              hintText: _type == SborType.online
+                  ? 'Steam, Discord, Zoom…'
+                  : 'Парк Горького, корт №2',
+              hintStyle:
+                  TextStyle(fontSize: 15, color: c.ink4),
+              border: InputBorder.none,
+              contentPadding:
+                  const EdgeInsets.fromLTRB(0, 14, 16, 14),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Details card (slots + price) ──────────────────────────────────────────
+
+  Widget _buildDetailsCard(SeeUThemeColors c) {
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.line),
+      ),
+      child: Column(
+        children: [
+          // Slots row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            child: Row(
+              children: [
+                Icon(PhosphorIconsRegular.usersThree,
+                    size: 18, color: c.ink3),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Мест в сборе',
+                          style: TextStyle(
+                              fontSize: 13, color: c.ink3)),
+                      Text(
+                        _noLimit ? 'Без ограничений' : '$_slots человек',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: c.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!_noLimit) ...[
+                  _StepperBtn(
+                    icon: PhosphorIconsBold.minus,
+                    onTap: () => setState(
+                        () => _slots = (_slots - 1).clamp(2, 99)),
+                    c: c,
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 36,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$_slots',
+                      style: const TextStyle(
+                        fontFamily: 'Fraunces',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  _StepperBtn(
+                    icon: PhosphorIconsBold.plus,
+                    onTap: () => setState(
+                        () => _slots = (_slots + 1).clamp(2, 99)),
+                    c: c,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _noLimit = !_noLimit);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _noLimit
+                          ? SeeUColors.accent.withValues(alpha: 0.12)
+                          : c.surface2,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '∞',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: _noLimit ? SeeUColors.accent : c.ink3,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: c.line),
+          // Price toggle
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            child: Row(
+              children: [
+                Icon(
+                  _isPaid
+                      ? PhosphorIconsRegular.wallet
+                      : PhosphorIconsRegular.gift,
+                  size: 18,
+                  color: c.ink3,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Взнос',
+                    style: TextStyle(fontSize: 14, color: c.ink3),
+                  ),
+                ),
+                // Price toggle
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      _priceTab(false, 'Бесплатно', c),
+                      _priceTab(true, 'Платный', c),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isPaid) ...[
+            Divider(height: 1, color: c.line),
+            Padding(
+              padding:
+                  const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(
+                children: [
+                  Text('₸',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: c.ink3)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _priceCtrl,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: c.ink,
+                        fontFamily: 'Fraunces',
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Сумма взноса',
+                        hintStyle: TextStyle(
+                          fontSize: 18,
+                          color: c.ink4,
+                          fontFamily: 'Fraunces',
+                          fontWeight: FontWeight.w400,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _priceTab(bool paid, String label, SeeUThemeColors c) {
+    final active = _isPaid == paid;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _isPaid = paid;
+          if (!paid) _priceCtrl.clear();
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? c.bg : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1))
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            color: active ? c.ink : c.ink3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Description ───────────────────────────────────────────────────────────
+
+  Widget _buildDescField(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _label('ОПИСАНИЕ'),
+            const SizedBox(width: 6),
+            Text('необязательно',
+                style: TextStyle(fontSize: 11, color: c.ink4)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.line),
+          ),
+          child: TextField(
+            controller: _descCtrl,
+            minLines: 3,
+            maxLines: 6,
+            style: TextStyle(fontSize: 14, color: c.ink),
+            decoration: InputDecoration(
+              hintText:
+                  'Уровень, снаряжение, что взять с собой…',
+              hintStyle:
+                  TextStyle(fontSize: 14, color: c.ink4),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(16),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Sticky bottom CTA ─────────────────────────────────────────────────────
+
+  Widget _buildStickyBottom(SeeUThemeColors c) {
+    final hint = _validationHint;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [c.bg, c.bg, c.bg.withValues(alpha: 0)],
+            stops: const [0.0, 0.72, 1.0],
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 34),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Validation hint
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              child: hint != null
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Icon(PhosphorIconsRegular.info,
+                              size: 13, color: c.ink3),
+                          const SizedBox(width: 5),
+                          Text(
+                            hint,
+                            style: TextStyle(
+                                fontSize: 12, color: c.ink3),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            GestureDetector(
+              onTap: _canSubmit ? _submit : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 54,
+                decoration: BoxDecoration(
+                  gradient: _canSubmit
+                      ? SeeUGradients.heroOrange
+                      : null,
+                  color: _canSubmit ? null : c.surface2,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: _canSubmit
+                      ? [
+                          BoxShadow(
+                            color: SeeUColors.accent
+                                .withValues(alpha: 0.35),
+                            offset: const Offset(0, 6),
+                            blurRadius: 20,
+                          )
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_submitting)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      )
+                    else ...[
+                      Icon(
+                        PhosphorIcons.usersThree(
+                            PhosphorIconsStyle.bold),
+                        size: 18,
+                        color: _canSubmit ? Colors.white : c.ink3,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Создать сбор',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: _canSubmit ? Colors.white : c.ink3,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  Widget _label(String text) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.0,
+          color: context.seeuColors.ink3,
+        ),
+      );
+
   String _monthName(int m) {
-    const names = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-    return names[m - 1];
+    const n = [
+      'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+      'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
+    ];
+    return n[m - 1];
   }
 }
 
-class _FormField extends StatelessWidget {
+// ─── Sub-widgets ──────────────────────────────────────────────────────────────
+
+class _DateTimeChip extends StatelessWidget {
   final IconData icon;
   final String value;
+  final bool filled;
+  final VoidCallback onTap;
   final SeeUThemeColors c;
-  final VoidCallback? onTap;
 
-  const _FormField({required this.icon, required this.value, required this.c, this.onTap});
+  const _DateTimeChip({
+    required this.icon,
+    required this.value,
+    required this.filled,
+    required this.onTap,
+    required this.c,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: c.line),
+          color: filled
+              ? SeeUColors.accent.withValues(alpha: 0.09)
+              : c.surface,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: filled
+                ? SeeUColors.accent.withValues(alpha: 0.35)
+                : c.line,
+          ),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: c.ink3),
-            const SizedBox(width: 10),
+            Icon(icon,
+                size: 15,
+                color: filled ? SeeUColors.accent : c.ink3),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 value,
-                style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight:
+                      filled ? FontWeight.w600 : FontWeight.w500,
+                  color: filled ? SeeUColors.accent : c.ink3,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -840,21 +1256,21 @@ class _StepperBtn extends StatelessWidget {
   final VoidCallback onTap;
   final SeeUThemeColors c;
 
-  const _StepperBtn({required this.icon, required this.onTap, required this.c});
+  const _StepperBtn(
+      {required this.icon, required this.onTap, required this.c});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 32, height: 32,
+        width: 32,
+        height: 32,
         decoration: BoxDecoration(
           color: c.surface2,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Center(
-          child: Icon(icon, size: 16, color: c.ink),
-        ),
+        child: Center(child: Icon(icon, size: 15, color: c.ink)),
       ),
     );
   }
