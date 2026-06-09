@@ -27,6 +27,7 @@ class Chat {
   final User? otherUser; // только для direct
   final int participantsCount; // только для group
   final String lastMessage;
+  final String lastMessageKind; // 'text' | 'image' | 'voice' | 'video_note' etc.
   final String
       lastSenderUsername; // для group: префикс «X: ...» в last-сообщении
   final DateTime lastMessageAt;
@@ -58,6 +59,7 @@ class Chat {
     this.otherUser,
     this.participantsCount = 0,
     required this.lastMessage,
+    this.lastMessageKind = 'text',
     this.lastSenderUsername = '',
     required this.lastMessageAt,
     this.unreadCount = 0,
@@ -83,6 +85,7 @@ class Chat {
     User? otherUser,
     int? participantsCount,
     String? lastMessage,
+    String? lastMessageKind,
     String? lastSenderUsername,
     DateTime? lastMessageAt,
     int? unreadCount,
@@ -101,6 +104,7 @@ class Chat {
       otherUser: otherUser ?? this.otherUser,
       participantsCount: participantsCount ?? this.participantsCount,
       lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageKind: lastMessageKind ?? this.lastMessageKind,
       lastSenderUsername: lastSenderUsername ?? this.lastSenderUsername,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       unreadCount: unreadCount ?? this.unreadCount,
@@ -133,6 +137,7 @@ class Chat {
       otherUser: other,
       participantsCount: (json['participants_count'] ?? 0) as int,
       lastMessage: json['last_message']?.toString() ?? '',
+      lastMessageKind: json['last_message_kind']?.toString() ?? 'text',
       lastSenderUsername: json['last_sender_username']?.toString() ?? '',
       lastMessageAt: json['last_message_at'] != null
           ? DateTime.tryParse(json['last_message_at'].toString()) ??
@@ -215,6 +220,8 @@ class ReplyPreview {
       case 'voice':
       case 'audio':
         return '🎙 Голосовое';
+      case 'video_note':
+        return '📹 Видеосообщение';
       case 'shared_post':
         return '📄 Пост';
       default:

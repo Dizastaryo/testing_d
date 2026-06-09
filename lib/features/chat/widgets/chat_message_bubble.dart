@@ -96,6 +96,7 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback onLongPress;
   final VoidCallback? onDoubleTap;
   final void Function(String emoji) onReactionSelected;
+  final void Function(String replyId)? onReplyTap;
   /// B7: avatar URL for the last message in a cluster (other user only).
   final String? senderAvatarUrl;
   /// Group chat: имя отправителя (показывается над баблом для чужих сообщений).
@@ -112,6 +113,7 @@ class ChatMessageBubble extends StatelessWidget {
     required this.onLongPress,
     this.onDoubleTap,
     required this.onReactionSelected,
+    this.onReplyTap,
     this.senderAvatarUrl,
     this.senderName,
     this.isGroup = false,
@@ -403,7 +405,7 @@ class ChatMessageBubble extends StatelessWidget {
             const SizedBox(height: 2),
           ],
           if (msg.replyTo != null) ...[
-            _buildReplyQuoted(msg.replyTo!, mine, c),
+            _buildReplyQuoted(msg.replyTo!, mine, c, onReplyTap),
             const SizedBox(height: 4),
           ],
           _buildBubbleContent(msg, mine, c, time),
@@ -489,45 +491,48 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildReplyQuoted(
-      ReplyPreview reply, bool isMine, SeeUThemeColors c) {
+  Widget _buildReplyQuoted(ReplyPreview reply, bool isMine, SeeUThemeColors c,
+      void Function(String)? onTap) {
     final stripeColor = isMine ? Colors.white : SeeUColors.accent;
     final titleColor = isMine ? Colors.white : SeeUColors.accent;
     final textColor = isMine ? Colors.white70 : c.ink2;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: isMine
-            ? Colors.white.withValues(alpha: 0.15)
-            : c.surface2,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 4, color: stripeColor),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('@${reply.senderUsername}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: titleColor)),
-                  const SizedBox(height: 1),
-                  Text(reply.shortLabel(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: textColor)),
-                ],
+    return GestureDetector(
+      onTap: onTap != null ? () => onTap(reply.id) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isMine
+              ? Colors.white.withValues(alpha: 0.15)
+              : c.surface2,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 4, color: stripeColor),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('@${reply.senderUsername}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: titleColor)),
+                    const SizedBox(height: 1),
+                    Text(reply.shortLabel(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: textColor)),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

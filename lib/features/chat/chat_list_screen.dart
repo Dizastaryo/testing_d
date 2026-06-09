@@ -649,6 +649,20 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 // Chat tile
 // ---------------------------------------------------------------------------
 
+String _kindLabel(String kind) {
+  switch (kind) {
+    case 'image':
+      return '📷 Фото';
+    case 'voice':
+    case 'audio':
+      return '🎙 Голосовое';
+    case 'video_note':
+      return '📹 Видеосообщение';
+    default:
+      return '';
+  }
+}
+
 class _ChatTile extends ConsumerWidget {
   final Chat chat;
   final VoidCallback onTap;
@@ -666,21 +680,24 @@ class _ChatTile extends ConsumerWidget {
     final user = chat.otherUser;
     final isGroup = chat.isGroup;
     final hasUnread = chat.unreadCount > 0;
-    final lastMsg = chat.lastMessage;
+    // Если текст пуст, показываем метку по типу сообщения.
+    final rawMsg = chat.lastMessage.isEmpty
+        ? _kindLabel(chat.lastMessageKind)
+        : chat.lastMessage;
     final lastMsgTime = chat.lastMessageAt;
     // Если отправитель — текущий юзер → «Вы: текст».
     // Для group: если чужой → «username: текст».
     // Для direct: если чужой → без префикса (имя и так в заголовке чата).
     final String lastMsgWithPrefix;
-    if (lastMsg.isEmpty || chat.lastSenderUsername.isEmpty) {
-      lastMsgWithPrefix = lastMsg;
+    if (rawMsg.isEmpty || chat.lastSenderUsername.isEmpty) {
+      lastMsgWithPrefix = rawMsg;
     } else if (currentUsername.isNotEmpty &&
         chat.lastSenderUsername == currentUsername) {
-      lastMsgWithPrefix = 'Вы: $lastMsg';
+      lastMsgWithPrefix = 'Вы: $rawMsg';
     } else if (isGroup) {
-      lastMsgWithPrefix = '${chat.lastSenderUsername}: $lastMsg';
+      lastMsgWithPrefix = '${chat.lastSenderUsername}: $rawMsg';
     } else {
-      lastMsgWithPrefix = lastMsg;
+      lastMsgWithPrefix = rawMsg;
     }
     // Real online status from backend (otherUser.isOnline, обновляется
     // через WS user.presence).

@@ -102,6 +102,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // disappearing'ом (per-message UX, не chat-wide).
   int? _ttlSeconds;
 
+  // Multi-select mode
+  final Set<String> _selectedIds = {};
+  bool get _isSelecting => _selectedIds.isNotEmpty;
+
   int _messageCount = 0;
   bool _atBottom = true;
   bool _sendError = false;
@@ -1023,7 +1027,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .toggleReaction(messageId, emoji);
   }
 
+  void _toggleSelect(String messageId) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedIds.contains(messageId)) {
+        _selectedIds.remove(messageId);
+      } else {
+        _selectedIds.add(messageId);
+      }
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(() => _selectedIds.clear());
+  }
+
   void _onMessageLongPress(String messageId) {
+    if (_isSelecting) {
+      _toggleSelect(messageId);
+      return;
+    }
+    _showMessageOptions(messageId);
+  }
+
+  void _showMessageOptions(String messageId) {
     HapticFeedback.mediumImpact();
     _focusNode.unfocus();
     final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
@@ -1181,6 +1208,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     },
                   );
                 }),
+                // Выбрать — войти в режим множественного выбора
+                ListTile(
+                  leading: Icon(PhosphorIcons.checkCircle(), color: c.ink),
+                  title: const Text('Выбрать'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    setState(() => _selectedIds.add(messageId));
+                  },
+                ),
                 // Удалить: у своих сообщений < 1ч → для всех; иначе (своё > 1ч
                 // или чужое) → только у себя. Удалённые сообщения нельзя удалить повторно.
                 if (!m.isDeletedForAll) ...[
@@ -1284,10 +1320,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                         child: Row(
                           children: [
-                            // Back chevron
+                            // Back chevron (or exit select mode)
                             GestureDetector(
                               onTap: () {
                                 HapticFeedback.selectionClick();
+                                if (_isSelecting) {
+                                  _exitSelectMode();
+                                  return;
+                                }
                                 _focusNode.unfocus();
                                 if (context.canPop()) {
                                   context.pop();
@@ -1296,7 +1336,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 }
                               },
                               child: Icon(
-                                  PhosphorIconsRegular.caretLeft,
+                                  _isSelecting
+                                      ? PhosphorIconsRegular.x
+                                      : PhosphorIconsRegular.caretLeft,
                                   color: c.ink,
                                   size: 22,
                                 ),
@@ -1548,8 +1590,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               // Sending indicator for voice/video-note uploads
               if (_sendingInfo != null) _buildUploadingBubble(_sendingInfo!),
-              // Input bar
-              _buildInputBar(),
+              // Multi-select action bar replaces input bar when selecting
+              if (_isSelecting)
+                _buildSelectionBar()
+              else
+                _buildInputBar(),
                 ], // Column children
               ), // Column
               // Round video message overlay
@@ -1661,39 +1706,75 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             items[nextIdx] is String ||
             (items[nextIdx] as ChatMessage).senderId != msg.senderId;
 
+        final isSelected = _selectedIds.contains(msg.id);
+
         // CHAT-3.1: wrapper с animated bg для flash-highlight на scroll-to.
-        final bubble = AnimatedContainer(
-          key: ValueKey('flash-${msg.id}'),
-          duration: const Duration(milliseconds: 350),
-          decoration: BoxDecoration(
-            color: msg.id == _flashMessageId
-                ? SeeUColors.accent.withValues(alpha: 0.14)
-                : SeeUColors.accent.withValues(alpha: 0.0),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ChatMessageBubble(
-            message: msg,
-            isMine: isMine,
-            showTail: showTail,
-            isGroup: currentChat?.isGroup ?? false,
-            senderName: isMine
-                ? null
-                : msg.senderName.isNotEmpty
-                    ? msg.senderName
-                    : null,
-            senderAvatarUrl: isMine
-                ? null
-                : (currentChat?.isGroup == true
-                    ? msg.senderAvatarUrl
-                    : otherUser?.avatarUrl),
-            reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
-            allReactions: msg.reactions,
-            onLongPress: () => _onMessageLongPress(msg.id),
-            onDoubleTap: () => _onReactionSelected(msg.id, '❤️'),
-            onReactionSelected: (emoji) => _onReactionSelected(msg.id, emoji),
+        final bubble = GestureDetector(
+          onTap: _isSelecting ? () => _toggleSelect(msg.id) : null,
+          child: AnimatedContainer(
+            key: ValueKey('flash-${msg.id}'),
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? SeeUColors.accent.withValues(alpha: 0.18)
+                  : msg.id == _flashMessageId
+                      ? SeeUColors.accent.withValues(alpha: 0.14)
+                      : SeeUColors.accent.withValues(alpha: 0.0),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _isSelecting
+                      ? Padding(
+                          key: const ValueKey('chk'),
+                          padding: const EdgeInsets.only(left: 4, right: 2),
+                          child: Icon(
+                            isSelected
+                                ? PhosphorIconsBold.checkCircle
+                                : PhosphorIcons.circle(),
+                            size: 22,
+                            color: isSelected
+                                ? SeeUColors.accent
+                                : context.seeuColors.ink3,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('nochk')),
+                ),
+                Expanded(
+                  child: ChatMessageBubble(
+                    message: msg,
+                    isMine: isMine,
+                    showTail: showTail,
+                    isGroup: currentChat?.isGroup ?? false,
+                    senderName: isMine
+                        ? null
+                        : msg.senderName.isNotEmpty
+                            ? msg.senderName
+                            : null,
+                    senderAvatarUrl: isMine
+                        ? null
+                        : (currentChat?.isGroup == true
+                            ? msg.senderAvatarUrl
+                            : otherUser?.avatarUrl),
+                    reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
+                    allReactions: msg.reactions,
+                    onLongPress: () => _onMessageLongPress(msg.id),
+                    onDoubleTap: _isSelecting
+                        ? null
+                        : () => _onReactionSelected(msg.id, '❤️'),
+                    onReactionSelected: (emoji) =>
+                        _onReactionSelected(msg.id, emoji),
+                    onReplyTap: (id) => _scrollToMessage(id),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
-        // E1: swipe right → reply
+        // E1: swipe right → reply (disabled in select mode)
+        if (_isSelecting) return bubble;
         return SwipeToReply(
           onReply: () {
             final me = ref.read(authProvider).user;
@@ -2399,6 +2480,154 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                   child: Icon(PhosphorIconsBold.x, size: 12, color: c.ink3),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionBar() {
+    final c = context.seeuColors;
+    final count = _selectedIds.length;
+    final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    final selected = messages.where((m) => _selectedIds.contains(m.id)).toList();
+    final hasText = selected.any((m) => m.text.isNotEmpty && m.kind == 'text');
+    final canDeleteForAll = selected.every((m) =>
+        m.isMe &&
+        DateTime.now().difference(m.createdAt) < const Duration(hours: 1) &&
+        !m.isDeletedForAll);
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border(top: BorderSide(color: c.line.withValues(alpha: 0.5), width: 0.5)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Text(
+              '$count выбрано',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink),
+            ),
+            const Spacer(),
+            if (hasText)
+              _selBarBtn(
+                icon: PhosphorIcons.copy(),
+                label: 'Копировать',
+                color: c.ink,
+                onTap: () {
+                  final text = selected
+                      .where((m) => m.text.isNotEmpty)
+                      .map((m) => m.text)
+                      .join('\n');
+                  Clipboard.setData(ClipboardData(text: text));
+                  _exitSelectMode();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Скопировано'), duration: Duration(seconds: 1)),
+                  );
+                },
+              ),
+            const SizedBox(width: 4),
+            _selBarBtn(
+              icon: PhosphorIcons.arrowBendUpRight(),
+              label: 'Переслать',
+              color: c.ink,
+              onTap: () {
+                // Forward first selected for now; multi-forward UX TBD.
+                if (selected.length == 1) {
+                  _exitSelectMode();
+                  _showForwardPicker(selected.first);
+                }
+              },
+            ),
+            const SizedBox(width: 4),
+            _selBarBtn(
+              icon: PhosphorIcons.trash(),
+              label: canDeleteForAll ? 'Удалить для всех' : 'Удалить',
+              color: Colors.red,
+              onTap: () {
+                final ids = List<String>.from(_selectedIds);
+                _exitSelectMode();
+                _confirmBulkDelete(ids, forAll: canDeleteForAll);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _selBarBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmBulkDelete(List<String> ids, {required bool forAll}) {
+    final c = context.seeuColors;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(SeeURadii.card)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Удалить ${ids.length} сообщени${ids.length == 1 ? 'е' : 'й'}?',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.ink),
+                ),
+              ),
+              Divider(height: 1, color: c.line),
+              ListTile(
+                leading: const Icon(PhosphorIconsRegular.trash, color: Colors.red),
+                title: Text(
+                  forAll ? 'Удалить для всех' : 'Удалить у себя',
+                  style: const TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  for (final id in ids) {
+                    _confirmDeleteMessage(id, forAll: forAll);
+                  }
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.x(), color: c.ink),
+                title: const Text('Отмена'),
+                onTap: () => Navigator.of(sheetCtx).pop(),
               ),
             ],
           ),
