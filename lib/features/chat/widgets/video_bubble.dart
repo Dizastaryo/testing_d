@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
@@ -369,27 +370,16 @@ class _VideoNoteBubbleState extends State<VideoNoteBubble> {
                                   ),
                                 ],
                               )
-                            // Placeholder while thumbnail loads
-                            : Container(
-                                decoration: const BoxDecoration(
-                                  gradient: RadialGradient(
-                                    center: Alignment(-0.3, -0.4),
-                                    radius: 1.1,
-                                    colors: [
-                                      Color(0xFF2D3F5A),
-                                      Color(0xFF0A1220),
-                                    ],
-                                  ),
-                                ),
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 24, height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white.withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                ),
+                            // Placeholder while thumbnail loads — shimmer
+                            : Builder(
+                                builder: (ctx) {
+                                  final c = ctx.seeuColors;
+                                  return Shimmer.fromColors(
+                                    baseColor: c.surface2,
+                                    highlightColor: c.surface,
+                                    child: Container(color: Colors.white),
+                                  );
+                                },
                               ),
                   ),
                 ),
