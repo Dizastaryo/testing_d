@@ -87,7 +87,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       if (Platform.isIOS) {
         CallBgService.instance.enterPip(
           username: VoiceRoomService.instance.activeRoomName.value,
-          kind: 'voice',
+          kind: 'room',
           connectedAt: VoiceRoomService.instance.joinedAt.value,
         );
       }

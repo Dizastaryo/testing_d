@@ -179,18 +179,27 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     avatarContainer.clipsToBounds = true
     view.addSubview(avatarContainer)
 
-    // Иконка типа звонка (fallback, пока не загрузится аватар)
-    let sysName = kind == "video" ? "video.fill" : "phone.fill"
+    // Иконка: микрофон для голосового канала, камера для видео, телефон для звонка.
+    let sysName: String
+    switch kind {
+    case "video": sysName = "video.fill"
+    case "room":  sysName = "mic.fill"
+    default:      sysName = "phone.fill"
+    }
     let iconView = UIImageView(image: UIImage(systemName: sysName))
     iconView.translatesAutoresizingMaskIntoConstraints = false
     iconView.tintColor = accent
     iconView.contentMode = .scaleAspectFit
     avatarContainer.addSubview(iconView)
 
-    // ── Имя пользователя ──────────────────────────────────────────────────
+    // ── Название: для канала — имя комнаты без @, для звонка — @username.
     let nameLabel = UILabel()
     nameLabel.translatesAutoresizingMaskIntoConstraints = false
-    nameLabel.text = username.isEmpty ? "Звонок" : "@\(username)"
+    if kind == "room" {
+      nameLabel.text = username.isEmpty ? "Голосовой канал" : username
+    } else {
+      nameLabel.text = username.isEmpty ? "Звонок" : "@\(username)"
+    }
     nameLabel.textColor = .white
     nameLabel.font = UIFont.systemFont(ofSize: 11, weight: .bold)
     nameLabel.textAlignment = .center

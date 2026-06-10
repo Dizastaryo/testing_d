@@ -42,7 +42,7 @@ class VoiceRoomService {
     if (Platform.isIOS) {
       unawaited(CallBgService.instance.prepareCallPip(
         username: roomName,
-        kind: 'voice',
+        kind: 'room',
       ));
     }
   }
