@@ -88,6 +88,9 @@ class _CallListenerState extends ConsumerState<CallListener> {
           GroupCallService.instance.minimized.value = false;
         } else if (CallService.instance.session.value != null) {
           CallService.instance.minimized.value = false;
+        } else if (VoiceRoomService.instance.activeRoomId.value != null) {
+          // Голосовой канал: minimized=false → _onVoiceRoomMinimized → navigate to room.
+          VoiceRoomService.instance.minimized.value = false;
         }
     }
   }

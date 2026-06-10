@@ -16,6 +16,7 @@ import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/room_provider.dart';
+import '../../core/services/call_bg_service.dart';
 import '../../core/services/voice_room_service.dart';
 import 'room_members_screen.dart';
 import 'widgets/emoji_sticker_panel.dart';
@@ -61,6 +62,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _inputController.addListener(_onInputChanged);
     // Мы открыли страницу комнаты — overlay должен быть скрыт.
     VoiceRoomService.instance.minimized.value = false;
+    // Слушаем Android PiP-режим для перерисовки минимального UI.
+    CallBgService.instance.pipMode.addListener(_onPipModeChanged);
+  }
+
+  void _onPipModeChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -73,9 +80,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _stopMicMonitoring();
     _micMonitor.dispose();
     _myAudioLevel.dispose();
-    // Уходим со страницы — если ещё в голосовом, показываем overlay.
+    CallBgService.instance.pipMode.removeListener(_onPipModeChanged);
+    // Уходим со страницы — если ещё в голосовом, показываем overlay / PiP.
     if (VoiceRoomService.instance.activeRoomId.value == widget.roomId) {
       VoiceRoomService.instance.minimized.value = true;
+      if (Platform.isIOS) {
+        CallBgService.instance.enterPip(
+          username: VoiceRoomService.instance.activeRoomName.value,
+          kind: 'voice',
+        );
+      }
     }
     super.dispose();
   }
@@ -341,6 +355,49 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  Widget _buildVoicePipContent(Room room) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: SeeUColors.accent.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                color: SeeUColors.accent,
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              room.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Голосовой канал',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -375,6 +432,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
         body: Center(child: Text('Комната не найдена', style: TextStyle(color: c.ink3))),
       );
     }
+
+    // System PiP: Android shrinks whole Activity — show minimal voice UI.
+    final inVoicePip = CallBgService.instance.pipMode.value &&
+        VoiceRoomService.instance.activeRoomId.value == widget.roomId;
+    if (inVoicePip) return _buildVoicePipContent(room);
 
     return Scaffold(
       backgroundColor: c.bg,

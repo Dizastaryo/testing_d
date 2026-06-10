@@ -31,6 +31,8 @@ class VoiceRoomService {
       title: 'Голосовой канал',
       body: roomName,
     ));
+    // Сообщаем Android: голосовой канал активен → onUserLeaveHint → auto PiP.
+    unawaited(CallBgService.instance.setCallActive(true));
   }
 
   void leave() {
@@ -38,5 +40,6 @@ class VoiceRoomService {
     activeRoomName.value = '';
     minimized.value = false; // сброс
     unawaited(CallBgService.instance.stopForeground());
+    unawaited(CallBgService.instance.setCallActive(false));
   }
 }
