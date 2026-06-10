@@ -642,6 +642,7 @@ class GroupCallService {
   Future<void> _cleanup() async {
     _stopRing();
     unawaited(CallBgService.instance.stopForeground());
+    unawaited(CallBgService.instance.clearCallPip());
     // #10: отменяем invite-timeout.
     _inviteTimer?.cancel();
     _inviteTimer = null;

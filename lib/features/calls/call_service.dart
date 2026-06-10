@@ -744,6 +744,7 @@ class CallService {
     // остаётся в ringtone-mode и не будет перенастроена.
     _audioSessionConfigured = false;
     unawaited(CallBgService.instance.stopForeground());
+    unawaited(CallBgService.instance.clearCallPip());
     try {
       await _pc?.close();
     } catch (e) {

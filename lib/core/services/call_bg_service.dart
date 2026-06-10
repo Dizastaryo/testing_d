@@ -116,25 +116,57 @@ class CallBgService {
   // ── PiP ───────────────────────────────────────────────────────────────────
 
   /// Android: активировать PiP-режим Activity.
-  /// iOS 15+: показать нативное PiP-окно с аватаром и таймером.
   Future<void> enterPip({
     String avatarUrl = '',
     String username  = '',
     String kind      = 'voice',
   }) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await _pipCh.invokeMethod<void>('enterPip', {
         'avatarUrl': avatarUrl,
         'username' : username,
         'kind'     : kind,
       });
-      appLog('[CallBgService] PiP entered');
+      appLog('[CallBgService] PiP entered (android)');
     } catch (e, st) {
       appLog.error('[CallBgService] enterPip failed', e, st);
     }
   }
 
-  /// Завершить PiP (iOS: скрыть нативное окно).
+  /// iOS: подготовить данные звонка для нативного PiP.
+  /// PiP запустится автоматически когда приложение уходит в фон,
+  /// и погасится когда вернётся. Внутри приложения — только Flutter overlay.
+  Future<void> prepareCallPip({
+    String avatarUrl = '',
+    String username  = '',
+    String kind      = 'voice',
+  }) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await _pipCh.invokeMethod<void>('prepareCallPip', {
+        'avatarUrl': avatarUrl,
+        'username' : username,
+        'kind'     : kind,
+      });
+      appLog('[CallBgService] PiP prepared (ios)');
+    } catch (e, st) {
+      appLog.error('[CallBgService] prepareCallPip failed', e, st);
+    }
+  }
+
+  /// iOS: завершить PiP и снять lifecycle-наблюдатели (вызывается при окончании звонка).
+  Future<void> clearCallPip() async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await _pipCh.invokeMethod<void>('clearCallPip');
+      appLog('[CallBgService] PiP cleared (ios)');
+    } catch (e, st) {
+      appLog.error('[CallBgService] clearCallPip failed', e, st);
+    }
+  }
+
+  /// Завершить PiP (iOS: скрыть нативное окно, не снимая lifecycle-наблюдатели).
   Future<void> exitPip() async {
     try {
       await _pipCh.invokeMethod<void>('exitPip');

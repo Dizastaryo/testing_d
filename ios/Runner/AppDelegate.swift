@@ -20,13 +20,13 @@ import AVKit
       )
       pipChannel?.setMethodCallHandler { [weak self] call, result in
         switch call.method {
-        case "enterPip":
+        case "prepareCallPip":
           if #available(iOS 15.0, *) {
             let args = call.arguments as? [String: Any]
             let avatarUrl = args?["avatarUrl"] as? String
             let username  = args?["username"]  as? String ?? ""
             let kind      = args?["kind"]      as? String ?? "voice"
-            PipManager.shared.start(
+            PipManager.shared.prepareCall(
               avatarUrl: (avatarUrl?.isEmpty == false) ? avatarUrl : nil,
               username: username,
               kind: kind,
@@ -38,6 +38,16 @@ import AVKit
               }
             )
           }
+          result(nil)
+
+        case "clearCallPip":
+          if #available(iOS 15.0, *) {
+            PipManager.shared.clearCall()
+          }
+          result(nil)
+
+        case "enterPip":
+          // Android only — на iOS не используется (lifecycle-based PiP).
           result(nil)
 
         case "exitPip":

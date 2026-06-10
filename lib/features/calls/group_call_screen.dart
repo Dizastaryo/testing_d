@@ -50,6 +50,14 @@ class _GroupCallScreenState extends State<GroupCallScreen>
     GroupCallService.instance.session.addListener(_onSessionForTimer);
     _onSessionForTimer();
     unawaited(CallBgService.instance.setCallActive(true));
+    if (Platform.isIOS) {
+      final s = GroupCallService.instance.session.value;
+      unawaited(CallBgService.instance.prepareCallPip(
+        avatarUrl: '',
+        username:  s?.chatTitle ?? '',
+        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
+      ));
+    }
   }
 
   void _onSessionForTimer() {
@@ -91,17 +99,11 @@ class _GroupCallScreenState extends State<GroupCallScreen>
   }
 
   void _minimizeOrPip() {
-    final s = GroupCallService.instance.session.value;
     if (Platform.isAndroid) {
       unawaited(CallBgService.instance.enterPip());
     } else {
       GroupCallService.instance.minimized.value = true;
-      unawaited(CallBgService.instance.enterPip(
-        avatarUrl: '',
-        username:  s?.chatTitle ?? '',
-        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
-      ));
-      if (mounted) Navigator.of(context).maybePop();
+      if (mounted) Navigator.of(context).pop();
     }
   }
 

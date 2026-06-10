@@ -2,7 +2,12 @@ import AVKit
 import UIKit
 
 /// Управляет системным PiP-окном для звонков на iOS 15+.
-/// Показывает аватар собеседника + имя + таймер в нативном PiP-окне.
+///
+/// Логика: PiP НЕ запускается вручную при нажатии «свернуть».
+/// Вместо этого регистрируются lifecycle-наблюдатели:
+///   - willResignActive → PiP стартует (когда приложение уходит в фон)
+///   - didBecomeActive  → PiP гасится (когда приложение возвращается)
+/// Внутри приложения видит только Flutter mini overlay.
 @available(iOS 15.0, *)
 class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
@@ -16,11 +21,19 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
   private var onReturn: (() -> Void)?
   private var onDismissed: (() -> Void)?
 
+  // Сохранённые данные звонка для авто-запуска PiP при уходе в фон.
+  private var callAvatarUrl: String?
+  private var callUsername: String = ""
+  private var callKind: String = "voice"
+
   private override init() { super.init() }
 
   // MARK: - Public API
 
-  func start(
+  /// Подготовить PiP: сохранить данные звонка и зарегистрировать lifecycle-наблюдатели.
+  /// Вызывается когда экран звонка открывается (initState во Flutter).
+  /// PiP запустится автоматически при уходе приложения в фон.
+  func prepareCall(
     avatarUrl: String?,
     username: String,
     kind: String,
@@ -28,18 +41,72 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     onDismissed: @escaping () -> Void
   ) {
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
-    self.onReturn   = onReturn
+    callAvatarUrl  = avatarUrl
+    callUsername   = username
+    callKind       = kind
+    self.onReturn  = onReturn
     self.onDismissed = onDismissed
+    // Переподписываемся (идемпотентно).
+    NotificationCenter.default.removeObserver(self,
+      name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.removeObserver(self,
+      name: UIApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self,
+      selector: #selector(appWillResignActive),
+      name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self,
+      selector: #selector(appDidBecomeActive),
+      name: UIApplication.didBecomeActiveNotification, object: nil)
+  }
+
+  /// Полная очистка: остановить PiP + снять наблюдатели. Вызывается при завершении звонка.
+  func clearCall() {
+    NotificationCenter.default.removeObserver(self,
+      name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.removeObserver(self,
+      name: UIApplication.didBecomeActiveNotification, object: nil)
     stop()
+    callAvatarUrl = nil
+    callUsername  = ""
+    callKind      = "voice"
+    onReturn      = nil
+    onDismissed   = nil
+  }
+
+  /// Остановить PiP-окно (не снимает lifecycle-наблюдатели — используется при
+  /// возврате в приложение, чтобы следующий уход в фон снова запустил PiP).
+  func stop() {
+    stopDisplayLink()
+    pipController?.stopPictureInPicture()
+    pipController  = nil
+    pipVC          = nil
+    timerLabel     = nil
+    startDate      = nil
+  }
+
+  // MARK: - Lifecycle observers
+
+  @objc private func appWillResignActive() {
+    guard pipController == nil else { return }  // уже в PiP
+    _startPip()
+  }
+
+  @objc private func appDidBecomeActive() {
+    stop()
+  }
+
+  // MARK: - Internal PiP start
+
+  private func _startPip() {
+    stop()  // сброс предыдущего состояния
 
     let vc = AVPictureInPictureVideoCallViewController()
     vc.preferredContentSize = CGSize(width: 160, height: 240)
     pipVC = vc
 
-    buildContentView(in: vc.view, avatarUrl: avatarUrl, username: username, kind: kind)
+    buildContentView(in: vc.view, avatarUrl: callAvatarUrl,
+                     username: callUsername, kind: callKind)
 
-    // UIApplication.shared.windows deprecated on iOS 16+ (returns empty array).
-    // Use connectedScenes instead to reliably get the key window.
     let keyWindow = UIApplication.shared.connectedScenes
         .filter { $0.activationState == .foregroundActive }
         .compactMap { $0 as? UIWindowScene }
@@ -60,18 +127,9 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     startDate = Date()
     startDisplayLink()
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak pip] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak pip] in
       pip?.startPictureInPicture()
     }
-  }
-
-  func stop() {
-    stopDisplayLink()
-    pipController?.stopPictureInPicture()
-    pipController  = nil
-    pipVC          = nil
-    timerLabel     = nil
-    startDate      = nil
   }
 
   // MARK: - Content view

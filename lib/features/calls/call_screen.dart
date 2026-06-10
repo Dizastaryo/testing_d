@@ -68,6 +68,16 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _onSessionChanged();
     _scheduleHide();
     unawaited(CallBgService.instance.setCallActive(true));
+    // iOS: регистрируем lifecycle-наблюдатели чтобы PiP автозапускался при
+    // уходе в фон (как с полного экрана, так и после minimize).
+    if (Platform.isIOS) {
+      final s = CallService.instance.session.value;
+      unawaited(CallBgService.instance.prepareCallPip(
+        avatarUrl: s?.peerAvatarUrl ?? '',
+        username:  s?.peerUsername  ?? '',
+        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
+      ));
+    }
   }
 
   void _onSessionChanged() {
@@ -163,18 +173,13 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   // ── PiP ─────────────────────────────────────────────────────────────────
 
   /// Android: Activity входит в PiP-режим (окно остаётся, маршрут не меняется).
-  /// iOS: запускаем нативный PiP и убираем экран звонка.
+  /// iOS: закрываем полный экран, показываем Flutter mini overlay.
+  /// Нативный PiP запустится автоматически при уходе в фон (lifecycle observer).
   void _minimizeOrPip() {
-    final s = CallService.instance.session.value;
     if (Platform.isAndroid) {
       unawaited(CallBgService.instance.enterPip());
     } else {
       CallService.instance.minimized.value = true;
-      unawaited(CallBgService.instance.enterPip(
-        avatarUrl: s?.peerAvatarUrl ?? '',
-        username:  s?.peerUsername  ?? '',
-        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
-      ));
       if (mounted) Navigator.of(context).pop();
     }
   }
