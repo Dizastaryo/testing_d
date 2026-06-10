@@ -311,18 +311,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         );
       }
     }
-    // During outgoing ringing — show local camera preview as main (if not swapped)
-    // so the user can see themselves before the call connects.
-    if (!_swapped &&
-        s.status == CallStatus.outgoingRinging &&
-        _localRenderer.srcObject != null &&
-        !cameraOff) {
-      return RTCVideoView(
-        _localRenderer,
-        mirror: true,
-        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-      );
-    }
+    // Во время исходящего вызова — НЕ показываем local-стрим на main.
+    // PiP уже показывает превью своей камеры. Показывать себя дважды — баг.
     return _buildAvatarBg(s);
   }
 
@@ -604,9 +594,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           });
         },
         child: ValueListenableBuilder<double>(
-          valueListenable: CallService.instance.localAudioLevel,
+          // Speaking border: слушаем аудио того, кто в PiP-окошке.
+          valueListenable: pipIsLocal
+              ? CallService.instance.localAudioLevel
+              : CallService.instance.remoteAudioLevel,
           builder: (_, level, __) {
-            final speaking = pipIsLocal && level > 0.08;
+            final speaking = level > 0.08;
             return Container(
               width: pipW,
               height: pipH,
@@ -636,9 +629,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     else
                       Container(
                         color: const Color(0xFF1A1A2E),
-                        child: const Center(
+                        child: Center(
                           child: Icon(
-                            PhosphorIconsBold.videoCameraSlash,
+                            pipIsLocal
+                                ? PhosphorIconsBold.videoCameraSlash
+                                : PhosphorIconsBold.user,
                             color: Colors.white24,
                             size: 26,
                           ),
@@ -659,6 +654,29 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+
+                    // «Вы» лейбл в углу когда PiP показывает свою камеру.
+                    if (pipIsLocal)
+                      Positioned(
+                        bottom: 7,
+                        left: 7,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Вы',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
 
                     // Swap hint icon (bottom-right)
                     Positioned(
