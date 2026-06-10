@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "setCallActive" -> {
                     callActive = call.argument<Boolean>("active") ?: false
+                    updatePipParams() // inform system: auto-PiP preference changed
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -60,6 +61,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Обновляет PictureInPictureParams системе.
+     * Android 12+ (API 31): setAutoEnterEnabled(callActive) — система автоматически
+     * входит в PiP при свайпе домой (gesture navigation), без необходимости ловить
+     * onUserLeaveHint. На 8-11 используется только onUserLeaveHint (кнопка Home).
+     */
+    private fun updatePipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(9, 16))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // API 31 = Android 12: auto-enter PiP on home gesture
+                builder.setAutoEnterEnabled(callActive)
+            }
+            setPictureInPictureParams(builder.build())
+        }
+    }
+
     private fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val params = PictureInPictureParams.Builder()
@@ -69,7 +88,10 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Автоматический вход в PiP при нажатии кнопки «Домой» во время активного звонка. */
+    /**
+     * Android 8-11 (button nav): кнопка «Домой» → onUserLeaveHint → enterPipMode.
+     * Android 12+ gesture nav: handled by setAutoEnterEnabled above.
+     */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (callActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

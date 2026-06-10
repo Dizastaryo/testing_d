@@ -38,11 +38,16 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
     buildContentView(in: vc.view, avatarUrl: avatarUrl, username: username, kind: kind)
 
-    // Берём корневой view как источник анимации PiP
-    guard
-      let keyWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
-      let sourceView = keyWindow.rootViewController?.view
-    else { return }
+    // UIApplication.shared.windows deprecated on iOS 16+ (returns empty array).
+    // Use connectedScenes instead to reliably get the key window.
+    let keyWindow = UIApplication.shared.connectedScenes
+        .filter { $0.activationState == .foregroundActive }
+        .compactMap { $0 as? UIWindowScene }
+        .first?
+        .windows
+        .first(where: { $0.isKeyWindow })
+        ?? UIApplication.shared.delegate?.window.flatMap { $0 }
+    guard let sourceView = keyWindow?.rootViewController?.view else { return }
 
     let contentSource = AVPictureInPictureController.ContentSource(
       activeVideoCallSourceView: sourceView,
