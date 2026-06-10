@@ -156,7 +156,11 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
   private func startDisplayLink() {
     let link = CADisplayLink(target: self, selector: #selector(tick))
-    link.preferredFramesPerSecond = 1
+    if #available(iOS 15.0, *) {
+      link.preferredFrameRateRange = CAFrameRateRange(minimum: 1, maximum: 1, preferred: 1)
+    } else {
+      link.preferredFramesPerSecond = 1
+    }
     link.add(to: .main, forMode: .common)
     displayLink = link
   }

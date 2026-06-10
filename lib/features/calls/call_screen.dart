@@ -175,7 +175,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         username:  s?.peerUsername  ?? '',
         kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
       ));
-      if (mounted) Navigator.of(context).maybePop();
+      if (mounted) Navigator.of(context).pop();
     }
   }
 
