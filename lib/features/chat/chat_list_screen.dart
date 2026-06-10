@@ -1791,10 +1791,6 @@ class _RoomCard extends StatelessWidget {
                     style: TextStyle(fontSize: 13, color: c.ink3),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                   ),
-                  if (room.participants.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    _AvatarStack(participants: room.participants, c: c),
-                  ],
                 ],
               ),
             ),
@@ -1822,49 +1818,6 @@ class _RoomCard extends StatelessWidget {
   }
 }
 
-class _AvatarStack extends StatelessWidget {
-  final List<RoomParticipant> participants;
-  final SeeUThemeColors c;
-
-  const _AvatarStack({required this.participants, required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 18.0;
-    const overlap = 10.0;
-    final shown = participants.take(5).toList();
-    final width = shown.length * (size - overlap) + overlap;
-
-    return SizedBox(
-      height: size,
-      width: width,
-      child: Stack(
-        children: [
-          for (int i = 0; i < shown.length; i++)
-            Positioned(
-              left: i * (size - overlap),
-              child: Container(
-                width: size, height: size,
-                decoration: BoxDecoration(
-                  color: c.surface2,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: c.bg, width: 1),
-                ),
-                child: Center(
-                  child: Text(
-                    shown[i].fullName.isNotEmpty
-                        ? shown[i].fullName[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: c.ink2),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Archived chats screen
