@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -22,10 +23,14 @@ class VoiceRoomService {
   /// Аналогично CallService.minimized / GroupCallService.minimized.
   final ValueNotifier<bool> minimized = ValueNotifier(false);
 
+  /// Момент входа в голосовой канал — для корректного таймера в нативном PiP.
+  final ValueNotifier<DateTime?> joinedAt = ValueNotifier(null);
+
   void join(String roomId, String roomName) {
     activeRoomId.value = roomId;
     activeRoomName.value = roomName;
     minimized.value = false; // только что вошли — экран открыт
+    joinedAt.value = DateTime.now();
     unawaited(CallBgService.instance.configureForCall());
     unawaited(CallBgService.instance.startForeground(
       title: 'Голосовой канал',
@@ -33,12 +38,24 @@ class VoiceRoomService {
     ));
     // Сообщаем Android: голосовой канал активен → onUserLeaveHint → auto PiP.
     unawaited(CallBgService.instance.setCallActive(true));
+    // iOS: подготовить нативный PiP — зарегистрировать lifecycle-наблюдатели.
+    if (Platform.isIOS) {
+      unawaited(CallBgService.instance.prepareCallPip(
+        username: roomName,
+        kind: 'voice',
+      ));
+    }
   }
 
   void leave() {
+    // iOS: очистить PiP до сброса состояния — снять наблюдатели.
+    if (Platform.isIOS) {
+      unawaited(CallBgService.instance.clearCallPip());
+    }
     activeRoomId.value = null;
     activeRoomName.value = '';
     minimized.value = false; // сброс
+    joinedAt.value = null;
     unawaited(CallBgService.instance.stopForeground());
     unawaited(CallBgService.instance.setCallActive(false));
   }

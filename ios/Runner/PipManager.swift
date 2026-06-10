@@ -76,12 +76,14 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
       name: UIApplication.willResignActiveNotification, object: nil)
     NotificationCenter.default.removeObserver(self,
       name: UIApplication.didBecomeActiveNotification, object: nil)
+    // Nil out callbacks BEFORE stop() to prevent async delegate from firing them
+    // after the call has already ended.
+    onReturn    = nil
+    onDismissed = nil
     stop()
     callAvatarUrl = nil
     callUsername  = ""
     callKind      = "voice"
-    onReturn      = nil
-    onDismissed   = nil
   }
 
   /// Запустить нативный PiP вручную (при нажатии «Свернуть» внутри приложения).
@@ -156,6 +158,7 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     startDisplayLink()
 
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak pip] in
+      guard pip?.isPictureInPicturePossible == true else { return }
       pip?.startPictureInPicture()
     }
   }
@@ -227,12 +230,18 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
       URLSession.shared.dataTask(with: url) { data, _, _ in
         guard let data = data, let img = UIImage(data: data) else { return }
         DispatchQueue.main.async { [weak avatarContainer, weak iconView] in
+          guard let container = avatarContainer else { return }
           iconView?.removeFromSuperview()
           let imgView = UIImageView(image: img)
           imgView.contentMode = .scaleAspectFill
-          imgView.frame = avatarContainer?.bounds ?? .zero
-          imgView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-          avatarContainer?.addSubview(imgView)
+          imgView.translatesAutoresizingMaskIntoConstraints = false
+          container.addSubview(imgView)
+          NSLayoutConstraint.activate([
+            imgView.topAnchor.constraint(equalTo: container.topAnchor),
+            imgView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            imgView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            imgView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+          ])
         }
       }.resume()
     }
@@ -242,11 +251,7 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
   private func startDisplayLink() {
     let link = CADisplayLink(target: self, selector: #selector(tick))
-    if #available(iOS 15.0, *) {
-      link.preferredFrameRateRange = CAFrameRateRange(minimum: 1, maximum: 1, preferred: 1)
-    } else {
-      link.preferredFramesPerSecond = 1
-    }
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 1, maximum: 1, preferred: 1)
     link.add(to: .main, forMode: .common)
     displayLink = link
   }

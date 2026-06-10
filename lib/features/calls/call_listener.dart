@@ -295,6 +295,8 @@ class _CallListenerState extends ConsumerState<CallListener> {
           ),
 
         // ── Голосовой канал комнаты mini overlay ───────────────────────────
+        // iOS: нативный AVPictureInPicture — Flutter overlay не нужен.
+        if (!Platform.isIOS)
         ValueListenableBuilder<String?>(
           valueListenable: VoiceRoomService.instance.activeRoomId,
           builder: (_, roomId, __) {
