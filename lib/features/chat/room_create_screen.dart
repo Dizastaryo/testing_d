@@ -16,7 +16,7 @@ import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../core/providers/following_candidates_provider.dart';
+import '../../core/providers/room_candidates_provider.dart';
 import '../../core/providers/room_provider.dart';
 
 /// Создание комнаты — двухшаговый флоу:
@@ -86,7 +86,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
       _candidatesError = null;
     });
     try {
-      final result = await ref.read(followingCandidatesProvider.future);
+      final result = await ref.read(mutualFollowersProvider.future);
       if (mounted) setState(() => _candidates = result);
     } catch (e) {
       if (mounted) setState(() => _candidatesError = e.toString());

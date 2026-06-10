@@ -17,6 +17,8 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/room_provider.dart';
+import '../../core/providers/room_invites_provider.dart';
+import 'room_invites_sheet.dart';
 import '../sbory/sbory_screen.dart' show sborRefreshProvider;
 import 'widgets/typing_dots.dart';
 
@@ -149,30 +151,86 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                       child: Icon(PhosphorIconsRegular.pencilSimple, size: 22, color: c.ink),
                     ),
                   ] else
-                    GestureDetector(
-                      onTap: _showNewRoomPicker,
-                      child: Container(
-                        height: 36,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: SeeUColors.accent,
-                          borderRadius: BorderRadius.circular(SeeURadii.pill),
-                          boxShadow: SeeUShadows.sm,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 14, color: Colors.white),
-                            const SizedBox(width: 5),
-                            const Text(
-                              'Создать',
-                              style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Invite badge button
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            showModalBottomSheet<void>(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (_) => const RoomInvitesSheet(),
+                            );
+                          },
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 36, height: 36,
+                                decoration: BoxDecoration(
+                                  color: c.surface2,
+                                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                                ),
+                                child: Icon(
+                                  PhosphorIcons.envelope(PhosphorIconsStyle.fill),
+                                  size: 18, color: c.ink2,
+                                ),
                               ),
-                            ),
-                          ],
+                              Consumer(builder: (_, ref, __) {
+                                final count = ref.watch(roomInvitesProvider).valueOrNull?.length ?? 0;
+                                if (count == 0) return const SizedBox.shrink();
+                                return Positioned(
+                                  top: -4, right: -4,
+                                  child: Container(
+                                    width: 18, height: 18,
+                                    decoration: const BoxDecoration(
+                                      color: SeeUColors.accent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      count > 9 ? '9+' : '$count',
+                                      style: const TextStyle(
+                                        fontSize: 10, fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: _showNewRoomPicker,
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: SeeUColors.accent,
+                              borderRadius: BorderRadius.circular(SeeURadii.pill),
+                              boxShadow: SeeUShadows.sm,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(PhosphorIcons.plus(PhosphorIconsStyle.bold), size: 14, color: Colors.white),
+                                const SizedBox(width: 5),
+                                const Text(
+                                  'Создать',
+                                  style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),

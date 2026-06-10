@@ -177,8 +177,12 @@ class ApiEndpoints {
   static String roomMessages(String id) => '/rooms/$id/messages';
   static String roomMembers(String id) => '/rooms/$id/members';
   static String roomInvite(String id) => '/rooms/$id/invite';
+  static String roomCandidates(String id) => '/rooms/$id/candidates';
   static String roomMember(String id, String userId) => '/rooms/$id/members/$userId';
   static String roomAdmin(String id, String userId) => '/rooms/$id/admins/$userId';
+  static const String roomInvitesMe = '/rooms/invites/me';
+  static String roomInviteAccept(String id) => '/rooms/invites/$id/accept';
+  static String roomInviteDecline(String id) => '/rooms/invites/$id/decline';
 
   // === Library Service endpoints ===
   static const String files = '/files';

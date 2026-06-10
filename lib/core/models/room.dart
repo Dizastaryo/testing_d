@@ -32,6 +32,39 @@ class RoomMember {
       );
 }
 
+class RoomInvite {
+  final String id;
+  final String roomId;
+  final String roomName;
+  final String roomCover;
+  final String inviterName;
+  final String inviterUsername;
+  final String inviterAvatar;
+  final DateTime createdAt;
+
+  const RoomInvite({
+    required this.id,
+    required this.roomId,
+    required this.roomName,
+    this.roomCover = '',
+    required this.inviterName,
+    required this.inviterUsername,
+    this.inviterAvatar = '',
+    required this.createdAt,
+  });
+
+  factory RoomInvite.fromJson(Map<String, dynamic> j) => RoomInvite(
+        id: j['id'] as String,
+        roomId: j['room_id'] as String,
+        roomName: j['room_name'] as String? ?? '',
+        roomCover: j['room_cover'] as String? ?? '',
+        inviterName: j['inviter_name'] as String? ?? '',
+        inviterUsername: j['inviter_username'] as String? ?? '',
+        inviterAvatar: j['inviter_avatar'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 class RoomParticipant {
   final String userId;
   final String fullName;

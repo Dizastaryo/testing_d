@@ -11,7 +11,7 @@ import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../core/providers/following_candidates_provider.dart';
+import '../../core/providers/room_candidates_provider.dart';
 import '../../core/providers/room_provider.dart';
 
 /// Экран участников комнаты.
@@ -330,7 +330,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
             const SizedBox(height: 6),
             Text(
               grant
-                  ? '${member.fullName} сможет редактировать комнату и приглашать участников.'
+                  ? '${member.fullName} станет администратором и сможет приглашать участников. Вы потеряете роль администратора (если вы не создатель).'
                   : '${member.fullName} потеряет права администратора.',
               style: SeeUTypography.body.copyWith(color: c.ink2),
             ),
@@ -696,7 +696,7 @@ class _InvitePickerSheetState extends ConsumerState<_InvitePickerSheet> {
     try {
       List<User> users;
       if (q == null || q.isEmpty) {
-        users = await ref.read(followingCandidatesProvider.future);
+        users = await ref.read(roomCandidatesProvider(widget.roomId).future);
       } else {
         final api = ref.read(apiClientProvider);
         final r = await api.get(
