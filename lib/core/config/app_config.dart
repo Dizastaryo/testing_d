@@ -1,5 +1,5 @@
 /// Build-time configuration. Values come from `--dart-define` flags;
-/// defaults point at the dev-laptop's **LAN IPv4** (`192.168.1.7`).
+/// defaults point at the dev-laptop's **LAN IPv4** (`192.168.1.4`).
 ///
 /// **Why LAN, not localhost:** shipping target — iOS + Android (см. CLAUDE.md).
 /// Юзер собирает APK/IPA и ставит на телефон, телефон и ноут в одной Wi-Fi
