@@ -102,8 +102,11 @@ class _GroupCallScreenState extends State<GroupCallScreen>
     if (Platform.isAndroid) {
       unawaited(CallBgService.instance.enterPip());
     } else {
+      final s = GroupCallService.instance.session.value;
       GroupCallService.instance.minimized.value = true;
-      unawaited(CallBgService.instance.enterPip());
+      unawaited(CallBgService.instance.enterPip(
+        connectedAt: s?.connectedAt,
+      ));
       if (mounted) Navigator.of(context).pop();
     }
   }

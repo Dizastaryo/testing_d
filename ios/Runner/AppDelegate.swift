@@ -49,7 +49,12 @@ import AVKit
         case "enterPip":
           // iOS: запустить нативный PiP немедленно (например при нажатии «Свернуть»).
           if #available(iOS 15.0, *) {
-            PipManager.shared.startPip()
+            let args = call.arguments as? [String: Any]
+            var connectedDate: Date? = nil
+            if let ms = args?["connectedAtMs"] as? Int {
+              connectedDate = Date(timeIntervalSince1970: Double(ms) / 1000.0)
+            }
+            PipManager.shared.startPip(connectedDate: connectedDate)
           }
           result(nil)
 

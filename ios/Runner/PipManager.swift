@@ -3,11 +3,18 @@ import UIKit
 
 /// Управляет системным PiP-окном для звонков на iOS 15+.
 ///
-/// Логика: PiP НЕ запускается вручную при нажатии «свернуть».
-/// Вместо этого регистрируются lifecycle-наблюдатели:
-///   - willResignActive → PiP стартует (когда приложение уходит в фон)
-///   - didBecomeActive  → PiP гасится (когда приложение возвращается)
-/// Внутри приложения видит только Flutter mini overlay.
+/// Жизненный цикл:
+///   1. Flutter вызывает `prepareCall` при открытии экрана звонка — регистрируем
+///      lifecycle-наблюдатели.
+///   2. Нажатие «Свернуть» во Flutter → `enterPip` channel → `startPip()` — запускаем
+///      PiP немедленно в foreground (плавает поверх приложения).
+///   3. Уход в фон (`willResignActive`) → запускаем PiP если ещё не запущен.
+///   4. Возврат в приложение (`didBecomeActive`) → останавливаем PiP.
+///   5. Пользователь нажал «Развернуть» в PiP → `restoreUserInterface` delegate →
+///      `onReturn` → Flutter восстанавливает полноэкранный звонок.
+///   6. Пользователь нажал «×» или PiP закрылся иначе → `didStop` → тот же
+///      `onReturn` → звонок не теряется.
+///   7. Завершение звонка → Flutter вызывает `clearCall` → снимаем наблюдатели.
 @available(iOS 15.0, *)
 class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
@@ -78,11 +85,13 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
   }
 
   /// Запустить нативный PiP вручную (при нажатии «Свернуть» внутри приложения).
+  /// - Parameter connectedDate: момент соединения звонка — таймер покажет реальную длительность.
+  ///   Если nil — таймер стартует с 0 (для голосовых каналов где нет точного времени).
   /// Идемпотент: если PiP уже запущен — ничего не делает.
-  func startPip() {
+  func startPip(connectedDate: Date? = nil) {
     guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
     guard pipController == nil else { return }
-    _startPip()
+    _startPip(connectedDate: connectedDate)
   }
 
   /// Остановить PiP-окно (не снимает lifecycle-наблюдатели — используется при
@@ -106,17 +115,15 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
   @objc private func appDidBecomeActive() {
     guard pipController != nil else { return }
-    let alreadyReturned = returnCallbackFired
-    stop()  // сбрасывает returnCallbackFired
-    if !alreadyReturned {
-      // PiP закрылся не через Expand (свайп, системное закрытие) → восстанавливаем экран звонка
-      onReturn?()
-    }
+    // PiP запущен — останавливаем. Если это возврат через «Развернуть»,
+    // система уже вызвала restoreUserInterface до didBecomeActive.
+    // Если возврат иным путём — didStopPictureInPicture вызовет onReturn.
+    pipController?.stopPictureInPicture()
   }
 
   // MARK: - Internal PiP start
 
-  private func _startPip() {
+  private func _startPip(connectedDate: Date? = nil) {
     stop()  // сброс предыдущего состояния
 
     let vc = AVPictureInPictureVideoCallViewController()
@@ -143,7 +150,9 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     pip.delegate = self
     pipController = pip
 
-    startDate = Date()
+    // Используем реальное время начала звонка (если передано) — таймер показывает
+    // корректную длительность даже если minimize нажат на 5-й минуте.
+    startDate = connectedDate ?? Date()
     startDisplayLink()
 
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak pip] in
@@ -257,14 +266,8 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
 
   // MARK: - AVPictureInPictureControllerDelegate
 
-  func pictureInPictureControllerDidStopPictureInPicture(
-    _ controller: AVPictureInPictureController
-  ) {
-    stopDisplayLink()
-    onDismissed?()
-  }
-
-  /// Пользователь нажал «Развернуть» → возвращаем в приложение.
+  /// Пользователь нажал «Развернуть» → помечаем флаг и уведомляем Flutter.
+  /// Вызывается ДО didStopPictureInPicture.
   func pictureInPictureController(
     _ controller: AVPictureInPictureController,
     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
@@ -272,5 +275,28 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     returnCallbackFired = true
     onReturn?()
     completionHandler(true)
+  }
+
+  /// PiP остановлен — независимо от причины (Expand, ×, программно, система).
+  /// Сюда приходят ВСЕ случаи завершения PiP. Обнуляем состояние и при необходимости
+  /// восстанавливаем экран звонка (если закрыт не через Expand).
+  func pictureInPictureControllerDidStopPictureInPicture(
+    _ controller: AVPictureInPictureController
+  ) {
+    let wasExpand = returnCallbackFired
+    // Обнуляем pipController — предотвращаем повторный stopPictureInPicture
+    // из appDidBecomeActive (уже обработан здесь).
+    pipController  = nil
+    pipVC          = nil
+    timerLabel     = nil
+    startDate      = nil
+    stopDisplayLink()
+    returnCallbackFired = false
+    onDismissed?()
+    if !wasExpand {
+      // PiP закрыт через «×», системно или при возврате без Expand →
+      // восстанавливаем полноэкранный звонок, чтобы звонок не завис «в воздухе».
+      onReturn?()
+    }
   }
 }

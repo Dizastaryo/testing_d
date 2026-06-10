@@ -179,8 +179,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     if (Platform.isAndroid) {
       unawaited(CallBgService.instance.enterPip());
     } else {
+      final s = CallService.instance.session.value;
       CallService.instance.minimized.value = true;
-      unawaited(CallBgService.instance.enterPip());
+      unawaited(CallBgService.instance.enterPip(
+        connectedAt: s?.connectedAt,
+      ));
       if (mounted) Navigator.of(context).pop();
     }
   }

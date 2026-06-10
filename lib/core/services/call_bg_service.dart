@@ -118,16 +118,20 @@ class CallBgService {
   /// Активировать PiP-режим.
   /// Android: Activity входит в PiP.
   /// iOS: запустить нативный AVPictureInPicture немедленно (floating overlay).
+  /// [connectedAt] — момент соединения звонка; передаётся в iOS PiP для корректного таймера.
   Future<void> enterPip({
-    String avatarUrl = '',
-    String username  = '',
-    String kind      = 'voice',
+    String avatarUrl   = '',
+    String username    = '',
+    String kind        = 'voice',
+    DateTime? connectedAt,
   }) async {
     try {
       await _pipCh.invokeMethod<void>('enterPip', {
         'avatarUrl': avatarUrl,
         'username' : username,
         'kind'     : kind,
+        if (connectedAt != null)
+          'connectedAtMs': connectedAt.millisecondsSinceEpoch,
       });
       appLog('[CallBgService] PiP entered');
     } catch (e, st) {
