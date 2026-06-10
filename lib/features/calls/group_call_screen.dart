@@ -103,6 +103,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
       unawaited(CallBgService.instance.enterPip());
     } else {
       GroupCallService.instance.minimized.value = true;
+      unawaited(CallBgService.instance.enterPip());
       if (mounted) Navigator.of(context).pop();
     }
   }

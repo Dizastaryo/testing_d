@@ -26,6 +26,10 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
   private var callUsername: String = ""
   private var callKind: String = "voice"
 
+  /// true если onReturn уже был вызван делегатом (Expand) — чтобы appDidBecomeActive
+  /// не вызвал его повторно.
+  private var returnCallbackFired = false
+
   private override init() { super.init() }
 
   // MARK: - Public API
@@ -73,9 +77,18 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     onDismissed   = nil
   }
 
+  /// Запустить нативный PiP вручную (при нажатии «Свернуть» внутри приложения).
+  /// Идемпотент: если PiP уже запущен — ничего не делает.
+  func startPip() {
+    guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+    guard pipController == nil else { return }
+    _startPip()
+  }
+
   /// Остановить PiP-окно (не снимает lifecycle-наблюдатели — используется при
   /// возврате в приложение, чтобы следующий уход в фон снова запустил PiP).
   func stop() {
+    returnCallbackFired = false
     stopDisplayLink()
     pipController?.stopPictureInPicture()
     pipController  = nil
@@ -92,7 +105,13 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
   }
 
   @objc private func appDidBecomeActive() {
-    stop()
+    guard pipController != nil else { return }
+    let alreadyReturned = returnCallbackFired
+    stop()  // сбрасывает returnCallbackFired
+    if !alreadyReturned {
+      // PiP закрылся не через Expand (свайп, системное закрытие) → восстанавливаем экран звонка
+      onReturn?()
+    }
   }
 
   // MARK: - Internal PiP start
@@ -250,6 +269,7 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     _ controller: AVPictureInPictureController,
     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
   ) {
+    returnCallbackFired = true
     onReturn?()
     completionHandler(true)
   }

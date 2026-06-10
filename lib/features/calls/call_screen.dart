@@ -173,13 +173,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   // ── PiP ─────────────────────────────────────────────────────────────────
 
   /// Android: Activity входит в PiP-режим (окно остаётся, маршрут не меняется).
-  /// iOS: закрываем полный экран, показываем Flutter mini overlay.
-  /// Нативный PiP запустится автоматически при уходе в фон (lifecycle observer).
+  /// iOS: запускаем нативный AVPictureInPicture немедленно (floating over app),
+  /// закрываем полноэкранный маршрут. Один нативный PiP работает и внутри и снаружи.
   void _minimizeOrPip() {
     if (Platform.isAndroid) {
       unawaited(CallBgService.instance.enterPip());
     } else {
       CallService.instance.minimized.value = true;
+      unawaited(CallBgService.instance.enterPip());
       if (mounted) Navigator.of(context).pop();
     }
   }

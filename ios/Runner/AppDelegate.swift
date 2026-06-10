@@ -47,7 +47,10 @@ import AVKit
           result(nil)
 
         case "enterPip":
-          // Android only — на iOS не используется (lifecycle-based PiP).
+          // iOS: запустить нативный PiP немедленно (например при нажатии «Свернуть»).
+          if #available(iOS 15.0, *) {
+            PipManager.shared.startPip()
+          }
           result(nil)
 
         case "exitPip":

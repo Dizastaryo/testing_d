@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -260,34 +261,38 @@ class _CallListenerState extends ConsumerState<CallListener> {
         widget.child,
 
         // ── 1-на-1 звонок mini overlay ─────────────────────────────────────
-        ValueListenableBuilder<CallSession?>(
-          valueListenable: CallService.instance.session,
-          builder: (_, sess, __) {
-            if (sess == null) return const SizedBox.shrink();
-            return ValueListenableBuilder<bool>(
-              valueListenable: CallService.instance.minimized,
-              builder: (_, isMin, __) {
-                if (!isMin) return const SizedBox.shrink();
-                return const _MiniCallOverlay();
-              },
-            );
-          },
-        ),
+        // iOS: нативный AVPictureInPicture — Flutter overlay не нужен.
+        // Android: Flutter overlay (Activity PiP не поддерживает произвольный UI).
+        if (!Platform.isIOS)
+          ValueListenableBuilder<CallSession?>(
+            valueListenable: CallService.instance.session,
+            builder: (_, sess, __) {
+              if (sess == null) return const SizedBox.shrink();
+              return ValueListenableBuilder<bool>(
+                valueListenable: CallService.instance.minimized,
+                builder: (_, isMin, __) {
+                  if (!isMin) return const SizedBox.shrink();
+                  return const _MiniCallOverlay();
+                },
+              );
+            },
+          ),
 
         // ── Групповой звонок mini overlay ──────────────────────────────────
-        ValueListenableBuilder<GroupCallSession?>(
-          valueListenable: GroupCallService.instance.session,
-          builder: (_, groupSess, __) {
-            if (groupSess == null) return const SizedBox.shrink();
-            return ValueListenableBuilder<bool>(
-              valueListenable: GroupCallService.instance.minimized,
-              builder: (_, isMin, __) {
-                if (!isMin) return const SizedBox.shrink();
-                return const _MiniGroupCallOverlay();
-              },
-            );
-          },
-        ),
+        if (!Platform.isIOS)
+          ValueListenableBuilder<GroupCallSession?>(
+            valueListenable: GroupCallService.instance.session,
+            builder: (_, groupSess, __) {
+              if (groupSess == null) return const SizedBox.shrink();
+              return ValueListenableBuilder<bool>(
+                valueListenable: GroupCallService.instance.minimized,
+                builder: (_, isMin, __) {
+                  if (!isMin) return const SizedBox.shrink();
+                  return const _MiniGroupCallOverlay();
+                },
+              );
+            },
+          ),
 
         // ── Голосовой канал комнаты mini overlay ───────────────────────────
         ValueListenableBuilder<String?>(

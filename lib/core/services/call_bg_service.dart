@@ -115,20 +115,21 @@ class CallBgService {
 
   // ── PiP ───────────────────────────────────────────────────────────────────
 
-  /// Android: активировать PiP-режим Activity.
+  /// Активировать PiP-режим.
+  /// Android: Activity входит в PiP.
+  /// iOS: запустить нативный AVPictureInPicture немедленно (floating overlay).
   Future<void> enterPip({
     String avatarUrl = '',
     String username  = '',
     String kind      = 'voice',
   }) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await _pipCh.invokeMethod<void>('enterPip', {
         'avatarUrl': avatarUrl,
         'username' : username,
         'kind'     : kind,
       });
-      appLog('[CallBgService] PiP entered (android)');
+      appLog('[CallBgService] PiP entered');
     } catch (e, st) {
       appLog.error('[CallBgService] enterPip failed', e, st);
     }
