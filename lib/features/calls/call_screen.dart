@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../core/services/call_bg_service.dart';
 import '../../widgets/speaking_rings.dart';
 import 'call_service.dart';
 
@@ -65,6 +67,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     CallService.instance.isCameraOff.addListener(_syncState);
     _onSessionChanged();
     _scheduleHide();
+    unawaited(CallBgService.instance.setCallActive(true));
   }
 
   void _onSessionChanged() {
@@ -153,7 +156,27 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     CallService.instance.remoteStream.removeListener(_syncRemote);
     _localRenderer.dispose();
     _remoteRenderer.dispose();
+    unawaited(CallBgService.instance.setCallActive(false));
     super.dispose();
+  }
+
+  // ── PiP ─────────────────────────────────────────────────────────────────
+
+  /// Android: Activity входит в PiP-режим (окно остаётся, маршрут не меняется).
+  /// iOS: запускаем нативный PiP и убираем экран звонка.
+  void _minimizeOrPip() {
+    final s = CallService.instance.session.value;
+    if (Platform.isAndroid) {
+      unawaited(CallBgService.instance.enterPip());
+    } else {
+      CallService.instance.minimized.value = true;
+      unawaited(CallBgService.instance.enterPip(
+        avatarUrl: s?.peerAvatarUrl ?? '',
+        username:  s?.peerUsername  ?? '',
+        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
+      ));
+      if (mounted) Navigator.of(context).maybePop();
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
@@ -165,12 +188,24 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       builder: (_, session, __) {
         if (session == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            }
+            if (mounted) Navigator.of(context).pop();
           });
           return const SizedBox.shrink();
         }
+
+        // Android PiP-режим: минимальный UI — только видео/аватар, без управления.
+        return ValueListenableBuilder<bool>(
+          valueListenable: CallBgService.instance.pipMode,
+          builder: (_, inPip, __) {
+            if (inPip) {
+              final isVoicePip = session.kind == CallKind.voice;
+              return Scaffold(
+                backgroundColor: Colors.black,
+                body: isVoicePip
+                    ? _buildAvatarBg(session)
+                    : _buildMainView(session, false),
+              );
+            }
 
         final isVoice = session.kind == CallKind.voice;
         final size = MediaQuery.of(context).size;
@@ -184,16 +219,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         );
 
         return PopScope(
-          canPop: true,
+          canPop: false,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) return;
+            if (didPop) return;
             final status = CallService.instance.session.value?.status;
-            // Не минимизируем во время входящего/завершённого звонка
             if (status != null &&
                 status != CallStatus.incomingRinging &&
                 status != CallStatus.ended &&
                 status != CallStatus.idle) {
-              CallService.instance.minimized.value = true;
+              _minimizeOrPip();
+            } else {
+              Navigator.of(context).pop();
             }
           },
           child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -237,6 +273,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
+        );
+          }, // ValueListenableBuilder<bool> pipMode
         );
       },
     );
@@ -654,10 +692,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           // Minimize — top-left (avoids conflict with PiP top-right)
           _glassButton(
             icon: PhosphorIconsRegular.arrowsInSimple,
-            onTap: () {
-              CallService.instance.minimized.value = true;
-              Navigator.of(context).maybePop();
-            },
+            onTap: _minimizeOrPip,
           ),
           const Spacer(),
           // Timer pill — center when connected

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../core/services/call_bg_service.dart';
 import 'call_service.dart' show CallKind;
 import 'group_call_service.dart';
 
@@ -47,6 +49,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
     GroupCallService.instance.isCameraOff.addListener(_syncState);
     GroupCallService.instance.session.addListener(_onSessionForTimer);
     _onSessionForTimer();
+    unawaited(CallBgService.instance.setCallActive(true));
   }
 
   void _onSessionForTimer() {
@@ -84,8 +87,21 @@ class _GroupCallScreenState extends State<GroupCallScreen>
 
   void _onSession() {
     final s = GroupCallService.instance.session.value;
-    if (s == null && mounted && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    if (s == null && mounted) Navigator.of(context).pop();
+  }
+
+  void _minimizeOrPip() {
+    final s = GroupCallService.instance.session.value;
+    if (Platform.isAndroid) {
+      unawaited(CallBgService.instance.enterPip());
+    } else {
+      GroupCallService.instance.minimized.value = true;
+      unawaited(CallBgService.instance.enterPip(
+        avatarUrl: '',
+        username:  s?.chatTitle ?? '',
+        kind:      (s?.kind == CallKind.voice) ? 'voice' : 'video',
+      ));
+      if (mounted) Navigator.of(context).maybePop();
     }
   }
 
@@ -116,6 +132,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
     _controlsHideTimer?.cancel();
     _fadeCtrl.dispose();
     _localRenderer.dispose();
+    unawaited(CallBgService.instance.setCallActive(false));
     super.dispose();
   }
 
@@ -136,14 +153,25 @@ class _GroupCallScreenState extends State<GroupCallScreen>
               .clamp(8.0, size.height - pipH - 8),
         );
 
+        // Android PiP-режим: минимальный UI внутри PiP-окна.
+        return ValueListenableBuilder<bool>(
+          valueListenable: CallBgService.instance.pipMode,
+          builder: (_, inPip, __) {
+        if (inPip) {
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: _buildGallery(sess, sess.kind == CallKind.voice),
+          );
+        }
         return PopScope(
-          canPop: true,
+          canPop: false,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) return;
+            if (didPop) return;
             final status = GroupCallService.instance.session.value?.status;
-            if (status != null &&
-                status != GroupCallStatus.incomingRinging) {
-              GroupCallService.instance.minimized.value = true;
+            if (status != null && status != GroupCallStatus.incomingRinging) {
+              _minimizeOrPip();
+            } else {
+              Navigator.of(context).pop();
             }
           },
           child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -184,6 +212,8 @@ class _GroupCallScreenState extends State<GroupCallScreen>
             ),
           ),
         );
+          }, // ValueListenableBuilder<bool> pipMode
+        );
       },
     );
   }
@@ -199,10 +229,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
           // Minimize
           _glassBtn(
             icon: PhosphorIconsRegular.arrowsInSimple,
-            onTap: () {
-              GroupCallService.instance.minimized.value = true;
-              Navigator.of(context).maybePop();
-            },
+            onTap: _minimizeOrPip,
           ),
           const SizedBox(width: 10),
           // Title + timer

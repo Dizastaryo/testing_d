@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import 'logger.dart';
 
+// ignore_for_file: avoid_void_async
+
 /// Управляет двумя вещами:
 /// 1. AVAudioSession — переключение между режимами «рингтон» и «звонок» (iOS).
 /// 2. Android ForegroundService — держит процесс живым пока экран заблокирован.
@@ -15,7 +17,12 @@ class CallBgService {
   CallBgService._();
   static final CallBgService instance = CallBgService._();
 
-  static const _ch = MethodChannel('seeu/call_fg');
+  static const _ch    = MethodChannel('seeu/call_fg');
+  static const _pipCh = MethodChannel('seeu/pip');
+
+  /// true когда Activity находится в режиме PiP (Android).
+  /// Flutter переключается на минимальный UI.
+  final ValueNotifier<bool> pipMode = ValueNotifier(false);
 
   // ── AudioSession ──────────────────────────────────────────────────────────
 
@@ -103,6 +110,48 @@ class CallBgService {
       appLog('[CallBgService] FG stopped');
     } catch (e, st) {
       appLog.error('[CallBgService] stopForeground failed', e, st);
+    }
+  }
+
+  // ── PiP ───────────────────────────────────────────────────────────────────
+
+  /// Android: активировать PiP-режим Activity.
+  /// iOS 15+: показать нативное PiP-окно с аватаром и таймером.
+  Future<void> enterPip({
+    String avatarUrl = '',
+    String username  = '',
+    String kind      = 'voice',
+  }) async {
+    try {
+      await _pipCh.invokeMethod<void>('enterPip', {
+        'avatarUrl': avatarUrl,
+        'username' : username,
+        'kind'     : kind,
+      });
+      appLog('[CallBgService] PiP entered');
+    } catch (e, st) {
+      appLog.error('[CallBgService] enterPip failed', e, st);
+    }
+  }
+
+  /// Завершить PiP (iOS: скрыть нативное окно).
+  Future<void> exitPip() async {
+    try {
+      await _pipCh.invokeMethod<void>('exitPip');
+      appLog('[CallBgService] PiP exited');
+    } catch (e, st) {
+      appLog.error('[CallBgService] exitPip failed', e, st);
+    }
+  }
+
+  /// Сообщить Android, что активный звонок начался/закончился.
+  /// Используется в onUserLeaveHint для авто-входа в PiP при нажатии «Домой».
+  Future<void> setCallActive(bool active) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _ch.invokeMethod<void>('setCallActive', {'active': active});
+    } catch (e, st) {
+      appLog.error('[CallBgService] setCallActive failed', e, st);
     }
   }
 }

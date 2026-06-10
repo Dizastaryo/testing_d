@@ -11,6 +11,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/services/call_bg_service.dart';
 import '../../core/services/voice_room_service.dart';
 import 'call_screen.dart';
 import 'call_service.dart';
@@ -39,6 +40,8 @@ class _CallListenerState extends ConsumerState<CallListener> {
   bool _groupOpen = false;
   bool _roomOpen = false;
 
+  static const _pipCh = MethodChannel('seeu/pip');
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +60,7 @@ class _CallListenerState extends ConsumerState<CallListener> {
     GroupCallService.instance.minimized.addListener(_onGroupMinimized);
     GroupCallService.instance.lastError.addListener(_onGroupCallError);
     VoiceRoomService.instance.minimized.addListener(_onVoiceRoomMinimized);
+    _pipCh.setMethodCallHandler(_onPipMessage);
   }
 
   @override
@@ -69,6 +73,23 @@ class _CallListenerState extends ConsumerState<CallListener> {
     GroupCallService.instance.lastError.removeListener(_onGroupCallError);
     VoiceRoomService.instance.minimized.removeListener(_onVoiceRoomMinimized);
     super.dispose();
+  }
+
+  /// Сообщения от нативного PiP-канала.
+  Future<dynamic> _onPipMessage(MethodCall call) async {
+    switch (call.method) {
+      case 'pipModeChanged':
+        // Android: Activity вошла/вышла из PiP-режима.
+        CallBgService.instance.pipMode.value = call.arguments as bool? ?? false;
+      case 'pipReturn':
+        // iOS: пользователь нажал «Развернуть» в нативном PiP.
+        unawaited(CallBgService.instance.exitPip());
+        if (GroupCallService.instance.session.value != null) {
+          GroupCallService.instance.minimized.value = false;
+        } else if (CallService.instance.session.value != null) {
+          CallService.instance.minimized.value = false;
+        }
+    }
   }
 
   void _onCallError() {
