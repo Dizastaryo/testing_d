@@ -62,6 +62,28 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
         };
         if (refreshEvents.contains(evt.type)) {
           load(silent: true);
+        } else if (evt.type == 'room.message') {
+          final payload = evt.payload is Map<String, dynamic>
+              ? evt.payload as Map<String, dynamic>
+              : null;
+          if (payload == null) return;
+          final roomId = payload['room_id'] as String?;
+          final msgJson = payload['message'] as Map<String, dynamic>?;
+          if (roomId == null || msgJson == null) return;
+          final text = msgJson['text'] as String? ?? '';
+          final senderUsername = msgJson['sender_username'] as String? ?? '';
+          final atStr = msgJson['created_at'] as String?;
+          final at = atStr != null ? DateTime.tryParse(atStr) : null;
+          state = state.copyWith(
+            rooms: state.rooms.map((r) {
+              if (r.id != roomId) return r;
+              return r.copyWith(
+                lastMessage: text,
+                lastSenderUsername: senderUsername,
+                lastMessageAt: at,
+              );
+            }).toList(),
+          );
         }
       });
     });

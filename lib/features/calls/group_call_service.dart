@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -8,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/services/call_bg_service.dart';
 import '../../core/services/logger.dart';
 import 'call_service.dart' show CallKind, CallSender;
 
@@ -117,6 +117,7 @@ class GroupCallService {
   final ValueNotifier<MediaStream?> localStream = ValueNotifier(null);
   final ValueNotifier<bool> isMuted = ValueNotifier(false);
   final ValueNotifier<bool> isCameraOff = ValueNotifier(false);
+  final ValueNotifier<bool> isSpeakerOn = ValueNotifier(false);
   /// #5: последняя ошибка — показывается снэкбаром через CallListener.
   final ValueNotifier<String?> lastError = ValueNotifier(null);
   /// Список участников чата, которым отправлен инвайт, с их статусами.
@@ -184,6 +185,10 @@ class GroupCallService {
       inviterUsername: myUsername,
     );
     await _initLocalStream();
+    unawaited(CallBgService.instance.startForeground(
+      title: 'Групповой звонок',
+      body: chatTitle,
+    ));
     _startRingback();
     // #10: 60 секунд без единого join → автоматический hangup.
     _inviteTimer?.cancel();
@@ -205,6 +210,7 @@ class GroupCallService {
     if (s == null || s.status != GroupCallStatus.incomingRinging) return;
     _stopRing();
     session.value = s.copyWith(status: GroupCallStatus.active);
+    unawaited(CallBgService.instance.configureForCall());
     await _initLocalStream();
     // #H-1: после await getUserMedia сессия могла быть очищена (отказ в
     // разрешениях → _cleanup). Без проверки отправляется call.group.join
@@ -257,6 +263,26 @@ class GroupCallService {
     isCameraOff.value = next;
   }
 
+  Future<void> switchCamera() async {
+    final tracks = localStream.value?.getVideoTracks() ?? const [];
+    if (tracks.isEmpty) return;
+    try {
+      await Helper.switchCamera(tracks.first);
+    } catch (e) {
+      appLog.warn('[GroupCallService] switchCamera failed', e);
+    }
+  }
+
+  Future<void> toggleSpeaker() async {
+    final next = !isSpeakerOn.value;
+    try {
+      await Helper.setSpeakerphoneOn(next);
+      isSpeakerOn.value = next;
+    } catch (e) {
+      appLog.warn('[GroupCallService] toggleSpeaker failed', e);
+    }
+  }
+
   // ── Internals ──
 
   void _onRealtimeEvent(RealtimeEvent evt) {
@@ -298,15 +324,21 @@ class GroupCallService {
     final kindStr = p['kind']?.toString();
     final kind = kindStr == 'voice' ? CallKind.voice : CallKind.video;
     if (chatId.isEmpty || from.isEmpty) return;
+    final chatTitle = p['chat_title']?.toString() ?? 'Групповой звонок';
+    final inviterUsername = p['from_username']?.toString() ?? '';
     session.value = GroupCallSession(
       chatId: chatId,
-      chatTitle: p['chat_title']?.toString() ?? 'Групповой звонок',
+      chatTitle: chatTitle,
       kind: kind,
       isOutgoing: false,
       status: GroupCallStatus.incomingRinging,
       inviterId: from,
-      inviterUsername: p['from_username']?.toString() ?? '',
+      inviterUsername: inviterUsername,
     );
+    unawaited(CallBgService.instance.startForeground(
+      title: 'Входящий групповой звонок',
+      body: inviterUsername.isNotEmpty ? inviterUsername : chatTitle,
+    ));
     _startRingtone();
   }
 
@@ -585,21 +617,7 @@ class GroupCallService {
   }
 
   Future<void> _ensureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.duckOthers,
-        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
-        avAudioSessionRouteSharingPolicy:
-            AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        avAudioSessionSetActiveOptions:
-            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
-      ));
-    } catch (e) {
-      appLog.warn('[GroupCall] AudioSession configure failed', e);
-    }
+    await CallBgService.instance.configureForRingtone();
   }
 
   Future<void> _playRingAsset(String asset) async {
@@ -623,6 +641,7 @@ class GroupCallService {
 
   Future<void> _cleanup() async {
     _stopRing();
+    unawaited(CallBgService.instance.stopForeground());
     // #10: отменяем invite-timeout.
     _inviteTimer?.cancel();
     _inviteTimer = null;
@@ -651,6 +670,10 @@ class GroupCallService {
     localStream.value = null;
     isMuted.value = false;
     isCameraOff.value = false;
+    if (isSpeakerOn.value) {
+      try { await Helper.setSpeakerphoneOn(false); } catch (_) {}
+    }
+    isSpeakerOn.value = false;
     invitedMembers.value = [];
     // #L-2: принудительно очищаем — страховка если concurrent _ensurePeer
     // добавил peer между итерациями выше.

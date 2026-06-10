@@ -12,6 +12,8 @@
          когда приложение свёрнуто). Android 14+ требует TYPE-permission. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 14+ TYPE-permission для звонков с микрофоном в foreground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 13+ runtime permission для push-нотификаций (APNs/FCM). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Wake/network для WS-keep-alive + ML Kit (face detection). -->
@@ -48,6 +50,13 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- ForegroundService для звонков и голосовых каналов.
+             Тип microphone — Android 10+ требует явного объявления типа
+             если сервис захватывает микрофон в background'е. -->
+        <service
+            android:name=".CallForegroundService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

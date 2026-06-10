@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -8,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/services/call_bg_service.dart';
 import '../../core/services/logger.dart';
 
 /// Сигнатура «отправить WS-сообщение». Injection-point вместо direct-привязки
@@ -99,9 +99,12 @@ class CallService {
   final ValueNotifier<String?> lastError = ValueNotifier(null);
   /// Нормализованный уровень локального микрофона (0.0..1.0).
   /// Обновляется каждые ~150 мс из RTCPeerConnection.getStats() пока
-  /// status == connected && !isMuted. Используется в CallScreen для
-  /// отображения SpeakingRings вокруг аватара.
+  /// status == connected. Используется в CallScreen для индикатора микрофона.
   final ValueNotifier<double> localAudioLevel = ValueNotifier(0.0);
+  /// Нормализованный уровень входящего аудио собеседника (0.0..1.0).
+  /// Читается из inbound-rtp stats. Используется в CallScreen для
+  /// SpeakingRings вокруг аватара собеседника.
+  final ValueNotifier<double> remoteAudioLevel = ValueNotifier(0.0);
   Timer? _levelTimer;
 
   RTCPeerConnection? _pc;
@@ -161,31 +164,8 @@ class CallService {
   bool _audioSessionConfigured = false;
   Future<void> _ensureAudioSession() async {
     if (_audioSessionConfigured) return;
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.duckOthers,
-        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
-        avAudioSessionRouteSharingPolicy:
-            AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        avAudioSessionSetActiveOptions:
-            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
-        androidAudioAttributes: AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech,
-          flags: AndroidAudioFlags.audibilityEnforced,
-          usage: AndroidAudioUsage.notificationRingtone,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
-        androidWillPauseWhenDucked: true,
-      ));
-      await session.setActive(true);
-      _audioSessionConfigured = true;
-      appLog('[CallService] audio session configured for ringtone');
-    } catch (e, st) {
-      appLog.error('[CallService] audio session configure failed', e, st);
-    }
+    await CallBgService.instance.configureForRingtone();
+    _audioSessionConfigured = true;
   }
 
   /// Loop play asset через _ringPlayer. BUG-2 (b): раньше silent catch
@@ -217,30 +197,35 @@ class CallService {
   void _startLevelMonitoring() {
     _levelTimer?.cancel();
     _levelTimer = Timer.periodic(const Duration(milliseconds: 150), (_) async {
-      if (isMuted.value) {
-        if (localAudioLevel.value != 0.0) localAudioLevel.value = 0.0;
-        return;
-      }
       final pc = _pc;
       if (pc == null) {
         localAudioLevel.value = 0.0;
+        remoteAudioLevel.value = 0.0;
         return;
       }
       try {
         final stats = await pc.getStats();
-        double level = 0.0;
+        double local = 0.0;
+        double remote = 0.0;
         for (final s in stats) {
-          // Тип «media-source» (Chrome/Android) или «audio-source» (некоторые
-          // нативные реализации) содержит audioLevel 0.0..1.0.
-          if (s.type == 'media-source' || s.type == 'audio-source') {
+          // Local mic level: media-source (Chrome/Android) или audio-source.
+          if (!isMuted.value &&
+              (s.type == 'media-source' || s.type == 'audio-source')) {
             final v = s.values['audioLevel'];
-            if (v != null) {
-              level = (v as num).toDouble().clamp(0.0, 1.0);
-              break;
+            if (v != null) local = (v as num).toDouble().clamp(0.0, 1.0);
+          }
+          // Remote audio level: inbound-rtp с kind=audio.
+          if (s.type == 'inbound-rtp') {
+            final kind = s.values['kind']?.toString() ??
+                s.values['mediaType']?.toString() ?? '';
+            if (kind == 'audio') {
+              final v = s.values['audioLevel'];
+              if (v != null) remote = (v as num).toDouble().clamp(0.0, 1.0);
             }
           }
         }
-        localAudioLevel.value = level;
+        localAudioLevel.value = local;
+        remoteAudioLevel.value = remote;
       } catch (_) {
         // getStats может не поддерживаться на конкретной платформе — молча игнорируем.
       }
@@ -251,6 +236,7 @@ class CallService {
     _levelTimer?.cancel();
     _levelTimer = null;
     localAudioLevel.value = 0.0;
+    remoteAudioLevel.value = 0.0;
   }
 
   /// One-shot endtone (descending chirp) при hangup. Играется до cleanup'а
@@ -291,6 +277,10 @@ class CallService {
       kind: kind,
     );
     _startRing(CallStatus.outgoingRinging);
+    unawaited(CallBgService.instance.startForeground(
+      title: 'Исходящий звонок',
+      body: peerUsername,
+    ));
     // #9: 60 секунд без ответа → автоматический hangup.
     _inviteTimer?.cancel();
     _inviteTimer = Timer(const Duration(seconds: 60), () {
@@ -319,6 +309,7 @@ class CallService {
     final s = session.value;
     if (s == null || s.status != CallStatus.incomingRinging) return;
     session.value = s.copyWith(status: CallStatus.connecting);
+    unawaited(CallBgService.instance.configureForCall());
     await _initLocalStream();
     // #2: после await проверяем — cleanup мог запуститься (getUserMedia упал
     // или caller сбросил пока ждали permission dialog). Без этого создаётся
@@ -617,6 +608,10 @@ class CallService {
       status: CallStatus.incomingRinging,
       kind: kind,
     );
+    unawaited(CallBgService.instance.startForeground(
+      title: 'Входящий звонок',
+      body: username,
+    ));
     _startRing(CallStatus.incomingRinging);
   }
 
@@ -629,6 +624,7 @@ class CallService {
     _noResponseTimer?.cancel();
     _noResponseTimer = null;
     session.value = s.copyWith(status: CallStatus.connecting, peerResponseSeen: true);
+    unawaited(CallBgService.instance.configureForCall());
     await _ensurePeerConnection();
     await _createAndSendOffer();
   }
@@ -747,6 +743,7 @@ class CallService {
     // конфигурацию. Без сброса после завершённого звонка audio session
     // остаётся в ringtone-mode и не будет перенастроена.
     _audioSessionConfigured = false;
+    unawaited(CallBgService.instance.stopForeground());
     try {
       await _pc?.close();
     } catch (e) {
@@ -773,6 +770,9 @@ class CallService {
     _pendingIce.clear();
     isMuted.value = false;
     isCameraOff.value = false;
+    if (isSpeakerOn.value) {
+      try { await Helper.setSpeakerphoneOn(false); } catch (_) {}
+    }
     isSpeakerOn.value = false;
     final endingSession = session.value;
     if (endingSession != null) {

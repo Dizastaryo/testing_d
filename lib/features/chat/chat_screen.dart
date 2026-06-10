@@ -86,6 +86,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   int _messageCount = 0;
   bool _atBottom = true;
+  int _unreadCount = 0;
   bool _sendError = false;
   String _failedText = '';
 
@@ -131,7 +132,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // With reverse=true, index 0 = newest message. atBottom when index 0 is visible.
     final atBottom = minVisible == 0;
     if (atBottom != _atBottom) {
-      if (mounted) setState(() => _atBottom = atBottom);
+      if (mounted) {
+        setState(() {
+          _atBottom = atBottom;
+          if (atBottom) _unreadCount = 0;
+        });
+      }
     }
     if (maxVisible >= _messageCount - 2) {
       ref
@@ -410,6 +416,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (reply != null) _replyingTo = null;
           _ttlSeconds = null;
           _failedText = '';
+          _unreadCount = 0;
         });
       }
       _scrollToBottom();
@@ -1267,7 +1274,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final prevCount = prev?.messages.length ?? 0;
       final nextCount = next.messages.length;
       if (nextCount > prevCount) {
-        _scrollToBottom(animate: prevCount > 0);
+        if (prevCount == 0 || _atBottom) {
+          _scrollToBottom(animate: prevCount > 0);
+        } else {
+          // User is scrolled up — show unread badge without forced scroll.
+          setState(() => _unreadCount += nextCount - prevCount);
+        }
         // Mark read when new messages arrive while chat is open.
         if (prevCount > 0) {
           ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
@@ -1277,7 +1289,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final c = context.seeuColors;
     return GestureDetector(
-      onTap: () {},
+      onTap: () => _focusNode.unfocus(),
       child: Scaffold(
         backgroundColor: c.bg,
         body: Container(
@@ -1553,28 +1565,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   right: 16,
                                   child: GestureDetector(
                                     onTap: () => _scrollToBottom(),
-                                    child: Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: c.surface,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: c.line, width: 0.5),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.12),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: c.surface,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: c.line, width: 0.5),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.12),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                      child: Icon(
-                                        PhosphorIconsRegular.arrowDown,
-                                        size: 20,
-                                        color: c.ink,
-                                      ),
+                                          child: Icon(
+                                            PhosphorIconsRegular.arrowDown,
+                                            size: 20,
+                                            color: c.ink,
+                                          ),
+                                        ),
+                                        if (_unreadCount > 0)
+                                          Positioned(
+                                            top: -6,
+                                            right: -6,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: SeeUColors.accent,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                _unreadCount > 99
+                                                    ? '99+'
+                                                    : '$_unreadCount',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -2862,10 +2905,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               label: 'Переслать',
               color: c.ink,
               onTap: () {
-                // Forward first selected for now; multi-forward UX TBD.
                 if (selected.length == 1) {
                   _exitSelectMode();
                   _showForwardPicker(selected.first);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Выберите одно сообщение для пересылки'),
+                    duration: Duration(seconds: 2),
+                  ));
                 }
               },
             ),
@@ -2940,10 +2987,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   forAll ? 'Удалить для всех' : 'Удалить у себя',
                   style: const TextStyle(color: Colors.red),
                 ),
-                onTap: () {
+                onTap: () async {
                   Navigator.of(sheetCtx).pop();
+                  final notifier =
+                      ref.read(chatMessagesProvider(widget.chatId).notifier);
+                  final snapshot =
+                      ref.read(chatMessagesProvider(widget.chatId)).messages;
+                  // Optimistic update for all selected messages at once.
                   for (final id in ids) {
-                    _confirmDeleteMessage(id, forAll: forAll);
+                    if (forAll) {
+                      notifier.markDeletedForAll(id);
+                    } else {
+                      notifier.removeLocally(id);
+                    }
+                  }
+                  try {
+                    final api = ref.read(apiClientProvider);
+                    for (final id in ids) {
+                      final url = forAll
+                          ? ApiEndpoints.chatMessageDelete(id)
+                          : '${ApiEndpoints.chatMessageDelete(id)}?scope=self';
+                      await api.delete(url);
+                    }
+                  } on DioException catch (e) {
+                    notifier.restoreMessages(snapshot);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            'Не удалось удалить: ${apiErrorMessage(e)}'),
+                      ));
+                    }
                   }
                 },
               ),

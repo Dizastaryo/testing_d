@@ -35,6 +35,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _sending = false;
   bool _atBottom = true;
   bool _emojiPanelOpen = false;
+  bool _hasText = false;
+  int _unreadCount = 0;
 
   // ── Search ──────────────────────────────────────────────────────────────
   bool _isSearching = false;
@@ -56,6 +58,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _inputController.addListener(_onInputChanged);
     // Мы открыли страницу комнаты — overlay должен быть скрыт.
     VoiceRoomService.instance.minimized.value = false;
   }
@@ -63,6 +66,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
+    _inputController.removeListener(_onInputChanged);
     _inputController.dispose();
     _searchCtrl.dispose();
     _scrollController.dispose();
@@ -113,12 +117,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _micMonitor.stop().ignore(); // fire-and-forget, ошибки suppressed
   }
 
+  void _onInputChanged() {
+    final hasText = _inputController.text.trim().isNotEmpty;
+    if (hasText != _hasText) setState(() => _hasText = hasText);
+  }
+
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
     final atBottom = pos.pixels >= pos.maxScrollExtent - 50;
     if (atBottom != _atBottom) {
-      if (mounted) setState(() => _atBottom = atBottom);
+      if (mounted) {
+        setState(() {
+          _atBottom = atBottom;
+          if (atBottom) _unreadCount = 0;
+        });
+      }
     }
   }
 
@@ -138,7 +152,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
     _inputController.clear();
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _emojiPanelOpen = false;
+      _unreadCount = 0;
+    });
     try {
       await ref.read(roomMessagesProvider(widget.roomId).notifier).send(text);
       _scrollToBottom();
@@ -150,7 +168,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   void _toggleEmojiPanel() {
     if (_emojiPanelOpen) {
       setState(() => _emojiPanelOpen = false);
-      FocusScope.of(context).requestFocus(FocusNode());
     } else {
       FocusScope.of(context).unfocus();
       setState(() => _emojiPanelOpen = true);
@@ -337,7 +354,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       final prevCount = prev?.messages.length ?? 0;
       final nextCount = next.messages.length;
       if (nextCount > prevCount) {
-        _scrollToBottom();
+        if (prevCount == 0 || _atBottom) {
+          _scrollToBottom();
+        } else {
+          setState(() => _unreadCount += nextCount - prevCount);
+        }
       }
     });
 
@@ -394,26 +415,54 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       right: 16,
                       child: GestureDetector(
                         onTap: _scrollToBottom,
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: c.line, width: 0.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: c.line, width: 0.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.12),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Icon(
-                            PhosphorIconsRegular.arrowDown,
-                            size: 20,
-                            color: c.ink,
-                          ),
+                              child: Icon(
+                                PhosphorIconsRegular.arrowDown,
+                                size: 20,
+                                color: c.ink,
+                              ),
+                            ),
+                            if (_unreadCount > 0)
+                              Positioned(
+                                top: -6,
+                                right: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.accent,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    _unreadCount > 99
+                                        ? '99+'
+                                        : '$_unreadCount',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -937,20 +986,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: _sending ? null : _sendMessage,
+            onTap: (_sending || !_hasText) ? null : _sendMessage,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               width: 42, height: 42,
               decoration: BoxDecoration(
-                color: SeeUColors.accent,
+                color: _hasText
+                    ? SeeUColors.accent
+                    : SeeUColors.accent.withValues(alpha: 0.35),
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: SeeUColors.accent.withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                boxShadow: _hasText
+                    ? [
+                        BoxShadow(
+                          color: SeeUColors.accent.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
               ),
               child: _sending
                   ? const Center(
