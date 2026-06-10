@@ -107,11 +107,11 @@ class PipManager: NSObject, AVPictureInPictureControllerDelegate {
     buildContentView(in: vc.view, avatarUrl: callAvatarUrl,
                      username: callUsername, kind: callKind)
 
+    // Не фильтруем по foregroundActive: при willResignActive сцена уже
+    // переходит в foregroundInactive, поэтому фильтр вернёт пустой массив.
     let keyWindow = UIApplication.shared.connectedScenes
-        .filter { $0.activationState == .foregroundActive }
         .compactMap { $0 as? UIWindowScene }
-        .first?
-        .windows
+        .flatMap { $0.windows }
         .first(where: { $0.isKeyWindow })
         ?? UIApplication.shared.delegate?.window.flatMap { $0 }
     guard let sourceView = keyWindow?.rootViewController?.view else { return }
