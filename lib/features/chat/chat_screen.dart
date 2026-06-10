@@ -5,7 +5,6 @@ import 'dart:ui';
 
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:flutter/services.dart';
@@ -573,35 +572,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  /// Take photo with camera → upload → send as image message.
-  Future<void> _attachFromCamera() async {
-    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
-    HapticFeedback.selectionClick();
-    final picker = ImagePicker();
-    final XFile? picked = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-    final reply = _replyingTo;
-    if (reply != null) setState(() => _replyingTo = null);
-    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
-      id: UploadTask.newId(),
-      chatId: widget.chatId,
-      kind: UploadTaskKind.image,
-      thumbnail: bytes,
-      bytes: bytes,
-      fileName: picked.name,
-      mediaType: 'image',
-      replyTo: reply,
-      cancelToken: CancelToken(),
-    ));
-    _scrollToBottom();
-  }
-
   /// Pick image from gallery → upload to /media/upload → send as image
   /// message. Caption is the current text input (sent + cleared).
   Future<void> _attachImage() async {
@@ -644,40 +614,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        void snackSoon() {
-          Navigator.pop(ctx);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Скоро')),
-          );
-        }
-
         Widget opt(String label, IconData icon, List<Color> colors, VoidCallback onTap) {
           return GestureDetector(
             onTap: onTap,
+            behavior: HitTestBehavior.opaque,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 72,
+                  height: 72,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(22),
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: colors,
                     ),
-                    boxShadow: SeeUShadows.sm,
+                    boxShadow: [
+                      BoxShadow(
+                        color: colors.last.withAlpha(77),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  child: Icon(icon, color: Colors.white, size: 25),
+                  child: Icon(icon, color: Colors.white, size: 28),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: c.ink2,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
+                    letterSpacing: -0.1,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -688,8 +659,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
         return Container(
           padding: EdgeInsets.only(
-            left: 16, right: 16, top: 0,
-            bottom: 16 + MediaQuery.of(ctx).padding.bottom,
+            left: 24, right: 24, top: 0,
+            bottom: 28 + MediaQuery.of(ctx).padding.bottom,
           ),
           decoration: BoxDecoration(
             color: c.bg,
@@ -698,37 +669,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 36, height: 4,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: c.line, borderRadius: BorderRadius.circular(2),
-                  ),
+              Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: c.line, borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 16),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
                   'Прикрепить',
                   style: TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w600, color: c.ink,
+                    fontSize: 18, fontWeight: FontWeight.w700, color: c.ink,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ),
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 4,
-                mainAxisSpacing: 18,
-                crossAxisSpacing: 8,
-                childAspectRatio: 0.85,
+              const SizedBox(height: 28),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  opt('Камера', PhosphorIconsRegular.camera,
-                      const [Color(0xFFFF5A3C), Color(0xFFFF3B6B)],
-                      () { Navigator.pop(ctx); _attachFromCamera(); }),
                   opt('Фото', PhosphorIconsRegular.image,
                       const [Color(0xFFC04CFD), Color(0xFF5DB1FF)],
                       () { Navigator.pop(ctx); _attachImage(); }),
@@ -738,18 +700,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   opt('Файл', PhosphorIconsRegular.paperclip,
                       const [Color(0xFF2FA84F), Color(0xFF5DB1FF)],
                       () { Navigator.pop(ctx); _attachGenericFile(); }),
-                  opt('Геолокация', PhosphorIconsRegular.mapPin,
-                      const [Color(0xFFFF8060), Color(0xFFFFB547)],
-                      () { Navigator.pop(ctx); _attachLocation(); }),
-                  opt('Контакт', PhosphorIconsRegular.userCircle,
-                      const [Color(0xFF7B61FF), Color(0xFFC04CFD)],
-                      snackSoon),
-                  opt('Сбор', PhosphorIconsRegular.usersThree,
-                      const [Color(0xFFFFB547), Color(0xFFFF5A3C)],
-                      snackSoon),
-                  opt('Аудио', PhosphorIconsRegular.microphone,
-                      const [Color(0xFF1AC8B8), Color(0xFF5DB1FF)],
-                      () { Navigator.pop(ctx); _attachAudio(); }),
                 ],
               ),
             ],
@@ -800,33 +750,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollToBottom();
   }
 
-  /// Pick audio file → upload → send as voice message.
-  Future<void> _attachAudio() async {
-    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
-    HapticFeedback.selectionClick();
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      withData: kIsWeb,
-    );
-    if (result == null || result.files.isEmpty || !mounted) return;
-    final file = result.files.first;
-    final reply = _replyingTo;
-    if (reply != null) setState(() => _replyingTo = null);
-    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
-      id: UploadTask.newId(),
-      chatId: widget.chatId,
-      kind: UploadTaskKind.audio,
-      bytes: file.bytes,
-      filePath: file.path,
-      fileName: file.name,
-      fileBytes: file.size,
-      mediaType: 'audio',
-      replyTo: reply,
-      cancelToken: CancelToken(),
-    ));
-    _scrollToBottom();
-  }
-
   /// Pick any file (documents, PDFs, etc.) → upload → send as file message.
   Future<void> _attachGenericFile() async {
     if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
@@ -857,46 +780,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       cancelToken: CancelToken(),
     ));
     _scrollToBottom();
-  }
-
-  /// Get current GPS position → send as a location message (Google Maps link).
-  Future<void> _attachLocation() async {
-    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
-    final messenger = ScaffoldMessenger.of(context);
-    HapticFeedback.selectionClick();
-
-    LocationPermission perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
-      perm = await Geolocator.requestPermission();
-    }
-    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Нет доступа к геолокации')));
-      return;
-    }
-    if (!mounted) return;
-
-    setState(() => _locationPending = true);
-    _scrollToBottom();
-
-    try {
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      // Guard: user may have pressed ✕ while GPS was running
-      if (!mounted || !_locationPending) return;
-      final lat = pos.latitude.toStringAsFixed(6);
-      final lng = pos.longitude.toStringAsFixed(6);
-      final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
-      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
-            '📍 $mapsUrl',
-            replyTo: _replyingTo,
-          );
-      if (_replyingTo != null && mounted) setState(() => _replyingTo = null);
-    } catch (_) {
-      if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Не удалось получить геолокацию')));
-    } finally {
-      if (mounted) setState(() => _locationPending = false);
-    }
   }
 
   /// Голосовое сообщение: расшариваем уже-готовый файл (recorder сохранил
