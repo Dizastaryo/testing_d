@@ -717,6 +717,173 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   // ─── Voice panel ───────────────────────────────────────────────────
   // Shows voice channel state. Users must explicitly join to speak.
 
+  void _showVoiceParticipantsSheet(
+      SeeUThemeColors c, List<RoomParticipant> voiceUsers) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 0,
+          bottom: 20 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: c.bg,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(SeeURadii.sheet)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: c.line, borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 34, height: 34,
+                  decoration: BoxDecoration(
+                    color: c.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                    size: 17, color: SeeUColors.accent,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'В голосовом канале',
+                  style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700,
+                    color: c.ink, letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    '${voiceUsers.length}',
+                    style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: c.ink2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (voiceUsers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    'Никого нет в эфире',
+                    style: TextStyle(fontSize: 14, color: c.ink3),
+                  ),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: voiceUsers.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1, color: c.line, indent: 56,
+                ),
+                itemBuilder: (_, i) {
+                  final p = voiceUsers[i];
+                  final seed = (p.fullName.isNotEmpty
+                          ? p.fullName.codeUnitAt(0)
+                          : 65) %
+                      SeeUColors.avatarPalettes.length;
+                  final pal = SeeUColors.avatarPalettes[seed];
+                  final initial =
+                      p.fullName.isNotEmpty ? p.fullName[0].toUpperCase() : '?';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: pal,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: p.avatarUrl != null && p.avatarUrl!.isNotEmpty
+                              ? ClipOval(
+                                  child: CachedNetworkImage(
+                                    imageUrl: p.avatarUrl!,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Center(
+                                      child: Text(initial,
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                  ),
+                                )
+                              : Center(
+                                  child: Text(initial,
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700)),
+                                ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.fullName.isNotEmpty ? p.fullName : p.username,
+                                style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600,
+                                  color: c.ink,
+                                ),
+                              ),
+                              Text(
+                                '@${p.username}',
+                                style: TextStyle(fontSize: 12, color: c.ink3),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          p.isMuted
+                              ? PhosphorIcons.microphoneSlash(
+                                  PhosphorIconsStyle.fill)
+                              : PhosphorIcons.microphone(PhosphorIconsStyle.fill),
+                          size: 18,
+                          color: p.isMuted ? c.ink4 : SeeUColors.success,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildVoicePanel(SeeUThemeColors c, Room room, String myId) {
     final inVoice = room.isInVoice;
     final voiceUsers = room.voiceParticipants;
@@ -730,7 +897,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       subtitle = '$names · $voiceCount в голосе';
     }
 
-    return Container(
+    return GestureDetector(
+      onTap: () => _showVoiceParticipantsSheet(c, voiceUsers),
+      child: Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -836,6 +1005,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ],
         ],
       ),
+    ),
     );
   }
 
