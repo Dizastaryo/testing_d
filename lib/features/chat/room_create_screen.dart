@@ -36,7 +36,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
   Timer? _searchDebounce;
 
   XFile? _coverImage;
-  bool _isPublic = true;
   int _step = 0;
   late final PageController _pageController;
 
@@ -192,7 +191,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
         'name': _nameCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         if (coverUrl.isNotEmpty) 'cover_url': coverUrl,
-        'is_public': _isPublic,
       });
       final data = resp.data is Map && resp.data.containsKey('data')
           ? resp.data['data'] as Map<String, dynamic>
@@ -430,10 +428,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                 c: c,
               ),
               const SizedBox(height: 26),
-              _SectionLabel('ПРИВАТНОСТЬ'),
-              const SizedBox(height: 10),
-              _buildPrivacyControl(c),
-              const SizedBox(height: 26),
               _buildInfoCard(c),
             ],
           ),
@@ -557,43 +551,6 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                   ],
                 ),
               ),
-      ),
-    );
-  }
-
-  Widget _buildPrivacyControl(SeeUThemeColors c) {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          _PrivacyOption(
-            icon: PhosphorIconsRegular.globe,
-            label: 'Открытая',
-            sublabel: 'Видна в поиске',
-            selected: _isPublic,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _isPublic = true);
-            },
-            c: c,
-          ),
-          _PrivacyOption(
-            icon: PhosphorIconsRegular.lockSimple,
-            label: 'Закрытая',
-            sublabel: 'Только по ссылке',
-            selected: !_isPublic,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _isPublic = false);
-            },
-            c: c,
-          ),
-        ],
       ),
     );
   }
@@ -1092,75 +1049,6 @@ class _InputField extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _PrivacyOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String sublabel;
-  final bool selected;
-  final VoidCallback onTap;
-  final SeeUThemeColors c;
-
-  const _PrivacyOption({
-    required this.icon,
-    required this.label,
-    required this.sublabel,
-    required this.selected,
-    required this.onTap,
-    required this.c,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          height: double.infinity,
-          decoration: BoxDecoration(
-            color: selected ? SeeUColors.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: selected ? Colors.white : c.ink3,
-              ),
-              const SizedBox(width: 6),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : c.ink,
-                    ),
-                  ),
-                  Text(
-                    sublabel,
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      color: selected
-                          ? Colors.white.withValues(alpha: 0.72)
-                          : c.ink3,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
