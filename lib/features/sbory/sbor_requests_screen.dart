@@ -37,6 +37,26 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
   List<SborJoinRequest>? _requests;
   final Set<String> _loading = {};
 
+  void _retryLoad() {
+    setState(() => _requests = null);
+    ref.invalidate(_requestsProvider(widget.sborId));
+  }
+
+  static String _networkErrorMessage(Object e) {
+    if (e is DioException) {
+      final t = e.type;
+      if (t == DioExceptionType.connectionError ||
+          t == DioExceptionType.unknown) {
+        return 'Нет соединения. Проверьте интернет и попробуйте снова.';
+      }
+      if (t == DioExceptionType.connectionTimeout ||
+          t == DioExceptionType.receiveTimeout) {
+        return 'Превышено время ожидания. Попробуйте ещё раз.';
+      }
+    }
+    return 'Не удалось загрузить заявки. Попробуйте ещё раз.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -126,7 +146,60 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
                   ? async.when(
                       loading: () => const SeeURequestListSkeleton(),
                       error: (e, _) => Center(
-                        child: Text('Ошибка: $e', style: TextStyle(color: c.ink2)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                PhosphorIcons.warningCircle(
+                                    PhosphorIconsStyle.bold),
+                                size: 40,
+                                color: SeeUColors.error.withValues(alpha: 0.6),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Не удалось загрузить заявки',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.ink,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _networkErrorMessage(e),
+                                style: TextStyle(fontSize: 13, color: c.ink3),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              GestureDetector(
+                                onTap: _retryLoad,
+                                child: Container(
+                                  height: 44,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24),
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.accent,
+                                    borderRadius: BorderRadius.circular(
+                                        SeeURadii.pill),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'Повторить',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                       data: (_) => const SeeURequestListSkeleton(),
                     )

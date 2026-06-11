@@ -89,6 +89,9 @@ class Chat {
     String? lastSenderUsername,
     DateTime? lastMessageAt,
     int? unreadCount,
+    // Для очистки закреплённого сообщения передайте clearPinnedMessage: true.
+    // Обычный copyWith(pinnedMessage: null) игнорирует null из-за ??.
+    bool clearPinnedMessage = false,
     ReplyPreview? pinnedMessage,
     String? sborId,
     bool? isOrganizer,
@@ -108,7 +111,7 @@ class Chat {
       lastSenderUsername: lastSenderUsername ?? this.lastSenderUsername,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       unreadCount: unreadCount ?? this.unreadCount,
-      pinnedMessage: pinnedMessage ?? this.pinnedMessage,
+      pinnedMessage: clearPinnedMessage ? null : (pinnedMessage ?? this.pinnedMessage),
       sborId: sborId ?? this.sborId,
       isOrganizer: isOrganizer ?? this.isOrganizer,
       isPinned: isPinned ?? this.isPinned,
@@ -459,6 +462,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             'chat.group.member.removed',
             'chat.pinned',
             'chat.message.deleted',
+            'chat.archived', // синхронизация архива между устройствами
+            'chat.muted',    // синхронизация мута между устройствами
           };
           if (triggerEvents.contains(evt.type)) {
             load(silent: true);
@@ -519,8 +524,14 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       final response = await _api.get(ApiEndpoints.chats);
       final data = response.data['data'];
       if (data is List) {
-        final chats =
-            data.map((e) => Chat.fromJson(e as Map<String, dynamic>)).toList();
+        final chats = <Chat>[];
+        for (final e in data) {
+          try {
+            chats.add(Chat.fromJson(e as Map<String, dynamic>));
+          } catch (parseErr) {
+            appLog.warn('[ChatListNotifier] skipping malformed chat entry: $parseErr');
+          }
+        }
         state = ChatListState(chats: chats);
       } else {
         state = const ChatListState(chats: []);
@@ -867,16 +878,18 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     try {
       final response = await _api.get(
         ApiEndpoints.chatMessages(chatId),
-        queryParameters: {'limit': _pageSize, 'offset': 0},
+        queryParameters: {'limit': _pageSize + 1, 'offset': 0},
       );
       final data = response.data['data'];
       if (data is List) {
-        final messages = data
+        final all = data
             .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
             .toList();
+        final hasMore = all.length > _pageSize;
+        final messages = hasMore ? all.sublist(0, _pageSize) : all;
         state = ChatMessagesState(
           messages: messages,
-          hasMore: messages.length >= _pageSize,
+          hasMore: hasMore,
         );
       } else {
         state = const ChatMessagesState(messages: [], hasMore: false);
@@ -891,22 +904,31 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     if (state.isLoadingOlder || !state.hasMore) return;
     state = state.copyWith(isLoadingOlder: true, loadOlderFailed: false);
     try {
+      // Cursor-пагинация: передаём ID самого старого сообщения в state.
+      // Сервер вернёт сообщения строго старше этого курсора.
+      // В отличие от offset: state.messages.length, курсор не ломается
+      // когда WS доставляет новые сообщения и увеличивает длину списка.
+      final oldest = state.messages.reduce(
+        (a, b) => a.createdAt.isBefore(b.createdAt) ? a : b,
+      );
       final response = await _api.get(
         ApiEndpoints.chatMessages(chatId),
         queryParameters: {
-          'limit': _pageSize,
-          'offset': state.messages.length,
+          'limit': _pageSize + 1,
+          'before_id': oldest.id,
         },
       );
       final data = response.data['data'];
       if (data is List) {
-        final older = data
+        final all = data
             .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
             .toList();
+        final hasMore = all.length > _pageSize;
+        final older = hasMore ? all.sublist(0, _pageSize) : all;
         state = state.copyWith(
           messages: [...older, ...state.messages],
           isLoadingOlder: false,
-          hasMore: older.length >= _pageSize,
+          hasMore: hasMore,
         );
       } else {
         state = state.copyWith(isLoadingOlder: false, hasMore: false);

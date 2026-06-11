@@ -71,6 +71,72 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     super.dispose();
   }
 
+  // ─── Close guard ───────────────────────────────────────────────────────────
+
+  bool get _hasUnsavedData =>
+      _titleCtrl.text.trim().isNotEmpty ||
+      _category != null ||
+      _scheduledDate != null ||
+      _placeCtrl.text.trim().isNotEmpty ||
+      _descCtrl.text.trim().isNotEmpty ||
+      _coverImage != null;
+
+  Future<void> _onCloseAttempt() async {
+    if (!_hasUnsavedData) {
+      context.pop();
+      return;
+    }
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отменить создание?'),
+        content: const Text('Введённые данные будут потеряны.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Продолжить'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Отменить',
+              style: TextStyle(color: SeeUColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (leave == true && mounted) context.pop();
+  }
+
+  // ─── Error helpers ─────────────────────────────────────────────────────────
+
+  static String _friendlyCreateError(Object e) {
+    if (e is DioException) {
+      final type = e.type;
+      if (type == DioExceptionType.connectionError ||
+          type == DioExceptionType.unknown) {
+        return 'Нет соединения. Проверьте интернет и попробуйте снова.';
+      }
+      if (type == DioExceptionType.connectionTimeout ||
+          type == DioExceptionType.receiveTimeout) {
+        return 'Превышено время ожидания. Попробуйте ещё раз.';
+      }
+      final data = e.response?.data;
+      if (data is Map) {
+        final msg = data['error'] ?? data['message'];
+        if (msg is String && msg.isNotEmpty) return msg;
+      }
+      if ((e.response?.statusCode ?? 0) == 422) {
+        return 'Проверьте введённые данные и попробуйте снова.';
+      }
+      if ((e.response?.statusCode ?? 0) >= 500) {
+        return 'Ошибка сервера. Попробуйте позже.';
+      }
+    }
+    return 'Не удалось создать сбор. Попробуйте снова.';
+  }
+
   // ─── Validation ────────────────────────────────────────────────────────────
 
   bool get _canSubmit =>
@@ -159,7 +225,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
           _scheduledDate!.day,
           t.hour,
           t.minute,
-        );
+        ).toUtc();
       }
 
       final city = ref.read(sboryCityProvider);
@@ -186,16 +252,9 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       context.pop();
     } catch (e) {
       if (!mounted) return;
-      String msg = 'Ошибка: $e';
-      if (e is DioException && e.response != null) {
-        final d = e.response!.data;
-        final backendMsg = d is Map
-            ? (d['error'] ?? d['message'] ?? d.toString())
-            : d?.toString();
-        msg = 'Ошибка ${e.response!.statusCode}: $backendMsg';
-      }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_friendlyCreateError(e))),
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -269,7 +328,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => context.pop(),
+            onPressed: _onCloseAttempt,
             icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold),
                 size: 20, color: c.ink),
           ),
@@ -421,7 +480,13 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
               )
             : AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                color: catSoft,
+                decoration: BoxDecoration(
+                  color: catSoft,
+                  border: Border.all(
+                    color: catColor.withValues(alpha: 0.30),
+                    width: 1.5,
+                  ),
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -433,27 +498,34 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _category != null
-                            ? kSborCategories[_category!]!.icon
-                            : PhosphorIconsRegular.camera,
+                        PhosphorIconsRegular.camera,
                         size: 24,
                         color: catColor.withValues(alpha: 0.85),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      'Добавить обложку',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: catColor.withValues(alpha: 0.8),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(PhosphorIconsBold.plus,
+                            size: 13,
+                            color: catColor.withValues(alpha: 0.8)),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Добавить обложку',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: catColor.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Необязательно',
+                      'Необязательно · Нажмите чтобы выбрать фото',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: catColor.withValues(alpha: 0.45),
                       ),
                     ),

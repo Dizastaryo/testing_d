@@ -13,6 +13,7 @@ import '../../core/config/app_config.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import '../../core/providers/chat_provider.dart';
+import '../../core/providers/realtime_provider.dart';
 import 'sbory_screen.dart' show sborRefreshProvider;
 
 // ─── Provider ────────────────────────────────────────────────────
@@ -39,12 +40,47 @@ class SborDetailScreen extends ConsumerStatefulWidget {
 
 class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   bool _joining = false;     // covers both submit-request and cancel-request loading
-  bool? _bookmarked; // null = not yet initialised from server
+  bool? _bookmarked;          // null = not yet initialised from server
+  bool? _lastServerBookmark;  // last value received from server — for change detection
   bool _bookmarkLoading = false;
+
+  static String _networkErrorMessage(Object e) {
+    if (e is DioException) {
+      final t = e.type;
+      if (t == DioExceptionType.connectionError ||
+          t == DioExceptionType.unknown) {
+        return 'Нет соединения. Проверьте интернет и попробуйте снова.';
+      }
+      if (t == DioExceptionType.connectionTimeout ||
+          t == DioExceptionType.receiveTimeout) {
+        return 'Превышено время ожидания. Попробуйте ещё раз.';
+      }
+      if ((e.response?.statusCode ?? 0) >= 500) {
+        return 'Ошибка на сервере. Попробуйте позже.';
+      }
+    }
+    return 'Что-то пошло не так. Попробуйте ещё раз.';
+  }
 
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(_sborDetailProvider(widget.sborId));
+
+    // Участник получает WS-событие об отмене сбора → авто-закрытие экрана.
+    ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
+      next.whenData((evt) {
+        if (evt.type != 'sbor.cancelled') return;
+        final payload = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
+        if (payload == null || payload['sbor_id']?.toString() != widget.sborId) return;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Сбор был отменён организатором')),
+        );
+        context.pop();
+      });
+    });
 
     return async.when(
       loading: () => Scaffold(
@@ -77,13 +113,75 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                   child: Center(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Text(
-                        isNotFound
-                            ? 'Сбор не найден или был отменён'
-                            : 'Ошибка: $e',
-                        style: TextStyle(color: c.ink2, fontSize: 15),
-                        textAlign: TextAlign.center,
-                      ),
+                      child: isNotFound
+                          ? Text(
+                              'Сбор не найден или был отменён',
+                              style: TextStyle(color: c.ink2, fontSize: 15),
+                              textAlign: TextAlign.center,
+                            )
+                          : Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.error.withValues(alpha: 0.10),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    PhosphorIcons.warningCircle(
+                                        PhosphorIconsStyle.bold),
+                                    size: 30,
+                                    color: SeeUColors.error,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Не удалось загрузить сбор',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: c.ink,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _networkErrorMessage(e),
+                                  style: TextStyle(fontSize: 13, color: c.ink3),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                GestureDetector(
+                                  onTap: () => ref.invalidate(
+                                      _sborDetailProvider(widget.sborId)),
+                                  child: Container(
+                                    height: 48,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 28),
+                                    decoration: BoxDecoration(
+                                      color: SeeUColors.accent,
+                                      borderRadius: BorderRadius.circular(
+                                          SeeURadii.pill),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Повторить',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                 ),
@@ -93,8 +191,13 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         );
       },
       data: (sbor) {
-        // Initialise bookmark state from server on first load.
-        _bookmarked ??= sbor.isBookmarked;
+        // Sync bookmark state when server value changes (initial load or
+        // external refresh from another device). Preserves local optimistic
+        // state only when server hasn't changed since last known value.
+        if (_lastServerBookmark != sbor.isBookmarked) {
+          _bookmarked = sbor.isBookmarked;
+          _lastServerBookmark = sbor.isBookmarked;
+        }
         return _buildScreen(context, sbor);
       },
     );
@@ -204,14 +307,42 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                       ),
                     ),
                     const Spacer(),
-                    _HeroAction(
-                      icon: PhosphorIcons.paperPlaneTilt(),
-                      onTap: () => _sendToChatDirect(s),
-                    ),
-                    const SizedBox(width: 6),
-                    _HeroAction(
-                      icon: PhosphorIcons.shareFat(),
-                      onTap: () => _showShareSheet(s),
+                    // Поделиться / Отправить — в popup, чтобы не перегружать хедер.
+                    PopupMenuButton<String>(
+                      icon: Container(
+                        width: 34, height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.22),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          PhosphorIcons.dotsThreeVertical(),
+                          size: 18, color: Colors.white,
+                        ),
+                      ),
+                      color: context.seeuColors.surface,
+                      onSelected: (v) {
+                        if (v == 'send') _sendToChatDirect(s);
+                        if (v == 'share') _showShareSheet(s);
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: 'send',
+                          child: Row(children: [
+                            Icon(PhosphorIcons.paperPlaneTilt(), size: 18, color: context.seeuColors.ink2),
+                            const SizedBox(width: 10),
+                            Text('Отправить другу', style: TextStyle(color: context.seeuColors.ink)),
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: 'share',
+                          child: Row(children: [
+                            Icon(PhosphorIcons.shareFat(), size: 18, color: context.seeuColors.ink2),
+                            const SizedBox(width: 10),
+                            Text('Поделиться', style: TextStyle(color: context.seeuColors.ink)),
+                          ]),
+                        ),
+                      ],
                     ),
                     const SizedBox(width: 6),
                     _bookmarkLoading
@@ -327,7 +458,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     String sub = '',
     Color? valueColor,
   }) {
-    return Padding(
+    final semanticLabel = sub.isNotEmpty ? '$label: $value · $sub' : '$label: $value';
+    return Semantics(
+      label: semanticLabel,
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         children: [
@@ -363,7 +497,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _infoRowSlots(SeeUThemeColors c, Sbor s) {
@@ -373,7 +507,9 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         ? (s.joined / s.max!).clamp(0.0, 1.0)
         : 0.0;
 
-    return Padding(
+    return Semantics(
+      label: '$label: $count',
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,7 +559,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildStatusBanner(SeeUThemeColors c, Sbor s) {
@@ -456,6 +592,12 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       icon = PhosphorIcons.hourglassMedium();
       title = 'Заявка на рассмотрении';
       sub = 'Организатор обычно отвечает в течение часа';
+    } else if (status == 'rejected') {
+      bg = SeeUColors.error.withValues(alpha: 0.10);
+      fg = SeeUColors.error;
+      icon = PhosphorIcons.xCircle(PhosphorIconsStyle.fill);
+      title = 'Заявка отклонена';
+      sub = 'Вы можете подать заявку повторно';
     } else if (s.isFull) {
       bg = c.surface2;
       fg = c.ink3;
@@ -612,14 +754,22 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
 
   void _showAllMembers(Sbor s) {
     final c = context.seeuColors;
+    // Load full member list from API (backend has LIMIT 8 in getMemberUsers,
+    // but /sbory/:id/members returns all participants without limit).
+    final Future<List<dynamic>> membersFuture = ref
+        .read(apiClientProvider)
+        .get(ApiEndpoints.sborMembers(s.id))
+        .then((r) {
+      final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+      return data as List<dynamic>;
+    });
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.7,
-        ),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
         decoration: BoxDecoration(
           color: c.bg,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -649,68 +799,88 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
               ),
             ),
             Flexible(
-              child: ListView.builder(
-                padding: const EdgeInsets.only(bottom: 20),
-                itemCount: s.memberNames.length,
-                itemBuilder: (_, i) {
-                  final name = s.memberNames[i];
-                  final username = i < s.memberUsernames.length ? s.memberUsernames[i] : '';
-                  final memberId = i < s.memberIds.length ? s.memberIds[i] : null;
-                  final avatarUrl = i < s.memberAvatarUrls.length ? s.memberAvatarUrls[i] : '';
-                  final isHost = memberId != null && memberId == s.hostId;
-                  final resolvedUrl = avatarUrl.isEmpty
-                      ? null
-                      : avatarUrl.startsWith('http')
-                          ? avatarUrl
-                          : AppConfig.apiOrigin + avatarUrl;
-                  final seed = name.isNotEmpty
-                      ? (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length
-                      : 0;
-                  final pal = SeeUColors.avatarPalettes[seed];
+              child: FutureBuilder<List<dynamic>>(
+                future: membersFuture,
+                builder: (_, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    );
+                  }
+                  if (snap.hasError || !snap.hasData) {
+                    return Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text('Ошибка загрузки', style: TextStyle(color: c.ink3)),
+                    );
+                  }
+                  final members = snap.data!;
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    itemCount: members.length,
+                    itemBuilder: (_, i) {
+                      final m = members[i] as Map<String, dynamic>;
+                      final name = m['full_name'] as String? ?? '';
+                      final username = m['username'] as String? ?? '';
+                      final memberId = m['user_id'] as String? ?? '';
+                      final avatarUrl = m['avatar_url'] as String? ?? '';
+                      final role = m['role'] as String? ?? '';
+                      final isHost = memberId == s.hostId || role == 'organizer';
+                      final resolvedUrl = avatarUrl.isEmpty
+                          ? null
+                          : avatarUrl.startsWith('http')
+                              ? avatarUrl
+                              : AppConfig.apiOrigin + avatarUrl;
+                      final seed = name.isNotEmpty
+                          ? (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length
+                          : 0;
+                      final pal = SeeUColors.avatarPalettes[seed];
 
-                  return ListTile(
-                    onTap: username.isNotEmpty
-                        ? () {
-                            Navigator.pop(ctx);
-                            context.push('/profile/$username');
-                          }
-                        : null,
-                    leading: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: resolvedUrl == null ? LinearGradient(colors: pal) : null,
-                      ),
-                      child: ClipOval(
-                        child: resolvedUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: resolvedUrl,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => Container(
-                                  decoration: BoxDecoration(gradient: LinearGradient(colors: pal)),
-                                  child: Center(
+                      return ListTile(
+                        onTap: username.isNotEmpty
+                            ? () {
+                                Navigator.pop(ctx);
+                                context.push('/profile/$username');
+                              }
+                            : null,
+                        leading: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: resolvedUrl == null ? LinearGradient(colors: pal) : null,
+                          ),
+                          child: ClipOval(
+                            child: resolvedUrl != null
+                                ? CachedNetworkImage(
+                                    imageUrl: resolvedUrl,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
+                                      decoration: BoxDecoration(gradient: LinearGradient(colors: pal)),
+                                      child: Center(
+                                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
                                     child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
                                   ),
-                                ),
-                              )
-                            : Center(
-                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
-                              ),
-                      ),
-                    ),
-                    title: Text(name, style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500)),
-                    subtitle: username.isNotEmpty
-                        ? Text('@$username', style: TextStyle(fontSize: 13, color: c.ink3))
-                        : isHost
-                            ? Text('организатор', style: TextStyle(fontSize: 13, color: SeeUColors.accent))
-                            : null,
-                    trailing: isHost
-                        ? Text('★', style: TextStyle(fontSize: 16, color: SeeUColors.accent))
-                        : username.isNotEmpty
-                            ? Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4)
-                            : null,
+                          ),
+                        ),
+                        title: Text(name, style: TextStyle(fontSize: 15, color: c.ink, fontWeight: FontWeight.w500)),
+                        subtitle: username.isNotEmpty
+                            ? Text('@$username', style: TextStyle(fontSize: 13, color: c.ink3))
+                            : isHost
+                                ? Text('организатор', style: TextStyle(fontSize: 13, color: SeeUColors.accent))
+                                : null,
+                        trailing: isHost
+                            ? Text('★', style: TextStyle(fontSize: 16, color: SeeUColors.accent))
+                            : username.isNotEmpty
+                                ? Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4)
+                                : null,
+                      );
+                    },
                   );
                 },
               ),
@@ -1092,6 +1262,13 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
         content: Text(saved ? 'Добавлено в сохранённые' : 'Убрано из сохранённых'),
         duration: const Duration(seconds: 2),
       ));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final status = e.response?.statusCode;
+      final text = status == 403
+          ? 'Организатор не может добавить свой сбор в закладки'
+          : (e.response?.data?['error'] as String? ?? 'Ошибка при сохранении');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1371,6 +1548,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   }
 
   Future<void> _submitRequest(Sbor s) async {
+    if (_joining) return; // guard against double-tap before setState rebuild
     HapticFeedback.mediumImpact();
     setState(() => _joining = true);
     try {
@@ -1396,6 +1574,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   }
 
   Future<void> _cancelRequest(Sbor s) async {
+    if (_joining) return; // guard against double-tap before setState rebuild
     HapticFeedback.lightImpact();
     setState(() => _joining = true);
     try {
@@ -1435,7 +1614,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Выйти', style: TextStyle(color: Colors.red)),
+            child: const Text('Выйти', style: TextStyle(color: SeeUColors.error)),
           ),
         ],
       ),
@@ -1474,7 +1653,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Отменить', style: TextStyle(color: Colors.red)),
+            child: const Text('Отменить', style: TextStyle(color: SeeUColors.error)),
           ),
         ],
       ),

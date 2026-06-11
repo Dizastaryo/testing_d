@@ -15,17 +15,35 @@ final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   );
 });
 
+/// `true` — есть сеть, `false` — нет соединения.
+/// Обновляется автоматически из Dio-интерцептора.
+final networkOnlineProvider = StateProvider<bool>((_) => true);
+
 final apiClientProvider = Provider<ApiClient>((ref) {
   final storage = ref.watch(secureStorageProvider);
-  return ApiClient(storage: storage);
+  return ApiClient(
+    storage: storage,
+    onOffline: () {
+      if (ref.read(networkOnlineProvider)) {
+        ref.read(networkOnlineProvider.notifier).state = false;
+      }
+    },
+    onOnline: () {
+      if (!ref.read(networkOnlineProvider)) {
+        ref.read(networkOnlineProvider.notifier).state = true;
+      }
+    },
+  );
 });
 
 class ApiClient {
   late final Dio _dio;
   final FlutterSecureStorage storage;
+  final void Function()? onOffline;
+  final void Function()? onOnline;
   Completer<bool>? _refreshCompleter;
 
-  ApiClient({required this.storage}) {
+  ApiClient({required this.storage, this.onOffline, this.onOnline}) {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiEndpoints.baseUrl,
@@ -83,6 +101,7 @@ class ApiClient {
   }
 
   void _onResponse(Response response, ResponseInterceptorHandler handler) {
+    onOnline?.call();
     handler.next(response);
   }
 
@@ -90,6 +109,12 @@ class ApiClient {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
+    // Сетевые ошибки (нет подключения / таймаут) → офлайн-статус.
+    if (err.type == DioExceptionType.connectionError ||
+        err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.receiveTimeout) {
+      onOffline?.call();
+    }
     final alreadyRetried = err.requestOptions.extra['_authRetried'] == true;
     if (err.response?.statusCode == 401 && !alreadyRetried && _refreshCompleter == null) {
       final refreshed = await refreshTokens();

@@ -36,9 +36,11 @@ class RoomMembersScreen extends ConsumerStatefulWidget {
 class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  Timer? _searchDebounce;
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -109,7 +111,13 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                 ),
                 child: TextField(
                   controller: _searchCtrl,
-                  onChanged: (v) => setState(() => _searchQuery = v),
+                  onChanged: (v) {
+                    _searchDebounce?.cancel();
+                    _searchDebounce = Timer(
+                      const Duration(milliseconds: 300),
+                      () { if (mounted) setState(() => _searchQuery = v); },
+                    );
+                  },
                   style: SeeUTypography.body.copyWith(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Поиск участника',
@@ -122,6 +130,7 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                     suffixIcon: _searchQuery.isNotEmpty
                         ? GestureDetector(
                             onTap: () {
+                              _searchDebounce?.cancel();
                               _searchCtrl.clear();
                               setState(() => _searchQuery = '');
                             },
@@ -138,6 +147,22 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
                 ),
               ),
             ),
+
+            // Hint when list is large: client-side search covers only loaded members.
+            if (membersState.members.length >= 50 && _searchQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsRegular.info, size: 12, color: c.ink3),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Поиск среди ${membersState.members.length} загруженных участников',
+                      style: TextStyle(fontSize: 11, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
 
             // Content
             Expanded(

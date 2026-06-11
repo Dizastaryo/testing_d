@@ -224,6 +224,10 @@ class RoomMessage {
   final String? attachedMediaUrl;
   final String? attachedMediaType;
   final DateTime createdAt;
+  /// Агрегированные реакции: emoji → count.
+  final Map<String, int> reactions;
+  /// Реакция текущего пользователя (пустая строка = нет реакции).
+  final String myReaction;
 
   const RoomMessage({
     required this.id,
@@ -236,18 +240,53 @@ class RoomMessage {
     this.attachedMediaUrl,
     this.attachedMediaType,
     required this.createdAt,
+    this.reactions = const {},
+    this.myReaction = '',
   });
 
-  factory RoomMessage.fromJson(Map<String, dynamic> j) => RoomMessage(
-        id: j['id'] as String,
-        roomId: j['room_id'] as String,
-        senderId: j['sender_id'] as String,
-        senderName: j['sender_name'] as String? ?? '',
-        senderUsername: j['sender_username'] as String? ?? '',
-        senderAvatar: j['sender_avatar_url'] as String?,
-        text: j['text'] as String? ?? '',
-        attachedMediaUrl: j['attached_media_url'] as String?,
-        attachedMediaType: j['attached_media_type'] as String?,
-        createdAt: DateTime.parse(j['created_at'] as String),
-      );
+  RoomMessage copyWith({
+    Map<String, int>? reactions,
+    String? myReaction,
+  }) => RoomMessage(
+    id: id,
+    roomId: roomId,
+    senderId: senderId,
+    senderName: senderName,
+    senderUsername: senderUsername,
+    senderAvatar: senderAvatar,
+    text: text,
+    attachedMediaUrl: attachedMediaUrl,
+    attachedMediaType: attachedMediaType,
+    createdAt: createdAt,
+    reactions: reactions ?? this.reactions,
+    myReaction: myReaction ?? this.myReaction,
+  );
+
+  factory RoomMessage.fromJson(Map<String, dynamic> j) {
+    final rawReactions = j['reactions'];
+    final Map<String, int> reactions = {};
+    if (rawReactions is Map) {
+      rawReactions.forEach((k, v) {
+        if (v is int) {
+          reactions[k.toString()] = v;
+        } else if (v is num) {
+          reactions[k.toString()] = v.toInt();
+        }
+      });
+    }
+    return RoomMessage(
+      id: j['id'] as String,
+      roomId: j['room_id'] as String,
+      senderId: j['sender_id'] as String,
+      senderName: j['sender_name'] as String? ?? '',
+      senderUsername: j['sender_username'] as String? ?? '',
+      senderAvatar: j['sender_avatar_url'] as String?,
+      text: j['text'] as String? ?? '',
+      attachedMediaUrl: j['attached_media_url'] as String?,
+      attachedMediaType: j['attached_media_type'] as String?,
+      createdAt: DateTime.parse(j['created_at'] as String),
+      reactions: reactions,
+      myReaction: j['my_reaction'] as String? ?? '',
+    );
+  }
 }

@@ -315,16 +315,30 @@ class RoomMessagesState {
   final List<RoomMessage> messages;
   final bool isLoading;
   final bool isSending;
+  /// Non-null while a server-side search is active. Null = show all messages.
+  final List<RoomMessage>? searchResults;
+  final bool isSearching;
   const RoomMessagesState({
     this.messages = const [],
     this.isLoading = false,
     this.isSending = false,
+    this.searchResults,
+    this.isSearching = false,
   });
-  RoomMessagesState copyWith({List<RoomMessage>? messages, bool? isLoading, bool? isSending}) =>
+  RoomMessagesState copyWith({
+    List<RoomMessage>? messages,
+    bool? isLoading,
+    bool? isSending,
+    List<RoomMessage>? searchResults,
+    bool clearSearch = false,
+    bool? isSearching,
+  }) =>
       RoomMessagesState(
         messages: messages ?? this.messages,
         isLoading: isLoading ?? this.isLoading,
         isSending: isSending ?? this.isSending,
+        searchResults: clearSearch ? null : (searchResults ?? this.searchResults),
+        isSearching: isSearching ?? this.isSearching,
       );
 }
 
@@ -379,21 +393,118 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        if (evt.type != 'room.message') return;
         final payload = evt.payload is Map<String, dynamic>
             ? evt.payload as Map<String, dynamic>
             : null;
-        if (payload?['room_id'] != roomId) return;
-        final msgJson = payload?['message'] as Map<String, dynamic>?;
-        if (msgJson == null) return;
-        _appendIfAbsent(RoomMessage.fromJson(msgJson));
+        if (payload == null || payload['room_id'] != roomId) return;
+
+        if (evt.type == 'room.message') {
+          final msgJson = payload['message'] as Map<String, dynamic>?;
+          if (msgJson != null) _appendIfAbsent(RoomMessage.fromJson(msgJson));
+          return;
+        }
+
+        if (evt.type == 'room.reaction') {
+          final msgId = payload['message_id']?.toString() ?? '';
+          final emoji = payload['emoji']?.toString() ?? '';
+          final userId = payload['user_id']?.toString() ?? '';
+          final added = payload['added'] as bool? ?? false;
+          if (msgId.isEmpty || emoji.isEmpty) return;
+          _applyReaction(msgId, userId, emoji, added);
+        }
       });
     });
+  }
+
+  /// Applies a reaction event received via WS, updating in-place.
+  void _applyReaction(String msgId, String userId, String emoji, bool added) {
+    final myId = _ref.read(authProvider).user?.id ?? '';
+    final updated = state.messages.map((m) {
+      if (m.id != msgId) return m;
+      final reactions = Map<String, int>.from(m.reactions);
+      final prevEmoji = userId == myId ? m.myReaction : null;
+
+      // Remove previous reaction for this user if known.
+      if (prevEmoji != null && prevEmoji.isNotEmpty && prevEmoji != emoji) {
+        final prev = (reactions[prevEmoji] ?? 1) - 1;
+        if (prev <= 0) {
+          reactions.remove(prevEmoji);
+        } else {
+          reactions[prevEmoji] = prev;
+        }
+      }
+
+      if (added) {
+        reactions[emoji] = (reactions[emoji] ?? 0) + 1;
+      } else {
+        final next = (reactions[emoji] ?? 1) - 1;
+        if (next <= 0) {
+          reactions.remove(emoji);
+        } else {
+          reactions[emoji] = next;
+        }
+      }
+
+      final myReaction = userId == myId
+          ? (added ? emoji : '')
+          : m.myReaction;
+      return m.copyWith(reactions: reactions, myReaction: myReaction);
+    }).toList();
+    state = state.copyWith(messages: updated);
+  }
+
+  /// Sends a reaction to the server. Optimistic update first, rollback on error.
+  Future<void> react(String msgId, String emoji) async {
+    final myId = _ref.read(authProvider).user?.id ?? '';
+    // Find current state to determine if adding or removing.
+    final msg = state.messages.firstWhere(
+      (m) => m.id == msgId,
+      orElse: () => throw StateError('message not found'),
+    );
+    final adding = msg.myReaction != emoji;
+    // Optimistic update.
+    _applyReaction(msgId, myId, emoji, adding);
+    try {
+      await _api.post(
+        ApiEndpoints.roomMessageReact(roomId, msgId),
+        data: {'emoji': emoji},
+      );
+    } catch (_) {
+      // Roll back: invert the optimistic change.
+      _applyReaction(msgId, myId, emoji, !adding);
+    }
   }
 
   void _appendIfAbsent(RoomMessage msg) {
     if (state.messages.any((m) => m.id == msg.id)) return;
     state = state.copyWith(messages: [...state.messages, msg]);
+  }
+
+  /// Searches messages on the server by [q]. Call with empty string to clear.
+  Future<void> search(String q) async {
+    final trimmed = q.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(clearSearch: true, isSearching: false);
+      return;
+    }
+    state = state.copyWith(isSearching: true);
+    try {
+      final r = await _api.get(
+        ApiEndpoints.roomMessages(roomId),
+        queryParameters: {'q': trimmed, 'limit': 50},
+      );
+      final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+      final results = (data as List<dynamic>)
+          .map((e) => RoomMessage.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (mounted) state = state.copyWith(searchResults: results, isSearching: false);
+    } catch (_) {
+      if (mounted) state = state.copyWith(isSearching: false);
+    }
+  }
+
+  void clearSearch() {
+    state = state.copyWith(clearSearch: true, isSearching: false);
   }
 }
 

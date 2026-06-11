@@ -156,6 +156,7 @@ class ApiEndpoints {
   static const String mySboryHistory = '/sbory/me?past=true';
   static const String bookmarkedSbory = '/sbory/bookmarked';
   static String sborById(String id) => '/sbory/$id';
+  static String sborMembers(String id) => '/sbory/$id/members';
   // POST /sbory/:id/join → join; DELETE /sbory/:id/join → leave (same path, different method)
   static String joinSbor(String id) => '/sbory/$id/join';
   static String leaveSbor(String id) => '/sbory/$id/join';
@@ -175,6 +176,7 @@ class ApiEndpoints {
   static String muteRoom(String id) => '/rooms/$id/mute';
   static String roomVoice(String id) => '/rooms/$id/voice';
   static String roomMessages(String id) => '/rooms/$id/messages';
+  static String roomMessageReact(String roomId, String msgId) => '/rooms/$roomId/messages/$msgId/react';
   static String roomMembers(String id) => '/rooms/$id/members';
   static String roomInvite(String id) => '/rooms/$id/invite';
   static String roomCandidates(String id) => '/rooms/$id/candidates';

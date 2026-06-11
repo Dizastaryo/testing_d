@@ -276,15 +276,17 @@ class SeeUSborCardSkeleton extends StatelessWidget {
         itemBuilder: (_, __) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            // Beige background so white ShimmerBoxes are visually distinct
+            // and the shimmer sweep (white→beige) is clearly animated.
+            color: SeeUColors.surfaceElevated,
             borderRadius: BorderRadius.circular(24),
           ),
           clipBehavior: Clip.antiAlias,
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header strip
-              SizedBox(height: 96),
+              // Cover image placeholder — height matches SborCard's SizedBox(height: 150)
+              ShimmerBox(width: double.infinity, height: 150, radius: 0),
               // Body
               Padding(
                 padding: EdgeInsets.fromLTRB(14, 12, 14, 14),

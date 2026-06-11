@@ -35,9 +35,23 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   String _searchQuery = '';
   String _roomSearchQuery = '';
   bool _showRooms = false;
+  Timer? _timeTicker;
+  Timer? _roomSearchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    // Refresh time labels (сейчас / 12:34 / Вчера) every minute so they
+    // don't stay stale while the user has the chat list open.
+    _timeTicker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
+    _timeTicker?.cancel();
+    _roomSearchDebounce?.cancel();
     _searchController.dispose();
     _roomSearchController.dispose();
     super.dispose();
@@ -348,7 +362,13 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             ),
             child: TextField(
               controller: _roomSearchController,
-              onChanged: (v) => setState(() => _roomSearchQuery = v),
+              onChanged: (v) {
+                _roomSearchDebounce?.cancel();
+                _roomSearchDebounce = Timer(
+                  const Duration(milliseconds: 300),
+                  () { if (mounted) setState(() => _roomSearchQuery = v); },
+                );
+              },
               style: SeeUTypography.body.copyWith(fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Поиск комнат',
@@ -361,6 +381,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                 suffixIcon: _roomSearchQuery.isNotEmpty
                     ? GestureDetector(
                         onTap: () {
+                          _roomSearchDebounce?.cancel();
                           _roomSearchController.clear();
                           setState(() => _roomSearchQuery = '');
                         },
@@ -1069,10 +1090,12 @@ class _SwipableChatTileState extends State<_SwipableChatTile>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Archive button.
+                // Archive / Unarchive button.
                 _ActionButton(
-                  icon: PhosphorIcons.archive(PhosphorIconsStyle.regular),
-                  label: 'В архив',
+                  icon: widget.chat.isArchived
+                      ? PhosphorIcons.arrowUUpLeft(PhosphorIconsStyle.regular)
+                      : PhosphorIcons.archive(PhosphorIconsStyle.regular),
+                  label: widget.chat.isArchived ? 'Убрать из архива' : 'В архив',
                   color: c.surface2,
                   iconColor: c.ink3,
                   width: 72,
@@ -1178,8 +1201,16 @@ class _SwipableChatTileState extends State<_SwipableChatTile>
               Divider(color: c.line, height: 1),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(PhosphorIcons.archive(PhosphorIconsStyle.regular), color: c.ink2),
-                title: Text('В архив', style: SeeUTypography.body),
+                leading: Icon(
+                  widget.chat.isArchived
+                      ? PhosphorIcons.arrowUUpLeft(PhosphorIconsStyle.regular)
+                      : PhosphorIcons.archive(PhosphorIconsStyle.regular),
+                  color: c.ink2,
+                ),
+                title: Text(
+                  widget.chat.isArchived ? 'Убрать из архива' : 'В архив',
+                  style: SeeUTypography.body,
+                ),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   widget.onArchive();

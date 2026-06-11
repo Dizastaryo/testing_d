@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,8 +20,15 @@ import 'sbory_widgets.dart';
 /// Increment to force-refresh all sbory lists (after leave/cancel/create).
 final sborRefreshProvider = StateProvider<int>((ref) => 0);
 
-/// Параметр провайдера: тип-фильтр + категория + город.
-typedef _SboryParams = ({String? type, String? category, String city});
+/// Параметр провайдера: тип-фильтр + категория + город + диапазон дат + поиск.
+typedef _SboryParams = ({
+  String? type,
+  String? category,
+  String city,
+  DateTime? dateFrom,
+  DateTime? dateTo,
+  String q,
+});
 
 final _sboryProvider = FutureProvider.autoDispose
     .family<List<Sbor>, _SboryParams>((ref, p) async {
@@ -29,6 +38,9 @@ final _sboryProvider = FutureProvider.autoDispose
   if (p.type != null && p.type!.isNotEmpty) params['type'] = p.type;
   if (p.category != null && p.category!.isNotEmpty) params['category'] = p.category;
   if (p.city.isNotEmpty) params['city'] = p.city;
+  if (p.dateFrom != null) params['date_from'] = p.dateFrom!.toUtc().toIso8601String();
+  if (p.dateTo != null) params['date_to'] = p.dateTo!.toUtc().toIso8601String();
+  if (p.q.isNotEmpty) params['q'] = p.q;
   final r = await api.get(ApiEndpoints.sbory, queryParameters: params);
   final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
   return (data as List<dynamic>)
@@ -84,7 +96,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
   String? _datePreset;
   String _searchQuery = '';
   bool _showSearch = false;
+  bool _isSearchPending = false; // true между вводом и срабатыванием debounce
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -97,6 +111,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -252,7 +267,14 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
         ? ref.watch(_bookmarkedSboryProvider)
         : _showMine
             ? ref.watch(_mySboryProvider)
-            : ref.watch(_sboryProvider((type: _typeFilter, category: catName, city: city)));
+            : ref.watch(_sboryProvider((
+                type: _typeFilter,
+                category: catName,
+                city: city,
+                dateFrom: _dateFilter?.start,
+                dateTo: _dateFilter?.end,
+                q: _searchQuery,
+              )));
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -264,7 +286,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             _buildCategoryChips(c),
             _buildTypeToggle(c),
             Expanded(
-              child: async.when(
+              child: _isSearchPending
+                  ? const SeeUSborCardSkeleton()
+                  : async.when(
                 loading: () => const SeeUSborCardSkeleton(),
                 error: (e, _) => Center(
                   child: Column(
@@ -283,7 +307,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                             ref.invalidate(_mySboryProvider);
                           } else {
                             final c2 = ref.read(sboryCityProvider);
-                            ref.invalidate(_sboryProvider((type: _typeFilter, category: _catFilter?.name, city: c2)));
+                            ref.invalidate(_sboryProvider((type: _typeFilter, category: _catFilter?.name, city: c2, dateFrom: _dateFilter?.start, dateTo: _dateFilter?.end, q: _searchQuery)));
                           }
                         },
                         child: const Text('Повторить'),
@@ -297,7 +321,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                   var filtered = (_catFilter != null && (_showMine || _showBookmarked))
                       ? items.where((s) => s.category == _catFilter).toList()
                       : items;
-                  if (_searchQuery.isNotEmpty) {
+                  // Search: server handles it for main feed (via ?q=).
+                  // For Mine/Bookmarked: apply client-side since those endpoints don't accept ?q=.
+                  if (_searchQuery.isNotEmpty && (_showMine || _showBookmarked)) {
                     final q = _searchQuery.toLowerCase();
                     filtered = filtered
                         .where((s) =>
@@ -305,7 +331,9 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                             s.place.toLowerCase().contains(q))
                         .toList();
                   }
-                  if (_dateFilter != null) {
+                  // Date filter: server handles it for main feed. Apply client-side
+                  // only for Mine/Bookmarked tabs that don't send date params.
+                  if (_dateFilter != null && (_showMine || _showBookmarked)) {
                     final df = _dateFilter!;
                     final endOfDay = df.end.add(const Duration(days: 1));
                     filtered = filtered.where((s) {
@@ -389,7 +417,14 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
       child: TextField(
         controller: _searchController,
         style: TextStyle(fontSize: 14, color: c.ink),
-        onChanged: (v) => setState(() => _searchQuery = v),
+        onChanged: (v) {
+          _searchDebounce?.cancel();
+          // Immediately show skeleton so user sees feedback before debounce fires.
+          setState(() => _isSearchPending = true);
+          _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+            if (mounted) setState(() { _searchQuery = v; _isSearchPending = false; });
+          });
+        },
         decoration: InputDecoration(
           hintText: 'Поиск сборов...',
           hintStyle: TextStyle(fontSize: 14, color: c.ink3),
@@ -559,7 +594,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
               setState(() => _catFilter = cat);
               if (!_showMine && !_showBookmarked) {
                 final city2 = ref.read(sboryCityProvider);
-                ref.invalidate(_sboryProvider((type: _typeFilter, category: cat?.name, city: city2)));
+                ref.invalidate(_sboryProvider((type: _typeFilter, category: cat?.name, city: city2, dateFrom: _dateFilter?.start, dateTo: _dateFilter?.end, q: _searchQuery)));
               }
             },
             child: Container(
@@ -603,7 +638,7 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
     } else {
       final city = ref.read(sboryCityProvider);
       return ref.refresh(
-          _sboryProvider((type: _typeFilter, category: _catFilter?.name, city: city)).future);
+          _sboryProvider((type: _typeFilter, category: _catFilter?.name, city: city, dateFrom: _dateFilter?.start, dateTo: _dateFilter?.end, q: _searchQuery)).future);
     }
   }
 
@@ -726,6 +761,36 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
             'Вы ещё не вступали в сборы или все уже прошли',
             style: TextStyle(fontSize: 13, color: c.ink3),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.push('/sbory/create');
+            },
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              decoration: BoxDecoration(
+                color: SeeUColors.accent,
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIconsBold.plus, size: 16, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'Создать сбор',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

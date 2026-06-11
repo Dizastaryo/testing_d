@@ -245,24 +245,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // Кнопка звонка для group-чата в хедере.
   Widget _groupCallHeaderButton(SeeUThemeColors c, Chat chat, CallKind kind) {
     final isVoice = kind == CallKind.voice;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        final me = ref.read(authProvider).user;
-        if (me == null) return;
-        GroupCallService.instance.startGroupCall(
-          chatId: widget.chatId,
-          chatTitle: chat.title,
-          myId: me.id,
-          myUsername: me.username,
-          kind: kind,
-        );
-      },
-      child: SizedBox(
-        width: 44, height: 44,
-        child: Icon(
-          isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
-          size: 22, color: c.ink,
+    return Semantics(
+      label: isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          final me = ref.read(authProvider).user;
+          if (me == null) return;
+          GroupCallService.instance.startGroupCall(
+            chatId: widget.chatId,
+            chatTitle: chat.title,
+            myId: me.id,
+            myUsername: me.username,
+            kind: kind,
+          );
+        },
+        child: SizedBox(
+          width: 44, height: 44,
+          child: Icon(
+            isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+            size: 22, color: c.ink,
+          ),
         ),
       ),
     );
@@ -271,29 +275,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // #39: DRY-хелпер для кнопок звонка в хедере direct-чата.
   Widget _callHeaderButton(SeeUThemeColors c, dynamic peer, CallKind kind) {
     final isVoice = kind == CallKind.voice;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        CallService.instance.startCall(
-          peerId: peer.id,
-          peerUsername: peer.username,
-          peerAvatarUrl: peer.avatarUrl ?? '',
-          kind: kind,
-        );
-      },
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Icon(
-          isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
-          size: 22,
-          color: c.ink,
+    return Semantics(
+      label: isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          CallService.instance.startCall(
+            peerId: peer.id,
+            peerUsername: peer.username,
+            peerAvatarUrl: peer.avatarUrl ?? '',
+            kind: kind,
+          );
+        },
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+            size: 22,
+            color: c.ink,
+          ),
         ),
       ),
     );
   }
 
-  // ignore: unused_element
   Future<void> _leaveGroup({String? sborId, bool isOrganizer = false}) async {
     final c = context.seeuColors;
     final isSbor = sborId != null;
@@ -324,7 +331,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(isOrganizer ? 'Отменить сбор' : 'Выйти',
-                style: const TextStyle(color: Colors.red)),
+                style: const TextStyle(color: SeeUColors.error)),
           ),
         ],
       ),
@@ -975,6 +982,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Sender name header — shown in group chats for non-mine messages (UX-026).
+                if (!m.isMe && m.senderUsername.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Row(
+                      children: [
+                        Icon(PhosphorIconsRegular.user,
+                            size: 13, color: c.ink3),
+                        const SizedBox(width: 6),
+                        Text(
+                          m.senderName.isNotEmpty
+                              ? '${m.senderName} · @${m.senderUsername}'
+                              : '@${m.senderUsername}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: c.ink3,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 // Reactions row: 6 popular + «+» для expanded picker
                 Padding(
                   padding:
@@ -1383,18 +1414,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                             // Поиск в чате (CHAT-3). Bottom-sheet с TextField +
                             // debounced API + results list.
-                            GestureDetector(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                _showSearchSheet();
-                              },
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Icon(
-                                  PhosphorIconsRegular.magnifyingGlass,
-                                  size: 22,
-                                  color: c.ink,
+                            Semantics(
+                              label: 'Поиск по сообщениям',
+                              button: true,
+                              child: GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  _showSearchSheet();
+                                },
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    PhosphorIconsRegular.magnifyingGlass,
+                                    size: 22,
+                                    color: c.ink,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1407,6 +1442,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             if (chat?.isGroup == true) ...[
                               _groupCallHeaderButton(c, chat!, CallKind.voice),
                               _groupCallHeaderButton(c, chat, CallKind.video),
+                              // Меню группы: выход / отмена сбора
+                              PopupMenuButton<String>(
+                                icon: Icon(PhosphorIconsRegular.dotsThreeVertical, size: 22, color: c.ink),
+                                color: c.surface,
+                                onSelected: (value) {
+                                  if (value == 'leave') {
+                                    _leaveGroup(
+                                      sborId: chat.sborId,
+                                      isOrganizer: chat.isOrganizer,
+                                    );
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  PopupMenuItem<String>(
+                                    value: 'leave',
+                                    child: Row(
+                                      children: [
+                                        Icon(PhosphorIconsRegular.signOut, size: 18, color: SeeUColors.error),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          chat.isOrganizer
+                                              ? 'Отменить сбор'
+                                              : chat.sborId != null
+                                                  ? 'Выйти из сбора'
+                                                  : 'Выйти из группы',
+                                          style: const TextStyle(color: SeeUColors.error),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ],
                         ),
@@ -1428,19 +1495,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ? _buildEmptyChat(otherUser)
                         : Stack(
                             children: [
-                              Column(
-                                children: [
-                                  if (msgState.isLoadingOlder)
-                                    const LinearProgressIndicator(
-                                      color: SeeUColors.accent,
-                                      backgroundColor: Colors.transparent,
-                                    ),
-                                  Expanded(
-                                    child: _buildMessageList(msgState.messages,
-                                        myId, otherUser, chat),
+                              _buildMessageList(
+                                  msgState.messages, myId, otherUser, chat),
+                              // Sticky load-older indicator: Positioned overlay so it
+                              // stays visible regardless of scroll position (UX-008).
+                              if (msgState.isLoadingOlder)
+                                const Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: LinearProgressIndicator(
+                                    color: SeeUColors.accent,
+                                    backgroundColor: Colors.transparent,
                                   ),
-                                ],
-                              ),
+                                ),
                               // Scroll-to-bottom FAB: shown when scrolled up.
                               if (!_atBottom)
                                 Positioned(
@@ -1929,6 +1997,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _locationPending = false);
   }
 
+
   Widget _buildRoundVideoOverlay() {
     final ctrl = _videoCamController;
     final initialized = ctrl?.value.isInitialized == true;
@@ -2161,8 +2230,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildUploadingBubble(UploadTask task) {
     final c = context.seeuColors;
-    void onCancel() => ref.read(uploadQueueProvider.notifier).cancel(task.id);
-    if (task.errorMessage != null) return _buildErrorBubble(task, c, onCancel);
+    final notifier = ref.read(uploadQueueProvider.notifier);
+    void onCancel() => notifier.cancel(task.id);
+    void onRetry() => notifier.retry(task.id);
+    if (task.errorMessage != null) return _buildErrorBubble(task, c, onCancel, onRetry);
     return switch (task.kind) {
       UploadTaskKind.videoNote => _buildPendingVideoNote(task, onCancel),
       UploadTaskKind.voice     => _buildPendingVoice(task, c, onCancel),
@@ -2173,7 +2244,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     };
   }
 
-  Widget _buildErrorBubble(UploadTask task, SeeUThemeColors c, VoidCallback onCancel) {
+  Widget _buildErrorBubble(
+    UploadTask task,
+    SeeUThemeColors c,
+    VoidCallback onCancel,
+    VoidCallback onRetry,
+  ) {
+    const errorColor = Color(0xFFFF3B3B);
     return Padding(
       padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
       child: Align(
@@ -2183,16 +2260,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           decoration: BoxDecoration(
             color: c.surface2,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFFF3B3B).withValues(alpha: 0.45), width: 1),
+            border: Border.all(color: errorColor.withValues(alpha: 0.45), width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(PhosphorIconsBold.warningCircle, color: Color(0xFFFF3B3B), size: 18),
+              const Icon(PhosphorIconsBold.warningCircle, color: errorColor, size: 18),
               const SizedBox(width: 8),
-              Flexible(child: Text(task.errorMessage!, style: const TextStyle(fontSize: 13, color: Color(0xFFFF3B3B)))),
+              Flexible(
+                child: Text(
+                  task.errorMessage!,
+                  style: const TextStyle(fontSize: 13, color: errorColor),
+                ),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: onRetry,
+                child: Text(
+                  'Повторить',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: SeeUColors.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(width: 0.5, height: 14, color: c.line),
               const SizedBox(width: 8),
-              GestureDetector(onTap: onCancel, child: Icon(PhosphorIconsBold.x, size: 14, color: c.ink3)),
+              GestureDetector(
+                onTap: onCancel,
+                child: Icon(PhosphorIconsBold.x, size: 14, color: c.ink3),
+              ),
             ],
           ),
         ),
@@ -2223,10 +2322,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ],
               ),
             ),
-            // Indeterminate loading ring (orange)
+            // Progress ring — determinate when upload size is known
             SizedBox(
               width: ringSize, height: ringSize,
               child: CircularProgressIndicator(
+                value: info.progress,
                 strokeWidth: 3.5,
                 color: SeeUColors.accent,
                 backgroundColor: Colors.white.withValues(alpha: 0.12),
@@ -2317,7 +2417,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Spinner (same size as play button in VoiceBubble)
+              // Upload spinner — determinate when size is known
               Container(
                 width: 44, height: 44,
                 decoration: BoxDecoration(
@@ -2326,7 +2426,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    value: info.progress,
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -2425,6 +2529,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: SizedBox(
                     height: 3,
                     child: LinearProgressIndicator(
+                      value: info.progress,
                       color: SeeUColors.accent,
                       backgroundColor: Colors.white.withValues(alpha: 0.3),
                     ),
@@ -2543,6 +2648,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: SizedBox(
                     height: 3,
                     child: LinearProgressIndicator(
+                      value: info.progress,
                       color: SeeUColors.accent,
                       backgroundColor: Colors.white.withValues(alpha: 0.3),
                     ),
@@ -2605,9 +2711,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   shape: BoxShape.circle,
                   color: Colors.white.withValues(alpha: 0.20),
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: CircularProgressIndicator(
+                    value: info.progress,
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -2627,6 +2737,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       child: SizedBox(
                         height: 3,
                         child: LinearProgressIndicator(
+                          value: info.progress,
                           color: Colors.white,
                           backgroundColor: Colors.white.withValues(alpha: 0.3),
                         ),
@@ -2703,6 +2814,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       child: SizedBox(
                         height: 3,
                         child: LinearProgressIndicator(
+                          value: info.progress,
                           color: SeeUColors.accent,
                           backgroundColor: SeeUColors.accent.withValues(alpha: 0.15),
                         ),
@@ -3315,6 +3427,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildSendErrorBanner(SeeUThemeColors c) {
+    // Show preview of the failed message text (first 40 chars) for context.
+    final preview = _failedText.length > 40
+        ? '${_failedText.substring(0, 40)}…'
+        : _failedText;
     return Container(
       color: SeeUColors.error.withValues(alpha: 0.10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -3323,9 +3439,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           Icon(PhosphorIconsRegular.warningCircle, size: 16, color: SeeUColors.error),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              'Не удалось отправить',
-              style: TextStyle(fontSize: 13, color: SeeUColors.error),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Не удалось отправить',
+                  style: TextStyle(fontSize: 13, color: SeeUColors.error, fontWeight: FontWeight.w600),
+                ),
+                if (preview.isNotEmpty)
+                  Text(
+                    preview,
+                    style: TextStyle(fontSize: 11, color: SeeUColors.error.withValues(alpha: 0.7)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
           ),
           GestureDetector(

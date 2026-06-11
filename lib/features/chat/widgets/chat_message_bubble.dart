@@ -205,42 +205,12 @@ class ChatMessageBubble extends StatelessWidget {
                           child: Wrap(
                             spacing: 4,
                             children: allReactions.entries
-                                .map((e) => GestureDetector(
+                                .map((e) => _ReactionChip(
+                                      emoji: e.key,
+                                      count: e.value,
+                                      isSelected: e.key == reaction,
                                       onTap: () => onReactionSelected(e.key),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: e.key == reaction
-                                              ? SeeUColors.accentSoft
-                                              : c.surface,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          boxShadow: SeeUShadows.sm,
-                                          border: e.key == reaction
-                                              ? Border.all(
-                                                  color: SeeUColors.accent,
-                                                  width: 0.8)
-                                              : null,
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(e.key,
-                                                style: const TextStyle(
-                                                    fontSize: 13)),
-                                            if (e.value > 1) ...[
-                                              const SizedBox(width: 3),
-                                              Text('${e.value}',
-                                                  style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: c.ink2,
-                                                      fontWeight:
-                                                          FontWeight.w600)),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
+                                      c: c,
                                     ))
                                 .toList(),
                           ),
@@ -340,7 +310,13 @@ class ChatMessageBubble extends StatelessWidget {
                           ? PhosphorIconsBold.checks
                           : PhosphorIconsRegular.check,
                       size: 14,
-                      color: msg.isRead ? Colors.white : const Color(0xBBFFFFFF),
+                      // Read = fully white; Delivered = dimmed double-check;
+                      // Sent only = single check at medium opacity.
+                      color: msg.isRead
+                          ? Colors.white
+                          : msg.isDelivered
+                              ? const Color(0x66FFFFFF)
+                              : const Color(0xBBFFFFFF),
                     ),
                   ],
                 ],
@@ -446,7 +422,13 @@ class ChatMessageBubble extends StatelessWidget {
                           ? PhosphorIconsBold.checks
                           : PhosphorIconsRegular.check,
                       size: 14,
-                      color: msg.isRead ? Colors.white : const Color(0xBBFFFFFF),
+                      // Read = fully white; Delivered = dimmed double-check;
+                      // Sent only = single check at medium opacity.
+                      color: msg.isRead
+                          ? Colors.white
+                          : msg.isDelivered
+                              ? const Color(0x66FFFFFF)
+                              : const Color(0xBBFFFFFF),
                     ),
                     if (msg.recipientsCount > 1 &&
                         msg.readCount > 0 &&
@@ -582,8 +564,19 @@ class ChatMessageBubble extends StatelessWidget {
         fit: BoxFit.contain,
         placeholder: (_, __) =>
             const SizedBox(width: 140, height: 140),
-        errorWidget: (_, __, ___) =>
-            const SizedBox(width: 140, height: 140),
+        errorWidget: (_, __, ___) => Container(
+          width: 140,
+          height: 140,
+          decoration: BoxDecoration(
+            color: const Color(0x14000000),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            PhosphorIconsRegular.imageBroken,
+            size: 36,
+            color: Color(0x55000000),
+          ),
+        ),
       );
     }
     if (message.attachedMediaUrl.isNotEmpty) {
@@ -1208,6 +1201,96 @@ class _ChatFileBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Reaction chip with scale-bounce animation on tap (UX-023).
+class _ReactionChip extends StatefulWidget {
+  final String emoji;
+  final int count;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final SeeUThemeColors c;
+
+  const _ReactionChip({
+    required this.emoji,
+    required this.count,
+    required this.isSelected,
+    required this.onTap,
+    required this.c,
+  });
+
+  @override
+  State<_ReactionChip> createState() => _ReactionChipState();
+}
+
+class _ReactionChipState extends State<_ReactionChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _scale = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.30), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.30, end: 0.92), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 30),
+    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _ctrl.forward(from: 0);
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    return GestureDetector(
+      onTap: _handleTap,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: widget.isSelected ? SeeUColors.accentSoft : c.surface,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: SeeUShadows.sm,
+            border: widget.isSelected
+                ? Border.all(color: SeeUColors.accent, width: 0.8)
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(widget.emoji, style: const TextStyle(fontSize: 13)),
+              if (widget.count > 1) ...[
+                const SizedBox(width: 3),
+                Text(
+                  '${widget.count}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: c.ink2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

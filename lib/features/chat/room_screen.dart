@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:record/record.dart';
 
@@ -15,6 +16,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/realtime_provider.dart';
 import '../../core/providers/room_provider.dart';
 import '../../core/services/call_bg_service.dart';
 import '../../core/services/voice_room_service.dart';
@@ -43,11 +45,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _isSearching = false;
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
-  // ── Reactions (local-only, no backend) ──────────────────────────────────
+  // ── Reactions ───────────────────────────────────────────────────────────
   String? _reactionPickerMsgId;
-  final Map<String, String> _myReactions = {};
-  final Map<String, Map<String, int>> _allReactions = {};
 
   // ── Mic level monitoring (только пока пользователь в голосовом канале) ──
   final AudioRecorder _micMonitor = AudioRecorder();
@@ -75,6 +76,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _scrollController.removeListener(_onScroll);
     _inputController.removeListener(_onInputChanged);
     _inputController.dispose();
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _scrollController.dispose();
     _stopMicMonitoring();
@@ -216,24 +218,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   void _toggleReaction(String msgId, String emoji) {
     HapticFeedback.selectionClick();
-    setState(() {
-      _reactionPickerMsgId = null;
-      final current = _myReactions[msgId];
-      final reactions = Map<String, int>.from(_allReactions[msgId] ?? {});
-      if (current == emoji) {
-        _myReactions.remove(msgId);
-        reactions[emoji] = ((reactions[emoji] ?? 1) - 1).clamp(0, 999);
-        if ((reactions[emoji] ?? 0) == 0) reactions.remove(emoji);
-      } else {
-        if (current != null) {
-          reactions[current] = ((reactions[current] ?? 1) - 1).clamp(0, 999);
-          if ((reactions[current] ?? 0) == 0) reactions.remove(current);
-        }
-        _myReactions[msgId] = emoji;
-        reactions[emoji] = (reactions[emoji] ?? 0) + 1;
-      }
-      _allReactions[msgId] = reactions;
-    });
+    setState(() => _reactionPickerMsgId = null);
+    ref.read(roomMessagesProvider(widget.roomId).notifier).react(msgId, emoji);
   }
 
   Future<void> _toggleMute(Room room) async {
@@ -406,6 +392,23 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final room = detailState.room;
     final myId = ref.watch(authProvider).user?.id ?? '';
     final msgsState = ref.watch(roomMessagesProvider(widget.roomId));
+
+    // Если текущего пользователя удалили из комнаты — закрываем экран.
+    ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
+      next.whenData((evt) {
+        if (evt.type != 'room.member.removed') return;
+        final p = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
+        if (p == null || p['room_id']?.toString() != widget.roomId) return;
+        final uid = p['user_id']?.toString();
+        if (uid != myId || !mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Вас удалили из комнаты')),
+        );
+        Navigator.of(context).pop();
+      });
+    });
 
     // Scroll to bottom when new messages arrive — via listener, not side effect in build.
     ref.listen<RoomMessagesState>(roomMessagesProvider(widget.roomId), (prev, next) {
@@ -589,16 +592,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
-                onChanged: (v) => setState(() => _searchQuery = v),
+                onChanged: (v) {
+                  setState(() => _searchQuery = v);
+                  _searchDebounce?.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+                    ref.read(roomMessagesProvider(widget.roomId).notifier).search(v);
+                  });
+                },
               ),
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () => setState(() {
-                _isSearching = false;
-                _searchQuery = '';
-                _searchCtrl.clear();
-              }),
+              onTap: () {
+                setState(() {
+                  _isSearching = false;
+                  _searchQuery = '';
+                  _searchCtrl.clear();
+                });
+                ref.read(roomMessagesProvider(widget.roomId).notifier).clearSearch();
+              },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Icon(PhosphorIconsRegular.x, size: 20, color: c.ink),
@@ -672,9 +684,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final initial = room.name.isNotEmpty ? room.name[0].toUpperCase() : 'R';
 
     return Container(
-      width: 36, height: 36,
+      width: 44, height: 44,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(13),
         gradient: hasCover ? null : LinearGradient(colors: palette),
       ),
       clipBehavior: Clip.antiAlias,
@@ -781,7 +793,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   // Shows voice channel state. Users must explicitly join to speak.
 
   void _showVoiceParticipantsSheet(
-      SeeUThemeColors c, List<RoomParticipant> voiceUsers) {
+      SeeUThemeColors c, List<RoomParticipant> voiceUsers,
+      {bool canJoin = false}) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -848,11 +861,70 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             const SizedBox(height: 16),
             if (voiceUsers.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
+                padding: const EdgeInsets.symmetric(vertical: 28),
                 child: Center(
-                  child: Text(
-                    'Никого нет в эфире',
-                    style: TextStyle(fontSize: 14, color: c.ink3),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 56, height: 56,
+                        decoration: BoxDecoration(
+                          color: c.surface2,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          PhosphorIcons.microphone(PhosphorIconsStyle.regular),
+                          size: 26, color: c.ink4,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'В эфире пока никого нет',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: c.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Войдите первым и начните общение',
+                        style: TextStyle(fontSize: 13, color: c.ink3),
+                      ),
+                      if (canJoin) ...[
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _joinVoice();
+                          },
+                          child: Container(
+                            height: 44,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            decoration: BoxDecoration(
+                              color: SeeUColors.accent,
+                              borderRadius: BorderRadius.circular(SeeURadii.pill),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(PhosphorIconsFill.microphone,
+                                    size: 16, color: Colors.white),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Войти в эфир',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               )
@@ -961,7 +1033,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
 
     return GestureDetector(
-      onTap: () => _showVoiceParticipantsSheet(c, voiceUsers),
+      onTap: () => _showVoiceParticipantsSheet(
+        c, voiceUsers,
+        canJoin: room.isJoined && room.isActive && !inVoice,
+      ),
       child: Container(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -996,12 +1071,22 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   'Голосовой канал',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink),
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12, color: c.ink3),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                if (voiceCount == 0 && room.isJoined && room.isActive && !inVoice)
+                  Text(
+                    'Войти первым в эфир →',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SeeUColors.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                else
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: c.ink3),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
@@ -1092,7 +1177,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             ),
             const SizedBox(height: 14),
             Text(
-              'Начните общение',
+              'Здесь пока пусто',
               style: TextStyle(
                 fontSize: 15, fontWeight: FontWeight.w600, color: c.ink2,
               ),
@@ -1102,17 +1187,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               'Напишите первое сообщение',
               style: TextStyle(fontSize: 13, color: c.ink3),
             ),
+            const SizedBox(height: 20),
+            // Animated arrow pointing toward the text input below.
+            Icon(PhosphorIconsBold.arrowDown, size: 22, color: c.ink3)
+                .animate(onPlay: (ctrl) => ctrl.repeat(reverse: true))
+                .moveY(
+                  begin: 0,
+                  end: 7,
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeInOut,
+                )
+                .fadeIn(duration: const Duration(milliseconds: 300)),
           ],
         ),
       );
     }
 
-    final query = _searchQuery.trim().toLowerCase();
-    final messages = query.isEmpty
-        ? msgsState.messages
-        : msgsState.messages
-            .where((m) => m.text.toLowerCase().contains(query))
-            .toList();
+    // Use server-side search results when active, otherwise show all messages.
+    final messages = msgsState.searchResults ?? msgsState.messages;
 
     return GestureDetector(
       onTap: () {
@@ -1139,9 +1231,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             showAvatar: showAvatar,
             c: c,
             showReactionPicker: _reactionPickerMsgId == msg.id,
-            reactions: _allReactions[msg.id] ?? {},
-            myReaction: _myReactions[msg.id],
-            searchQuery: query,
+            reactions: msg.reactions,
+            myReaction: msg.myReaction.isEmpty ? null : msg.myReaction,
+            searchQuery: _searchQuery.trim(),
             onLongPress: () => setState(() => _reactionPickerMsgId = msg.id),
             onReactionSelected: (emoji) => _toggleReaction(msg.id, emoji),
           );

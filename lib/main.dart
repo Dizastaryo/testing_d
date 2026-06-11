@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import 'core/api/api_client.dart' show networkOnlineProvider;
 import 'core/design/tokens.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/auth_provider.dart';
@@ -482,6 +485,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
     });
 
     final themeMode = ref.watch(themeProvider);
+    final isOnline = ref.watch(networkOnlineProvider);
 
     return MaterialApp.router(
       title: 'SeeU',
@@ -494,8 +498,90 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
       // открывать полноэкранный CallScreen поверх любого роута.
       builder: (context, child) => CallListener(
         navigatorKey: _navigatorKey,
-        child: child ?? const SizedBox(),
+        child: _NetworkBanner(
+          isOnline: isOnline,
+          child: child ?? const SizedBox(),
+        ),
       ),
+    );
+  }
+}
+
+/// Глобальный баннер сети: красный «Нет соединения» + кратковременный зелёный
+/// «Соединение восстановлено» при переходе offline → online.
+class _NetworkBanner extends StatefulWidget {
+  final bool isOnline;
+  final Widget child;
+
+  const _NetworkBanner({required this.isOnline, required this.child});
+
+  @override
+  State<_NetworkBanner> createState() => _NetworkBannerState();
+}
+
+class _NetworkBannerState extends State<_NetworkBanner> {
+  bool _showRestored = false;
+  Timer? _restoredTimer;
+
+  @override
+  void didUpdateWidget(_NetworkBanner old) {
+    super.didUpdateWidget(old);
+    // Detect offline → online transition.
+    if (!old.isOnline && widget.isOnline) {
+      _restoredTimer?.cancel();
+      setState(() => _showRestored = true);
+      _restoredTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _showRestored = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _restoredTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showOffline = !widget.isOnline;
+    final showGreen = _showRestored && widget.isOnline;
+
+    return Column(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          height: (showOffline || showGreen) ? 28 : 0,
+          color: showGreen ? const Color(0xFF34C759) : SeeUColors.error,
+          child: OverflowBox(
+            maxHeight: 28,
+            child: (showOffline || showGreen)
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        showGreen
+                            ? PhosphorIconsBold.wifiHigh
+                            : PhosphorIconsBold.wifiSlash,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        showGreen ? 'Соединение восстановлено' : 'Нет соединения',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+        Expanded(child: widget.child),
+      ],
     );
   }
 }
