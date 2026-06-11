@@ -1839,8 +1839,8 @@ class _RoomCard extends StatelessWidget {
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      // Live badge for voice rooms with participants
-                      if (isVoice && room.participantCount > 0)
+                      // Live badge for voice rooms with active voice participants
+                      if (isVoice && room.voiceCount > 0)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
@@ -1858,7 +1858,7 @@ class _RoomCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '${room.participantCount}',
+                                '${room.voiceCount}',
                                 style: const TextStyle(
                                   fontSize: 11, fontWeight: FontWeight.w700,
                                   color: SeeUColors.accent,
