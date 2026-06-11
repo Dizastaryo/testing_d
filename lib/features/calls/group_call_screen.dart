@@ -155,8 +155,8 @@ class _GroupCallScreenState extends State<GroupCallScreen>
         _pipOffset = Offset(
           (prev?.dx ?? (size.width - pipW - 16))
               .clamp(8.0, size.width - pipW - 8),
-          (prev?.dy ?? (size.height - pipH - 140))
-              .clamp(8.0, size.height - pipH - 8),
+          (prev?.dy ?? (size.height - pipH - 150))
+              .clamp(8.0, size.height - pipH - 150),
         );
 
         // Android PiP-режим: минимальный UI внутри PiP-окна.
@@ -194,11 +194,6 @@ class _GroupCallScreenState extends State<GroupCallScreen>
                       child: _buildGallery(sess, isVoice),
                     ),
 
-                    // ── Local PiP ──
-                    if (!isVoice &&
-                        sess.status != GroupCallStatus.incomingRinging)
-                      _buildLocalPip(sess, size, pipW, pipH),
-
                     // ── Top bar: minimize + title + timer ──
                     _buildTopBar(sess),
 
@@ -212,6 +207,11 @@ class _GroupCallScreenState extends State<GroupCallScreen>
                         child: _buildControls(sess, isVoice),
                       ),
                     ),
+
+                    // ── Local PiP — после controls, всегда поверх ──
+                    if (!isVoice &&
+                        sess.status != GroupCallStatus.incomingRinging)
+                      _buildLocalPip(sess, size, pipW, pipH),
                   ],
                 ),
               ),
@@ -356,7 +356,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
             _pipOffset = Offset(
               (offset.dx + d.delta.dx).clamp(8.0, screen.width - pipW - 8),
               (offset.dy + d.delta.dy)
-                  .clamp(8.0, screen.height - pipH - 8),
+                  .clamp(8.0, screen.height - pipH - 150),
             );
           });
         },

@@ -224,7 +224,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         _pipOffset = Offset(
           (prev?.dx ?? (size.width - pipW - 20))
               .clamp(8.0, size.width - pipW - 8),
-          (prev?.dy ?? 80.0).clamp(8.0, size.height - pipH - 8),
+          (prev?.dy ?? 80.0).clamp(8.0, size.height - pipH - 150),
         );
 
         return PopScope(
@@ -255,11 +255,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                       child: _buildMainView(session, isVoice),
                     ),
 
-                    // ── Draggable PiP ──
-                    if (!isVoice &&
-                        session.status != CallStatus.incomingRinging)
-                      _buildPip(session, size),
-
                     // ── Reconnecting banner ──
                     if (session.status == CallStatus.reconnecting)
                       _buildReconnectBanner(),
@@ -277,6 +272,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         child: _buildControls(session),
                       ),
                     ),
+
+                    // ── Draggable PiP — после controls, всегда поверх ──
+                    if (!isVoice &&
+                        session.status != CallStatus.incomingRinging)
+                      _buildPip(session, size),
                   ],
                 ),
               ),
@@ -294,25 +294,24 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Widget _buildMainView(CallSession s, bool isVoice) {
     if (isVoice) return _buildAvatarBg(s);
     final cameraOff = CallService.instance.isCameraOff.value;
-    if (s.status == CallStatus.connected) {
-      // Swapped: local full-screen (only if camera is on)
-      if (_swapped && _localRenderer.srcObject != null && !cameraOff) {
-        return RTCVideoView(
-          _localRenderer,
-          mirror: true,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-        );
-      }
-      // Default: remote full-screen
-      if (!_swapped && _remoteRenderer.srcObject != null) {
-        return RTCVideoView(
-          _remoteRenderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-        );
-      }
+    // Swapped: своя камера на весь экран — работает на любом статусе,
+    // в т.ч. во время исходящего звонка (пользователь хочет видеть себя).
+    if (_swapped && _localRenderer.srcObject != null && !cameraOff) {
+      return RTCVideoView(
+        _localRenderer,
+        mirror: true,
+        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+      );
     }
-    // Во время исходящего вызова — НЕ показываем local-стрим на main.
-    // PiP уже показывает превью своей камеры. Показывать себя дважды — баг.
+    // Default: чужая камера на весь экран (только когда соединение установлено).
+    if (!_swapped &&
+        s.status == CallStatus.connected &&
+        _remoteRenderer.srcObject != null) {
+      return RTCVideoView(
+        _remoteRenderer,
+        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+      );
+    }
     return _buildAvatarBg(s);
   }
 
@@ -589,7 +588,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           setState(() {
             _pipOffset = Offset(
               (offset.dx + d.delta.dx).clamp(8.0, screen.width - pipW - 8),
-              (offset.dy + d.delta.dy).clamp(8.0, screen.height - pipH - 8),
+              (offset.dy + d.delta.dy).clamp(8.0, screen.height - pipH - 150),
             );
           });
         },
