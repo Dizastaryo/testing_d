@@ -257,6 +257,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     final room = ref.read(roomDetailProvider(widget.roomId)).room;
     if (room == null || room.isInVoice) return;
     HapticFeedback.mediumImpact();
+
+    // Если уже в голосовом канале ДРУГОЙ комнаты — выходим оттуда автоматически.
+    final prevRoomId = VoiceRoomService.instance.activeRoomId.value;
+    if (prevRoomId != null && prevRoomId != widget.roomId) {
+      _stopMicMonitoring();
+      try {
+        await ref.read(apiClientProvider).delete(ApiEndpoints.roomVoice(prevRoomId));
+      } catch (_) {}
+      VoiceRoomService.instance.leave(); // очищает activeRoomId, убирает mini-overlay
+    }
+
     final myId = ref.read(authProvider).user?.id ?? '';
     await ref.read(roomDetailProvider(widget.roomId).notifier).joinVoice(myId);
     VoiceRoomService.instance.join(widget.roomId, room.name);
