@@ -26,6 +26,10 @@ class VoiceRoomService {
   /// Момент входа в голосовой канал — для корректного таймера в нативном PiP.
   final ValueNotifier<DateTime?> joinedAt = ValueNotifier(null);
 
+  /// ID комнаты, чей RoomScreen сейчас открыт (не null пока страница видна).
+  /// Используется CallListener чтобы не пушить voice-panel поверх открытой страницы.
+  String? currentOpenRoomId;
+
   void join(String roomId, String roomName) {
     activeRoomId.value = roomId;
     activeRoomName.value = roomName;

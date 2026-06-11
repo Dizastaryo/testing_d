@@ -11,6 +11,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/models/room.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/room_provider.dart';
 import '../../core/providers/realtime_provider.dart';
 import '../../core/services/call_bg_service.dart';
 import '../../core/services/voice_room_service.dart';
@@ -39,7 +42,7 @@ class CallListener extends ConsumerStatefulWidget {
 class _CallListenerState extends ConsumerState<CallListener> {
   bool _open = false;
   bool _groupOpen = false;
-  bool _roomOpen = false;
+  bool _panelOpen = false;
 
   static const _pipCh = MethodChannel('seeu/pip');
 
@@ -167,21 +170,40 @@ class _CallListenerState extends ConsumerState<CallListener> {
     }
   }
 
-  /// Пользователь тапнул по mini-overlay голосового канала → возвращаем на страницу комнаты.
+  /// Пользователь тапнул по mini-overlay голосового канала → показываем Voice Panel.
   void _onVoiceRoomMinimized() {
     final isMin = VoiceRoomService.instance.minimized.value;
     final roomId = VoiceRoomService.instance.activeRoomId.value;
-    if (!isMin && roomId != null && !_roomOpen) {
-      _goToRoom(roomId);
-    }
+    // Не открывать панель если: overlay свёрнут (isMin=true),
+    // нет активной комнаты, панель уже открыта, или RoomScreen уже открыт.
+    if (isMin || roomId == null || _panelOpen) return;
+    if (VoiceRoomService.instance.currentOpenRoomId != null) return;
+    _showVoicePanel(roomId);
   }
 
-  void _goToRoom(String roomId) {
+  void _showVoicePanel(String roomId) {
+    final nav = widget.navigatorKey.currentState;
     final ctx = widget.navigatorKey.currentContext;
-    if (ctx == null) return;
-    _roomOpen = true;
-    ctx.push('/room/$roomId').then((_) {
-      _roomOpen = false;
+    if (nav == null || ctx == null) return;
+    _panelOpen = true;
+    nav.push(
+      PageRouteBuilder(
+        opaque: true,
+        fullscreenDialog: true,
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (_, __, ___) => _VoiceRoomFullPanel(
+          roomId: roomId,
+          roomName: VoiceRoomService.instance.activeRoomName.value,
+          onViewChat: () => ctx.push('/room/$roomId'),
+        ),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      ),
+    ).then((_) {
+      _panelOpen = false;
     });
   }
 
@@ -828,7 +850,7 @@ class _MiniVoiceRoomOverlay extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
-                    PhosphorIconsBold.microphoneSlash,
+                    PhosphorIconsBold.phoneSlash,
                     color: Colors.white,
                     size: 12,
                   ),
@@ -839,6 +861,386 @@ class _MiniVoiceRoomOverlay extends StatelessWidget {
         ),
       ),
     ),
+    );
+  }
+}
+
+// ─── Голосовой канал — полноэкранная панель (Discord-стиль) ──────────────────
+
+class _VoiceRoomFullPanel extends ConsumerStatefulWidget {
+  final String roomId;
+  final String roomName;
+  final VoidCallback onViewChat;
+
+  const _VoiceRoomFullPanel({
+    required this.roomId,
+    required this.roomName,
+    required this.onViewChat,
+  });
+
+  @override
+  ConsumerState<_VoiceRoomFullPanel> createState() => _VoiceRoomFullPanelState();
+}
+
+class _VoiceRoomFullPanelState extends ConsumerState<_VoiceRoomFullPanel> {
+  Timer? _tick;
+  bool _suppressMinimize = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    // Показываем mini-overlay если всё ещё в голосовом канале,
+    // кроме случаев когда уходим к Room Chat или покидаем канал.
+    if (!_suppressMinimize &&
+        VoiceRoomService.instance.activeRoomId.value == widget.roomId) {
+      VoiceRoomService.instance.minimized.value = true;
+    }
+    super.dispose();
+  }
+
+  Future<void> _toggleMute(Room room) async {
+    HapticFeedback.selectionClick();
+    final myId = ref.read(authProvider).user?.id ?? '';
+    final newMuted = !room.isMuted;
+    ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, newMuted);
+    try {
+      await ref.read(apiClientProvider).patch(ApiEndpoints.muteRoom(room.id));
+    } catch (_) {
+      // Откат оптимистичного обновления
+      ref.read(roomDetailProvider(widget.roomId).notifier).setMyMute(myId, room.isMuted);
+    }
+  }
+
+  Future<void> _leaveVoice() async {
+    HapticFeedback.mediumImpact();
+    final myId = ref.read(authProvider).user?.id ?? '';
+    await ref.read(roomDetailProvider(widget.roomId).notifier).leaveVoice(myId);
+    VoiceRoomService.instance.leave();
+    _suppressMinimize = true;
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  void _viewChat() {
+    _suppressMinimize = true;
+    Navigator.of(context).pop();
+    // microtask чтобы pop завершился до push
+    Future.microtask(widget.onViewChat);
+  }
+
+  String _fmtDuration() {
+    final joined = VoiceRoomService.instance.joinedAt.value;
+    if (joined == null) return '0:00';
+    final d = DateTime.now().difference(joined);
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roomState = ref.watch(roomDetailProvider(widget.roomId));
+    final room = roomState.room;
+    final myId = ref.read(authProvider).user?.id ?? '';
+    final voiceParticipants = room?.voiceParticipants ?? [];
+    final isMuted = room?.isMuted ?? false;
+    final inVoice = room?.isInVoice ?? false;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F0F1A),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Шапка ────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(
+                children: [
+                  // Свернуть → mini overlay
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        PhosphorIconsBold.caretDown,
+                        color: Colors.white54,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Column(
+                    children: [
+                      Text(
+                        widget.roomName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Голосовой · ${_fmtDuration()}',
+                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  // Перейти в чат комнаты
+                  GestureDetector(
+                    onTap: _viewChat,
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        PhosphorIconsBold.chatCircle,
+                        color: Colors.white54,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Участники голосового канала ───────────────────────────
+            Expanded(
+              child: voiceParticipants.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 72, height: 72,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              PhosphorIconsBold.microphone,
+                              color: Colors.white24,
+                              size: 32,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Никого нет в эфире',
+                            style: TextStyle(color: Colors.white38, fontSize: 15),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Войди в голосовой канал первым',
+                            style: TextStyle(color: Colors.white24, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+                      child: Wrap(
+                        spacing: 20,
+                        runSpacing: 28,
+                        alignment: WrapAlignment.center,
+                        children: voiceParticipants.map((p) {
+                          final isMe = p.userId == myId;
+                          return _VoiceParticipantTile(
+                            participant: p,
+                            isMe: isMe,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+            ),
+
+            // ── Панель управления ─────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(32, 22, 32, 30),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                border: Border(
+                  top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (inVoice) ...[
+                    _VoiceControlButton(
+                      icon: isMuted
+                          ? PhosphorIconsBold.microphoneSlash
+                          : PhosphorIconsBold.microphone,
+                      label: isMuted ? 'Включить' : 'Выключить',
+                      bgColor: isMuted
+                          ? const Color(0xFF2E2E45)
+                          : SeeUColors.success.withValues(alpha: 0.15),
+                      iconColor: isMuted ? Colors.white38 : SeeUColors.success,
+                      onTap: room != null ? () => _toggleMute(room) : null,
+                    ),
+                    const SizedBox(width: 24),
+                  ],
+                  _VoiceControlButton(
+                    icon: PhosphorIconsBold.phoneSlash,
+                    label: 'Покинуть',
+                    bgColor: SeeUColors.error.withValues(alpha: 0.18),
+                    iconColor: SeeUColors.error,
+                    onTap: inVoice ? _leaveVoice : null,
+                    size: 64,
+                    iconSize: 24,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceParticipantTile extends StatelessWidget {
+  final RoomParticipant participant;
+  final bool isMe;
+
+  const _VoiceParticipantTile({required this.participant, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPic =
+        participant.avatarUrl != null && participant.avatarUrl!.isNotEmpty;
+
+    return SizedBox(
+      width: 72,
+      child: Column(
+        children: [
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              Container(
+                width: 60, height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: isMe
+                      ? Border.all(color: SeeUColors.accent, width: 2.5)
+                      : Border.all(
+                          color: Colors.white.withValues(alpha: 0.08)),
+                  color: const Color(0xFF2A2A40),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: hasPic
+                    ? CachedNetworkImage(
+                        imageUrl: participant.avatarUrl!,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) =>
+                            _buildInitials(participant.fullName),
+                      )
+                    : _buildInitials(participant.fullName),
+              ),
+              if (participant.isMuted)
+                Container(
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F0F1A),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  child: const Icon(
+                    PhosphorIconsBold.microphoneSlash,
+                    size: 10,
+                    color: Colors.white38,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            participant.fullName.split(' ').first,
+            style: TextStyle(
+              color: isMe ? SeeUColors.accent : Colors.white60,
+              fontSize: 11,
+              fontWeight: isMe ? FontWeight.w700 : FontWeight.w400,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInitials(String name) {
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return Center(
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceControlButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color bgColor;
+  final Color iconColor;
+  final VoidCallback? onTap;
+  final double size;
+  final double iconSize;
+
+  const _VoiceControlButton({
+    required this.icon,
+    required this.label,
+    required this.bgColor,
+    required this.iconColor,
+    this.onTap,
+    this.size = 56,
+    this.iconSize = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: size, height: size,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: iconSize),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -61,8 +61,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _inputController.addListener(_onInputChanged);
-    // Мы открыли страницу комнаты — overlay должен быть скрыт.
-    VoiceRoomService.instance.minimized.value = false;
+    // Регистрируем этот экран как открытый, чтобы CallListener не пушил
+    // voice-panel поверх нас при смене minimized.
+    VoiceRoomService.instance.currentOpenRoomId = widget.roomId;
+    // Скрываем mini-overlay только если это именно наш активный голосовой канал.
+    if (VoiceRoomService.instance.activeRoomId.value == widget.roomId) {
+      VoiceRoomService.instance.minimized.value = false;
+    }
     // Слушаем Android PiP-режим для перерисовки минимального UI.
     CallBgService.instance.pipMode.addListener(_onPipModeChanged);
   }
@@ -83,6 +88,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     _micMonitor.dispose();
     _myAudioLevel.dispose();
     CallBgService.instance.pipMode.removeListener(_onPipModeChanged);
+    VoiceRoomService.instance.currentOpenRoomId = null;
     // Уходим со страницы — если ещё в голосовом, показываем overlay / PiP.
     if (VoiceRoomService.instance.activeRoomId.value == widget.roomId) {
       VoiceRoomService.instance.minimized.value = true;
