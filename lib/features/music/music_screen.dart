@@ -63,6 +63,10 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
   bool _searchOpen = false;
   final _searchCtrl = TextEditingController();
 
+  // Optimistic like state: trackId → isLiked / likesCount
+  final Map<String, bool> _likedMap = {};
+  final Map<String, int> _likesCountMap = {};
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -77,6 +81,32 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось проиграть: $e')),
       );
+    }
+  }
+
+  Future<void> _toggleLike(AudioTrack track) async {
+    final isLiked = _likedMap[track.id] ?? track.isLiked;
+    final count = _likesCountMap[track.id] ?? track.likesCount;
+    // Optimistic update
+    setState(() {
+      _likedMap[track.id] = !isLiked;
+      _likesCountMap[track.id] = isLiked ? (count - 1).clamp(0, 999999) : count + 1;
+    });
+    try {
+      final api = ref.read(apiClientProvider);
+      if (isLiked) {
+        await api.delete('${ApiEndpoints.audioTracks}/${track.id}/like');
+      } else {
+        await api.post('${ApiEndpoints.audioTracks}/${track.id}/like');
+      }
+    } catch (_) {
+      // Revert on failure
+      if (mounted) {
+        setState(() {
+          _likedMap[track.id] = isLiked;
+          _likesCountMap[track.id] = count;
+        });
+      }
     }
   }
 
@@ -311,6 +341,21 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
                 style: TextStyle(
                     fontFamily: 'JetBrains Mono', fontSize: 11, color: c.ink3)),
             const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _toggleLike(track),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                child: Icon(
+                  (_likedMap[track.id] ?? track.isLiked)
+                      ? PhosphorIconsFill.heart
+                      : PhosphorIconsRegular.heart,
+                  color: (_likedMap[track.id] ?? track.isLiked)
+                      ? SeeUColors.accent
+                      : c.ink3,
+                  size: 20,
+                ),
+              ),
+            ),
             Icon(
               isPlaying ? PhosphorIconsFill.pause : PhosphorIconsFill.play,
               color: isCurrent ? SeeUColors.accent : c.ink2,

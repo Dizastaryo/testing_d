@@ -24,6 +24,8 @@ class AudioTrack {
   /// MUSIC-2: LRC-формат текст. Пустая = lyrics нет. Frontend парсит через
   /// `parseLrc(String)` (см. ниже) и показывает sing-along scroller.
   final String lyricsLrc;
+  final int likesCount;
+  final bool isLiked;
 
   AudioTrack({
     required this.id,
@@ -38,6 +40,8 @@ class AudioTrack {
     this.status = 'approved',
     this.rejectionReason = '',
     this.lyricsLrc = '',
+    this.likesCount = 0,
+    this.isLiked = false,
   });
 
   factory AudioTrack.fromJson(Map<String, dynamic> j) => AudioTrack(
@@ -53,6 +57,25 @@ class AudioTrack {
         status: j['status']?.toString() ?? 'approved',
         rejectionReason: j['rejection_reason']?.toString() ?? '',
         lyricsLrc: j['lyrics_lrc']?.toString() ?? '',
+        likesCount: (j['likes_count'] as num?)?.toInt() ?? 0,
+        isLiked: j['is_liked'] == true,
+      );
+
+  AudioTrack copyWith({bool? isLiked, int? likesCount}) => AudioTrack(
+        id: id,
+        title: title,
+        artist: artist,
+        coverUrl: coverUrl,
+        audioUrl: audioUrl,
+        durationSeconds: durationSeconds,
+        usesCount: usesCount,
+        genre: genre,
+        userId: userId,
+        status: status,
+        rejectionReason: rejectionReason,
+        lyricsLrc: lyricsLrc,
+        likesCount: likesCount ?? this.likesCount,
+        isLiked: isLiked ?? this.isLiked,
       );
 
   String get durationFormatted {
