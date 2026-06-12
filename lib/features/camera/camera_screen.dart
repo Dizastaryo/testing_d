@@ -34,9 +34,8 @@ import 'widgets/camera_record_button.dart';
 import 'widgets/camera_right_panel.dart';
 import 'widgets/camera_top_bar.dart';
 
-// ─── Re-export CameraMode (was defined here, now sourced from bottom panel) ──
-export 'widgets/camera_bottom_panel.dart' show CameraBottomMode;
-typedef CameraMode = CameraBottomMode;
+// ─── Re-export CameraMode ────────────────────────────────────────────────────
+export 'widgets/camera_bottom_panel.dart' show CameraMode;
 
 // ─── Constants ────────────────────────────────────────────────────────────
 

@@ -1,28 +1,26 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/design/tokens.dart';
 
-/// Record / shutter button with pulse animation and progress ring.
+enum CaptureButtonState { photoReady, videoReady, recording }
+
+/// Record / shutter button.
 ///
-/// Tap (< 300 мс) → [onTap] (фото).
-/// Hold (≥ 300 мс) → [onHoldStart] (начать видео), release → [onHoldEnd].
+/// Tap → [onTap].
+/// Visual state driven by [state]:
+///   - photoReady  : white filled circle
+///   - videoReady  : orange gradient circle
+///   - recording   : pulsing outer glow + orange square stop
 class CameraRecordButton extends StatefulWidget {
-  final bool isRecording;
+  final CaptureButtonState state;
   final double totalPct;
-  final bool isPhotoMode;
   final VoidCallback onTap;
-  final VoidCallback onHoldStart;
-  final VoidCallback onHoldEnd;
 
   const CameraRecordButton({
     super.key,
-    required this.isRecording,
+    required this.state,
     required this.totalPct,
-    required this.isPhotoMode,
     required this.onTap,
-    required this.onHoldStart,
-    required this.onHoldEnd,
   });
 
   @override
@@ -33,8 +31,6 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
-  Timer? _holdTimer;
-  bool _holdFired = false;
 
   @override
   void initState() {
@@ -43,18 +39,22 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _pulseAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
+    _pulseAnim = Tween<double>(begin: 0.88, end: 1.12).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    if (widget.isRecording) _pulseController.repeat(reverse: true);
+    if (widget.state == CaptureButtonState.recording) {
+      _pulseController.repeat(reverse: true);
+    }
   }
 
   @override
   void didUpdateWidget(CameraRecordButton old) {
     super.didUpdateWidget(old);
-    if (widget.isRecording && !old.isRecording) {
+    final wasRecording = old.state == CaptureButtonState.recording;
+    final isRecording = widget.state == CaptureButtonState.recording;
+    if (isRecording && !wasRecording) {
       _pulseController.repeat(reverse: true);
-    } else if (!widget.isRecording && old.isRecording) {
+    } else if (!isRecording && wasRecording) {
       _pulseController.stop();
       _pulseController.animateTo(0);
     }
@@ -62,59 +62,31 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
 
   @override
   void dispose() {
-    _holdTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
-  }
-
-  void _onTapDown(TapDownDetails _) {
-    _holdFired = false;
-    _holdTimer = Timer(const Duration(milliseconds: 300), () {
-      _holdFired = true;
-      widget.onHoldStart();
-    });
-  }
-
-  void _onTapUp(TapUpDetails _) {
-    if (_holdTimer?.isActive ?? false) {
-      _holdTimer!.cancel();
-      widget.onTap(); // короткий тап = фото
-    } else if (_holdFired) {
-      widget.onHoldEnd(); // держал = остановить видео
-    }
-    _holdFired = false;
-  }
-
-  void _onTapCancel() {
-    if (_holdTimer?.isActive ?? false) {
-      _holdTimer!.cancel();
-    } else if (_holdFired) {
-      widget.onHoldEnd();
-    }
-    _holdFired = false;
   }
 
   @override
   Widget build(BuildContext context) {
     const double btnSize = 96;
     const double whiteRingSize = 78;
-    const double innerPhotoSize = 64;
-    const double innerRecordSize = 30;
+    const double innerFullSize = 64;
+    const double innerStopSize = 30;
 
-    final isRecording = widget.isRecording && !widget.isPhotoMode;
-    final innerSize = isRecording ? innerRecordSize : innerPhotoSize;
-    final innerRadius = isRecording ? 8.0 : innerPhotoSize / 2;
+    final isRecording = widget.state == CaptureButtonState.recording;
+    final isPhoto = widget.state == CaptureButtonState.photoReady;
+    final innerSize = isRecording ? innerStopSize : innerFullSize;
+    final innerRadius = isRecording ? 8.0 : innerFullSize / 2;
 
     return GestureDetector(
-      onTapDown: _onTapDown,
-      onTapUp: _onTapUp,
-      onTapCancel: _onTapCancel,
+      onTap: widget.onTap,
       child: SizedBox(
         width: btnSize,
         height: btnSize,
         child: Stack(
           alignment: Alignment.center,
           children: [
+            // Pulse glow (recording only)
             if (isRecording)
               AnimatedBuilder(
                 animation: _pulseAnim,
@@ -137,14 +109,19 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
                   ),
                 ),
               ),
-            CustomPaint(
-              size: const Size(btnSize, btnSize),
-              painter: _RingPainter(
-                totalPct: widget.isPhotoMode ? 0.0 : widget.totalPct,
-                ringRadius: 46.0,
-                isRecording: isRecording,
+
+            // Progress ring (video modes only)
+            if (!isPhoto)
+              CustomPaint(
+                size: const Size(btnSize, btnSize),
+                painter: _RingPainter(
+                  totalPct: widget.totalPct,
+                  ringRadius: 46.0,
+                  isRecording: isRecording,
+                ),
               ),
-            ),
+
+            // White outer ring
             Container(
               width: whiteRingSize,
               height: whiteRingSize,
@@ -153,35 +130,39 @@ class _CameraRecordButtonState extends State<CameraRecordButton>
                 border: Border.all(color: Colors.white, width: 3),
               ),
             ),
+
+            // Inner circle
             AnimatedContainer(
-              duration: const Duration(milliseconds: 320),
-              curve: const Cubic(0.34, 1.56, 0.64, 1.0),
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
               width: innerSize,
               height: innerSize,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFFF8060), Color(0xFFFF5A3C), Color(0xFFFF3B6B)],
-                ),
+                color: isPhoto ? Colors.white : null,
+                gradient: isPhoto
+                    ? null
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFFF8060),
+                          Color(0xFFFF5A3C),
+                          Color(0xFFFF3B6B),
+                        ],
+                      ),
                 borderRadius: BorderRadius.circular(innerRadius),
                 boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF5A3C).withValues(alpha: 0.55),
-                    blurRadius: 22,
-                  ),
+                  if (isPhoto)
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.30),
+                      blurRadius: 12,
+                    )
+                  else
+                    BoxShadow(
+                      color: const Color(0xFFFF5A3C).withValues(alpha: 0.55),
+                      blurRadius: 22,
+                    ),
                 ],
-              ),
-              child: Align(
-                alignment: const Alignment(-0.3, -0.55),
-                child: Container(
-                  width: innerSize * 0.38,
-                  height: innerSize * 0.14,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.28),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
               ),
             ),
           ],

@@ -6,42 +6,37 @@ import '../decorations/decoration_item.dart';
 import '../decorations/decoration_picker.dart';
 import 'camera_record_button.dart';
 
-// ── CameraMode enum (must match the one in camera_screen.dart) ──────────────
-// Ре-экспортируем через typedef чтобы избежать дублирования.
-// camera_bottom_panel.dart принимает _CameraBottomMode чтобы не зависеть от
-// самого camera_screen.dart при компиляции виджета отдельно.
+enum CameraMode { photo, sec15, sec60, min3 }
 
-enum CameraBottomMode { photo, video, story, reel }
-
-extension CameraBottomModeExt on CameraBottomMode {
+extension CameraModeExt on CameraMode {
   String get label {
     switch (this) {
-      case CameraBottomMode.photo:   return 'Фото';
-      case CameraBottomMode.video:   return 'Видео';
-      case CameraBottomMode.story:   return 'История';
-      case CameraBottomMode.reel:    return 'Рилс';
+      case CameraMode.photo: return 'ФОТО';
+      case CameraMode.sec15: return '15 с';
+      case CameraMode.sec60: return '60 с';
+      case CameraMode.min3:  return '3 мин';
     }
   }
 
-  bool get isVideoMode => this != CameraBottomMode.photo;
+  bool get isVideoMode => this != CameraMode.photo;
 
   double get maxSeconds {
     switch (this) {
-      case CameraBottomMode.photo:  return 0;
-      case CameraBottomMode.story:  return 15.0;
-      case CameraBottomMode.video:
-      case CameraBottomMode.reel:   return 60.0;
+      case CameraMode.photo: return 0;
+      case CameraMode.sec15: return 15.0;
+      case CameraMode.sec60: return 60.0;
+      case CameraMode.min3:  return 180.0;
     }
   }
 }
 
 /// Нижняя область камеры:
 /// - DecorationPicker (показывается/скрывается)
-/// - Mode tabs (Фото / Видео / История / Рилс)
+/// - Mode tabs (ФОТО / 15 с / 60 с / 3 мин)
 /// - Record row: [Галерея] [Кнопка съёмки] [Undo/Deco]
 class CameraBottomPanel extends StatelessWidget {
   // State
-  final CameraBottomMode cameraMode;
+  final CameraMode cameraMode;
   final bool isRecording;
   final double totalPct;
   final double totalWithCurrent;
@@ -52,7 +47,7 @@ class CameraBottomPanel extends StatelessWidget {
   final bool hasSegments;
 
   // Callbacks
-  final ValueChanged<CameraBottomMode> onModeChanged;
+  final ValueChanged<CameraMode> onModeChanged;
   final VoidCallback onPickGallery;
   final VoidCallback onTakePicture;
   final VoidCallback onStartRecording;
@@ -171,14 +166,14 @@ class CameraBottomPanel extends StatelessWidget {
 // ── Mode tab bar ─────────────────────────────────────────────────────────────
 
 class _ModeTabBar extends StatelessWidget {
-  final CameraBottomMode currentMode;
-  final ValueChanged<CameraBottomMode> onChanged;
+  final CameraMode currentMode;
+  final ValueChanged<CameraMode> onChanged;
 
   const _ModeTabBar({required this.currentMode, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    final modes = CameraBottomMode.values;
+    final modes = CameraMode.values;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -244,7 +239,7 @@ class _ModeTab extends StatelessWidget {
 // ── Record row ───────────────────────────────────────────────────────────────
 
 class _RecordRow extends StatelessWidget {
-  final CameraBottomMode cameraMode;
+  final CameraMode cameraMode;
   final bool isRecording;
   final double totalPct;
   final double totalWithCurrent;
@@ -278,26 +273,26 @@ class _RecordRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPhotoMode = cameraMode == CameraBottomMode.photo;
+    final isPhotoMode = !cameraMode.isVideoMode;
     final showUndo = hasSegments || isRecording;
+    final captureState = isPhotoMode
+        ? CaptureButtonState.photoReady
+        : isRecording
+            ? CaptureButtonState.recording
+            : CaptureButtonState.videoReady;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Story badge / REC indicator
+        // REC indicator
         AnimatedOpacity(
-          opacity: (isRecording && !isPhotoMode) ||
-                  cameraMode == CameraBottomMode.story
-              ? 1.0
-              : 0.0,
+          opacity: isRecording && !isPhotoMode ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 220),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: isRecording && !isPhotoMode
                 ? _RecordingIndicator(elapsed: totalWithCurrent)
-                : cameraMode == CameraBottomMode.story
-                    ? _StoryBadge()
-                    : const SizedBox.shrink(),
+                : const SizedBox.shrink(),
           ),
         ),
 
@@ -314,20 +309,13 @@ class _RecordRow extends StatelessWidget {
 
             // Record / Shutter
             CameraRecordButton(
-              isRecording: isRecording,
+              state: captureState,
               totalPct: totalPct,
-              isPhotoMode: isPhotoMode,
               onTap: isPhotoMode
                   ? onTakePicture
-                  : () {
-                      if (isRecording) {
-                        onStopRecording();
-                      } else {
-                        onStartRecording();
-                      }
-                    },
-              onHoldStart: isPhotoMode ? () {} : onStartRecording,
-              onHoldEnd: isPhotoMode ? () {} : onStopRecording,
+                  : isRecording
+                      ? onStopRecording
+                      : onStartRecording,
             ),
 
             const SizedBox(width: 28),
@@ -463,38 +451,6 @@ class _DecoButton extends StatelessWidget {
           color: active ? SeeUColors.accent : Colors.white,
           size: 26,
         ),
-      ),
-    );
-  }
-}
-
-class _StoryBadge extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.50),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: SeeUColors.accent.withValues(alpha: 0.55),
-          width: 0.8,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(PhosphorIconsRegular.crop, color: SeeUColors.accent, size: 12),
-          const SizedBox(width: 4),
-          const Text(
-            '9:16 · до 15 сек',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }
