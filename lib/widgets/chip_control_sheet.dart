@@ -190,35 +190,69 @@ class _ChipControlSheetState extends ConsumerState<ChipControlSheet> {
               ),
             )
           else ...[
-            // Mode buttons
+            // Если браслет выключен кнопкой — показываем статус
+            if (_currentMode == 0xFF) ...[
+              _OffBadge(),
+              const SizedBox(height: 10),
+            ],
+            // Только два режима — OFF управляется физической кнопкой на браслете
             _ModeButton(
               label: 'Общий',
-              subtitle: 'Все видят твоё имя',
+              subtitle: 'Все видят тебя в сканере',
               icon: PhosphorIcons.broadcast(PhosphorIconsStyle.fill),
               color: const Color(0xFF5DCAA5),
               isActive: _currentMode == 0x00,
-              onTap: () => _setMode(0x00),
+              onTap: _currentMode == 0xFF ? null : () => _setMode(0x00),
             ),
             const SizedBox(height: 10),
             _ModeButton(
               label: 'Приватный',
-              subtitle: 'Только друзья узнают те��я',
+              subtitle: 'Только выбранные тебя видят',
               icon: PhosphorIcons.lockSimple(PhosphorIconsStyle.fill),
               color: const Color(0xFFCECBF6),
               isActive: _currentMode == 0x01,
-              onTap: () => _setMode(0x01),
+              onTap: _currentMode == 0xFF ? null : () => _setMode(0x01),
             ),
-            const SizedBox(height: 10),
-            _ModeButton(
-              label: 'Выключить',
-              subtitle: 'Никто тебя не видит',
-              icon: PhosphorIcons.power(PhosphorIconsStyle.fill),
-              color: const Color(0xFF555555),
-              isActive: _currentMode == 0xFF,
-              onTap: () => _setMode(0xFF),
-            ),
+            // OFF намеренно убран из приложения — управляется кнопкой на браслете.
+            // Безопасность: браслет можно выключить без телефона.
           ],
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+// Плашка когда браслет выключен физической кнопкой
+class _OffBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(SeeURadii.card),
+        border: Border.all(color: c.line),
+      ),
+      child: Row(
+        children: [
+          Icon(PhosphorIcons.power(PhosphorIconsStyle.fill),
+              size: 20, color: c.ink3),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Браслет выключен',
+                    style: SeeUTypography.subtitle.copyWith(
+                        fontWeight: FontWeight.w600, color: c.ink2)),
+                const SizedBox(height: 2),
+                Text('Нажми кнопку на браслете чтобы включить',
+                    style: SeeUTypography.caption.copyWith(color: c.ink3)),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -231,7 +265,8 @@ class _ModeButton extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool isActive;
-  final VoidCallback onTap;
+  // null = кнопка задизейблена (браслет выключен физически)
+  final VoidCallback? onTap;
 
   const _ModeButton({
     required this.label,
@@ -246,8 +281,11 @@ class _ModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isLight = color.computeLuminance() > 0.5;
     final fg = isLight ? const Color(0xFF333333) : Colors.white;
+    final disabled = onTap == null;
 
-    return GestureDetector(
+    return Opacity(
+      opacity: disabled ? 0.4 : 1.0,
+      child: GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -297,6 +335,6 @@ class _ModeButton extends StatelessWidget {
           ],
         ),
       ),
-    );
+    )); // закрываем Opacity
   }
 }

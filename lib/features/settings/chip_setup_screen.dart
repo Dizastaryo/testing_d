@@ -9,9 +9,9 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
 
-/// Screen для привязки/отвязки BLE-метки (ESP32C3) к аккаунту.
-/// Юзер либо вводит публичный ID руками (с коробки/QR-наклейки), либо в
-/// будущем сканирует QR. Привязка идёт через `POST /users/me/device`.
+/// Привязка браслета SeeU к аккаунту.
+/// Юзер вводит серийный номер с коробки браслета (напр. «SEEU_000001»).
+/// POST /users/me/device { serial_number }
 class ChipSetupScreen extends ConsumerStatefulWidget {
   const ChipSetupScreen({super.key});
 
@@ -30,18 +30,17 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
   }
 
   Future<void> _bind() async {
-    final raw = _ctrl.text.trim();
-    if (raw.isEmpty || _busy) return;
+    final serial = _ctrl.text.trim().toUpperCase();
+    if (serial.isEmpty || _busy) return;
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final api = ref.read(apiClientProvider);
-      await api.post(ApiEndpoints.myDevice, data: {'device_public_id': raw});
-      // Refresh /me so settings reflects the new chip.
+      await api.post(ApiEndpoints.myDevice, data: {'serial_number': serial});
       await ref.read(authProvider.notifier).reloadMe();
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Чип «$raw» привязан')),
+        SnackBar(content: Text('Браслет «$serial» привязан')),
       );
       context.pop();
     } on DioException catch (e) {
@@ -50,8 +49,10 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(code == 409
-              ? 'Этот чип уже привязан к другому аккаунту'
-              : 'Не удалось привязать: ${apiErrorMessage(e)}'),
+              ? 'Этот браслет уже привязан к другому аккаунту'
+              : code == 404
+                  ? 'Браслет не найден — проверьте серийный номер'
+                  : 'Не удалось привязать: ${apiErrorMessage(e)}'),
         ),
       );
     } finally {
@@ -64,9 +65,10 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Отвязать чип?'),
+        title: const Text('Отвязать браслет?'),
         content: const Text(
-          'Сканер перестанет показывать ваш профиль другим. Можете привязать его снова в любой момент.',
+          'Сканер перестанет показывать вас другим. '
+          'Сможете привязать его снова в любой момент.',
         ),
         actions: [
           TextButton(
@@ -86,7 +88,7 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
       await api.delete(ApiEndpoints.myDevice);
       await ref.read(authProvider.notifier).reloadMe();
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('Чип отвязан')));
+      messenger.showSnackBar(const SnackBar(content: Text('Браслет отвязан')));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -97,12 +99,40 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
     }
   }
 
+  void _showQRHelp() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Как найти серийный номер'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              '1. Возьмите коробку браслета SeeU.\n'
+              '2. Найдите QR-наклейку на боковой стороне.\n'
+              '3. Серийный номер указан под QR — например: SEEU_000001.\n'
+              '4. Введите его в поле ниже.',
+              style: TextStyle(height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Понятно'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final user = ref.watch(authProvider).user;
-    final currentChip = user?.devicePublicId ?? '';
-    final hasChip = currentChip.isNotEmpty;
+    final currentSerial = user?.devicePublicId ?? '';
+    final hasChip = currentSerial.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -114,7 +144,7 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
           icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
           onPressed: () => context.pop(),
         ),
-        title: Text('Чип',
+        title: Text('Браслет SeeU',
             style: TextStyle(
                 fontFamily: 'Fraunces',
                 fontWeight: FontWeight.w400,
@@ -126,7 +156,7 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Текущий чип
+            // Текущий браслет
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -155,13 +185,16 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(hasChip ? 'Текущий чип' : 'Чип не привязан',
+                        Text(hasChip ? 'Привязан' : 'Не привязан',
                             style: TextStyle(color: c.ink2, fontSize: 12)),
                         const SizedBox(height: 2),
                         Text(
-                          hasChip ? currentChip : 'Привяжите свой ESP32C3 ниже',
+                          hasChip
+                              ? currentSerial
+                              : 'Введите серийный номер с браслета',
                           style: TextStyle(
-                            fontFamily: hasChip ? 'JetBrains Mono' : null,
+                            fontFamily:
+                                hasChip ? 'JetBrains Mono' : null,
                             fontWeight: FontWeight.w600,
                             color: c.ink,
                           ),
@@ -182,25 +215,40 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Привязать новый
-            Text(hasChip ? 'Сменить чип' : 'Привязать чип',
-                style: SeeUTypography.subtitle
-                    .copyWith(fontWeight: FontWeight.w600)),
+            Row(
+              children: [
+                Text(hasChip ? 'Сменить браслет' : 'Привязать браслет',
+                    style: SeeUTypography.subtitle
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _showQRHelp,
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIcons.question(), size: 14, color: c.ink3),
+                      const SizedBox(width: 4),
+                      Text('Где найти?',
+                          style: TextStyle(fontSize: 12, color: c.ink3)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Text(
-              'Введите публичный ID, напечатанный на коробке или наклейке чипа. '
-              'Например: «DEVICE_0001».',
+              'Введите серийный номер с QR-наклейки на коробке браслета.',
               style: TextStyle(color: c.ink2, fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 16),
+
             TextField(
               controller: _ctrl,
               autocorrect: false,
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
-                hintText: 'DEVICE_XXXX',
-                prefixIcon: Icon(PhosphorIcons.qrCode(),
-                    color: c.ink3),
+                hintText: 'SEEU_000001',
+                labelText: 'Серийный номер',
+                prefixIcon: Icon(PhosphorIcons.qrCode(), color: c.ink3),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -214,7 +262,6 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
             ),
 
             const SizedBox(height: 32),
-            // Помощь
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -228,9 +275,8 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'После привязки сканер других пользователей сможет '
-                      'найти вас рядом по этому чипу. К одному аккаунту можно '
-                      'привязать только один чип; перепривязка освобождает старый.',
+                      'После привязки сканер других пользователей увидит вас рядом. '
+                      'К одному аккаунту — один браслет; при смене старый освобождается.',
                       style: TextStyle(
                           color: c.ink2, fontSize: 12, height: 1.4),
                     ),

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-const _svcUuid = '5ee0cafe-5ee0-5ee0-5ee0-5ee0cafe0001';
+const _svcUuid      = '5ee0cafe-5ee0-5ee0-5ee0-5ee0cafe0001';
 const _modeCharUuid = '5ee0cafe-5ee0-5ee0-5ee0-5ee0cafe0002';
 const _infoCharUuid = '5ee0cafe-5ee0-5ee0-5ee0-5ee0cafe0003';
 
@@ -145,8 +145,8 @@ class ChipControlService {
   Future<void> _cleanup() async {
     _notifySub?.cancel();
     _notifySub = null;
-    _modeChar = null;
-    _infoChar = null;
+    _modeChar  = null;
+    _infoChar  = null;
     _connected = false;
     try {
       await _device?.disconnect();

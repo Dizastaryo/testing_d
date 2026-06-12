@@ -138,12 +138,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     _SettingsRowData(
                       icon: PhosphorIcons.bluetoothConnected(),
                       label: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
-                          ? 'Чип ${ref.watch(authProvider).user!.devicePublicId}'
-                          : 'Чип не привязан',
+                          ? 'Браслет ${ref.watch(authProvider).user!.devicePublicId}'
+                          : 'Браслет не привязан',
                       value: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
                           ? 'управление'
                           : 'привязать',
                       onTap: () => context.push('/settings/chip'),
+                    ),
+                    _SettingsRowData(
+                      icon: PhosphorIcons.ghost(),
+                      label: 'Scan-профиль',
+                      value: ref.watch(authProvider).user?.scanAlias.isNotEmpty == true
+                          ? ref.watch(authProvider).user!.scanAlias
+                          : 'не настроен',
+                      onTap: () => context.push('/settings/scan-profile'),
                     ),
                   ],
                 ),

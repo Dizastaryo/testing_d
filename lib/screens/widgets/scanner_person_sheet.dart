@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../core/api/api_client.dart';
 import '../../core/design/design.dart';
+import '../../core/providers/scanner_provider.dart';
 import '../../models/ble_device_model.dart';
 import '../../services/user_resolver.dart';
 
@@ -11,15 +14,15 @@ class ScannerResolvedEntry {
   const ScannerResolvedEntry({required this.device, required this.resolved});
 }
 
-class ScannerPersonSheet extends StatefulWidget {
+class ScannerPersonSheet extends ConsumerStatefulWidget {
   final String emoji;
   final String alias;
   final String distance;
   final bool isOnline;
   final int rssi;
+  /// publicIDHex браслета — используется для API лайка.
+  final String deviceHash;
   final bool initialLiked;
-  final void Function(bool liked)? onLikeChanged;
-  final Future<void> Function()? onOpenProfile;
 
   const ScannerPersonSheet({
     super.key,
@@ -28,17 +31,17 @@ class ScannerPersonSheet extends StatefulWidget {
     required this.distance,
     required this.isOnline,
     required this.rssi,
+    required this.deviceHash,
     this.initialLiked = false,
-    this.onLikeChanged,
-    this.onOpenProfile,
   });
 
   @override
-  State<ScannerPersonSheet> createState() => _ScannerPersonSheetState();
+  ConsumerState<ScannerPersonSheet> createState() => _ScannerPersonSheetState();
 }
 
-class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
+class _ScannerPersonSheetState extends ConsumerState<ScannerPersonSheet> {
   late bool _liked;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -46,10 +49,20 @@ class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
     _liked = widget.initialLiked;
   }
 
-  void _toggleLike() {
+  Future<void> _toggleLike() async {
+    if (_loading) return;
     HapticFeedback.mediumImpact();
-    setState(() => _liked = !_liked);
-    widget.onLikeChanged?.call(_liked);
+    setState(() => _loading = true);
+    final api = ref.read(apiClientProvider);
+    final success = _liked
+        ? await removeScannerLike(api, widget.deviceHash)
+        : await postScannerLike(api, widget.deviceHash);
+    if (mounted) {
+      setState(() {
+        if (success) _liked = !_liked;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -121,19 +134,6 @@ class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (widget.onOpenProfile != null) ...[
-                  GestureDetector(
-                    onTap: () async { Navigator.pop(context); await widget.onOpenProfile!.call(); },
-                    child: Container(
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: SeeUColors.accent, borderRadius: BorderRadius.circular(16)),
-                      child: const Center(child: Text('Открыть профиль',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white))),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
                 Row(children: [
                   Expanded(child: GestureDetector(
                     onTap: () => Navigator.pop(context),
@@ -147,7 +147,7 @@ class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
                   )),
                   const SizedBox(width: 10),
                   Expanded(flex: 2, child: GestureDetector(
-                    onTap: _toggleLike,
+                    onTap: _loading ? null : _toggleLike,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       height: 52,
@@ -157,14 +157,18 @@ class _ScannerPersonSheetState extends State<ScannerPersonSheet> {
                         boxShadow: _liked ? [BoxShadow(
                           color: SeeUColors.like.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))] : null,
                       ),
-                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                          size: 18, color: _liked ? Colors.white : SeeUColors.textSecondary),
-                        const SizedBox(width: 8),
-                        Text(_liked ? 'Лайк поставлен' : 'Поставить лайк',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                            color: _liked ? Colors.white : SeeUColors.textSecondary)),
-                      ]),
+                      child: _loading
+                          ? const Center(child: SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
+                          : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                size: 18, color: _liked ? Colors.white : SeeUColors.textSecondary),
+                              const SizedBox(width: 8),
+                              Text(_liked ? 'Лайк поставлен' : 'Поставить лайк',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                                  color: _liked ? Colors.white : SeeUColors.textSecondary)),
+                            ]),
                     ),
                   )),
                 ]),

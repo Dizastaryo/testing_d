@@ -1,30 +1,30 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:go_router/go_router.dart';
-import '../core/api/api_endpoints.dart';
 import '../core/design/design.dart';
+import '../core/providers/auth_provider.dart';
 import '../models/ble_device_model.dart';
 import '../services/account_session.dart';
 import '../services/user_resolver.dart';
+import 'scanner_likes_screen.dart';
+import 'widgets/my_bracelet_sheet.dart';
 import 'widgets/scanner_painters.dart';
 import 'widgets/scanner_person_sheet.dart';
 
-class ScannerScreen extends StatefulWidget {
+class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
   @override
-  State<ScannerScreen> createState() => _ScannerScreenState();
+  ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen>
+class _ScannerScreenState extends ConsumerState<ScannerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final Map<String, BleDeviceModel> _devicesMap = {};
-  final Map<String, bool> _likedMap = {};
   List<ScannerResolvedEntry> _cachedSortedDevices = [];
   int _devicesMapVersion = 0;
   int _cachedVersion = -1;
@@ -33,8 +33,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   StreamSubscription<BluetoothAdapterState>? _adapterStateSub;
   bool _isScanning = false;
   bool _bluetoothOn = true;
-  // _chipOn is visual-only placeholder for now; does not actually toggle BLE advertising
-  bool _chipOn = true;
   String _viewMode = 'radar'; // radar | list
 
   late AnimationController _pulseController;
@@ -167,7 +165,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       for (final r in results) {
-        if (r.advertisementData.advName != 'ESP32C3_TAG') continue;
+        final name = r.advertisementData.advName;
+        if (name != 'SeeUBand' && name != 'ESP32C3_TAG') continue;
         final device = BleDeviceModel.fromScanResult(r);
         _devicesMap[device.macAddress] = device;
       }
@@ -273,43 +272,38 @@ class _ScannerScreenState extends State<ScannerScreen>
                       ],
                     ),
                     const Spacer(),
-                    // Chip status button
+                    // "Мой браслет" button — opens real control sheet
+                    _buildMyBraceletPill(c),
+                    const SizedBox(width: 8),
+                    // Likes history button
                     GestureDetector(
                       onTap: () {
                         HapticFeedback.lightImpact();
-                        setState(() => _chipOn = !_chipOn);
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => DraggableScrollableSheet(
+                            initialChildSize: 0.85,
+                            maxChildSize: 0.95,
+                            minChildSize: 0.5,
+                            builder: (_, ctrl) => ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(28)),
+                              child: const ScannerLikesScreen(),
+                            ),
+                          ),
+                        );
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        width: 38,
+                        height: 38,
                         decoration: BoxDecoration(
-                          color: _chipOn ? c.accentSoft : c.surface2,
+                          color: c.surface2,
                           borderRadius: BorderRadius.circular(SeeURadii.pill),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _chipOn ? SeeUColors.accent : c.ink3,
-                                boxShadow: _chipOn
-                                    ? [BoxShadow(color: SeeUColors.accent, blurRadius: 8)]
-                                    : null,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'чип ${_chipOn ? "вкл" : "выкл"}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _chipOn ? SeeUColors.accent : c.ink3,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: Icon(PhosphorIconsRegular.heart,
+                            size: 18, color: c.ink3),
                       ),
                     ),
                   ],
@@ -798,46 +792,72 @@ class _ScannerScreenState extends State<ScannerScreen>
         distance: dist,
         isOnline: isOnline,
         rssi: entry.device.rssi,
-        initialLiked: _likedMap[entry.device.macAddress] ?? false,
-        onLikeChanged: (liked) {
-          setState(() => _likedMap[entry.device.macAddress] = liked);
-        },
-        // Show «Открыть профиль» only if we have a usable BLE id.
-        onOpenProfile: (publicHex != null && publicHex.isNotEmpty)
-            ? () => _resolveAndOpen(publicHex)
-            : null,
+        deviceHash: publicHex ?? '',
       ),
     );
   }
 
-  /// Calls the backend `/users/by-device/:publicId` to turn a BLE chip's
-  /// public ID into a real account, then navigates to its profile.
-  Future<void> _resolveAndOpen(String publicHex) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final dio = Dio(BaseOptions(baseUrl: ApiEndpoints.baseUrl));
-      final r = await dio.get('/users/by-device/$publicHex');
-      final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
-      final username = (data as Map)['username'] as String? ?? '';
-      if (!mounted) return;
-      if (username.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Профиль не найден')),
-        );
-        return;
-      }
-      context.push('/profile/$username');
-    } on DioException catch (e) {
-      if (!mounted) return;
-      final code = e.response?.statusCode;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(code == 404
-              ? 'Никто не привязал эту метку'
-              : 'Не удалось найти профиль'),
+
+
+  Widget _buildMyBraceletPill(SeeUThemeColors c) {
+    final user = ref.watch(authProvider).user;
+    final scanEnabled = user?.scanEnabled ?? true;
+    final hasDevice = (user?.devicePublicId ?? '').isNotEmpty;
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        _showMyBraceletSheet();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: (scanEnabled && hasDevice) ? c.accentSoft : c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
         ),
-      );
-    }
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: (scanEnabled && hasDevice)
+                    ? SeeUColors.accent
+                    : c.ink3,
+                boxShadow: (scanEnabled && hasDevice)
+                    ? [BoxShadow(color: SeeUColors.accent, blurRadius: 8)]
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              hasDevice
+                  ? (scanEnabled ? 'браслет вкл' : 'браслет выкл')
+                  : 'нет браслета',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: (scanEnabled && hasDevice) ? SeeUColors.accent : c.ink3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMyBraceletSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.seeuColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => MyBraceletSheet(devicesMap: Map.unmodifiable(_devicesMap)),
+    );
   }
 
   // ─── List view ─────────────────────────────────────────────────────────
@@ -850,12 +870,8 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
-      itemCount: entries.length + (_chipOn ? 0 : 1),
+      itemCount: entries.length,
       itemBuilder: (context, index) {
-        if (!_chipOn && index == entries.length) {
-          return _buildChipOffBanner();
-        }
-
         final entry = entries[index];
         final emoji = emojis[entry.device.macAddress.hashCode.abs() % emojis.length];
         final alias = (entry.resolved.user?.name ?? '').isNotEmpty
@@ -954,40 +970,23 @@ class _ScannerScreenState extends State<ScannerScreen>
                       ],
                     ),
                   ),
-                  // Like button
+                  // Like button — opens sheet which handles API call
                   GestureDetector(
                     onTap: () {
-                      HapticFeedback.lightImpact();
-                      setState(() {
-                        final mac = entry.device.macAddress;
-                        _likedMap[mac] = !(_likedMap[mac] ?? false);
-                      });
+                      const emojis = ['🌅', '🚀', '🍑', '🐈\u200D⬛', '🦊', '🛸', '🍞', '🌿', '✨'];
+                      _showPersonSheet(entry, emojis[entry.device.macAddress.hashCode.abs() % emojis.length]);
                     },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
+                    child: Container(
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: (_likedMap[entry.device.macAddress] ?? false)
-                            ? SeeUColors.like
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: (_likedMap[entry.device.macAddress] ?? false)
-                              ? SeeUColors.like
-                              : SeeUColors.borderSubtle,
-                        ),
+                        color: Colors.transparent,
+                        border: Border.all(color: SeeUColors.borderSubtle),
                       ),
-                      child: Center(
-                        child: Icon(
-                          (_likedMap[entry.device.macAddress] ?? false)
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          size: 18,
-                          color: (_likedMap[entry.device.macAddress] ?? false)
-                              ? Colors.white
-                              : SeeUColors.textSecondary,
-                        ),
+                      child: const Center(
+                        child: Icon(Icons.favorite_border_rounded,
+                            size: 18, color: SeeUColors.textSecondary),
                       ),
                     ),
                   ),
@@ -1000,33 +999,6 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildChipOffBanner() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      margin: const EdgeInsets.only(top: 8),
-      decoration: BoxDecoration(
-        color: SeeUColors.accentSoft,
-        borderRadius: BorderRadius.circular(SeeURadii.medium),
-        border: Border.all(color: SeeUColors.borderSubtle, width: 0.5),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.bluetooth_disabled_rounded, size: 20, color: SeeUColors.accent),
-          const SizedBox(height: 6),
-          Text(
-            'Чип выключен',
-            style: SeeUTypography.subtitle.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Включите чип, чтобы вас видели вокруг.\nСами вы видите всех в любом случае.',
-            style: TextStyle(fontSize: 12, color: context.seeuColors.ink3, height: 1.4),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildEmptyState() {
     return Center(

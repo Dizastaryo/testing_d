@@ -79,6 +79,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       case NotificationType.postTag:
         // radar-style for post tag (nearby mapping)
         return PhosphorIcons.tag(PhosphorIconsStyle.fill);
+      case NotificationType.scannerLike:
+        return PhosphorIcons.bluetoothConnected(PhosphorIconsStyle.fill);
     }
   }
 
@@ -96,6 +98,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         return const Color(0xFF85B7EB);
       case NotificationType.postTag:
         return SeeUColors.success;
+      case NotificationType.scannerLike:
+        return SeeUColors.like;
     }
   }
 

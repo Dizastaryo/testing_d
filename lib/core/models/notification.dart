@@ -7,6 +7,7 @@ enum NotificationType {
   mention,
   reply,
   postTag,
+  scannerLike,
 }
 
 class AppNotification {
@@ -61,6 +62,7 @@ class AppNotification {
           return 'и ещё $n $ppl отметили вас.';
         case NotificationType.follow:
         case NotificationType.mention:
+        case NotificationType.scannerLike:
           break; // эти типы backend не батчит — fallthrough к single-форме
       }
     }
@@ -81,6 +83,8 @@ class AppNotification {
             : 'ответил(а) на ваш комментарий.';
       case NotificationType.postTag:
         return 'отметил(а) вас в публикации.';
+      case NotificationType.scannerLike:
+        return 'лайкнул(а) тебя в сканере.';
     }
   }
 
@@ -133,6 +137,8 @@ class AppNotification {
         return NotificationType.reply;
       case 'post_tag':
         return NotificationType.postTag;
+      case 'scanner_like':
+        return NotificationType.scannerLike;
       default:
         return NotificationType.like;
     }
