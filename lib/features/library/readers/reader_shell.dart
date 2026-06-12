@@ -35,6 +35,15 @@ class ReaderShell extends ConsumerStatefulWidget {
 }
 
 class _ReaderShellState extends ConsumerState<ReaderShell> {
+  // Кэшируем до dispose, чтобы не обращаться к ref после dispose.
+  late final Dio _dio;
+
+  @override
+  void initState() {
+    super.initState();
+    _dio = ref.read(libraryApiClientProvider);
+  }
+
   @override
   void dispose() {
     _saveProgress();
@@ -43,11 +52,11 @@ class _ReaderShellState extends ConsumerState<ReaderShell> {
 
   Future<void> _saveProgress() async {
     final pos = widget.positionNotifier.value;
+    final fileId = widget.fileId;
     if (pos.isEmpty) return;
     try {
-      final dio = ref.read(libraryApiClientProvider);
-      await dio.put(
-        ApiEndpoints.fileProgress(widget.fileId),
+      await _dio.put(
+        ApiEndpoints.fileProgress(fileId),
         data: {'position': pos},
       );
     } catch (_) {
@@ -104,9 +113,18 @@ class _ReaderShellState extends ConsumerState<ReaderShell> {
 
   Future<void> _addBookmark(BuildContext context) async {
     final pos = widget.positionNotifier.value;
+    // Баг #8: не сохраняем закладку без позиции
+    if (pos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Прокрутите немного, затем добавьте закладку'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     try {
-      final dio = ref.read(libraryApiClientProvider);
-      await dio.post(
+      await _dio.post(
         ApiEndpoints.fileBookmarks(widget.fileId),
         data: {
           'position': pos,

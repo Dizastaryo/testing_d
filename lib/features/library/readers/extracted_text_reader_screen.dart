@@ -1,6 +1,5 @@
 import 'dart:io' show File;
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +48,21 @@ class _ExtractedTextReaderScreenState
 
   Future<void> _init() async {
     final dio = ref.read(libraryApiClientProvider);
-    await Future.wait([_loadText(), _restoreProgress(dio)]);
+    // Баг #2 fix: те же принципы что и в TextReaderScreen.
+    final progressFuture = loadProgress(dio, widget.fileId);
+    await _loadText();
+    final progress = await progressFuture;
+    if (progress == null || !mounted) return;
+    final offset = (progress['offset'] as num?)?.toDouble() ?? 0;
+    if (offset > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.jumpTo(
+            offset.clamp(0, _scrollCtrl.position.maxScrollExtent),
+          );
+        }
+      });
+    }
   }
 
   Future<File?> _cacheFile() async {
@@ -81,18 +94,6 @@ class _ExtractedTextReaderScreenState
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
-  }
-
-  Future<void> _restoreProgress(Dio dio) async {
-    final progress = await loadProgress(dio, widget.fileId);
-    if (progress == null || !mounted) return;
-    final offset = (progress['offset'] as num?)?.toDouble() ?? 0;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients && offset > 0) {
-        _scrollCtrl.jumpTo(
-            offset.clamp(0, _scrollCtrl.position.maxScrollExtent));
-      }
-    });
   }
 
   void _onScroll() {

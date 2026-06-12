@@ -37,6 +37,8 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   int _current = 0;
   int _total = 0;
   PDFViewController? _pdfController;
+  // Баг #1: страница из прогресса, применяется в onRender когда контроллер готов
+  int? _initialPage;
   bool _savedOffline = false;
   bool _savingOffline = false;
 
@@ -58,27 +60,28 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
 
   Future<File> _offlineFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/${widget.fileId}.pdf');
+    return File(p.join(dir.path, '${widget.fileId}.pdf'));
   }
 
   Future<void> _init() async {
     final dio = ref.read(libraryApiClientProvider);
-    await Future.wait([
+    // Загружаем PDF и прогресс параллельно.
+    // Баг #1 fix: прогресс сохраняем в _initialPage и применяем в onRender,
+    // когда _pdfController гарантированно создан.
+    final results = await Future.wait([
       _loadPdf(),
-      loadProgress(dio, widget.fileId).then((savedProgress) {
-        if (savedProgress != null && mounted) {
-          final page = savedProgress['page'] as int? ?? 0;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _pdfController?.setPage(page);
-          });
-        }
-      }),
+      loadProgress(dio, widget.fileId),
     ]);
+    final progress = results[1] as Map<String, dynamic>?;
+    if (progress != null && mounted) {
+      final page = (progress['page'] as num?)?.toInt() ?? 0;
+      if (page > 0) _initialPage = page;
+    }
   }
 
   Future<void> _loadPdf() async {
     try {
-      // Check offline first
+      // Проверяем офлайн-кэш
       final offlineFile = await _offlineFile();
       if (await offlineFile.exists()) {
         if (mounted) {
@@ -90,11 +93,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         return;
       }
 
-      // Download to temp
+      // Баг #4 fix: имя файла только из fileId, без небезопасного title
       final tmpDir = await getTemporaryDirectory();
-      final filename =
-          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(widget.title)}.pdf';
-      final localFile = File(p.join(tmpDir.path, filename));
+      final localFile = File(p.join(tmpDir.path, '${widget.fileId}_tmp.pdf'));
       final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 3)));
       await dio.download(widget.fileUrl, localFile.path);
       if (mounted) setState(() => _localPath = localFile.path);
@@ -145,7 +146,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         children: [
           _buildBody(isDark),
 
-          // Page indicator
+          // Индикатор страницы
           if (_total > 0)
             Positioned(
               bottom: 16,
@@ -170,7 +171,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
               ),
             ),
 
-          // Save offline button
+          // Кнопка сохранения офлайн
           if (_localPath != null && !_savedOffline)
             Positioned(
               bottom: 60,
@@ -227,7 +228,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final pdfView = PDFView(
+    // Баг #3 fix: используем ТОЛЬКО nightMode — убираем ColorFilter поверх.
+    // Раньше были обе инверсии одновременно, что взаимно уничтожалось.
+    return PDFView(
       filePath: _localPath!,
       enableSwipe: true,
       swipeHorizontal: false,
@@ -239,7 +242,14 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         if (mounted) setState(() => _error = err.toString());
       },
       onRender: (pages) {
-        if (mounted && pages != null) setState(() => _total = pages);
+        if (!mounted || pages == null) return;
+        setState(() => _total = pages);
+        // Баг #1 fix: применяем сохранённую страницу здесь, когда
+        // _pdfController гарантированно инициализирован и PDF отрендерен.
+        if (_initialPage != null && _initialPage! > 0) {
+          _pdfController?.setPage(_initialPage!);
+          _initialPage = null;
+        }
       },
       onPageChanged: (page, total) {
         if (mounted && page != null) {
@@ -251,19 +261,5 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         }
       },
     );
-
-    // Dark mode ColorFilter as fallback if nightMode not supported
-    if (isDark) {
-      return ColorFiltered(
-        colorFilter: const ColorFilter.matrix([
-          -1, 0, 0, 0, 255,
-          0, -1, 0, 0, 255,
-          0, 0, -1, 0, 255,
-          0, 0, 0, 1, 0,
-        ]),
-        child: pdfView,
-      );
-    }
-    return pdfView;
   }
 }
