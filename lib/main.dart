@@ -19,6 +19,7 @@ import 'features/auth/register_screen.dart';
 import 'features/auth/splash_screen.dart';
 import 'features/feed/feed_screen.dart';
 import 'features/explore/explore_screen.dart';
+import 'features/explore/leaderboard_screen.dart';
 import 'features/post/post_detail_screen.dart';
 import 'features/post/create_post_screen.dart';
 import 'features/post/comments_screen.dart';
@@ -36,6 +37,7 @@ import 'features/chat/chat_members_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/settings/blocked_users_screen.dart';
 import 'features/settings/chip_setup_screen.dart';
+import 'features/settings/scan_profile_screen.dart';
 import 'features/settings/follow_requests_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -315,6 +317,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               ),
             ),
             GoRoute(
+              path: '/leaderboard',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const LeaderboardScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
               path: '/scanner',
               pageBuilder: (_, __) => CustomTransitionPage(
                 child: const ScannerScreen(),
@@ -415,6 +424,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/settings/chip',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: ChipSetupScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/scan-profile',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: ScanProfileScreen(),
               ),
             ),
             GoRoute(

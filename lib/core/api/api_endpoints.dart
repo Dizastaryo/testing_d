@@ -54,6 +54,13 @@ class ApiEndpoints {
 
   // Device binding (BLE chip)
   static const String myDevice = '/users/me/device';
+  static const String myScanProfile = '/users/me/scan-profile';
+
+  // Scanner (BLE bracelet likes)
+  static const String scannerLike = '/scanner/like';
+  static String scannerUnlike(String deviceHash) => '/scanner/like/$deviceHash';
+  static const String scannerReceivedLikes = '/scanner/likes/received';
+  static const String scannerSentLikes = '/scanner/likes/sent';
 
   // Follow requests (private accounts)
   static const String myFollowRequests = '/users/me/follow-requests';
@@ -76,6 +83,7 @@ class ApiEndpoints {
 
   // Explore
   static const String explore = '/explore';
+  static const String leaderboard = '/leaderboard';
   static const String dailyPrompt = '/daily-prompt';
   static const String search = '/search';
   static const String searchHistory = '/search/history';

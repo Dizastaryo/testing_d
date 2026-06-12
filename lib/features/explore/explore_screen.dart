@@ -292,6 +292,14 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          // Leaderboard banner
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+              child: _LeaderboardBanner(),
+            ),
+          ),
+
           if (state.posts.length >= 4)
             SliverToBoxAdapter(
               child: Padding(
@@ -987,3 +995,61 @@ class _BentoFeatured extends StatelessWidget {
   }
 }
 
+
+class _LeaderboardBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/leaderboard'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF5A3C), Color(0xFFFF8C42)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: SeeUColors.accent.withValues(alpha: 0.30),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(PhosphorIconsFill.trophy, color: Colors.white, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Топ по лайкам',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Кто собрал больше всего лайков?',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(PhosphorIconsRegular.caretRight,
+                color: Colors.white, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
