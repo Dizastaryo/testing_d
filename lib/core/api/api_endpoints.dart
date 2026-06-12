@@ -199,9 +199,22 @@ class ApiEndpoints {
   // === Library Service endpoints ===
   static const String files = '/files';
   static const String filesCategories = '/files/categories';
+  static const String filesUpload = '/files/upload';
+  static const String filesTrending = '/files/trending';
   static String fileById(String id) => '/files/$id';
   static String fileDownload(String id) => '/files/$id/download';
   static String filePreview(String id) => '/files/$id/preview';
   static String fileLike(String id) => '/files/$id/like';
+  static String fileText(String id) => '/files/$id/text';
+  static String fileProgress(String id) => '/files/$id/progress';
+  static String fileBookmarks(String id) => '/files/$id/bookmarks';
+  static String bookmarkById(String id) => '/files/bookmarks/$id';
+  static String fileReadingStatus(String id) => '/files/$id/reading-status';
+  static String fileStats(String id) => '/files/$id/stats';
   static String userFiles(String userId) => '/users/$userId/files';
+  static const String myReadingList = '/users/me/reading-list';
+  static const String collections = '/collections';
+  static String collectionById(String id) => '/collections/$id';
+  static String collectionFiles(String id) => '/collections/$id/files';
+  static String collectionFile(String id, String fileId) => '/collections/$id/files/$fileId';
 }

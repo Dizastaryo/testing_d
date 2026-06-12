@@ -12,12 +12,16 @@ String _absUrl(String? url) {
 class FileCategory {
   final String id;
   final String name;
+  final String slug;
+  final int sortOrder;
 
-  FileCategory({required this.id, required this.name});
+  FileCategory({required this.id, required this.name, this.slug = '', this.sortOrder = 0});
 
   factory FileCategory.fromJson(Map<String, dynamic> json) => FileCategory(
         id: json['id'] ?? '',
         name: json['name'] ?? '',
+        slug: json['slug'] ?? '',
+        sortOrder: json['sort_order'] ?? 0,
       );
 }
 
@@ -25,6 +29,9 @@ class FileItem {
   final String id;
   final String userId;
   final String filename;
+  final String title;
+  final String authorName;
+  final String language;
   final String fileUrl;
   final String mimeType;
   final int fileSize;
@@ -35,14 +42,21 @@ class FileItem {
   final bool isPreviewable;
   final String previewUrl;
   final String description;
+  final int pagesCount;
+  final String docFormat;
   final DateTime createdAt;
   final UserShort? user;
   final FileCategory? category;
+  // Заполняется отдельным запросом/handler'ом
+  final String? readingStatus; // 'want' | 'reading' | 'done' | null
 
   FileItem({
     required this.id,
     required this.userId,
     required this.filename,
+    this.title = '',
+    this.authorName = '',
+    this.language = '',
     required this.fileUrl,
     required this.mimeType,
     required this.fileSize,
@@ -53,18 +67,24 @@ class FileItem {
     this.isPreviewable = false,
     this.previewUrl = '',
     this.description = '',
+    this.pagesCount = 0,
+    this.docFormat = '',
     required this.createdAt,
     this.user,
     this.category,
+    this.readingStatus,
   });
 
   factory FileItem.fromJson(Map<String, dynamic> json) => FileItem(
         id: json['id'] ?? '',
         userId: json['user_id'] ?? '',
         filename: json['filename'] ?? '',
+        title: json['title'] ?? '',
+        authorName: json['author_name'] ?? '',
+        language: json['language'] ?? '',
         fileUrl: _absUrl(json['file_url']),
         mimeType: json['mime_type'] ?? '',
-        fileSize: json['file_size'] ?? 0,
+        fileSize: (json['file_size'] as num?)?.toInt() ?? 0,
         categoryId: json['category_id'] ?? '',
         downloadsCount: json['downloads_count'] ?? 0,
         likesCount: json['likes_count'] ?? 0,
@@ -72,15 +92,21 @@ class FileItem {
         isPreviewable: json['is_previewable'] ?? false,
         previewUrl: json['preview_url'] ?? '',
         description: json['description'] ?? '',
+        pagesCount: json['pages_count'] ?? 0,
+        docFormat: json['doc_format'] ?? '',
         createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
         user: json['user'] != null ? UserShort.fromJson(json['user']) : null,
         category: json['category'] != null ? FileCategory.fromJson(json['category']) : null,
+        readingStatus: json['reading_status'] as String?,
       );
 
-  FileItem copyWith({int? likesCount, bool? isLiked}) => FileItem(
+  FileItem copyWith({int? likesCount, bool? isLiked, String? readingStatus}) => FileItem(
         id: id,
         userId: userId,
         filename: filename,
+        title: title,
+        authorName: authorName,
+        language: language,
         fileUrl: fileUrl,
         mimeType: mimeType,
         fileSize: fileSize,
@@ -91,10 +117,20 @@ class FileItem {
         isPreviewable: isPreviewable,
         previewUrl: previewUrl,
         description: description,
+        pagesCount: pagesCount,
+        docFormat: docFormat,
         createdAt: createdAt,
         user: user,
         category: category,
+        readingStatus: readingStatus ?? this.readingStatus,
       );
+
+  String get displayTitle => title.isNotEmpty ? title : _stripExtension(filename);
+
+  String _stripExtension(String s) {
+    final dot = s.lastIndexOf('.');
+    return dot == -1 ? s : s.substring(0, dot);
+  }
 
   String get fileSizeFormatted {
     if (fileSize >= 1073741824) return '${(fileSize / 1073741824).toStringAsFixed(1)} GB';
@@ -104,22 +140,41 @@ class FileItem {
   }
 
   String get fileExtension {
+    if (docFormat.isNotEmpty) return docFormat;
     final dot = filename.lastIndexOf('.');
     if (dot == -1) return '';
     return filename.substring(dot + 1).toLowerCase();
   }
 
-  /// LIB-2: audio-файл? Используется в library_screen чтобы выбрать
-  /// inline-play вместо download. Detect по mime_type или extension fallback.
-  bool get isAudio {
-    if (mimeType.startsWith('audio/')) return true;
-    const audioExts = {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus'};
-    return audioExts.contains(fileExtension);
+  /// Tier 1 — полноценный встроенный ридер (PDF, EPUB, TXT, MD)
+  bool get isTier1 => const {'pdf', 'epub', 'txt', 'md'}.contains(fileExtension);
+
+  /// Tier 2 — text extraction для ридера (FB2, DOCX, RTF, ODT)
+  bool get isTier2 => const {'fb2', 'docx', 'rtf', 'odt'}.contains(fileExtension);
+
+  /// Tier 3 — слайды (PPTX, ODP)
+  bool get isTier3 => const {'pptx', 'odp'}.contains(fileExtension);
+
+  String get readerLabel => isTier3 ? 'Смотреть слайды' : 'Читать';
+
+  String get formatLabel {
+    switch (fileExtension) {
+      case 'pdf': return 'PDF';
+      case 'epub': return 'EPUB';
+      case 'fb2': return 'FB2';
+      case 'docx': return 'DOCX';
+      case 'pptx': return 'PPTX';
+      case 'txt': return 'TXT';
+      case 'rtf': return 'RTF';
+      case 'md': return 'MD';
+      case 'odt': return 'ODT';
+      case 'odp': return 'ODP';
+      default: return fileExtension.toUpperCase();
+    }
   }
 
   /// LIB-1: PDF? Используется для inline-preview через flutter_pdfview.
-  bool get isPdf =>
-      mimeType == 'application/pdf' || fileExtension == 'pdf';
+  bool get isPdf => fileExtension == 'pdf' || mimeType == 'application/pdf';
 
   String get downloadsFormatted {
     if (downloadsCount >= 1000) return '${(downloadsCount / 1000).toStringAsFixed(1)}K';

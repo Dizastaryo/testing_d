@@ -9,7 +9,7 @@ final libraryApiClientProvider = Provider<Dio>((ref) {
   final dio = Dio(BaseOptions(
     baseUrl: ApiEndpoints.libraryBaseUrl,
     connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 60),
     headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
   ));
   dio.interceptors.add(InterceptorsWrapper(
@@ -24,6 +24,7 @@ final libraryApiClientProvider = Provider<Dio>((ref) {
   return dio;
 });
 
+// ─── Categories ────────────────────────────────────────────────────────────
 final fileCategoriesProvider = FutureProvider<List<FileCategory>>((ref) async {
   final dio = ref.watch(libraryApiClientProvider);
   final resp = await dio.get(ApiEndpoints.filesCategories);
@@ -31,25 +32,147 @@ final fileCategoriesProvider = FutureProvider<List<FileCategory>>((ref) async {
   return data.map((e) => FileCategory.fromJson(e)).toList();
 });
 
-/// LIB-6: trending — top-N files за 7 дней по hot-score (likes*2+downloads).
+// ─── Trending ──────────────────────────────────────────────────────────────
 final trendingFilesProvider = FutureProvider<List<FileItem>>((ref) async {
   final dio = ref.watch(libraryApiClientProvider);
-  final resp = await dio.get('/files/trending', queryParameters: {'limit': '10'});
+  final resp = await dio.get(ApiEndpoints.filesTrending, queryParameters: {'limit': 10});
   final data = resp.data['data'] as List? ?? [];
   return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
-final filesProvider = FutureProvider.family<List<FileItem>, String?>((ref, categoryId) async {
-  final dio = ref.watch(libraryApiClientProvider);
-  final params = <String, dynamic>{'limit': '20', 'page': '1'};
-  if (categoryId != null && categoryId.isNotEmpty) {
-    params['category_id'] = categoryId;
+// ─── Library list (cursor-based, with search + sort + category) ────────────
+class LibraryListParams {
+  final String categoryId;
+  final String q;
+  final String sort; // date | likes | downloads | title
+
+  const LibraryListParams({
+    this.categoryId = '',
+    this.q = '',
+    this.sort = 'date',
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryListParams &&
+      other.categoryId == categoryId &&
+      other.q == q &&
+      other.sort == sort;
+
+  @override
+  int get hashCode => Object.hash(categoryId, q, sort);
+}
+
+class LibraryListState {
+  final List<FileItem> items;
+  final bool isLoading;
+  final bool isLoadingMore;
+  final String cursor;
+  final bool hasMore;
+  final String? error;
+
+  const LibraryListState({
+    this.items = const [],
+    this.isLoading = false,
+    this.isLoadingMore = false,
+    this.cursor = '',
+    this.hasMore = true,
+    this.error,
+  });
+
+  LibraryListState copyWith({
+    List<FileItem>? items,
+    bool? isLoading,
+    bool? isLoadingMore,
+    String? cursor,
+    bool? hasMore,
+    String? error,
+  }) =>
+      LibraryListState(
+        items: items ?? this.items,
+        isLoading: isLoading ?? this.isLoading,
+        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+        cursor: cursor ?? this.cursor,
+        hasMore: hasMore ?? this.hasMore,
+        error: error,
+      );
+}
+
+class LibraryListNotifier extends StateNotifier<LibraryListState> {
+  final Dio _dio;
+  LibraryListParams _params;
+
+  LibraryListNotifier(this._dio, this._params) : super(const LibraryListState());
+
+  void updateParams(LibraryListParams params) {
+    if (_params == params) return;
+    _params = params;
+    load(reset: true);
   }
-  final resp = await dio.get(ApiEndpoints.files, queryParameters: params);
+
+  Future<void> load({bool reset = false}) async {
+    if (reset) {
+      state = const LibraryListState(isLoading: true);
+    } else {
+      if (!state.hasMore || state.isLoadingMore) return;
+      state = state.copyWith(isLoadingMore: true);
+    }
+
+    try {
+      final params = <String, dynamic>{'limit': 20};
+      if (_params.categoryId.isNotEmpty) params['category_id'] = _params.categoryId;
+      if (_params.q.isNotEmpty) params['q'] = _params.q;
+      if (_params.sort.isNotEmpty && _params.sort != 'date') params['sort'] = _params.sort;
+      if (!reset && state.cursor.isNotEmpty) params['cursor'] = state.cursor;
+
+      final resp = await _dio.get(ApiEndpoints.files, queryParameters: params);
+      final data = resp.data['data'] as List? ?? [];
+      final nextCursor = resp.data['meta']?['next_cursor'] as String? ?? '';
+      final fetched = data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+
+      state = LibraryListState(
+        items: reset ? fetched : [...state.items, ...fetched],
+        cursor: nextCursor,
+        hasMore: nextCursor.isNotEmpty,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isLoadingMore: false,
+        error: e.toString(),
+      );
+    }
+  }
+}
+
+final libraryListProvider =
+    StateNotifierProvider.family<LibraryListNotifier, LibraryListState, LibraryListParams>(
+  (ref, params) {
+    final dio = ref.watch(libraryApiClientProvider);
+    final notifier = LibraryListNotifier(dio, params);
+    notifier.load(reset: true);
+    return notifier;
+  },
+);
+
+// ─── My uploaded files ─────────────────────────────────────────────────────
+final userFilesProvider = FutureProvider.family<List<FileItem>, String>((ref, userId) async {
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.userFiles(userId));
   final data = resp.data['data'] as List? ?? [];
-  return data.map((e) => FileItem.fromJson(e)).toList();
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
+// ─── Reading list ──────────────────────────────────────────────────────────
+final readingListProvider =
+    FutureProvider.family<List<FileItem>, String>((ref, status) async {
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.myReadingList, queryParameters: {'status': status});
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+});
+
+// ─── Library actions ───────────────────────────────────────────────────────
 class LibraryActions {
   final Dio _dio;
   LibraryActions(this._dio);
@@ -67,16 +190,26 @@ class LibraryActions {
   Future<void> deleteFile(String fileId) async {
     await _dio.delete(ApiEndpoints.fileById(fileId));
   }
+
+  Future<void> upsertReadingStatus(String fileId, String status) async {
+    await _dio.put(ApiEndpoints.fileReadingStatus(fileId), data: {'status': status});
+  }
+
+  Future<void> deleteReadingStatus(String fileId) async {
+    await _dio.delete(ApiEndpoints.fileReadingStatus(fileId));
+  }
+
+  Future<String?> getReadingStatus(String fileId) async {
+    try {
+      final resp = await _dio.get(ApiEndpoints.fileReadingStatus(fileId));
+      if (resp.statusCode == 204) return null;
+      return resp.data['data']?['status'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 final libraryActionsProvider = Provider<LibraryActions>((ref) {
   return LibraryActions(ref.watch(libraryApiClientProvider));
-});
-
-/// Files uploaded by a specific user (profile tab).
-final userFilesProvider = FutureProvider.family<List<FileItem>, String>((ref, userId) async {
-  final dio = ref.watch(libraryApiClientProvider);
-  final resp = await dio.get(ApiEndpoints.userFiles(userId));
-  final data = resp.data['data'] as List? ?? [];
-  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
