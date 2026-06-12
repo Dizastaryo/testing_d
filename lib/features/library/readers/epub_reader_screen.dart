@@ -88,12 +88,16 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         }
       });
 
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     } catch (e) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
