@@ -61,6 +61,8 @@ class ApiEndpoints {
   static String scannerUnlike(String deviceHash) => '/scanner/like/$deviceHash';
   static const String scannerReceivedLikes = '/scanner/likes/received';
   static const String scannerSentLikes = '/scanner/likes/sent';
+  static const String scannerUnseenCount = '/scanner/likes/unseen-count';
+  static const String scannerMarkSeen = '/scanner/likes/mark-seen';
 
   // Follow requests (private accounts)
   static const String myFollowRequests = '/users/me/follow-requests';

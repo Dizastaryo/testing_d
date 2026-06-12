@@ -587,7 +587,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         if (user.totalLikes > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
-            child: _SocialScoreCard(totalLikes: user.totalLikes, colors: c),
+            child: _SocialScoreCard(
+              totalLikes: user.totalLikes,
+              levelName: user.socialLevelName,
+              nextMilestone: user.nextMilestone,
+              colors: c,
+            ),
           ),
 
         // ── Action buttons ─────────────────────────────────────────
@@ -699,52 +704,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
 }
 
-// Level thresholds must match backend domain/user_stats.go SocialLevel().
-const _levelThresholds = [
-  (0, 'Новичок'),
-  (50, 'Известный'),
-  (200, 'Популярный'),
-  (1000, 'Звезда'),
-  (5000, 'Легенда'),
-  (20000, 'Икона'),
-];
+// Milestones thresholds for progress bar computation (must match backend).
+const _levelMilestones = [0, 50, 200, 1000, 5000, 20000];
 
-({String name, int current, int next, double progress}) _computeLevel(int likes) {
-  String name = _levelThresholds.first.$2;
+double _levelProgress(int totalLikes, int nextMilestone) {
+  // Find the current threshold (largest milestone <= totalLikes)
   int curMin = 0;
-  int nextMin = _levelThresholds[1].$1;
-  for (int i = _levelThresholds.length - 1; i >= 0; i--) {
-    if (likes >= _levelThresholds[i].$1) {
-      name = _levelThresholds[i].$2;
-      curMin = _levelThresholds[i].$1;
-      nextMin = i + 1 < _levelThresholds.length
-          ? _levelThresholds[i + 1].$1
-          : _levelThresholds[i].$1;
-      break;
-    }
+  for (final m in _levelMilestones) {
+    if (totalLikes >= m) curMin = m;
   }
-  final isMax = curMin == nextMin;
-  final progress = isMax
-      ? 1.0
-      : (likes - curMin) / (nextMin - curMin).clamp(1, double.infinity);
-  return (
-    name: name,
-    current: curMin,
-    next: nextMin,
-    progress: progress.clamp(0.0, 1.0),
-  );
+  if (nextMilestone <= curMin) return 1.0;
+  return ((totalLikes - curMin) / (nextMilestone - curMin)).clamp(0.0, 1.0);
 }
 
 class _SocialScoreCard extends StatelessWidget {
   final int totalLikes;
+  final String levelName;
+  final int nextMilestone;
   final SeeUThemeColors colors;
 
-  const _SocialScoreCard({required this.totalLikes, required this.colors});
+  const _SocialScoreCard({
+    required this.totalLikes,
+    required this.levelName,
+    required this.nextMilestone,
+    required this.colors,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final level = _computeLevel(totalLikes);
-    final isMax = level.current == level.next;
+    final isMax = nextMilestone <= 0 || nextMilestone <= totalLikes;
+    final progress = _levelProgress(totalLikes, nextMilestone);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -766,8 +755,8 @@ class _SocialScoreCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      level.name,
-                      style: TextStyle(
+                      levelName,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
                         color: SeeUColors.accent,
@@ -784,7 +773,7 @@ class _SocialScoreCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: level.progress,
+                    value: progress,
                     minHeight: 4,
                     backgroundColor: colors.line,
                     valueColor: const AlwaysStoppedAnimation(SeeUColors.accent),
@@ -793,7 +782,7 @@ class _SocialScoreCard extends StatelessWidget {
                 if (!isMax) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'До следующего уровня: ${level.next - totalLikes}',
+                    'До следующего уровня: ${nextMilestone - totalLikes}',
                     style: TextStyle(fontSize: 10, color: colors.ink3),
                   ),
                 ],

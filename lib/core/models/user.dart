@@ -44,8 +44,18 @@ class User {
   final bool hideLastSeen;
   /// VIDEO-4 channel fields. Если оба пусты — обычный профиль; иначе UI
   /// рендерит channel-mode (hero-banner + about-text + Videos default tab).
+  final bool isAdmin;
   final String channelAbout;
   final String channelBannerUrl;
+  // Scanner / BLE bracelet identity (separate from real account)
+  final String scanAlias;
+  final String scanAvatarUrl;
+  final bool scanEnabled;
+  /// Суммарный социальный счёт из user_stats.total_likes.
+  final int totalLikes;
+  final int socialLevel;
+  final String socialLevelName;
+  final int nextMilestone;
   final DateTime createdAt;
 
   const User({
@@ -71,8 +81,16 @@ class User {
     this.isOnline = false,
     this.lastSeenAt,
     this.hideLastSeen = false,
+    this.isAdmin = false,
     this.channelAbout = '',
     this.channelBannerUrl = '',
+    this.scanAlias = '',
+    this.scanAvatarUrl = '',
+    this.scanEnabled = true,
+    this.totalLikes = 0,
+    this.socialLevel = 0,
+    this.socialLevelName = 'Новичок',
+    this.nextMilestone = 50,
     required this.createdAt,
   });
 
@@ -125,8 +143,16 @@ class User {
           ? DateTime.tryParse(json['last_seen_at'].toString())
           : null,
       hideLastSeen: (json['hide_last_seen'] as bool?) ?? false,
+      isAdmin: (json['is_admin'] as bool?) ?? false,
       channelAbout: json['channel_about']?.toString() ?? '',
       channelBannerUrl: _absUrl(json['channel_banner_url']?.toString()),
+      scanAlias: json['scan_alias']?.toString() ?? '',
+      scanAvatarUrl: json['scan_avatar_url']?.toString() ?? '',
+      scanEnabled: (json['scan_enabled'] as bool?) ?? true,
+      totalLikes: ((json['total_likes']) as num?)?.toInt() ?? 0,
+      socialLevel: ((json['social_level']) as num?)?.toInt() ?? 0,
+      socialLevelName: json['social_level_name']?.toString() ?? 'Новичок',
+      nextMilestone: ((json['next_milestone']) as num?)?.toInt() ?? 50,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -191,8 +217,13 @@ class User {
     bool? isOnline,
     DateTime? lastSeenAt,
     bool? hideLastSeen,
+    bool? isAdmin,
     String? channelAbout,
     String? channelBannerUrl,
+    String? scanAlias,
+    String? scanAvatarUrl,
+    bool? scanEnabled,
+    int? totalLikes,
     DateTime? createdAt,
   }) {
     return User(
@@ -219,8 +250,13 @@ class User {
       isOnline: isOnline ?? this.isOnline,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       hideLastSeen: hideLastSeen ?? this.hideLastSeen,
+      isAdmin: isAdmin ?? this.isAdmin,
       channelAbout: channelAbout ?? this.channelAbout,
       channelBannerUrl: channelBannerUrl ?? this.channelBannerUrl,
+      scanAlias: scanAlias ?? this.scanAlias,
+      scanAvatarUrl: scanAvatarUrl ?? this.scanAvatarUrl,
+      scanEnabled: scanEnabled ?? this.scanEnabled,
+      totalLikes: totalLikes ?? this.totalLikes,
       createdAt: createdAt ?? this.createdAt,
     );
   }

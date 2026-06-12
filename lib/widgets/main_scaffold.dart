@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/design/tokens.dart';
 import '../core/design/tappable.dart';
+import '../core/providers/scanner_provider.dart';
 import 'full_screen_player.dart';
 import 'mini_player.dart';
 
 /// Global notifier for hiding bottom nav from within a screen (e.g., feed camera swipe).
 final bottomNavHiddenNotifier = ValueNotifier<bool>(false);
 
-class MainScaffold extends StatelessWidget {
+class MainScaffold extends ConsumerWidget {
   final Widget child;
 
   const MainScaffold({super.key, required this.child});
@@ -30,7 +32,7 @@ class MainScaffold extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _locationToIndex(location);
     final brightness = Theme.of(context).brightness;
@@ -127,12 +129,15 @@ class MainScaffold extends StatelessWidget {
                             isSelected: currentIndex == 3,
                             onTap: () => _onTap(context, 3),
                           ),
-                          _NavItem(
-                            icon: _buildNavIcon('user', false),
-                            activeIcon: _buildNavIcon('user', true),
-                            label: 'Профиль',
-                            isSelected: currentIndex == 4,
-                            onTap: () => _onTap(context, 4),
+                          _BadgedNavItem(
+                            unseenCount: ref.watch(unseenLikesProvider).value ?? 0,
+                            child: _NavItem(
+                              icon: _buildNavIcon('user', false),
+                              activeIcon: _buildNavIcon('user', true),
+                              label: 'Профиль',
+                              isSelected: currentIndex == 4,
+                              onTap: () => _onTap(context, 4),
+                            ),
                           ),
                         ],
                       ),
@@ -151,6 +156,49 @@ class MainScaffold extends StatelessWidget {
     return CustomPaint(
       size: const Size(22, 22),
       painter: _NavIconPainter(name: name, filled: filled),
+    );
+  }
+}
+
+// ─── Badged nav item (shows unseen count dot) ────────────────────────────
+
+class _BadgedNavItem extends StatelessWidget {
+  final int unseenCount;
+  final Widget child;
+
+  const _BadgedNavItem({required this.unseenCount, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (unseenCount <= 0) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          top: 4,
+          right: 4,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: const BoxDecoration(
+              color: SeeUColors.accent,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                unseenCount > 99 ? '99+' : '$unseenCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
