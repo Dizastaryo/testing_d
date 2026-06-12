@@ -97,8 +97,23 @@ class LeaderboardScreen extends ConsumerWidget {
         data: (entries) {
           if (entries.isEmpty) {
             return Center(
-              child: Text('Рейтинг пока пуст',
-                  style: TextStyle(color: c.ink3)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIconsRegular.trophy,
+                      size: 48, color: c.ink4),
+                  const SizedBox(height: 12),
+                  Text('В твоём городе пока никого нет',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: c.ink2)),
+                  const SizedBox(height: 6),
+                  Text('Появись в сканере и набери первые лайки!',
+                      style: TextStyle(fontSize: 13, color: c.ink3),
+                      textAlign: TextAlign.center),
+                ],
+              ),
             );
           }
           return ListView.builder(
