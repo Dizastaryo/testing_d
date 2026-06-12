@@ -12,6 +12,7 @@ import '../../core/utils/format.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
+import 'readers/open_reader.dart';
 
 final _fileDetailProvider =
     FutureProvider.autoDispose.family<FileItem, String>((ref, id) async {
@@ -31,6 +32,38 @@ class FileDetailScreen extends ConsumerStatefulWidget {
 
 class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   bool _downloading = false;
+  String? _readingStatus; // 'want' | 'reading' | 'done' | null
+  bool _loadingStatus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReadingStatus();
+  }
+
+  Future<void> _loadReadingStatus() async {
+    final status = await ref.read(libraryActionsProvider).getReadingStatus(widget.id);
+    if (mounted) setState(() => _readingStatus = status);
+  }
+
+  Future<void> _setReadingStatus(String? status) async {
+    if (_loadingStatus) return;
+    setState(() => _loadingStatus = true);
+    try {
+      final actions = ref.read(libraryActionsProvider);
+      if (status == null || status == _readingStatus) {
+        await actions.deleteReadingStatus(widget.id);
+        if (mounted) setState(() => _readingStatus = null);
+      } else {
+        await actions.upsertReadingStatus(widget.id, status);
+        if (mounted) setState(() => _readingStatus = status);
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) setState(() => _loadingStatus = false);
+    }
+  }
 
   /// Optimistic toggle. Откат при ошибке через invalidate.
   Future<void> _toggleLike(FileItem file) async {
@@ -118,24 +151,32 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
 
           const SizedBox(height: 16),
           Text(
-            file.filename,
+            file.displayTitle,
             style: const TextStyle(
               fontFamily: 'Fraunces',
               fontSize: 22,
               fontWeight: FontWeight.w400,
             ),
           ),
+          if (file.authorName.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(file.authorName,
+                style: TextStyle(fontSize: 14, color: c.ink2)),
+          ],
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 6,
             children: [
-              _Chip(label: file.fileExtension.toUpperCase(), color: SeeUColors.accent),
+              _Chip(label: file.formatLabel, color: SeeUColors.accent),
               _Chip(label: file.fileSizeFormatted),
               _Chip(label: '↓ ${file.downloadsFormatted}'),
+              if (file.pagesCount > 0) _Chip(label: '${file.pagesCount} стр.'),
               if (file.likesCount > 0) _Chip(label: '❤ ${file.likesCount}'),
               if (file.category?.name.isNotEmpty == true)
                 _Chip(label: file.category!.name),
+              if (file.language.isNotEmpty)
+                _Chip(label: file.language.toUpperCase()),
             ],
           ),
           if (file.description.isNotEmpty) ...[
@@ -171,17 +212,94 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
               ],
             ),
 
-          const SizedBox(height: 24),
+          // Reading status chips
+          if (canRead(file)) ...[
+            const SizedBox(height: 16),
+            Text('Статус чтения',
+                style: TextStyle(fontSize: 12, color: c.ink3, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (final (key, label) in [
+                  ('want', 'Хочу'),
+                  ('reading', 'Читаю'),
+                  ('done', 'Прочитал(а)'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: _loadingStatus ? null : () => _setReadingStatus(key),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _readingStatus == key
+                              ? SeeUColors.accent
+                              : c.surface2,
+                          border: Border.all(
+                            color: _readingStatus == key
+                                ? SeeUColors.accent
+                                : c.line,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _readingStatus == key ? Colors.white : c.ink2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 20),
+          // Main action buttons
           Row(
             children: [
-              Expanded(
-                child: SeeUButton(
-                  label: _downloading ? 'Скачивание…' : 'Скачать',
-                  isLoading: _downloading,
-                  onTap: _downloading ? null : () => _download(file),
+              if (canRead(file)) ...[
+                Expanded(
+                  child: SeeUButton(
+                    label: file.readerLabel,
+                    onTap: () => openReader(context, file),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 8),
+                // Secondary: download
+                GestureDetector(
+                  onTap: _downloading ? null : () => _download(file),
+                  child: Container(
+                    height: 48,
+                    width: 48,
+                    decoration: BoxDecoration(
+                      color: c.surface2,
+                      borderRadius: BorderRadius.circular(SeeURadii.medium),
+                      border: Border.all(color: c.line),
+                    ),
+                    child: _downloading
+                        ? const Center(
+                            child: SizedBox(
+                              width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : Icon(PhosphorIconsRegular.download, color: c.ink2, size: 20),
+                  ),
+                ),
+              ] else ...[
+                Expanded(
+                  child: SeeUButton(
+                    label: _downloading ? 'Скачивание…' : 'Скачать',
+                    isLoading: _downloading,
+                    onTap: _downloading ? null : () => _download(file),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => _toggleLike(file),
                 child: Container(

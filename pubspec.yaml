@@ -84,6 +84,9 @@ dependencies:
   # Temp-dir для cache PDF перед PDFView.fromPath. Уже транзитивно есть у
   # многих пакетов, но указываем явно чтобы import был чистый.
   path_provider: ^2.1.4
+  # LIB Sprint 6: Tier-1 ридеры
+  flutter_markdown: ^0.7.7   # TXT/MD reader
+  vocsy_epub_viewer: ^3.0.0  # EPUB reader (wraps native FolioReader/R2)
   mediapipe_face_mesh: ^1.6.0
   video_thumbnail: ^0.5.3
   emoji_picker_flutter: ^4.4.0
