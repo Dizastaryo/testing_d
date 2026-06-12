@@ -29,11 +29,20 @@ import 'widgets/music_picker_sheet.dart';
 class MediaPrepareScreen extends ConsumerStatefulWidget {
   final XFile file;
   final bool isVideo;
+  /// 0 = История, 1 = Публикация. null → default (1).
+  final int? initialPublishMode;
+  /// Трек, выбранный на экране камеры — предзаполняется в форме.
+  final AudioTrack? preselectedTrack;
+  /// Pre-loaded bytes (e.g. from camera + editor). Skips re-reading the file.
+  final Uint8List? preloadedBytes;
 
   const MediaPrepareScreen({
     super.key,
     required this.file,
     required this.isVideo,
+    this.initialPublishMode,
+    this.preselectedTrack,
+    this.preloadedBytes,
   });
 
   @override
@@ -42,9 +51,9 @@ class MediaPrepareScreen extends ConsumerStatefulWidget {
 
 class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     with SingleTickerProviderStateMixin {
-  // 0 = Story, 1 = Post (any media: photo, multi-photo, video). Reels are
-  // gone — every publication is a "rils" in the unified product model.
+  // 0 = Story, 1 = Post
   int _publishMode = 1;
+  bool _publishSuccess = false;
 
   // Post aspect ratio: 0 = original, 1 = 1:1, 2 = 4:5
   int _aspectIdx = 0;
@@ -75,11 +84,19 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   @override
   void initState() {
     super.initState();
-    _loadBytes();
+    // Apply params passed from camera screen
+    _publishMode = widget.initialPublishMode ?? 1;
+    if (widget.preselectedTrack != null) {
+      _selectedTrack = widget.preselectedTrack;
+    }
+    // Use preloaded bytes if provided (avoids re-reading file)
+    if (widget.preloadedBytes != null) {
+      _bytes = widget.preloadedBytes;
+    } else {
+      _loadBytes();
+    }
 
-    // Pick up preselected track from Music screen ("Использовать в посте"),
-    // if any. Doing this in postFrame because StateProvider mutation outside
-    // of a Riverpod-aware build phase warns in debug.
+    // Also pick up track from Music screen pendingPostTrackProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pending = ref.read(pendingPostTrackProvider);
       if (pending != null && widget.isVideo && mounted) {
@@ -184,14 +201,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         }
         await api.post(ApiEndpoints.stories, data: storyData);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Стори опубликована!'),
-              backgroundColor: Color(0xFF4CAF50),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          context.go('/feed');
+          setState(() => _publishSuccess = true);
+          await Future.delayed(const Duration(milliseconds: 700));
+          if (mounted) context.go('/feed');
         }
       } else {
         // Create Post — every publication is a unified post now (photo,
@@ -220,15 +232,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         );
         if (mounted) {
           ref.read(feedProvider.notifier).refresh();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Пост опубликован!',
-                  style: SeeUTypography.body.copyWith(color: Colors.white)),
-              backgroundColor: SeeUColors.success,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          context.go('/feed');
+          setState(() => _publishSuccess = true);
+          await Future.delayed(const Duration(milliseconds: 700));
+          if (mounted) context.go('/feed');
         }
       }
     } catch (e) {
@@ -264,10 +270,21 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         child: Column(
           children: [
             _buildTopBar(c),
-            _buildModeToggle(c),
-            Expanded(child: _buildPreview(c)),
-            _buildMusicButton(c),
-            if (_publishMode == 1) _buildPostForm(c),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildPreview(c),
+                    _buildActionRow(c),
+                    if (_selectedTrack != null) _buildMusicTrimCard(c),
+                    if (_publishMode == 1) _buildPostForm(c),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
             _buildPublishButton(c),
           ],
         ),
@@ -279,68 +296,96 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
   Widget _buildTopBar(SeeUThemeColors c) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
       child: Row(
         children: [
+          // Back
           IconButton(
             icon: Icon(PhosphorIcons.arrowLeft(), color: c.ink, size: 22),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          const Spacer(),
-          Text(
-            _publishMode == 0 ? 'Новая история' : 'Новая публикация',
-            style: SeeUTypography.subtitle,
+          // Inline mode tabs (центр)
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _inlineModeTab('История', 0, c),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('·',
+                      style: TextStyle(
+                          color: c.ink3,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w300)),
+                ),
+                _inlineModeTab('Публикация', 1, c),
+              ],
+            ),
           ),
-          const Spacer(),
-          const SizedBox(width: 48), // balance
+          // Music quick-add button (top right)
+          GestureDetector(
+            onTap: _openMusicPicker,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _selectedTrack != null
+                    ? SeeUColors.accent.withValues(alpha: 0.12)
+                    : c.surface2,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _selectedTrack != null
+                      ? SeeUColors.accent.withValues(alpha: 0.4)
+                      : c.line,
+                ),
+              ),
+              child: Icon(
+                _selectedTrack != null
+                    ? PhosphorIconsFill.musicNote
+                    : PhosphorIcons.musicNote(),
+                color: _selectedTrack != null ? SeeUColors.accent : c.ink3,
+                size: 16,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ── Mode toggle (Story / Post) ─────────────────────────────────────────
-
-  Widget _buildModeToggle(SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-      child: Container(
-        height: 40,
-        decoration: BoxDecoration(
-          color: c.surface2,
-          borderRadius: BorderRadius.circular(SeeURadii.pill),
-        ),
-        child: Row(
-          children: [
-            _modeTab('История', 0, c),
-            _modeTab('Публикация', 1, c),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _modeTab(String label, int idx, SeeUThemeColors c) {
+  Widget _inlineModeTab(String label, int idx, SeeUThemeColors c) {
     final active = _publishMode == idx;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _publishMode = idx),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: active ? SeeUColors.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _publishMode = idx);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 180),
+            style: SeeUTypography.body.copyWith(
+              fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+              fontSize: active ? 15 : 14,
+              color: active ? c.ink : c.ink3,
+            ),
+            child: Text(label),
           ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: SeeUTypography.caption.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: active ? Colors.white : c.ink2,
+          const SizedBox(height: 3),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            height: 2,
+            width: active ? 22 : 0,
+            decoration: BoxDecoration(
+              color: SeeUColors.accent,
+              borderRadius: BorderRadius.circular(1),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -368,140 +413,130 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
 
     return Column(
       children: [
-        Expanded(
-          child: Center(
-            child: AspectRatio(
-              aspectRatio: previewAspect,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: widget.isVideo
-                    ? (_videoReady && _videoCtrl != null
-                        ? FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: _videoCtrl!.value.size.width,
-                              height: _videoCtrl!.value.size.height,
-                              child: VideoPlayer(_videoCtrl!),
-                            ),
-                          )
-                        : Container(
-                            color: Colors.black,
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white24, strokeWidth: 2,
-                              ),
-                            ),
-                          ))
-                    : (_bytes != null
-                        ? Image.memory(_bytes!, fit: BoxFit.cover)
-                        : Container(color: Colors.black)),
-              ),
-            ),
-          ),
-        ),
+        Center(
+          child: AspectRatio(
+            aspectRatio: previewAspect,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: widget.isVideo
+                      ? GestureDetector(
+                          onTap: () {
+                            if (_videoCtrl == null || !_videoReady) return;
+                            setState(() {
+                              _videoCtrl!.value.isPlaying
+                                  ? _videoCtrl!.pause()
+                                  : _videoCtrl!.play();
+                            });
+                          },
+                          child: _videoReady && _videoCtrl != null
+                              ? Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    FittedBox(
+                                      fit: BoxFit.cover,
+                                      child: SizedBox(
+                                        width: _videoCtrl!.value.size.width,
+                                        height: _videoCtrl!.value.size.height,
+                                        child: VideoPlayer(_videoCtrl!),
+                                      ),
+                                    ),
+                                    if (!(_videoCtrl!.value.isPlaying))
+                                      const Center(
+                                        child: Icon(PhosphorIconsFill.play,
+                                            color: Colors.white70, size: 40),
+                                      ),
+                                  ],
+                                )
+                              : Container(
+                                  color: Colors.black,
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white24, strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                        )
+                      : InteractiveViewer(
+                          minScale: 1.0,
+                          maxScale: 4.0,
+                          child: _bytes != null
+                              ? Image.memory(_bytes!, fit: BoxFit.cover)
+                              : Container(color: Colors.black),
+                        ),
+                ),
 
-        // Aspect ratio selector (Post mode only)
-        if (_publishMode == 1)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_aspectLabels.length, (i) {
-                final active = _aspectIdx == i;
-                return GestureDetector(
-                  onTap: () => setState(() => _aspectIdx = i),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: active ? c.ink : c.surface2,
-                      borderRadius: BorderRadius.circular(SeeURadii.pill),
-                    ),
-                    child: Text(
-                      _aspectLabels[i],
-                      style: SeeUTypography.caption.copyWith(
-                        color: active ? Colors.white : c.ink2,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                // Music pill overlay on preview
+                if (_selectedTrack != null)
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.60),
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        border: Border.all(
+                          color:
+                              SeeUColors.accent.withValues(alpha: 0.45),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(PhosphorIconsFill.musicNote,
+                              color: SeeUColors.accent, size: 11),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints:
+                                const BoxConstraints(maxWidth: 110),
+                            child: Text(
+                              _selectedTrack!.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                );
-              }),
-            ),
-          ),
 
-        // AI Стилизация (только для фото — видео через DALL-E не реалистично)
-        if (!widget.isVideo)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            child: GestureDetector(
-              onTap: _bytes == null ? null : _openStylizeSheet,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: SeeUGradients.heroOrange,
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(PhosphorIconsBold.sparkle, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'AI-стилизация',
-                      style: TextStyle(
+                // Publish mode badge (top left of preview)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(SeeURadii.pill),
+                    ),
+                    child: Text(
+                      _publishMode == 0 ? 'ИСТОРИЯ' : 'ПОСТ',
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-
-        // Редактировать (overlays) — только для фото. Открывает Story Editor,
-        // возвращает composite bytes (фото + текст + стикеры в один PNG).
-        // Видео-overlay требует ffmpeg-overlay-pass — отложено.
-        if (!widget.isVideo)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-            child: GestureDetector(
-              onTap: _bytes == null ? null : _openStoryEditor,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: context.seeuColors.surface2,
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  border: Border.all(
-                      color: SeeUColors.accent.withValues(alpha: 0.4)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(PhosphorIcons.textT(),
-                        color: SeeUColors.accent, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Добавить текст / стикеры',
-                      style: TextStyle(
-                        color: context.seeuColors.ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        ),
+        const SizedBox(height: 4),
       ],
     );
   }
@@ -581,6 +616,156 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     });
   }
 
+  // ── Action row (AI стиль | Текст | Музыка | Кроп) ─────────────────────
+
+  Widget _buildActionRow(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // PRIMARY: full-width "Add text / stickers" button (photos only)
+        if (!widget.isVideo)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: GestureDetector(
+              onTap: _bytes == null ? null : _openStoryEditor,
+              child: AnimatedOpacity(
+                opacity: _bytes == null ? 0.4 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                    border: Border.all(color: c.line),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(PhosphorIconsRegular.smileySticker,
+                          size: 18, color: c.ink2),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Добавить текст / стикеры',
+                        style: TextStyle(
+                          color: c.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // SECONDARY: icon chips row
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              if (!widget.isVideo) ...[
+                _ActionChip(
+                  icon: PhosphorIconsBold.sparkle,
+                  label: 'AI стиль',
+                  color: SeeUColors.accent,
+                  onTap: _bytes == null ? null : _openStylizeSheet,
+                ),
+                const SizedBox(width: 8),
+              ],
+              _ActionChip(
+                icon: _selectedTrack != null
+                    ? PhosphorIconsFill.musicNote
+                    : PhosphorIconsRegular.musicNote,
+                label: _selectedTrack != null ? _selectedTrack!.title : 'Музыка',
+                color: _selectedTrack != null ? SeeUColors.accent : c.ink2,
+                maxLabelWidth: 80,
+                onTap: _openMusicPicker,
+              ),
+              if (_publishMode == 1) ...[
+                const SizedBox(width: 8),
+                _ActionChip(
+                  icon: PhosphorIconsRegular.crop,
+                  label: _aspectLabels[_aspectIdx],
+                  color: c.ink2,
+                  onTap: () {
+                    setState(() => _aspectIdx =
+                        (_aspectIdx + 1) % _aspectLabels.length);
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Music trim card (compact, shown when track selected) ───────────────
+
+  Widget _buildMusicTrimCard(SeeUThemeColors c) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          border: Border.all(
+            color: SeeUColors.accent.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: SeeUColors.accent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(PhosphorIconsFill.musicNote,
+                      color: SeeUColors.accent, size: 15),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedTrack!.title,
+                        style: SeeUTypography.caption.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _selectedTrack!.artist,
+                        style: SeeUTypography.micro.copyWith(color: c.ink3),
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _selectedTrack = null;
+                    _audioStartSec = 0;
+                  }),
+                  child: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
+                ),
+              ],
+            ),
+            if ((_selectedTrack?.durationSeconds ?? 0) > 0)
+              _buildAudioTrimSlider(c),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Music button + trim slider ──────────────────────────────────────────
 
   /// Duration of the clip the user is publishing (video length or 15s for photo)
@@ -596,83 +781,6 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     final m = s ~/ 60;
     final sec = (s % 60).toInt();
     return '$m:${sec.toString().padLeft(2, '0')}';
-  }
-
-  Widget _buildMusicButton(SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Column(
-        children: [
-          // Track selector row
-          GestureDetector(
-            onTap: _openMusicPicker,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: c.surface2,
-                borderRadius: BorderRadius.circular(SeeURadii.pill),
-                border: Border.all(
-                  color: _selectedTrack != null
-                      ? SeeUColors.accent.withValues(alpha: 0.4)
-                      : c.line,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    PhosphorIcons.musicNotes(),
-                    size: 18,
-                    color: _selectedTrack != null ? SeeUColors.accent : c.ink3,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _selectedTrack != null
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _selectedTrack!.title,
-                                style: SeeUTypography.caption.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                _selectedTrack!.artist,
-                                style: SeeUTypography.micro.copyWith(color: c.ink3),
-                              ),
-                            ],
-                          )
-                        : Text(
-                            'Добавить музыку',
-                            style: SeeUTypography.body.copyWith(
-                              fontSize: 14,
-                              color: c.ink3,
-                            ),
-                          ),
-                  ),
-                  if (_selectedTrack != null)
-                    GestureDetector(
-                      onTap: () => setState(() {
-                        _selectedTrack = null;
-                        _audioStartSec = 0;
-                      }),
-                      child: Icon(PhosphorIcons.x(), size: 16, color: c.ink3),
-                    )
-                  else
-                    Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink3),
-                ],
-              ),
-            ),
-          ),
-
-          // Audio trim slider (shown when track selected)
-          if (_selectedTrack != null) _buildAudioTrimSlider(c),
-        ],
-      ),
-    );
   }
 
   Widget _buildAudioTrimSlider(SeeUThemeColors c) {
@@ -818,7 +926,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     maxLength: 2000,
                     style: SeeUTypography.body.copyWith(fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'Добавьте описание...',
+                      hintText: 'Что происходит?',
                       hintStyle: SeeUTypography.body.copyWith(
                         fontSize: 14,
                         color: c.ink3,
@@ -926,38 +1034,169 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   // ── Publish button ─────────────────────────────────────────────────────
 
   Widget _buildPublishButton(SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: GestureDetector(
-          onTap: _isPublishing ? null : _publish,
-          child: Container(
-            decoration: BoxDecoration(
-              color: _isPublishing
-                  ? SeeUColors.accent.withValues(alpha: 0.5)
-                  : SeeUColors.accent,
-              borderRadius: BorderRadius.circular(SeeURadii.pill),
+    final Widget buttonChild;
+    final BoxDecoration buttonDecoration;
+
+    if (_publishSuccess) {
+      // S6.7: brief green success flash
+      buttonChild = const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIconsBold.checkCircle, color: Colors.white, size: 22),
+          SizedBox(width: 8),
+          Text(
+            'Опубликовано!',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
             ),
-            alignment: Alignment.center,
-            child: _isPublishing
-                ? const SizedBox(
-                    width: 22, height: 22,
-                    child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2.5,
-                    ),
-                  )
-                : Text(
-                    _publishMode == 0
-                        ? 'Опубликовать историю'
-                        : 'Опубликовать',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+          ),
+        ],
+      );
+      buttonDecoration = BoxDecoration(
+        color: SeeUColors.success,
+        borderRadius: BorderRadius.circular(SeeURadii.pill),
+        boxShadow: [
+          BoxShadow(
+            color: SeeUColors.success.withValues(alpha: 0.45),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      );
+    } else if (_isPublishing) {
+      buttonChild = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _publishMode == 0 ? 'Публикуем историю...' : 'Публикуем...',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      );
+      buttonDecoration = BoxDecoration(
+        color: SeeUColors.accent.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(SeeURadii.pill),
+      );
+    } else {
+      buttonChild = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _publishMode == 0 ? 'Опубликовать историю' : 'Опубликовать',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(PhosphorIconsRegular.paperPlaneTilt,
+              color: Colors.white, size: 18),
+        ],
+      );
+      buttonDecoration = BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [SeeUColors.accentSecondary, SeeUColors.accent],
+        ),
+        borderRadius: BorderRadius.circular(SeeURadii.pill),
+        boxShadow: [
+          BoxShadow(
+            color: SeeUColors.accent.withValues(alpha: 0.38),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      child: GestureDetector(
+        onTap: (_isPublishing || _publishSuccess) ? null : _publish,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          height: 54,
+          decoration: buttonDecoration,
+          alignment: Alignment.center,
+          child: buttonChild,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Action chip widget ────────────────────────────────────────────────────
+
+class _ActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+  final double maxLabelWidth;
+
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+    this.maxLabelWidth = 60,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final disabled = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: disabled ? 0.4 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.pill),
+            border: Border.all(color: c.line),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 5),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                child: Text(
+                  label,
+                  style: SeeUTypography.caption.copyWith(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: FontWeight.w600,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
           ),
         ),
       ),

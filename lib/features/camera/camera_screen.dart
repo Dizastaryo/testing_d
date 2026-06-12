@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -12,13 +11,14 @@ import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/tokens.dart';
 import '../post/media_prepare_screen.dart';
+import '../post/widgets/music_picker_sheet.dart';
+import '../stories/story_editor_screen.dart';
 import 'decorations/decoration_item.dart';
-import 'decorations/decoration_picker.dart';
 import 'filters/filter_overlay.dart';
 import 'filters/filter_state.dart';
 import 'filters/frame_effect.dart';
@@ -27,17 +27,21 @@ import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
 import 'masks/mask_debug_config.dart';
 import 'masks/mask_overlay.dart';
-import 'widgets/camera_buttons.dart';
+import 'widgets/camera_bottom_panel.dart';
+import 'widgets/camera_gallery_preview.dart';
 import 'widgets/camera_painters.dart';
 import 'widgets/camera_record_button.dart';
+import 'widgets/camera_right_panel.dart';
+import 'widgets/camera_top_bar.dart';
+
+// ─── Re-export CameraMode (was defined here, now sourced from bottom panel) ──
+export 'widgets/camera_bottom_panel.dart' show CameraBottomMode;
+typedef CameraMode = CameraBottomMode;
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
-const double _kMaxDuration = 60.0; // seconds
-const Color _kAccent = SeeUColors.accent; // #FF5A3C
-// BUG-15: alias на SeeUColors.glassOverlay — централизованный token.
-// Сохраняем local-имя чтобы не лопатить десятки сайтов в этом файле.
-const Color _kGlassBg = SeeUColors.glassOverlay;
+const double _kMaxDuration = 60.0;
+const Color _kAccent = SeeUColors.accent;
 
 // ─── CameraScreen ─────────────────────────────────────────────────────────
 
@@ -72,45 +76,71 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   // ── Recording state ──
   bool _isRecording = false;
-  List<double> _segments = []; // completed segment durations in seconds
-  MaskDescriptor? _selectedMask; // AR-маска поверх preview
-  FilterState _filter = FilterState.identity; // color/grain/vignette state
-  OverlayEffect? _overlayEffect; // dust/scratches, light leak, etc.
-  FrameEffect? _frameEffect;    // polaroid, film strip, etc.
+  List<double> _segments = [];
+  MaskDescriptor? _selectedMask;
+  FilterState _filter = FilterState.identity;
+  OverlayEffect? _overlayEffect;
+  FrameEffect? _frameEffect;
 
-  // ── Украшения (объединённые фильтры + маски) ──
+  // ── Decorations ──
   bool _showDecorationPicker = false;
   String? _selectedDecorationId;
   Set<String> _savedDecorationIds = {};
-  double _currentSegDur = 0.0; // live elapsed seconds for active segment
+  double _currentSegDur = 0.0;
 
-  // ── Timer state ──
-  int _timerSetting = 0; // 0 | 3 | 10
+  // ── Timer ──
+  int _timerSetting = 0;
   int _countdown = 0;
 
   // ── Settings ──
-  bool _flashOn = false;
+  int _flashMode = 0; // 0=off, 1=torch, 2=auto
   bool _showGrid = false;
 
-  // ── Fake music track label ──
-  final String _audioTitle = 'Любимая музыка';
+  // ── Camera mode ──
+  CameraMode _cameraMode = CameraMode.photo;
+
+  // ── Music ──
+  AudioTrack? _selectedTrack;
+
+  // ── Video speed ──
+  static const List<double> _speedValues = [0.5, 1.0, 2.0, 3.0];
+  int _speedIdx = 1;
+  double get _videoSpeed => _speedValues[_speedIdx];
+
+  // ── Beauty toggle (front camera, UI only) ──
+  bool _beautyOn = false;
 
   // ── Gallery preview ──
   XFile? _galleryFile;
   Uint8List? _galleryBytes;
   bool _showGalleryPreview = false;
+  late AnimationController _galleryPreviewController;
+  late Animation<Offset> _gallerySlideAnim;
+  late Animation<double> _galleryFadeAnim;
+  Uint8List? _galleryThumbnailBytes;
 
-  // ── Upload state ──
+  // ── Zoom auto-hide ──
+  Timer? _zoomHideTimer;
+
+  // ── Upload state (legacy, unused) ──
   bool _isUploading = false;
 
   // ── Animation controllers ──
   late AnimationController _switchController;
   late Animation<double> _switchRotation;
   late AnimationController _flashPulseController;
+  late AnimationController _nextFabController;
+  late AnimationController _segmentFlashCtrl;
+  late AnimationController _blinkCtrl;
 
   // ── Ticker for segment progress ──
   Ticker? _ticker;
   Duration? _tickerStart;
+
+  double get _effectiveMaxDuration =>
+      _cameraMode.maxSeconds > 0 ? _cameraMode.maxSeconds : _kMaxDuration;
+
+  // ─── Init ───────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -124,23 +154,48 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     _switchRotation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _switchController, curve: Curves.easeInOutCubic),
     );
-
     _flashPulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
+    );
+    _nextFabController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _segmentFlashCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _galleryPreviewController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _gallerySlideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _galleryPreviewController,
+      curve: Curves.easeOutCubic,
+    ));
+    _galleryFadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _galleryPreviewController, curve: Curves.easeOut),
+    );
+    _blinkCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+      value: 1.0,
     );
 
     _initCamera();
   }
 
-  // ── Camera init ────────────────────────────────────────────────────────
+  // ─── Camera init ────────────────────────────────────────────────────────
 
   Future<void> _initCamera() async {
     if (kIsWeb) {
       if (mounted) setState(() => _errorMessage = 'Камера недоступна в браузере');
       return;
     }
-
     try {
       _cameras = await availableCameras();
     } on CameraException catch (e) {
@@ -160,38 +215,28 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (mounted) setState(() => _errorMessage = 'Камера недоступна');
       return;
     }
-
     await _setupCamera(_getFrontCamera() ?? _cameras.first);
   }
 
   CameraDescription? _getFrontCamera() {
     try {
       return _cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.front);
-    } catch (_) {
-      return null;
-    }
+    } catch (_) { return null; }
   }
 
   CameraDescription? _getBackCamera() {
     try {
       return _cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.back);
-    } catch (_) {
-      return null;
-    }
+    } catch (_) { return null; }
   }
 
   Future<void> _setupCamera(CameraDescription camera) async {
-    // Dispose the old controller BEFORE creating a new one.
-    // Running two controllers simultaneously can cause the back camera to
-    // output a black frame on many devices.
     final prev = _controller;
     _controller = null;
     if (mounted) setState(() => _isInitialized = false);
 
     if (prev != null) {
-      try {
-        await prev.dispose();
-      } catch (e) {
+      try { await prev.dispose(); } catch (e) {
         debugPrint('_setupCamera: error disposing previous controller: $e');
       }
     }
@@ -206,21 +251,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       await controller.initialize();
       final ps = controller.value.previewSize;
-      debugPrint(
-        '_setupCamera: initialized ${camera.lensDirection.name} camera '
-        'previewSize=$ps '
-        '(swapped for portrait: ${ps != null ? "${ps.height}x${ps.width}" : "null"}) '
-        'aspectRatio=${controller.value.aspectRatio}',
-      );
+      debugPrint('_setupCamera: initialized ${camera.lensDirection.name} '
+          'previewSize=$ps aspectRatio=${controller.value.aspectRatio}');
 
       _maxZoom = await controller.getMaxZoomLevel();
       _minZoom = await controller.getMinZoomLevel();
       _currentZoom = _minZoom;
 
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
+      if (!mounted) { await controller.dispose(); return; }
 
       setState(() {
         _controller = controller;
@@ -229,35 +267,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         _errorMessage = null;
       });
 
-      // Баг 5: восстановить torch на новом контроллере после смены камеры.
-      // Фронтальная камера не поддерживает вспышку — пропускаем.
-      if (_flashOn && !_isFrontCamera) {
-        try {
-          await controller.setFlashMode(FlashMode.torch);
-        } catch (_) {}
+      if (_flashMode > 0 && !_isFrontCamera) {
+        final fm = const [FlashMode.off, FlashMode.torch, FlashMode.auto][_flashMode];
+        try { await controller.setFlashMode(fm); } catch (_) {}
       }
     } on CameraException catch (e) {
       debugPrint('_setupCamera: CameraException: ${e.code} — ${e.description}');
       await controller.dispose();
       if (mounted) {
-        setState(() {
-          _errorMessage = 'Ошибка камеры: ${e.description}';
-          _isSwitching = false;
-        });
-      } else {
-        _isSwitching = false;
-      }
+        setState(() { _errorMessage = 'Ошибка камеры: ${e.description}'; _isSwitching = false; });
+      } else { _isSwitching = false; }
     } catch (e) {
       debugPrint('_setupCamera: unexpected error: $e');
       await controller.dispose();
       if (mounted) {
-        setState(() {
-          _errorMessage = 'Ошибка инициализации камеры';
-          _isSwitching = false;
-        });
-      } else {
-        _isSwitching = false;
-      }
+        setState(() { _errorMessage = 'Ошибка инициализации камеры'; _isSwitching = false; });
+      } else { _isSwitching = false; }
     }
   }
 
@@ -273,24 +298,25 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     await _setupCamera(camera);
   }
 
-  // ── Flash ──────────────────────────────────────────────────────────────
+  // ─── Flash ──────────────────────────────────────────────────────────────
 
   Future<void> _toggleFlash() async {
     if (_controller == null || !_isInitialized) return;
     HapticFeedback.selectionClick();
     _flashPulseController.forward(from: 0);
-    final next = !_flashOn;
+    final next = (_flashMode + 1) % 3;
+    final cameraFlash = const [FlashMode.off, FlashMode.torch, FlashMode.auto][next];
     try {
-      await _controller!.setFlashMode(next ? FlashMode.torch : FlashMode.off);
-      setState(() => _flashOn = next);
+      await _controller!.setFlashMode(cameraFlash);
+      setState(() => _flashMode = next);
     } catch (_) {}
   }
 
-  // ── Recording ──────────────────────────────────────────────────────────
+  // ─── Recording ──────────────────────────────────────────────────────────
 
   double get _totalCompleted => _segments.fold(0.0, (a, b) => a + b);
   double get _totalWithCurrent => _totalCompleted + _currentSegDur;
-  double get _totalPct => (_totalWithCurrent / _kMaxDuration).clamp(0.0, 1.0);
+  double get _totalPct => (_totalWithCurrent / _effectiveMaxDuration).clamp(0.0, 1.0);
 
   void _startRecording() {
     if (_isRecording || _countdown > 0) return;
@@ -321,13 +347,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   void _beginSegment() {
-    if (_isRecording) return; // уже пишем — повторный вызов игнорируем
+    if (_isRecording) return;
     if (_controller == null || !_isInitialized) return;
     HapticFeedback.mediumImpact();
-    setState(() {
-      _isRecording = true;
-      _currentSegDur = 0.0;
-    });
+    setState(() { _isRecording = true; _currentSegDur = 0.0; });
+    _nextFabController.reverse();
 
     _ticker?.dispose();
     _tickerStart = null;
@@ -335,15 +359,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (!mounted) return;
       _tickerStart ??= elapsed;
       final secs = (elapsed - _tickerStart!).inMilliseconds / 1000.0;
-      final clamped = secs.clamp(0.0, _kMaxDuration - _totalCompleted);
+      final clamped = secs.clamp(0.0, _effectiveMaxDuration - _totalCompleted);
       setState(() => _currentSegDur = clamped);
-      if (_totalCompleted + clamped >= _kMaxDuration) {
-        _stopRecording();
-      }
-    })
-      ..start();
+      if (_totalCompleted + clamped >= _effectiveMaxDuration) _stopRecording();
+    })..start();
 
-    // Also start actual video recording on controller (best-effort)
     unawaited(_controller!.startVideoRecording());
   }
 
@@ -361,46 +381,80 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       _currentSegDur = 0.0;
     });
 
-    final videoFile = await _controller?.stopVideoRecording();
-    if (videoFile != null && mounted) {
-      await _setGallery(videoFile);
+    if (_segments.isNotEmpty) {
+      _nextFabController.forward();
+      _segmentFlashCtrl.forward(from: 0);
     }
+
+    final videoFile = await _controller?.stopVideoRecording();
+    if (videoFile != null && mounted) await _setGallery(videoFile);
+  }
+
+  bool _isVideoPath(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    return ['mp4', 'mov', 'webm', 'avi', 'mkv'].contains(ext);
   }
 
   Future<void> _setGallery(XFile file) async {
     Uint8List? bytes;
-    try {
-      bytes = await file.readAsBytes();
-    } catch (e) {
+    try { bytes = await file.readAsBytes(); } catch (e) {
       debugPrint('camera readAsBytes: $e');
     }
+    if (!mounted) return;
+
+    Uint8List? thumb;
+    if (_isVideoPath(file.path)) {
+      if (!kIsWeb) {
+        try {
+          thumb = await vt.VideoThumbnail.thumbnailData(
+            video: file.path,
+            imageFormat: vt.ImageFormat.JPEG,
+            maxWidth: 112,
+            quality: 75,
+          );
+        } catch (e) { debugPrint('video_thumbnail: $e'); }
+      }
+    } else {
+      thumb = bytes;
+    }
+
     if (!mounted) return;
     setState(() {
       _galleryFile = file;
       _galleryBytes = bytes;
       _showGalleryPreview = true;
+      if (thumb != null) _galleryThumbnailBytes = thumb;
+    });
+    _galleryPreviewController.forward(from: 0);
+  }
+
+  void _closeGalleryPreview() {
+    _galleryPreviewController.reverse().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _showGalleryPreview = false;
+        _galleryFile = null;
+        _galleryBytes = null;
+        _nextFabController.reverse();
+      });
     });
   }
 
   Future<void> _undoLastSegment() async {
-    // Ждём остановки — _stopRecording добавляет сегмент в список,
-    // поэтому await обязателен: без него undo удалит старый сегмент,
-    // а новый (только что остановленный) останется.
     if (_isRecording) await _stopRecording();
     if (!mounted) return;
     if (_segments.isEmpty) return;
     HapticFeedback.selectionClick();
     setState(() {
       _segments = _segments.sublist(0, _segments.length - 1);
-      // Галерея preview была открыта _stopRecording — при undo закрываем её,
-      // пользователь продолжает работать с камерой.
       _showGalleryPreview = false;
       _galleryFile = null;
       _galleryBytes = null;
     });
+    if (_segments.isEmpty) _nextFabController.reverse();
   }
 
-  // ── Photo capture ──────────────────────────────────────────────────────
+  // ─── Photo capture ──────────────────────────────────────────────────────
 
   Future<void> _takePicture() async {
     if (_controller == null || !_isInitialized) return;
@@ -408,12 +462,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     HapticFeedback.mediumImpact();
     try {
       final file = await _controller!.takePicture();
-      // Bake AR-маску и color-filter в финальное изображение, чтобы они
-      // остались на снимке а не только на preview.
       final composed = await _composeCapture(file);
-      if (mounted) {
-        await _setGallery(composed);
-      }
+      if (mounted) await _setGallery(composed);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -426,23 +476,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
-  /// Композирует raw-фото с активным фильтром и маской.
-  /// 1. Decode raw в `ui.Image`.
-  /// 2. PictureRecorder + Canvas — рисует image, поверх — viewport-сайзов
-  ///    vignette/grain, затем mask-painter (через `_FaceFrame.fromSize`).
-  /// 3. Для color matrix используем `saveLayer + ColorFilter` — один shader pass.
-  /// 4. Encode picture обратно в PNG, пишем в файл рядом с raw.
-  ///
-  /// Web: File I/O недоступен в браузере — для Chrome-dev возвращаем raw как
-  /// есть (см. CLAUDE.md — Chrome это dev-preview, mobile это shipping).
   Future<XFile> _composeCapture(XFile raw) async {
     if (_filter.isIdentity &&
         _selectedMask == null &&
         _overlayEffect == null &&
-        _frameEffect == null) {
-      return raw;
-    }
-    if (kIsWeb) return raw; // web: dart:io недоступен — отдаём raw
+        _frameEffect == null) { return raw; }
+    if (kIsWeb) { return raw; }
 
     final bytes = await raw.readAsBytes();
     final codec = await ui.instantiateImageCodec(bytes);
@@ -455,66 +494,43 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // 1. Image (с color-filter если есть).
     if (_filter.isIdentity) {
       canvas.drawImage(image, Offset.zero, Paint());
     } else {
-      canvas.saveLayer(
-        Rect.fromLTWH(0, 0, w, h),
-        Paint()..colorFilter = ColorFilter.matrix(_filter.toMatrix()),
-      );
+      canvas.saveLayer(Rect.fromLTWH(0, 0, w, h),
+          Paint()..colorFilter = ColorFilter.matrix(_filter.toMatrix()));
       canvas.drawImage(image, Offset.zero, Paint());
       canvas.restore();
     }
 
-    // 2. Vignette overlay.
     if (_filter.vignette > 0) {
       final rect = Rect.fromLTWH(0, 0, w, h);
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..shader = RadialGradient(
-            radius: 0.9,
-            colors: [
-              Colors.black.withValues(alpha: 0),
-              Colors.black.withValues(alpha: _filter.vignette * 0.75),
-            ],
-            stops: const [0.55, 1.0],
-          ).createShader(rect),
-      );
+      canvas.drawRect(rect, Paint()
+        ..shader = RadialGradient(
+          radius: 0.9,
+          colors: [
+            Colors.black.withValues(alpha: 0),
+            Colors.black.withValues(alpha: _filter.vignette * 0.75),
+          ],
+          stops: const [0.55, 1.0],
+        ).createShader(rect));
     }
 
-    // 3. Grain — пропускаем при bake (heavy на full-res и плёночный noise
-    // на 4k-фотке выглядит сильнее чем в preview). Если нужно — отдельный
-    // toggle «зерно в финале».
-
-    // 4. Overlay effect (dust, light leak) — запекается с фиксированным
-    // animValue = 0.6 (средняя точка анимации) через OverlayEffect.bake().
     _overlayEffect?.bake(canvas, size);
-
-    // 5. Frame effect (polaroid, film strip…) — поверх overlay, под маской.
     _frameEffect?.bake(canvas, size);
-
-    // 6. Mask painter — рисуется в pixel-space фотографии, _FaceFrame
-    // автоматически масштабируется по size.
-    if (_selectedMask != null) {
-      _selectedMask!.painter().paint(canvas, size);
-    }
+    if (_selectedMask != null) _selectedMask!.painter().paint(canvas, size);
 
     final picture = recorder.endRecording();
     final composedImg = await picture.toImage(w.toInt(), h.toInt());
-    final pngBytes =
-        await composedImg.toByteData(format: ui.ImageByteFormat.png);
+    final pngBytes = await composedImg.toByteData(format: ui.ImageByteFormat.png);
     if (pngBytes == null) return raw;
 
-    // Запись рядом с raw — тот же каталог, новое имя.
-    final outPath =
-        '${raw.path.replaceAll(RegExp(r'\.[^.]+$'), '')}_composed.png';
+    final outPath = '${raw.path.replaceAll(RegExp(r'\.[^.]+$'), '')}_composed.png';
     await File(outPath).writeAsBytes(pngBytes.buffer.asUint8List());
     return XFile(outPath);
   }
 
-  // ── Gallery picker ─────────────────────────────────────────────────────
+  // ─── Gallery picker ─────────────────────────────────────────────────────
 
   Future<void> _pickFromGallery() async {
     final picker = ImagePicker();
@@ -523,7 +539,24 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     await _setGallery(file);
   }
 
-  // ── Zoom ──────────────────────────────────────────────────────────────
+  // ─── Music picker ───────────────────────────────────────────────────────
+
+  void _openMusicPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MusicPickerSheet(
+        onSelect: (track) {
+          setState(() => _selectedTrack = track);
+          Navigator.of(context).pop();
+          HapticFeedback.lightImpact();
+        },
+      ),
+    );
+  }
+
+  // ─── Zoom ──────────────────────────────────────────────────────────────
 
   void _onScaleStart(ScaleStartDetails d) => _baseZoom = _currentZoom;
 
@@ -535,14 +568,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final label = '${newZoom.toStringAsFixed(1)}x';
     final shouldShow = newZoom > _minZoom;
     if (_showZoomIndicator != shouldShow || _zoomLabel != label) {
-      setState(() {
-        _showZoomIndicator = shouldShow;
-        _zoomLabel = label;
+      setState(() { _showZoomIndicator = shouldShow; _zoomLabel = label; });
+    }
+    _zoomHideTimer?.cancel();
+    if (shouldShow) {
+      _zoomHideTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _showZoomIndicator = false);
       });
     }
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────
+  // ─── Lifecycle ──────────────────────────────────────────────────────────
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -551,24 +587,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       final ctrl = _controller;
       _controller = null;
       if (mounted) setState(() => _isInitialized = false);
-      if (ctrl != null) {
-        ctrl.dispose();
-      }
+      ctrl?.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      // Reinitialize the camera that was active before the app went background.
       _reinitActiveCamera();
     }
   }
 
-  /// Reinitializes the camera that was last active (front or back), without
-  /// resetting [_isFrontCamera] to its default value.
   Future<void> _reinitActiveCamera() async {
     if (kIsWeb) return;
-    if (_cameras.isEmpty) {
-      // Camera list might have been lost; do a full reinit.
-      await _initCamera();
-      return;
-    }
+    if (_cameras.isEmpty) { await _initCamera(); return; }
     final camera = _isFrontCamera
         ? (_getFrontCamera() ?? _cameras.first)
         : (_getBackCamera() ?? _cameras.last);
@@ -578,19 +605,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _zoomHideTimer?.cancel();
     _ticker?.dispose();
-    // Stop face-tracking перед disposal'ом controller'а — иначе
-    // service попытается stopImageStream на уже-dispose'нутом controller'е.
     unawaited(FaceTrackingService.instance.stop());
     _controller?.dispose();
     _switchController.dispose();
     _flashPulseController.dispose();
+    _nextFabController.dispose();
+    _segmentFlashCtrl.dispose();
+    _galleryPreviewController.dispose();
+    _blinkCtrl.dispose();
     super.dispose();
   }
 
-  /// Дёргается каждый раз когда юзер выбирает/снимает маску. Стартует или
-  /// останавливает face-tracking. Без выбранной маски detection не нужен —
-  /// сэкономим батарею.
   void _syncFaceTracking() {
     if (_selectedMask != null && _isInitialized && _controller != null) {
       unawaited(FaceTrackingService.instance.start(_controller!));
@@ -613,10 +640,32 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         _filter = FilterState.identity;
       }
     });
+    _blinkCtrl.forward(from: 0.0);
     _syncFaceTracking();
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────
+  void _goNext({int? publishMode}) {
+    HapticFeedback.mediumImpact();
+    if (widget.onNext != null) {
+      widget.onNext!();
+    } else if (_galleryFile != null) {
+      final file = _galleryFile!;
+      final isVid = _isVideoPath(file.path);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MediaPrepareScreen(
+            file: file,
+            isVideo: isVid,
+            preselectedTrack: _selectedTrack,
+            initialPublishMode: publishMode,
+            preloadedBytes: isVid ? null : _galleryBytes,
+          ),
+        ),
+      );
+    }
+  }
+
+  // ─── Build ──────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -625,313 +674,197 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Main layout: bounded camera area + solid bottom panel ──
-          Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // ── Camera preview ──
-                    if (_errorMessage != null)
-                      _buildErrorState(_errorMessage!)
-                    else if (_isInitialized && _controller != null)
-                      GestureDetector(
-                        onScaleStart: _onScaleStart,
-                        onScaleUpdate: _onScaleUpdate,
-                        child: FilterOverlay(
-                          state: _filter,
-                          child: _buildCameraPreview(),
-                        ),
-                      )
-                    else
-                      const Center(
-                        child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
-                      ),
-
-                    // ── AR mask overlay ──
-                    MaskOverlay(descriptor: _selectedMask),
-
-                    // ── Overlay effect (dust, light leak…) ──
-                    if (_overlayEffect != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: EffectOverlay(effect: _overlayEffect!),
-                        ),
-                      ),
-
-                    // ── Frame effect (polaroid, film strip…) ──
-                    if (_frameEffect != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: FrameOverlay(effect: _frameEffect!),
-                        ),
-                      ),
-
-                    // ── DEBUG: face tracking overlay ──
-                    if (kMaskTuning && _selectedMask != null) const _FaceTrackDebugOverlay(),
-
-                    // ── Grid overlay ──
-                    if (_showGrid)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: CustomPaint(painter: CameraGridPainter()),
-                        ),
-                      ),
-
-                    // ── Gradient overlay ──
-                    _buildGradientOverlay(),
-
-                    // ── Top area: segment bar + close/music/flip row ──
-                    _buildTopArea(),
-
-                    // ── Right tools ──
-                    _buildRightTools(),
-
-                    // ── Zoom indicator ──
-                    _buildZoomIndicator(),
-
-                    // ── Camera switching overlay ──
-                    if (_isSwitching)
-                      AnimatedBuilder(
-                        animation: _switchController,
-                        builder: (_, __) => Container(
-                          color: Colors.black
-                              .withValues(alpha: 0.3 * (1 - _switchController.value)),
-                        ),
-                      ),
-
-                    // ── Countdown overlay ──
-                    if (_countdown > 0) _buildCountdownOverlay(),
-                  ],
+          // Camera preview full-screen
+          if (_errorMessage != null)
+            _buildErrorState(_errorMessage!)
+          else if (_isInitialized && _controller != null)
+            GestureDetector(
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              child: FadeTransition(
+                opacity: _blinkCtrl,
+                child: FilterOverlay(
+                  state: _filter,
+                  child: _buildCameraPreview(),
                 ),
               ),
+            )
+          else
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+            ),
 
-              // ── Solid bottom controls panel ──
-              _buildBottomPanel(),
-            ],
+          // Overlays
+          MaskOverlay(descriptor: _selectedMask),
+
+          if (_overlayEffect != null)
+            Positioned.fill(
+              child: IgnorePointer(child: EffectOverlay(effect: _overlayEffect!)),
+            ),
+
+          if (_frameEffect != null)
+            Positioned.fill(
+              child: IgnorePointer(child: FrameOverlay(effect: _frameEffect!)),
+            ),
+
+          if (kMaskTuning && _selectedMask != null)
+            const _FaceTrackDebugOverlay(),
+
+          if (_showGrid)
+            Positioned.fill(
+              child: IgnorePointer(child: CustomPaint(painter: CameraGridPainter())),
+            ),
+
+          // Gradient scrim
+          _buildGradientOverlay(),
+
+          // ── Extracted widgets ──────────────────────────────────────────
+
+          // Top: segment bar + controls row
+          CameraTopBar(
+            segments: _segments,
+            currentSegDur: _currentSegDur,
+            maxDuration: _effectiveMaxDuration,
+            isRecording: _isRecording,
+            selectedTrack: _selectedTrack,
+            segmentFlashAnim: _segmentFlashCtrl,
+            switchRotationAnim: _switchRotation,
+            canSwitchCamera: _cameras.length >= 2 && !_isSwitching,
+            onClose: widget.onClose ?? () => Navigator.maybePop(context),
+            onMusicTap: _openMusicPicker,
+            onSwitchCamera: _switchCamera,
+            onClearTrack: () => setState(() => _selectedTrack = null),
           ),
 
-          // ── Full-screen overlays (above the column layout) ──
+          // Right: tool buttons
+          CameraRightPanel(
+            isFrontCamera: _isFrontCamera,
+            flashMode: _flashMode,
+            timerSetting: _timerSetting,
+            showGrid: _showGrid,
+            videoSpeed: _videoSpeed,
+            beautyOn: _beautyOn,
+            isVideoMode: _cameraMode.isVideoMode,
+            flashPulseAnim: _flashPulseController,
+            onToggleFlash: _toggleFlash,
+            onToggleTimer: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _timerSetting = _timerSetting == 0 ? 3 : _timerSetting == 3 ? 10 : 0;
+              });
+            },
+            onToggleGrid: () {
+              HapticFeedback.selectionClick();
+              setState(() => _showGrid = !_showGrid);
+            },
+            onToggleSpeed: () {
+              HapticFeedback.selectionClick();
+              setState(() => _speedIdx = (_speedIdx + 1) % _speedValues.length);
+            },
+            onToggleBeauty: () {
+              HapticFeedback.selectionClick();
+              setState(() => _beautyOn = !_beautyOn);
+            },
+          ),
 
-          // DEBUG: mask adjustment sliders
+          // Bottom: floating mode tabs + record row
+          CameraBottomPanel(
+            cameraMode: _cameraMode,
+            isRecording: _isRecording,
+            totalPct: _totalPct,
+            totalWithCurrent: _totalWithCurrent,
+            showDecorationPicker: _showDecorationPicker,
+            selectedDecorationId: _selectedDecorationId,
+            savedDecorationIds: _savedDecorationIds,
+            galleryThumbnailBytes: _galleryThumbnailBytes,
+            hasSegments: _segments.isNotEmpty,
+            onModeChanged: (mode) {
+              if (_cameraMode == mode) return;
+              if (_isRecording) _stopRecording();
+              HapticFeedback.selectionClick();
+              setState(() {
+                _cameraMode = mode;
+                _segments = [];
+                _currentSegDur = 0.0;
+                _galleryFile = null;
+                _galleryBytes = null;
+                _showGalleryPreview = false;
+              });
+              _nextFabController.reverse();
+            },
+            onPickGallery: _pickFromGallery,
+            onTakePicture: _takePicture,
+            onStartRecording: _startRecording,
+            onStopRecording: _stopRecording,
+            onDecorationChanged: _applyDecoration,
+            onToggleSaveDecoration: (id) => setState(() {
+              if (_savedDecorationIds.contains(id)) {
+                _savedDecorationIds = _savedDecorationIds.difference({id});
+              } else {
+                _savedDecorationIds = {..._savedDecorationIds, id};
+              }
+            }),
+            onToggleDecorationPicker: () =>
+                setState(() => _showDecorationPicker = !_showDecorationPicker),
+            onUndo: _undoLastSegment,
+          ),
+
+          // Next FAB (appears when segments recorded)
+          _buildNextFAB(),
+
+          // Zoom pill
+          _buildZoomIndicator(),
+
+          // Camera switch fade overlay
+          if (_isSwitching)
+            AnimatedBuilder(
+              animation: _switchController,
+              builder: (_, __) => Container(
+                color: Colors.black.withValues(
+                    alpha: 0.3 * (1 - _switchController.value)),
+              ),
+            ),
+
+          // Countdown
+          if (_countdown > 0) _buildCountdownOverlay(),
+
+          // DEBUG: mask sliders
           if (kMaskTuning && _selectedMask != null)
             _MaskDebugSliders(maskId: _selectedMask!.id),
 
-          // Gallery preview
+          // Gallery preview full-screen
           if (_showGalleryPreview && _galleryFile != null)
-            _buildGalleryPreview(),
+            CameraGalleryPreview(
+              file: _galleryFile!,
+              bytes: _galleryBytes,
+              selectedTrack: _selectedTrack,
+              fadeAnim: _galleryFadeAnim,
+              slideAnim: _gallerySlideAnim,
+              onClose: _closeGalleryPreview,
+              onStory: () => _goNext(publishMode: 0),
+              onPost: () => _goNext(publishMode: 1),
+              onEdit: _galleryBytes != null && !_isVideoPath(_galleryFile!.path)
+                  ? () async {
+                      if (_galleryBytes == null) return;
+                      final result = await Navigator.of(context)
+                          .push<StoryEditorResult>(MaterialPageRoute(
+                        fullscreenDialog: true,
+                        builder: (_) => StoryEditorScreen(initialBytes: _galleryBytes!),
+                      ));
+                      if (result == null || !mounted) return;
+                      setState(() {
+                        _galleryBytes = result.bytes;
+                        _galleryThumbnailBytes = result.bytes;
+                      });
+                    }
+                  : null,
+            ),
         ],
       ),
     );
   }
 
-  // Раньше старый flow камеры публиковал story напрямую этой функцией.
-  // Заменено на MediaPrepareScreen (см. «Далее» кнопка ниже). Сохраняем
-  // как утилиту для quick-upload short-circuit'а, если когда-нибудь
-  // вернутся. Подавляем unused-warning.
-  // ignore: unused_element
-  Future<void> _uploadStory(XFile file) async {
-    if (_isUploading) return;
-    setState(() => _isUploading = true);
-    try {
-      final api = ref.read(apiClientProvider);
-
-      // Upload file (cross-platform: read bytes, send via fromBytes).
-      final bytes = _galleryBytes ?? await file.readAsBytes();
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: file.name),
-      });
-      final uploadResp = await api.post(
-        ApiEndpoints.mediaUpload,
-        data: formData,
-        options: Options(
-          sendTimeout: const Duration(seconds: 120),
-          receiveTimeout: const Duration(seconds: 60),
-        ),
-      );
-      final mediaUrl = uploadResp.data['data']['url'] as String;
-
-      // Create story
-      await api.post(
-        ApiEndpoints.stories,
-        data: {
-          'media_url': mediaUrl,
-          'media_type': 'image',
-        },
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('\u0421\u0442\u043E\u0440\u0438 \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u043D\u0430!'),
-            backgroundColor: Color(0xFF4CAF50),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isUploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u043F\u0443\u0431\u043B\u0438\u043A\u043E\u0432\u0430\u0442\u044C: $e'),
-            backgroundColor: const Color(0xFFE53935),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-
-  // ── Bottom controls panel ──────────────────────────────────────────────
-
-  Widget _buildBottomPanel() {
-    return GestureDetector(
-      // Свайп вверх → галерея
-      onVerticalDragEnd: (details) {
-        if ((details.primaryVelocity ?? 0) < -300) {
-          _pickFromGallery();
-        }
-      },
-      child: Container(
-        color: Colors.black,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Пикер украшений (анимированно появляется/скрывается)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOut,
-                child: _showDecorationPicker
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-                        child: DecorationPicker(
-                          allItems: DecorationCatalog.all,
-                          savedIds: _savedDecorationIds,
-                          selectedId: _selectedDecorationId,
-                          onChanged: _applyDecoration,
-                          onToggleSave: (id) => setState(() {
-                            if (_savedDecorationIds.contains(id)) {
-                              _savedDecorationIds = _savedDecorationIds.difference({id});
-                            } else {
-                              _savedDecorationIds = {..._savedDecorationIds, id};
-                            }
-                          }),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 14),
-              _buildRecordRow(),
-              if (_segments.isNotEmpty && !_isRecording) ...[
-                const SizedBox(height: 14),
-                _buildNextButton(),
-              ],
-              const SizedBox(height: 10),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Gallery preview ────────────────────────────────────────────────────
-
-  bool get _galleryIsVideo {
-    final path = _galleryFile?.path ?? '';
-    final ext = path.split('.').last.toLowerCase();
-    return ['mp4', 'mov', 'webm', 'avi', 'mkv'].contains(ext);
-  }
-
-  Widget _buildGalleryPreview() {
-    final isVideo = _galleryIsVideo;
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Preview: видео — VideoPlayer, фото — Image.memory
-            if (isVideo && _galleryFile != null)
-              _VideoGalleryPreview(file: _galleryFile!)
-            else
-              InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: _galleryBytes != null
-                    ? Image.memory(_galleryBytes!, fit: BoxFit.contain)
-                    : Container(color: Colors.black),
-              ),
-
-            // Close (X) button
-            Positioned(
-              top: 56,
-              left: 16,
-              child: GestureDetector(
-                onTap: () => setState(() {
-                  _showGalleryPreview = false;
-                  _galleryFile = null;
-                  _galleryBytes = null;
-                }),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(PhosphorIconsRegular.x, color: Colors.white, size: 22),
-                ),
-              ),
-            ),
-
-            // "Далее" button → open MediaPrepareScreen
-            Positioned(
-              bottom: 48,
-              right: 24,
-              child: GestureDetector(
-                onTap: () {
-                  final file = _galleryFile!;
-                  final ext = file.path.split('.').last.toLowerCase();
-                  final isVideo = ['mp4', 'mov', 'webm', 'avi'].contains(ext);
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => MediaPrepareScreen(
-                        file: file,
-                        isVideo: isVideo,
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: _kAccent,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Text(
-                    'Далее',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Error state ────────────────────────────────────────────────────────
+  // ─── Error state ────────────────────────────────────────────────────────
 
   Widget _buildErrorState(String message) {
     return Center(
@@ -950,10 +883,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             const SizedBox(height: 24),
             TextButton(
               onPressed: () {
-                setState(() {
-                  _errorMessage = null;
-                  _isInitialized = false;
-                });
+                setState(() { _errorMessage = null; _isInitialized = false; });
                 _initCamera();
               },
               style: TextButton.styleFrom(
@@ -971,25 +901,18 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  // ── Camera preview ─────────────────────────────────────────────────────
+  // ─── Camera preview ─────────────────────────────────────────────────────
 
   Widget _buildCameraPreview() {
     final controller = _controller!;
-
-    // `previewSize` is reported in landscape orientation (width > height).
-    // In portrait mode the sensor is rotated 90°, so we swap width/height
-    // when sizing the inner SizedBox.  FittedBox.cover then scales that box
-    // to fill the screen exactly — no over-zoom, no black bars.
     final previewSize = controller.value.previewSize;
     if (previewSize == null) {
       return const SizedBox.expand(child: ColoredBox(color: Colors.black));
     }
-
     return SizedBox.expand(
       child: FittedBox(
         fit: BoxFit.cover,
         child: SizedBox(
-          // Swap landscape width/height to get the portrait dimensions.
           width: previewSize.height,
           height: previewSize.width,
           child: CameraPreview(controller),
@@ -998,7 +921,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  // ── Gradient overlay ───────────────────────────────────────────────────
+  // ─── Gradient ───────────────────────────────────────────────────────────
 
   Widget _buildGradientOverlay() {
     return Positioned.fill(
@@ -1008,8 +931,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              stops: [0.0, 0.30, 0.60, 1.0],
-              // BUG-15: scrim-tokens вместо inline-hex.
+              stops: [0.0, 0.28, 0.55, 1.0],
               colors: [
                 SeeUColors.mediumScrim,
                 SeeUColors.transparentBlack,
@@ -1023,365 +945,166 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  // ── Top area ───────────────────────────────────────────────────────────
+  // ─── Next FAB ───────────────────────────────────────────────────────────
 
-  Widget _buildTopArea() {
+  Widget _buildNextFAB() {
     return Positioned(
-      top: 0,
-      left: 0,
+      bottom: 0,
       right: 0,
       child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildSegmentBar(),
-              const SizedBox(height: 12),
-              _buildTopRow(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Segment progress bar ───────────────────────────────────────────────
-
-  Widget _buildSegmentBar() {
-    return SizedBox(
-      height: 4,
-      child: CustomPaint(
-        painter: CameraSegmentBarPainter(
-          segments: _segments,
-          currentSegDur: _currentSegDur,
-          maxDuration: _kMaxDuration,
-          isRecording: _isRecording,
-          accentColor: _kAccent,
-        ),
-      ),
-    );
-  }
-
-  // ── Top row: close | music | flip ─────────────────────────────────────
-
-  Widget _buildTopRow() {
-    return Row(
-      children: [
-        // Close
-        CameraGlassButton(
-          onTap: widget.onClose ?? () => Navigator.maybePop(context),
-          child: const Icon(PhosphorIconsRegular.x, color: Colors.white, size: 20),
-        ),
-
-        const Spacer(),
-
-        // Audio strip
-        GestureDetector(
-          onTap: widget.onOpenMusic ?? () {},
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: _kGlassBg,
-              borderRadius: BorderRadius.circular(SeeURadii.pill),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(PhosphorIconsRegular.musicNote, color: Colors.white, size: 14),
-                const SizedBox(width: 6),
-                CameraWaveform(),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    _audioTitle,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        const Spacer(),
-
-        // Flip camera
-        AnimatedBuilder(
-          animation: _switchRotation,
-          builder: (_, child) => Transform.rotate(
-            angle: _switchRotation.value * math.pi,
-            child: child,
-          ),
-          child: CameraGlassButton(
-            onTap: _switchCamera,
-            child: const Icon(PhosphorIconsRegular.cameraRotate, color: Colors.white, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Right tools ────────────────────────────────────────────────────────
-
-  Widget _buildRightTools() {
-    final timerLabel = _timerSetting == 0
-        ? 'таймер'
-        : '$_timerSetting\u0441';
-
-    return Positioned(
-      right: 12,
-      top: 110,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Flash
-            AnimatedBuilder(
-              animation: _flashPulseController,
-              builder: (_, child) {
-                final scale = 1.0 +
-                    0.15 * Curves.easeOut.transform(_flashPulseController.value);
-                return Transform.scale(scale: scale, child: child);
-              },
-              child: CameraToolButton(
-                icon: Icon(
-                  _flashOn ? PhosphorIconsFill.lightning : PhosphorIconsRegular.lightning,
-                  color: _flashOn ? SeeUColors.textPrimary : Colors.white,
-                  size: 20,
-                ),
-                label: _flashOn ? 'вкл' : 'выкл',
-                active: _flashOn,
-                onTap: _isFrontCamera ? null : _toggleFlash,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Timer
-            CameraToolButton(
-              icon: Icon(PhosphorIconsRegular.timer,
-                  color: _timerSetting > 0 ? SeeUColors.textPrimary : Colors.white,
-                  size: 20),
-              label: timerLabel,
-              active: _timerSetting > 0,
-              onTap: () {
-                setState(() {
-                  _timerSetting = _timerSetting == 0
-                      ? 3
-                      : _timerSetting == 3
-                          ? 10
-                          : 0;
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            // Grid
-            CameraToolButton(
-              icon: const Icon(PhosphorIconsRegular.gridFour, color: Colors.white, size: 20),
-              label: 'сетка',
-              active: _showGrid,
-              onTap: () => setState(() => _showGrid = !_showGrid),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Record button row ──────────────────────────────────────────────────
-
-  Widget _buildRecordRow() {
-    final hasSegments = _segments.isNotEmpty;
-    final showUndo = hasSegments || _isRecording;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Галерея (слева)
-        GestureDetector(
-          onTap: _pickFromGallery,
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(SeeURadii.small),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.20),
-                width: 1,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(PhosphorIconsRegular.image, color: Colors.white, size: 22),
-          ),
-        ),
-
-        const SizedBox(width: 32),
-
-        // Кнопка съёмки (центр): тап → фото, удержание → видео
-        CameraRecordButton(
-          isRecording: _isRecording,
-          totalPct: _totalPct,
-          isPhotoMode: !_isRecording,
-          onTap: _takePicture,
-          onHoldStart: () {
-            _startRecording();
-          },
-          onHoldEnd: _stopRecording,
-        ),
-
-        const SizedBox(width: 32),
-
-        // Справа: отмена сегмента (при записи) или украшения
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: showUndo
-              ? GestureDetector(
-                  key: const ValueKey('undo'),
-                  onTap: _undoLastSegment,
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.20),
-                        width: 1,
+        top: false,
+        child: AnimatedBuilder(
+          animation: _nextFabController,
+          builder: (_, __) {
+            final t = Curves.easeOutBack.transform(_nextFabController.value);
+            return Opacity(
+              opacity: _nextFabController.value.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, 24 * (1 - t)),
+                child: Transform.scale(
+                  scale: 0.7 + 0.3 * t,
+                  child: GestureDetector(
+                    onTap: _goNext,
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 20, bottom: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [SeeUColors.accentSecondary, SeeUColors.accent],
+                        ),
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _kAccent.withValues(alpha: 0.50),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Далее',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(width: 6),
+                          Icon(PhosphorIconsRegular.arrowRight,
+                              color: Colors.white, size: 18),
+                        ],
                       ),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(PhosphorIconsRegular.arrowCounterClockwise,
-                        color: Colors.white, size: 22),
-                  ),
-                )
-              : GestureDetector(
-                  key: const ValueKey('deco'),
-                  onTap: () => setState(
-                      () => _showDecorationPicker = !_showDecorationPicker),
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: _showDecorationPicker || _selectedDecorationId != null
-                          ? SeeUColors.accent.withValues(alpha: 0.18)
-                          : Colors.white.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _showDecorationPicker || _selectedDecorationId != null
-                            ? SeeUColors.accent
-                            : Colors.white.withValues(alpha: 0.20),
-                        width: 1.5,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      PhosphorIconsFill.sparkle,
-                      color: _showDecorationPicker || _selectedDecorationId != null
-                          ? SeeUColors.accent
-                          : Colors.white,
-                      size: 22,
-                    ),
                   ),
                 ),
-        ),
-      ],
-    );
-  }
-
-  // ── "Далее" button ─────────────────────────────────────────────────────
-
-  Widget _buildNextButton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          if (widget.onNext != null) {
-            widget.onNext!();
-          } else if (_galleryFile != null) {
-            final file = _galleryFile!;
-            final ext = file.path.split('.').last.toLowerCase();
-            final isVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv'].contains(ext);
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => MediaPrepareScreen(file: file, isVideo: isVideo),
               ),
             );
-          }
-        },
-        child: Container(
-          height: 46,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [SeeUColors.accentSecondary, SeeUColors.accent],
-            ),
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
-            boxShadow: [
-              BoxShadow(
-                color: _kAccent.withValues(alpha: 0.40),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Далее',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              SizedBox(width: 6),
-              Icon(PhosphorIconsRegular.caretRight, color: Colors.white, size: 18),
-            ],
-          ),
+          },
         ),
       ),
     );
   }
 
-  // ── Zoom indicator ─────────────────────────────────────────────────────
+  // ─── Zoom indicator ─────────────────────────────────────────────────────
 
   Widget _buildZoomIndicator() {
+    final range = _maxZoom - _minZoom;
+    final fraction =
+        range > 0 ? ((_currentZoom - _minZoom) / range).clamp(0.0, 1.0) : 0.0;
+    const trackW = 120.0;
+    const trackH = 3.0;
+    const thumbD = 14.0;
+    final thumbX = fraction * trackW - thumbD / 2;
+
     return Positioned(
-      bottom: 20,
+      bottom: 195,
       left: 0,
       right: 0,
       child: Center(
         child: AnimatedOpacity(
           opacity: _showZoomIndicator ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 200),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              _zoomLabel,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+          child: SizedBox(
+            width: trackW,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.translate(
+                  offset: Offset(thumbX - (trackW / 2 - thumbD / 2), 0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _zoomLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: trackW,
+                  height: thumbD,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        top: (thumbD - trackH) / 2, left: 0, right: 0,
+                        child: Container(
+                          height: trackH,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.28),
+                            borderRadius: BorderRadius.circular(trackH / 2),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: (thumbD - trackH) / 2,
+                        left: 0,
+                        width: fraction * trackW,
+                        child: Container(
+                          height: trackH,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(trackH / 2),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        left: thumbX,
+                        child: Container(
+                          width: thumbD,
+                          height: thumbD,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1389,77 +1112,67 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  // ── Countdown overlay ──────────────────────────────────────────────────
+  // ─── Countdown overlay ──────────────────────────────────────────────────
 
   Widget _buildCountdownOverlay() {
     return Positioned.fill(
       child: IgnorePointer(
         child: ColoredBox(
           color: Colors.black.withValues(alpha: 0.3),
-          child: Center(
-            child: CameraCountdownNumber(value: _countdown),
-          ),
+          child: Center(child: CameraCountdownNumber(value: _countdown)),
         ),
       ),
     );
   }
-}
 
-// ─── Video preview for gallery overlay ────────────────────────────────────
-
-class _VideoGalleryPreview extends StatefulWidget {
-  final XFile file;
-  const _VideoGalleryPreview({required this.file});
-
-  @override
-  State<_VideoGalleryPreview> createState() => _VideoGalleryPreviewState();
-}
-
-class _VideoGalleryPreviewState extends State<_VideoGalleryPreview> {
-  VideoPlayerController? _ctrl;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = kIsWeb
-        ? VideoPlayerController.networkUrl(Uri.parse(widget.file.path))
-        : VideoPlayerController.file(File(widget.file.path));
-    _ctrl!
-      ..setLooping(true)
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _ready = true);
-          _ctrl!.play();
-        }
-      }).catchError((e) {
-        debugPrint('_VideoGalleryPreview init error: $e');
+  // ─── Legacy upload (kept, unused) ───────────────────────────────────────
+  // ignore: unused_element
+  Future<void> _uploadStory(XFile file) async {
+    if (_isUploading) return;
+    setState(() => _isUploading = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = _galleryBytes ?? await file.readAsBytes();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: file.name),
       });
-  }
-
-  @override
-  void dispose() {
-    _ctrl?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_ready || _ctrl == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+      final uploadResp = await api.post(
+        ApiEndpoints.mediaUpload,
+        data: formData,
+        options: Options(
+          sendTimeout: const Duration(seconds: 120),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
       );
+      final mediaUrl = uploadResp.data['data']['url'] as String;
+      await api.post(ApiEndpoints.stories, data: {
+        'media_url': mediaUrl,
+        'media_type': 'image',
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Стори опубликована!'),
+            backgroundColor: Color(0xFF4CAF50),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Не удалось опубликовать: $e'),
+          backgroundColor: const Color(0xFFE53935),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
-    return Center(
-      child: AspectRatio(
-        aspectRatio: _ctrl!.value.aspectRatio,
-        child: VideoPlayer(_ctrl!),
-      ),
-    );
   }
 }
 
-// ─── DEBUG: on-screen face tracking values (remove after debugging) ───────
+// ─── DEBUG: face tracking overlay ─────────────────────────────────────────
 
 class _FaceTrackDebugOverlay extends StatefulWidget {
   const _FaceTrackDebugOverlay();
@@ -1474,16 +1187,10 @@ class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
   });
 
   @override
-  void initState() {
-    super.initState();
-    _sub;
-  }
+  void initState() { super.initState(); _sub; }
 
   @override
-  void dispose() {
-    _sub.cancel();
-    super.dispose();
-  }
+  void dispose() { _sub.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -1493,7 +1200,6 @@ class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
       child: IgnorePointer(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Use the full screen size as canvas (same as Positioned.fill in MaskOverlay)
             final screen = MediaQuery.of(context).size;
             final face = maskCurrentTrackedFace;
             String text;
@@ -1537,7 +1243,7 @@ class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
   }
 }
 
-// ─── DEBUG: per-mask adjustment sliders (remove after tuning) ─────────────
+// ─── DEBUG: mask adjustment sliders ───────────────────────────────────────
 
 class _MaskDebugSliders extends StatefulWidget {
   final String maskId;
@@ -1550,88 +1256,71 @@ class _MaskDebugSliders extends StatefulWidget {
 class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
   MaskAdjust get _adj => MaskDebugConfig.get(widget.maskId);
 
-  void _update(void Function(MaskAdjust a) fn) {
-    setState(() {
-      fn(_adj);
-      MaskDebugConfig.notify();
-    });
-  }
-
-  @override
-  void didUpdateWidget(_MaskDebugSliders old) {
-    super.didUpdateWidget(old);
-    if (old.maskId != widget.maskId) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
-    final a = _adj;
-    final pad = MediaQuery.of(context).padding.top;
+    final adj = _adj;
     return Positioned(
-      left: 0,
-      right: 0,
-      top: pad + 50,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.75),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${widget.maskId}: dx=${a.dx.toStringAsFixed(2)} '
-              'dy=${a.dy.toStringAsFixed(2)} s=${a.scale.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: Colors.greenAccent,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'monospace',
-              ),
-            ),
-            const SizedBox(height: 4),
-            _slider('dx', a.dx, -2.0, 2.0, (v) => _update((a) => a.dx = v)),
-            _slider('dy', a.dy, -3.0, 1.0, (v) => _update((a) => a.dy = v)),
-            _slider('s ', a.scale, 0.3, 3.0, (v) => _update((a) => a.scale = v)),
-          ],
+      bottom: 220,
+      left: 12,
+      right: 12,
+      child: IgnorePointer(
+        ignoring: false,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.70),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildSlider('scale', adj.scale, 0.5, 2.0, (v) {
+                adj.scale = v;
+                MaskDebugConfig.notify();
+                setState(() {});
+              }),
+              _buildSlider('dx', adj.dx, -0.3, 0.3, (v) {
+                adj.dx = v;
+                MaskDebugConfig.notify();
+                setState(() {});
+              }),
+              _buildSlider('dy', adj.dy, -0.3, 0.3, (v) {
+                adj.dy = v;
+                MaskDebugConfig.notify();
+                setState(() {});
+              }),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _slider(String label, double value, double min, double max,
+  Widget _buildSlider(String label, double value, double min, double max,
       ValueChanged<double> onChanged) {
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 24,
-            child: Text(label,
-                style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+    return Row(
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 10)),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+            activeColor: SeeUColors.accent,
+            inactiveColor: Colors.white24,
           ),
-          Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-                activeTrackColor: SeeUColors.accent,
-                inactiveTrackColor: Colors.white30,
-                thumbColor: Colors.white,
-              ),
-              child: Slider(
-                value: value.clamp(min, max),
-                min: min,
-                max: max,
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(value.toStringAsFixed(2),
+              style: const TextStyle(color: Colors.white54, fontSize: 9)),
+        ),
+      ],
     );
   }
 }

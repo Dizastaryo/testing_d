@@ -13,18 +13,8 @@ import '../../core/models/audio_track.dart';
 import '../../core/models/playlist.dart';
 import '../../core/providers/playlist_provider.dart';
 import '../../core/providers/post_compose_provider.dart';
+import '../../core/providers/user_provider.dart' show audioTracksProvider;
 import 'track_upload_sheet.dart';
-
-final _tracksProvider =
-    FutureProvider.autoDispose<List<AudioTrack>>((ref) async {
-  final api = ref.read(apiClientProvider);
-  final r = await api.get(ApiEndpoints.audioTracks);
-  final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
-  final list = (data is List ? data : (data as Map)['items'] as List? ?? []);
-  return list
-      .map((e) => AudioTrack.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
 
 /// Tracks uploaded by the current user (any status — pending/approved/rejected).
 final _myTracksProvider =
@@ -107,7 +97,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final theme = Theme.of(context);
-    final async = ref.watch(_tracksProvider);
+    final async = ref.watch(audioTracksProvider);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -116,10 +106,10 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
           Expanded(
             child: SeeURadarRefresh(
               onRefresh: () async {
-                ref.invalidate(_tracksProvider);
+                ref.invalidate(audioTracksProvider);
                 // Wait for next provider load to settle so the spinner
                 // doesn't yank closed before data lands.
-                await ref.read(_tracksProvider.future);
+                await ref.read(audioTracksProvider.future);
               },
               child: CustomScrollView(
               slivers: [
@@ -226,7 +216,7 @@ class _MusicScreenState extends ConsumerState<MusicScreen> {
                 onPressed: () async {
                   final ok = await showTrackUploadSheet(context, ref);
                   if (ok) {
-                    ref.invalidate(_tracksProvider);
+                    ref.invalidate(audioTracksProvider);
                     ref.invalidate(_myTracksProvider);
                   }
                 },

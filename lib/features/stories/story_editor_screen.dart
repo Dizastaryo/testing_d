@@ -45,91 +45,54 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
   int _nextId = 1;
   bool _exporting = false;
 
+  // ── Inline text editor state ──
+  bool _isEditingText = false;
+  final _inlineTextCtrl = TextEditingController();
+  Color _inlineColor = Colors.white;
+  final _inlineTextFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _inlineTextCtrl.dispose();
+    _inlineTextFocus.dispose();
+    super.dispose();
+  }
+
   static const _stickers48 = [
     '😀', '😂', '😍', '😎', '😭', '🥳', '🤔', '🤩',
     '❤️', '🔥', '⭐', '💯', '✨', '🎉', '🚀', '👀',
     '👍', '👏', '🙌', '🙏', '💪', '🤝', '👌', '🫶',
   ];
 
-  Future<void> _addText() async {
-    final result = await _showTextInputDialog();
-    if (result == null || result.text.trim().isEmpty) return;
-    setState(() {
-      _texts.add(_TextOverlay(
-        id: _nextId++,
-        text: result.text,
-        color: result.color,
-        // Изначально в центре canvas'а — потом юзер таскает.
-        position: const Offset(0.4, 0.45),
-        scale: 1.0,
-      ));
+  void _addText() {
+    _inlineTextCtrl.clear();
+    _inlineColor = Colors.white;
+    setState(() => _isEditingText = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _inlineTextFocus.requestFocus();
     });
   }
 
-  Future<_TextInputResult?> _showTextInputDialog() async {
-    final controller = TextEditingController();
-    Color color = Colors.white;
-    final res = await showDialog<_TextInputResult>(
-      context: context,
-      builder: (dlgCtx) => StatefulBuilder(builder: (sbCtx, sbSet) {
-        return AlertDialog(
-          title: const Text('Добавить текст'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                maxLength: 200,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Напишите что-нибудь',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  Colors.white,
-                  Colors.black,
-                  SeeUColors.accent,
-                  Colors.yellow,
-                  Colors.cyan,
-                  Colors.pinkAccent,
-                ].map((c) => GestureDetector(
-                  onTap: () => sbSet(() => color = c),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: color == c ? Colors.black : Colors.grey,
-                        width: color == c ? 3 : 1,
-                      ),
-                    ),
-                  ),
-                )).toList(),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(dlgCtx).pop(),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: SeeUColors.accent),
-              onPressed: () => Navigator.of(dlgCtx).pop(
-                  _TextInputResult(text: controller.text, color: color)),
-              child: const Text('Добавить'),
-            ),
-          ],
-        );
-      }),
-    );
-    return res;
+  void _confirmInlineText() {
+    final text = _inlineTextCtrl.text.trim();
+    if (text.isNotEmpty) {
+      setState(() {
+        _texts.add(_TextOverlay(
+          id: _nextId++,
+          text: text,
+          color: _inlineColor,
+          position: const Offset(0.35, 0.42),
+          scale: 1.0,
+        ));
+      });
+    }
+    _inlineTextFocus.unfocus();
+    setState(() => _isEditingText = false);
+  }
+
+  void _cancelInlineText() {
+    _inlineTextFocus.unfocus();
+    setState(() => _isEditingText = false);
   }
 
   Future<void> _addSticker() async {
@@ -388,51 +351,67 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
     }
   }
 
+  static const _colorSwatches = [
+    Colors.white,
+    Colors.yellow,
+    Colors.orange,
+    Colors.red,
+    Colors.pink,
+    Colors.purple,
+    Colors.blue,
+    Colors.cyan,
+    Colors.green,
+    Colors.black,
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top bar — Cancel + «Готово»
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: _exporting ? null : () => Navigator.of(context).pop(),
-                    icon: const Icon(PhosphorIconsRegular.x, color: Colors.white),
-                  ),
-                  const Spacer(),
-                  if (_exporting)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: SeeUColors.accent,
-                          strokeWidth: 2,
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                // Top bar — Cancel + «Готово»
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _exporting ? null : () => Navigator.of(context).pop(),
+                        icon: const Icon(PhosphorIconsRegular.x, color: Colors.white),
+                      ),
+                      const Spacer(),
+                      if (_exporting)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: SeeUColors.accent,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        )
+                      else
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: SeeUColors.accent,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
+                          ),
+                          onPressed: _exportAndPop,
+                          icon: const Icon(PhosphorIconsBold.check,
+                              size: 18, color: Colors.white),
+                          label: const Text('Готово',
+                              style: TextStyle(color: Colors.white)),
                         ),
-                      ),
-                    )
-                  else
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: SeeUColors.accent,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
-                      ),
-                      onPressed: _exportAndPop,
-                      icon:
-                          const Icon(PhosphorIconsBold.check, size: 18, color: Colors.white),
-                      label: const Text('Готово',
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                ],
-              ),
-            ),
+                    ],
+                  ),
+                ),
             // Canvas: фото + overlay'и. Story-aspect 9:16, но canvas сам
             // адаптируется к bytes; центрируем BoxFit.contain.
             Expanded(
@@ -578,8 +557,22 @@ class _StoryEditorScreenState extends State<StoryEditorScreen> {
                 ],
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          ),
+
+          // ── Inline text editor overlay ─────────────────────────────────
+          if (_isEditingText)
+            _InlineTextEditor(
+              controller: _inlineTextCtrl,
+              focusNode: _inlineTextFocus,
+              selectedColor: _inlineColor,
+              colorSwatches: _colorSwatches,
+              onColorChanged: (c) => setState(() => _inlineColor = c),
+              onConfirm: _confirmInlineText,
+              onCancel: _cancelInlineText,
+            ),
+        ],
       ),
     );
   }
@@ -706,12 +699,6 @@ class _QuestionOverlay extends _Overlay {
     required super.position,
     required super.scale,
   });
-}
-
-class _TextInputResult {
-  final String text;
-  final Color color;
-  _TextInputResult({required this.text, required this.color});
 }
 
 class _PollInputResult {
@@ -883,6 +870,163 @@ class _PollWidget extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Inline text editor overlay ────────────────────────────────────────────────
+
+/// Full-screen inline text editor: dark scrim, centered TextField (large white
+/// text), color picker row at top, «Готово» / cancel buttons.
+class _InlineTextEditor extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final Color selectedColor;
+  final List<Color> colorSwatches;
+  final ValueChanged<Color> onColorChanged;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _InlineTextEditor({
+    required this.controller,
+    required this.focusNode,
+    required this.selectedColor,
+    required this.colorSwatches,
+    required this.onColorChanged,
+    required this.onConfirm,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onCancel,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.72),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Top controls: cancel + confirm
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: onCancel,
+                      icon: const Icon(PhosphorIconsRegular.x,
+                          color: Colors.white),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: SeeUColors.accent,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10),
+                      ),
+                      onPressed: onConfirm,
+                      child: const Text('Готово',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Color swatches
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: colorSwatches.map((c) {
+                      final isSelected =
+                          c.toARGB32() == selectedColor.toARGB32();
+                      return GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          onColorChanged(c);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: isSelected ? 34 : 28,
+                          height: isSelected ? 34 : 28,
+                          margin: const EdgeInsets.symmetric(horizontal: 5),
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected
+                                  ? SeeUColors.accent
+                                  : Colors.white.withValues(alpha: 0.4),
+                              width: isSelected ? 2.5 : 1.5,
+                            ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: SeeUColors.accent
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 6,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+              // Centered text input — takes remaining space above keyboard
+              Expanded(
+                child: GestureDetector(
+                  // Absorb tap so outer GestureDetector's onCancel isn't triggered
+                  onTap: () {},
+                  behavior: HitTestBehavior.opaque,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        autofocus: true,
+                        maxLines: null,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: selectedColor,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w700,
+                          shadows: const [
+                            Shadow(
+                              offset: Offset(0, 1),
+                              blurRadius: 6,
+                              color: Colors.black54,
+                            ),
+                          ],
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Введите текст...',
+                          hintStyle: TextStyle(
+                            color: Colors.white38,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        onSubmitted: (_) => onConfirm(),
+                        textInputAction: TextInputAction.done,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

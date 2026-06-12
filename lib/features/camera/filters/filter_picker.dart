@@ -5,14 +5,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/design/design.dart';
 import 'filter_presets.dart';
 import 'filter_state.dart';
+import 'filter_thumbnail.dart';
 import 'frame_effect.dart';
 import 'overlay_effect.dart';
 
 /// Picker пресетов + кнопка «Настроить» для перехода в slider-sheet.
 /// Вторая строка — overlay-эффекты (пыль, засветки).
+/// [cameraSnapshotBytes] — последний кадр камеры для live thumbnail preview.
 class FilterPicker extends StatelessWidget {
   final String? selectedPresetId;
   final FilterState state;
+  // ignore: unused_element
+  final Uint8List? cameraSnapshotBytes;
   final ValueChanged<FilterPreset?> onPresetSelected;
   final VoidCallback onOpenSliders;
 
@@ -32,6 +36,7 @@ class FilterPicker extends StatelessWidget {
     required this.onOverlaySelected,
     required this.selectedFrame,
     required this.onFrameSelected,
+    this.cameraSnapshotBytes,
   });
 
   @override
@@ -260,27 +265,29 @@ class FilterPicker extends StatelessWidget {
 
         const SizedBox(height: 4),
 
-        // ── Строка 2: цветовые пресеты ─────────────────────────────────
+        // ── Строка 3: цветовые пресеты с live preview ──────────────────
         SizedBox(
-          height: 70,
+          height: 82,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: FilterPresets.all.length + 2,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
+              // "Без" — identity filter thumbnail
               if (i == 0) {
-                return _FilterBubble(
+                return FilterThumbnail(
+                  filter: FilterState.identity,
                   isSelected: state.isIdentity,
                   label: 'Без',
+                  imageBytes: cameraSnapshotBytes,
                   onTap: () {
                     HapticFeedback.selectionClick();
                     onPresetSelected(null);
                   },
-                  child: Icon(PhosphorIcons.x(),
-                      color: Colors.white.withValues(alpha: 0.85), size: 22),
                 );
               }
+              // "Точнее" — sliders
               if (i == FilterPresets.all.length + 1) {
                 return _FilterBubble(
                   isSelected: isCustomNoPreset,
@@ -293,16 +300,18 @@ class FilterPicker extends StatelessWidget {
                       color: Colors.white, size: 22),
                 );
               }
+              // Preset with thumbnail
               final p = FilterPresets.all[i - 1];
               final isSelected = selectedPresetId == p.id;
-              return _FilterBubble(
+              return FilterThumbnail(
+                filter: p.state,
                 isSelected: isSelected,
                 label: p.label,
+                imageBytes: cameraSnapshotBytes,
                 onTap: () {
                   HapticFeedback.selectionClick();
                   onPresetSelected(p);
                 },
-                child: Icon(p.previewIcon, color: Colors.white, size: 22),
               );
             },
           ),

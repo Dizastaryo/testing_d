@@ -25,6 +25,8 @@ class CameraSegmentBarPainter extends CustomPainter {
   final double maxDuration;
   final bool isRecording;
   final Color accentColor;
+  /// 0→1: the last completed segment flashes from accent color to white.
+  final double lastSegmentFlash;
 
   const CameraSegmentBarPainter({
     required this.segments,
@@ -32,6 +34,7 @@ class CameraSegmentBarPainter extends CustomPainter {
     required this.maxDuration,
     required this.isRecording,
     required this.accentColor,
+    this.lastSegmentFlash = 1.0,
   });
 
   @override
@@ -47,17 +50,21 @@ class CameraSegmentBarPainter extends CustomPainter {
 
     double offsetX = 0;
     const gap = 2.0;
-    final whitePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
 
     for (int i = 0; i < segments.length; i++) {
       final w = (segments[i] / maxDuration) * size.width;
+      // Last segment: lerp from accentColor → white during flash animation
+      final Color segColor = (i == segments.length - 1)
+          ? Color.lerp(accentColor, Colors.white, lastSegmentFlash)!
+          : Colors.white;
+      final segPaint = Paint()
+        ..color = segColor
+        ..style = PaintingStyle.fill;
       final r = RRect.fromRectAndRadius(
         Rect.fromLTWH(offsetX, 0, w - gap, size.height),
         const Radius.circular(2),
       );
-      canvas.drawRRect(r, whitePaint);
+      canvas.drawRRect(r, segPaint);
       offsetX += w;
     }
 
@@ -83,7 +90,8 @@ class CameraSegmentBarPainter extends CustomPainter {
   bool shouldRepaint(CameraSegmentBarPainter old) =>
       old.segments != segments ||
       old.currentSegDur != currentSegDur ||
-      old.isRecording != isRecording;
+      old.isRecording != isRecording ||
+      old.lastSegmentFlash != lastSegmentFlash;
 }
 
 /// Animated 3-bar waveform shown during audio recording.
