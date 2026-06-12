@@ -10,6 +10,7 @@ import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/utils/format.dart';
+import 'reading_list_screen.dart';
 import 'upload_sheet.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -169,6 +170,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
           const Spacer(),
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ReadingListScreen(),
+              ));
+            },
+            icon: Icon(PhosphorIconsRegular.bookOpen, color: theme.colorScheme.onSurface),
+            tooltip: 'Моя полка',
+          ),
           IconButton(
             onPressed: () {
               setState(() {
