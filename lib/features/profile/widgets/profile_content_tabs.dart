@@ -6,9 +6,11 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/models/post.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../core/providers/video_provider.dart';
 import '../../../core/utils/format.dart';
+import '../../library/collection_add_sheet.dart';
 import '../../post/profile_posts_feed.dart';
 
 class ProfileStatItem extends StatelessWidget {
@@ -156,7 +158,10 @@ class ProfileFilesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (userId.isEmpty) return const SizedBox.shrink();
+    final myId = ref.watch(authProvider).user?.id ?? '';
+    final isMe = myId == userId;
     final asyncFiles = ref.watch(userFilesProvider(userId));
+
     return asyncFiles.when(
       loading: () => const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
       error: (_, __) => const SeeUEmptyState(
@@ -166,20 +171,110 @@ class ProfileFilesTab extends ConsumerWidget {
           return const SeeUEmptyState(
               icon: PhosphorIconsRegular.folderSimple, title: 'Пока нет файлов');
         }
-        return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 100),
-          itemCount: files.length,
-          itemBuilder: (context, index) {
-            final f = files[index];
-            return ListTile(
-              leading: Icon(_iconForMime(f.mimeType), color: SeeUColors.accent),
-              title: Text(f.filename, style: SeeUTypography.body,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(_formatSize(f.fileSize), style: SeeUTypography.caption),
-              trailing: Icon(PhosphorIcons.arrowRight(), size: 18, color: SeeUColors.textSecondary),
-              onTap: () => context.push('/files/${f.id}'),
-            );
-          },
+
+        final totalDownloads = files.fold(0, (s, f) => s + f.downloadsCount);
+        final totalLikes = files.fold(0, (s, f) => s + f.likesCount);
+
+        return Column(
+          children: [
+            if (isMe)
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: SeeUColors.accent.withValues(alpha: 0.18)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _FileStat(label: 'Файлов', value: '${files.length}'),
+                    _FileStat(
+                        label: 'Скачиваний',
+                        value: formatCount(totalDownloads)),
+                    _FileStat(
+                        label: 'Лайков', value: formatCount(totalLikes)),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 100),
+                itemCount: files.length,
+                itemBuilder: (ctx, index) {
+                  final f = files[index];
+                  return ListTile(
+                    leading: Icon(_iconForMime(f.mimeType),
+                        color: SeeUColors.accent),
+                    title: Text(f.filename,
+                        style: SeeUTypography.body,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    subtitle: Text(_formatSize(f.fileSize),
+                        style: SeeUTypography.caption),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isMe)
+                          IconButton(
+                            icon: Icon(PhosphorIconsRegular.bookBookmark,
+                                size: 18, color: SeeUColors.accent),
+                            onPressed: () => showModalBottomSheet(
+                              context: ctx,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) =>
+                                  CollectionAddSheet(fileId: f.id),
+                            ),
+                          ),
+                        if (isMe)
+                          IconButton(
+                            icon: const Icon(PhosphorIconsRegular.trash,
+                                size: 18, color: Colors.red),
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: ctx,
+                                builder: (d) => AlertDialog(
+                                  title: const Text('Удалить файл?'),
+                                  content:
+                                      Text('«${f.filename}» будет удалён.'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(d).pop(false),
+                                        child: const Text('Отмена')),
+                                    FilledButton(
+                                      style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.red),
+                                      onPressed: () =>
+                                          Navigator.of(d).pop(true),
+                                      child: const Text('Удалить'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                await ref
+                                    .read(libraryActionsProvider)
+                                    .deleteFile(f.id);
+                                ref.invalidate(userFilesProvider(userId));
+                              }
+                            },
+                          )
+                        else
+                          Icon(PhosphorIcons.arrowRight(),
+                              size: 18,
+                              color: SeeUColors.textSecondary),
+                      ],
+                    ),
+                    onTap: () => context.push('/files/${f.id}'),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
@@ -199,6 +294,28 @@ class ProfileFilesTab extends ConsumerWidget {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
+}
+
+class _FileStat extends StatelessWidget {
+  final String label;
+  final String value;
+  const _FileStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: const TextStyle(
+                  fontFamily: 'JetBrains Mono',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: SeeUColors.accent)),
+          const SizedBox(height: 2),
+          Text(label,
+              style: const TextStyle(fontSize: 11, color: SeeUColors.textSecondary)),
+        ],
+      );
 }
 
 class ProfilePrivateContent extends StatelessWidget {

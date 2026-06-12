@@ -10,6 +10,8 @@ import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/utils/format.dart';
+import 'collections_screen.dart';
+import 'my_uploads_screen.dart';
 import 'reading_list_screen.dart';
 import 'upload_sheet.dart';
 
@@ -171,13 +173,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ),
           const Spacer(),
           IconButton(
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ReadingListScreen(),
-              ));
-            },
-            icon: Icon(PhosphorIconsRegular.bookOpen, color: theme.colorScheme.onSurface),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const CollectionsScreen(),
+            )),
+            icon: Icon(PhosphorIconsRegular.bookBookmark,
+                color: theme.colorScheme.onSurface),
+            tooltip: 'Коллекции',
+          ),
+          IconButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ReadingListScreen(),
+            )),
+            icon: Icon(PhosphorIconsRegular.bookOpen,
+                color: theme.colorScheme.onSurface),
             tooltip: 'Моя полка',
+          ),
+          IconButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const MyUploadsScreen(),
+            )),
+            icon: Icon(PhosphorIconsRegular.uploadSimple,
+                color: theme.colorScheme.onSurface),
+            tooltip: 'Мои загрузки',
           ),
           IconButton(
             onPressed: () {

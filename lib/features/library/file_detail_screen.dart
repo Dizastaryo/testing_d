@@ -12,6 +12,7 @@ import '../../core/utils/format.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
+import 'collection_add_sheet.dart';
 import 'readers/open_reader.dart';
 
 final _fileDetailProvider =
@@ -323,6 +324,26 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                     color: file.isLiked ? SeeUColors.like : c.ink2,
                     size: 22,
                   ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => CollectionAddSheet(fileId: file.id),
+                ),
+                child: Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                    border: Border.all(color: c.line),
+                  ),
+                  child: Icon(PhosphorIconsRegular.bookBookmark,
+                      color: c.ink2, size: 20),
                 ),
               ),
             ],
