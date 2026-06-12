@@ -12,7 +12,6 @@ import 'widgets/profile_content_tabs.dart';
 import 'widgets/profile_highlights.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/blocks_provider.dart';
-import '../../core/providers/nearby_devices_provider.dart';
 import '../../core/providers/story_provider.dart';
 import '../../widgets/report_sheet.dart';
 import '../../widgets/verified_badge.dart';
@@ -35,12 +34,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   // VIDEO-4: switch default tab to «Videos» (idx=1) once when we see this
   // is a channel-user. Toggle ensures we only do it on first load.
   bool _appliedChannelDefaultTab = false;
-  // PROFILE-1: реальный counter из `nearbyDevicesCountProvider`. State
-  // обновляется пока scanner_screen активно сканирует — если scanner не открыт
-  // последние секунды, count останется 0 (BLE-stream живёт только пока
-  // FlutterBluePlus.startScan вызван).
-  int get _nearbyCount => ref.watch(nearbyDevicesCountProvider);
-
   @override
   void initState() {
     super.initState();
@@ -306,46 +299,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           onTap: () => _showCreateSheet(context),
                         ),
                         const SizedBox(width: 8),
-                        // BLE button with "Рядом · N" badge when nearby > 0
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            ProfileHeaderIconButton(
-                              icon: PhosphorIcons.bluetoothConnected(),
-                              tooltip: 'Устройства рядом',
-                              onTap: () => context.push('/settings/chip'),
-                            ),
-                            if (_nearbyCount > 0)
-                              Positioned(
-                                top: -4,
-                                right: -6,
-                                child: IgnorePointer(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: SeeUColors.success,
-                                      borderRadius:
-                                          BorderRadius.circular(SeeURadii.pill),
-                                      border: Border.all(
-                                          color: c.bg,
-                                          width: 1.5),
-                                    ),
-                                    child: Text(
-                                      'Рядом · $_nearbyCount',
-                                      style: const TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                        letterSpacing: 0.2,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(width: 8),
                         ProfileHeaderIconButton(
                           icon: PhosphorIcons.gearSix(),
                           tooltip: 'Настройки',
@@ -541,6 +494,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           count: user.followingCount,
                           label: 'подписки'),
                     ),
+                    // Social score: лайки из всех источников
+                    GestureDetector(
+                      onTap: isOwnProfile
+                          ? () => context.push('/scanner/likes')
+                          : null,
+                      child: ProfileStatItem(
+                          count: user.totalLikes,
+                          label: 'лайки'),
+                    ),
                   ],
                 ),
               ),
@@ -620,6 +582,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ],
           ),
         ),
+
+        // ── Social Score card ───────────────────────────────────────
+        if (user.totalLikes > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+            child: _SocialScoreCard(totalLikes: user.totalLikes, colors: c),
+          ),
 
         // ── Action buttons ─────────────────────────────────────────
         Padding(
@@ -728,5 +697,112 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
+}
+
+// Level thresholds must match backend domain/user_stats.go SocialLevel().
+const _levelThresholds = [
+  (0, 'Новичок'),
+  (50, 'Известный'),
+  (200, 'Популярный'),
+  (1000, 'Звезда'),
+  (5000, 'Легенда'),
+  (20000, 'Икона'),
+];
+
+({String name, int current, int next, double progress}) _computeLevel(int likes) {
+  String name = _levelThresholds.first.$2;
+  int curMin = 0;
+  int nextMin = _levelThresholds[1].$1;
+  for (int i = _levelThresholds.length - 1; i >= 0; i--) {
+    if (likes >= _levelThresholds[i].$1) {
+      name = _levelThresholds[i].$2;
+      curMin = _levelThresholds[i].$1;
+      nextMin = i + 1 < _levelThresholds.length
+          ? _levelThresholds[i + 1].$1
+          : _levelThresholds[i].$1;
+      break;
+    }
+  }
+  final isMax = curMin == nextMin;
+  final progress = isMax
+      ? 1.0
+      : (likes - curMin) / (nextMin - curMin).clamp(1, double.infinity);
+  return (
+    name: name,
+    current: curMin,
+    next: nextMin,
+    progress: progress.clamp(0.0, 1.0),
+  );
+}
+
+class _SocialScoreCard extends StatelessWidget {
+  final int totalLikes;
+  final SeeUThemeColors colors;
+
+  const _SocialScoreCard({required this.totalLikes, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    final level = _computeLevel(totalLikes);
+    final isMax = level.current == level.next;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: SeeUColors.accent.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: SeeUColors.accent.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(PhosphorIconsFill.star, color: SeeUColors.accent, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      level.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: SeeUColors.accent,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$totalLikes лайков',
+                      style: TextStyle(fontSize: 11, color: colors.ink3),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: level.progress,
+                    minHeight: 4,
+                    backgroundColor: colors.line,
+                    valueColor: const AlwaysStoppedAnimation(SeeUColors.accent),
+                  ),
+                ),
+                if (!isMax) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'До следующего уровня: ${level.next - totalLikes}',
+                    style: TextStyle(fontSize: 10, color: colors.ink3),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
