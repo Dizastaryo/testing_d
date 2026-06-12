@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +13,7 @@ import 'collections_screen.dart';
 import 'my_uploads_screen.dart';
 import 'reading_list_screen.dart';
 import 'upload_sheet.dart';
+import 'widgets/file_cover_widget.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -538,7 +538,6 @@ class _FileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = colorForFileType(file.fileExtension);
-    final hasPreview = file.previewUrl.isNotEmpty;
 
     return GestureDetector(
       onTap: () => context.push('/files/${file.id}'),
@@ -561,24 +560,8 @@ class _FileCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Cover / format block
-                  Container(
-                    width: 52,
-                    height: 72,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: color.withValues(alpha: 0.08),
-                      border: Border.all(color: color.withValues(alpha: 0.3)),
-                    ),
-                    child: hasPreview
-                        ? CachedNetworkImage(
-                            imageUrl: file.previewUrl,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => _formatBadge(color),
-                          )
-                        : _formatBadge(color),
-                  ),
+                  // Cover
+                  FileCoverWidget(file: file, width: 52, height: 72),
                   const SizedBox(width: 12),
 
                   // Right content
@@ -661,21 +644,6 @@ class _FileCard extends StatelessWidget {
                 child: _readingBadge(file.readingStatus!, theme),
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _formatBadge(Color color) {
-    return Center(
-      child: Text(
-        file.formatLabel,
-        style: TextStyle(
-          fontFamily: 'JetBrains Mono',
-          fontSize: 8,
-          fontWeight: FontWeight.w700,
-          color: color,
-          letterSpacing: 0.5,
         ),
       ),
     );

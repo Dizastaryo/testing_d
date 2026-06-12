@@ -20,6 +20,7 @@ class UploadSheet extends ConsumerStatefulWidget {
 
 class _UploadSheetState extends ConsumerState<UploadSheet> {
   PlatformFile? _picked;
+  PlatformFile? _cover;
   final _titleCtrl = TextEditingController();
   final _authorCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
@@ -33,6 +34,15 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
     _authorCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCover() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    setState(() => _cover = result.files.first);
   }
 
   Future<void> _pickFile() async {
@@ -70,6 +80,8 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
         if (_categoryId.isNotEmpty) 'category_id': _categoryId,
         if (_descCtrl.text.trim().isNotEmpty) 'description': _descCtrl.text.trim(),
         'language': _language,
+        if (_cover?.bytes != null)
+          'cover': MultipartFile.fromBytes(_cover!.bytes!, filename: _cover!.name),
       });
       await dio.post(
         ApiEndpoints.filesUpload,
@@ -295,6 +307,14 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
                   ),
               ],
             ),
+            const SizedBox(height: 14),
+
+            // Cover picker — optional
+            _CoverPickerRow(
+              cover: _cover,
+              onPick: _uploading ? null : _pickCover,
+              onRemove: () => setState(() => _cover = null),
+            ),
             const SizedBox(height: 20),
 
             // Upload button
@@ -314,5 +334,125 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
     if (bytes >= 1048576) return '${(bytes / 1048576).toStringAsFixed(1)} MB';
     if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
     return '$bytes B';
+  }
+}
+
+class _CoverPickerRow extends StatelessWidget {
+  final PlatformFile? cover;
+  final VoidCallback? onPick;
+  final VoidCallback onRemove;
+
+  const _CoverPickerRow({
+    required this.cover,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Preview / placeholder
+        GestureDetector(
+          onTap: onPick,
+          child: Container(
+            width: 52,
+            height: 72,
+            decoration: BoxDecoration(
+              color: cover != null
+                  ? Colors.transparent
+                  : theme.cardColor,
+              border: Border.all(
+                color: cover != null
+                    ? SeeUColors.accent.withValues(alpha: 0.5)
+                    : theme.dividerColor,
+                style: BorderStyle.solid,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: cover?.bytes != null
+                ? Image.memory(cover!.bytes!, fit: BoxFit.cover)
+                : Icon(
+                    PhosphorIconsRegular.imageSquare,
+                    size: 24,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Обложка',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'необязательно',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                cover != null
+                    ? cover!.name
+                    : 'Без обложки — сгенерируем авто',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: onPick,
+                child: Text(
+                  cover != null ? 'Изменить' : 'Выбрать изображение',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SeeUColors.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (cover != null)
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: Icon(
+              PhosphorIconsRegular.x,
+              size: 18,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
+            onPressed: onRemove,
+          ),
+      ],
+    );
   }
 }

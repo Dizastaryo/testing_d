@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,12 +8,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
-import '../../core/utils/format.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
 import 'collection_add_sheet.dart';
 import 'readers/open_reader.dart';
+import 'widgets/file_cover_widget.dart';
 
 final _fileDetailProvider =
     FutureProvider.autoDispose.family<FileItem, String>((ref, id) async {
@@ -133,35 +132,22 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   }
 
   Widget _buildBody(FileItem file, SeeUThemeColors c) {
-    final isImage = file.mimeType.startsWith('image/');
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Preview area
-          AspectRatio(
-            aspectRatio: 16 / 10,
-            child: Container(
-              decoration: BoxDecoration(
-                color: c.surface2,
-                borderRadius: BorderRadius.circular(16),
+          // Cover — книжные пропорции 2:3
+          Center(
+            child: SizedBox(
+              width: 160,
+              height: 240,
+              child: FileCoverWidget(
+                file: file,
+                width: 160,
+                height: 240,
+                borderRadius: 14,
               ),
-              clipBehavior: Clip.antiAlias,
-              child: isImage && file.previewUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: file.previewUrl,
-                      fit: BoxFit.contain,
-                      errorWidget: (_, __, ___) => _typeIcon(file, big: true),
-                    )
-                  : isImage && file.fileUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: file.fileUrl,
-                          fit: BoxFit.contain,
-                          errorWidget: (_, __, ___) => _typeIcon(file, big: true),
-                        )
-                      : _typeIcon(file, big: true),
             ),
           ),
 
@@ -364,33 +350,6 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _typeIcon(FileItem file, {bool big = false}) {
-    final color = colorForFileType(file.fileExtension);
-    return Center(
-      child: Container(
-        width: big ? 100 : 60,
-        height: big ? 120 : 70,
-        padding: EdgeInsets.only(bottom: big ? 14 : 8),
-        alignment: Alignment.bottomCenter,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(big ? 14 : 8),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Text(
-          file.fileExtension.toUpperCase(),
-          style: TextStyle(
-            fontFamily: 'JetBrains Mono',
-            fontSize: big ? 16 : 10,
-            fontWeight: FontWeight.w700,
-            color: color,
-            letterSpacing: 2,
-          ),
-        ),
       ),
     );
   }

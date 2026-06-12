@@ -41,6 +41,7 @@ class FileItem {
   final bool isLiked;
   final bool isPreviewable;
   final String previewUrl;
+  final String coverUrl;
   final String description;
   final int pagesCount;
   final String docFormat;
@@ -66,6 +67,7 @@ class FileItem {
     this.isLiked = false,
     this.isPreviewable = false,
     this.previewUrl = '',
+    this.coverUrl = '',
     this.description = '',
     this.pagesCount = 0,
     this.docFormat = '',
@@ -91,6 +93,7 @@ class FileItem {
         isLiked: json['is_liked'] ?? false,
         isPreviewable: json['is_previewable'] ?? false,
         previewUrl: json['preview_url'] ?? '',
+        coverUrl: _absUrl(json['cover_url']),
         description: json['description'] ?? '',
         pagesCount: json['pages_count'] ?? 0,
         docFormat: json['doc_format'] ?? '',
@@ -99,6 +102,8 @@ class FileItem {
         category: json['category'] != null ? FileCategory.fromJson(json['category']) : null,
         readingStatus: json['reading_status'] as String?,
       );
+
+  bool get hasCover => coverUrl.isNotEmpty;
 
   FileItem copyWith({int? likesCount, bool? isLiked, String? readingStatus}) => FileItem(
         id: id,
@@ -116,6 +121,7 @@ class FileItem {
         isLiked: isLiked ?? this.isLiked,
         isPreviewable: isPreviewable,
         previewUrl: previewUrl,
+        coverUrl: coverUrl,
         description: description,
         pagesCount: pagesCount,
         docFormat: docFormat,
