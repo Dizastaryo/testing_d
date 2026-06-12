@@ -418,7 +418,7 @@ class _CoverPickerRow extends StatelessWidget {
               Text(
                 cover != null
                     ? cover!.name
-                    : 'Без обложки — сгенерируем авто',
+                    : 'По умолчанию',
                 style: TextStyle(
                   fontSize: 11,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
