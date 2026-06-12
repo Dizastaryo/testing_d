@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import 'reader_settings.dart';
 import 'reader_shell.dart';
 
 class PdfReaderScreen extends ConsumerStatefulWidget {
@@ -36,6 +37,8 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   int _current = 0;
   int _total = 0;
   PDFViewController? _pdfController;
+  bool _savedOffline = false;
+  bool _savingOffline = false;
 
   final _positionNotifier = ValueNotifier<Map<String, dynamic>>({});
 
@@ -53,24 +56,41 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     _init();
   }
 
-  Future<void> _init() async {
-    // Загружаем прогресс и PDF параллельно
-    final dio = ref.read(libraryApiClientProvider);
-    final results = await Future.wait([
-      _downloadPdf(),
-      loadProgress(dio, widget.fileId),
-    ]);
-    final savedProgress = results[1] as Map<String, dynamic>?;
-    if (savedProgress != null && mounted) {
-      final page = savedProgress['page'] as int? ?? 0;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _pdfController?.setPage(page);
-      });
-    }
+  Future<File> _offlineFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/${widget.fileId}.pdf');
   }
 
-  Future<void> _downloadPdf() async {
+  Future<void> _init() async {
+    final dio = ref.read(libraryApiClientProvider);
+    await Future.wait([
+      _loadPdf(),
+      loadProgress(dio, widget.fileId).then((savedProgress) {
+        if (savedProgress != null && mounted) {
+          final page = savedProgress['page'] as int? ?? 0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _pdfController?.setPage(page);
+          });
+        }
+      }),
+    ]);
+  }
+
+  Future<void> _loadPdf() async {
     try {
+      // Check offline first
+      final offlineFile = await _offlineFile();
+      if (await offlineFile.exists()) {
+        if (mounted) {
+          setState(() {
+            _localPath = offlineFile.path;
+            _savedOffline = true;
+          });
+        }
+        return;
+      }
+
+      // Download to temp
       final tmpDir = await getTemporaryDirectory();
       final filename =
           '${DateTime.now().millisecondsSinceEpoch}_${p.basename(widget.title)}.pdf';
@@ -83,6 +103,28 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     }
   }
 
+  Future<void> _saveOffline() async {
+    if (_savingOffline || _savedOffline) return;
+    setState(() => _savingOffline = true);
+    try {
+      final offlineFile = await _offlineFile();
+      final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 5)));
+      await dio.download(widget.fileUrl, offlineFile.path);
+      if (mounted) setState(() => _savedOffline = true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF сохранён для офлайн')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingOffline = false);
+    }
+  }
+
   @override
   void dispose() {
     _positionNotifier.dispose();
@@ -91,7 +133,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
+    final settings = ref.watch(readerSettingsProvider);
+    final isDark = settings.theme == ReaderTheme.dark;
+
     return ReaderShell(
       fileId: widget.fileId,
       title: widget.title,
@@ -99,8 +143,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       positionNotifier: _positionNotifier,
       child: Stack(
         children: [
-          _buildBody(c),
-          // Page indicator overlay
+          _buildBody(isDark),
+
+          // Page indicator
           if (_total > 0)
             Positioned(
               bottom: 16,
@@ -108,7 +153,8 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(20),
@@ -123,12 +169,33 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
                 ),
               ),
             ),
+
+          // Save offline button
+          if (_localPath != null && !_savedOffline)
+            Positioned(
+              bottom: 60,
+              right: 16,
+              child: FloatingActionButton.small(
+                backgroundColor: SeeUColors.accent,
+                tooltip: 'Сохранить для офлайн',
+                onPressed: _savingOffline ? null : _saveOffline,
+                child: _savingOffline
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(PhosphorIconsRegular.cloudArrowDown,
+                        color: Colors.white),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildBody(SeeUThemeColors c) {
+  Widget _buildBody(bool isDark) {
+    final c = context.seeuColors;
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -143,6 +210,14 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
               Text(_error!,
                   textAlign: TextAlign.center,
                   style: SeeUTypography.caption.copyWith(color: c.ink3)),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  setState(() => _error = null);
+                  _loadPdf();
+                },
+                child: const Text('Повторить'),
+              ),
             ],
           ),
         ),
@@ -151,12 +226,14 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     if (_localPath == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    return PDFView(
+
+    final pdfView = PDFView(
       filePath: _localPath!,
       enableSwipe: true,
       swipeHorizontal: false,
       autoSpacing: true,
       pageFling: true,
+      nightMode: isDark,
       onViewCreated: (ctrl) => _pdfController = ctrl,
       onError: (err) {
         if (mounted) setState(() => _error = err.toString());
@@ -174,5 +251,19 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         }
       },
     );
+
+    // Dark mode ColorFilter as fallback if nightMode not supported
+    if (isDark) {
+      return ColorFiltered(
+        colorFilter: const ColorFilter.matrix([
+          -1, 0, 0, 0, 255,
+          0, -1, 0, 0, 255,
+          0, 0, -1, 0, 255,
+          0, 0, 0, 1, 0,
+        ]),
+        child: pdfView,
+      );
+    }
+    return pdfView;
   }
 }

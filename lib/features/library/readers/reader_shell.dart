@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import 'reader_settings_sheet.dart';
 
 /// Общая обёртка для всех Tier-1/2/3 ридеров.
 /// Показывает AppBar с названием, кнопку закладок, прогресс-бар.
@@ -82,6 +83,15 @@ class _ReaderShellState extends ConsumerState<ReaderShell> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(PhosphorIconsRegular.textAa, color: c.ink2),
+            tooltip: 'Настройки',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (_) => const ReaderSettingsSheet(),
+            ),
+          ),
           IconButton(
             icon: Icon(PhosphorIconsRegular.bookmarkSimple, color: c.ink2),
             onPressed: () => _addBookmark(context),

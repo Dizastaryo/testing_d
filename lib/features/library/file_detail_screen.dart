@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_endpoints.dart';
@@ -108,6 +109,20 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                 fontWeight: FontWeight.w400,
                 fontSize: 22,
                 color: c.ink)),
+        actions: [
+          if (async.valueOrNull != null)
+            IconButton(
+              icon: Icon(PhosphorIconsRegular.shareFat, color: c.ink2),
+              tooltip: 'Поделиться',
+              onPressed: () {
+                final file = async.value!;
+                final text = file.authorName.isNotEmpty
+                    ? '${file.displayTitle} — ${file.authorName}'
+                    : file.displayTitle;
+                Share.share(text, subject: file.displayTitle);
+              },
+            ),
+        ],
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
