@@ -36,6 +36,7 @@ void openReader(BuildContext context, FileItem file) {
           fileId: file.id,
           title: file.displayTitle,
           format: ext,
+          fileUrl: file.fileUrl,
         ),
       ));
     case 'fb2':
