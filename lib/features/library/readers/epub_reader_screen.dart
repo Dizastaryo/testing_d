@@ -1,3 +1,4 @@
+import 'dart:async' show StreamSubscription;
 import 'dart:io' show File;
 
 import 'package:dio/dio.dart';
@@ -36,6 +37,7 @@ class EpubReaderScreen extends ConsumerStatefulWidget {
 class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
   bool _loading = true;
   String? _error;
+  StreamSubscription? _locatorSub;
   final _positionNotifier = ValueNotifier<Map<String, dynamic>>({});
 
   @override
@@ -89,8 +91,8 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       );
       VocsyEpub.open(localFile.path, lastLocation: lastLocator);
 
-      // Подписываемся на обновления позиции
-      VocsyEpub.locatorStream.listen((locator) {
+      // Подписываемся на обновления позиции (subscription сохраняется для dispose)
+      _locatorSub = VocsyEpub.locatorStream.listen((locator) {
         if (locator != null) {
           _positionNotifier.value = {
             'cfi': locator['href'] ?? '',
@@ -114,6 +116,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   @override
   void dispose() {
+    _locatorSub?.cancel();
     _positionNotifier.dispose();
     super.dispose();
   }

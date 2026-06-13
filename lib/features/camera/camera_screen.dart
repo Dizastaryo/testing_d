@@ -20,9 +20,10 @@ import '../post/widgets/music_picker_sheet.dart';
 import '../stories/story_editor_screen.dart';
 import 'decorations/decoration_item.dart';
 import 'filters/filter_overlay.dart';
-import 'filters/filter_state.dart';
 import 'filters/frame_effect.dart';
 import 'filters/overlay_effect.dart';
+import 'presets/camera_preset.dart';
+import 'presets/camera_presets_catalog.dart';
 import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
 import 'masks/mask_debug_config.dart';
@@ -77,11 +78,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _isRecording = false;
   List<double> _segments = [];
   MaskDescriptor? _selectedMask;
-  FilterState _filter = FilterState.identity;
-  OverlayEffect? _overlayEffect;
-  FrameEffect? _frameEffect;
 
-  // ── Decorations ──
+  // ── Active preset ──
+  CameraPreset _activePreset = CameraPresetsCollection.none;
+  bool _showPresetPicker = false;
+  Uint8List? _presetSnapshotBytes;
+
+  // ── Decorations (masks only) ──
   bool _showDecorationPicker = false;
   String? _selectedDecorationId;
   Set<String> _savedDecorationIds = {};
@@ -476,12 +479,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Future<XFile> _composeCapture(XFile raw) async {
-    if (_filter.isIdentity &&
-        _selectedMask == null &&
-        _overlayEffect == null &&
-        _frameEffect == null) { return raw; }
+    if (_activePreset.isNone && _selectedMask == null) { return raw; }
     if (kIsWeb) { return raw; }
 
+    final filter = _activePreset.filter;
     final bytes = await raw.readAsBytes();
     final codec = await ui.instantiateImageCodec(bytes);
     final frame = await codec.getNextFrame();
@@ -493,31 +494,37 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    if (_filter.isIdentity) {
+    if (filter.isIdentity) {
       canvas.drawImage(image, Offset.zero, Paint());
     } else {
       canvas.saveLayer(Rect.fromLTWH(0, 0, w, h),
-          Paint()..colorFilter = ColorFilter.matrix(_filter.toMatrix()));
+          Paint()..colorFilter = ColorFilter.matrix(filter.toMatrix()));
       canvas.drawImage(image, Offset.zero, Paint());
       canvas.restore();
     }
 
-    if (_filter.vignette > 0) {
+    if (filter.vignette > 0) {
       final rect = Rect.fromLTWH(0, 0, w, h);
       canvas.drawRect(rect, Paint()
         ..shader = RadialGradient(
           radius: 0.9,
           colors: [
             Colors.black.withValues(alpha: 0),
-            Colors.black.withValues(alpha: _filter.vignette * 0.75),
+            Colors.black.withValues(alpha: filter.vignette * 0.75),
           ],
           stops: const [0.55, 1.0],
         ).createShader(rect));
     }
 
-    _overlayEffect?.bake(canvas, size);
-    _frameEffect?.bake(canvas, size);
-    if (_selectedMask != null) _selectedMask!.painter().paint(canvas, size);
+    if (_activePreset.hasGrain) bakeGrain(canvas, size, _activePreset.grainAmount);
+    if (_activePreset.hasHalation) bakeHalation(canvas, size, _activePreset.halationAmount);
+
+    _activePreset.overlay?.bake(canvas, size);
+    _activePreset.frame?.bake(canvas, size);
+    // Lottie masks are live animations and cannot be baked into a still photo.
+    if (_selectedMask?.painter != null) {
+      _selectedMask!.painter!().paint(canvas, size);
+    }
 
     final picture = recorder.endRecording();
     final composedImg = await picture.toImage(w.toInt(), h.toInt());
@@ -628,19 +635,23 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   void _applyDecoration(DecorationItem? item) {
     setState(() {
       _selectedDecorationId = item?.id;
-      if (item == null) {
-        _filter = FilterState.identity;
-        _selectedMask = null;
-      } else if (item.category == DecorationCategory.filter) {
-        _filter = item.filterPreset!.state;
-        _selectedMask = null;
-      } else {
-        _selectedMask = item.mask;
-        _filter = FilterState.identity;
-      }
+      _selectedMask = item?.mask;
     });
     _blinkCtrl.forward(from: 0.0);
     _syncFaceTracking();
+  }
+
+  void _applyPreset(CameraPreset preset) {
+    setState(() => _activePreset = preset);
+    _blinkCtrl.forward(from: 0.0);
+  }
+
+  void _togglePresetPicker() {
+    setState(() {
+      _showPresetPicker = !_showPresetPicker;
+      // Presets and mask picker must never be open simultaneously.
+      if (_showPresetPicker) _showDecorationPicker = false;
+    });
   }
 
   void _goNext({int? publishMode}) {
@@ -683,7 +694,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               child: FadeTransition(
                 opacity: _blinkCtrl,
                 child: FilterOverlay(
-                  state: _filter,
+                  state: _activePreset.filter,
                   child: _buildCameraPreview(),
                 ),
               ),
@@ -696,14 +707,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           // Overlays
           MaskOverlay(descriptor: _selectedMask),
 
-          if (_overlayEffect != null)
+          if (_activePreset.overlay != null)
             Positioned.fill(
-              child: IgnorePointer(child: EffectOverlay(effect: _overlayEffect!)),
+              child: IgnorePointer(child: EffectOverlay(effect: _activePreset.overlay!)),
             ),
 
-          if (_frameEffect != null)
+          if (_activePreset.frame != null)
             Positioned.fill(
-              child: IgnorePointer(child: FrameOverlay(effect: _frameEffect!)),
+              child: IgnorePointer(child: FrameOverlay(effect: _activePreset.frame!)),
             ),
 
           if (kMaskTuning && _selectedMask != null)
@@ -744,6 +755,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             videoSpeed: _videoSpeed,
             beautyOn: _beautyOn,
             isVideoMode: _cameraMode.isVideoMode,
+            presetActive: !_activePreset.isNone || _showPresetPicker,
             flashPulseAnim: _flashPulseController,
             onToggleFlash: _toggleFlash,
             onToggleTimer: () {
@@ -764,6 +776,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               HapticFeedback.selectionClick();
               setState(() => _beautyOn = !_beautyOn);
             },
+            onTogglePresets: _togglePresetPicker,
           ),
 
           // Bottom: floating mode tabs + record row
@@ -777,6 +790,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             savedDecorationIds: _savedDecorationIds,
             galleryThumbnailBytes: _galleryThumbnailBytes,
             hasSegments: _segments.isNotEmpty,
+            showPresetPicker: _showPresetPicker,
+            activePreset: _activePreset,
+            presetSnapshotBytes: _presetSnapshotBytes,
             onModeChanged: (mode) {
               if (_cameraMode == mode) return;
               if (_isRecording) _stopRecording();
@@ -788,6 +804,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 _galleryFile = null;
                 _galleryBytes = null;
                 _showGalleryPreview = false;
+                _activePreset = CameraPresetsCollection.none;
+                _showPresetPicker = false;
               });
               _nextFabController.reverse();
             },
@@ -803,9 +821,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 _savedDecorationIds = {..._savedDecorationIds, id};
               }
             }),
-            onToggleDecorationPicker: () =>
-                setState(() => _showDecorationPicker = !_showDecorationPicker),
+            onToggleDecorationPicker: () => setState(() {
+              _showDecorationPicker = !_showDecorationPicker;
+              // Presets and mask picker must never be open simultaneously.
+              if (_showDecorationPicker) _showPresetPicker = false;
+            }),
             onUndo: _undoLastSegment,
+            onPresetSelected: _applyPreset,
           ),
 
           // Next FAB (appears when segments recorded)

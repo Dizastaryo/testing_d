@@ -4,6 +4,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/design/tokens.dart';
 import '../decorations/decoration_item.dart';
 import '../decorations/decoration_picker.dart';
+import '../presets/camera_preset.dart';
+import '../presets/preset_picker_bar.dart';
 import 'camera_record_button.dart';
 
 enum CameraMode { photo, sec15, sec60, min3 }
@@ -46,6 +48,11 @@ class CameraBottomPanel extends StatelessWidget {
   final Uint8List? galleryThumbnailBytes;
   final bool hasSegments;
 
+  // Preset state
+  final bool showPresetPicker;
+  final CameraPreset activePreset;
+  final Uint8List? presetSnapshotBytes;
+
   // Callbacks
   final ValueChanged<CameraMode> onModeChanged;
   final VoidCallback onPickGallery;
@@ -56,6 +63,7 @@ class CameraBottomPanel extends StatelessWidget {
   final ValueChanged<String> onToggleSaveDecoration;
   final VoidCallback onToggleDecorationPicker;
   final VoidCallback onUndo;
+  final ValueChanged<CameraPreset> onPresetSelected;
 
   const CameraBottomPanel({
     super.key,
@@ -68,6 +76,9 @@ class CameraBottomPanel extends StatelessWidget {
     required this.savedDecorationIds,
     required this.galleryThumbnailBytes,
     required this.hasSegments,
+    required this.showPresetPicker,
+    required this.activePreset,
+    this.presetSnapshotBytes,
     required this.onModeChanged,
     required this.onPickGallery,
     required this.onTakePicture,
@@ -77,6 +88,7 @@ class CameraBottomPanel extends StatelessWidget {
     required this.onToggleSaveDecoration,
     required this.onToggleDecorationPicker,
     required this.onUndo,
+    required this.onPresetSelected,
   });
 
   @override
@@ -103,7 +115,27 @@ class CameraBottomPanel extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Decoration picker (animated)
+                // Preset picker (animated)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOut,
+                  child: showPresetPicker
+                      ? AnimatedOpacity(
+                          opacity: showPresetPicker ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                            child: PresetPickerBar(
+                              activePreset: activePreset,
+                              snapshotBytes: presetSnapshotBytes,
+                              onPresetSelected: onPresetSelected,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+
+                // Mask decoration picker (animated)
                 AnimatedSize(
                   duration: const Duration(milliseconds: 280),
                   curve: Curves.easeOut,
@@ -114,7 +146,9 @@ class CameraBottomPanel extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
                             child: DecorationPicker(
-                              allItems: DecorationCatalog.all,
+                              allItems: DecorationCatalog.all
+                                  .where((i) => i.category == DecorationCategory.mask)
+                                  .toList(),
                               savedIds: savedDecorationIds,
                               selectedId: selectedDecorationId,
                               onChanged: onDecorationChanged,

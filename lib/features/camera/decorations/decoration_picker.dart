@@ -179,6 +179,7 @@ class _DecorationCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNone = item == null;
+    final isLottie = !isNone && item!.isLottieAnimated;
     final color = isNone ? Colors.white.withValues(alpha: 0.12) : item!.previewColor;
 
     return AnimatedScale(
@@ -195,13 +196,19 @@ class _DecorationCircle extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: isNone
                   ? null
-                  : RadialGradient(
-                      colors: [
-                        color.withValues(alpha: 0.95),
-                        color.withValues(alpha: 0.6),
-                      ],
-                      stops: const [0.0, 1.0],
-                    ),
+                  : isLottie
+                      ? const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF1A1A2A), Color(0xFF2A2A3A)],
+                        )
+                      : RadialGradient(
+                          colors: [
+                            color.withValues(alpha: 0.95),
+                            color.withValues(alpha: 0.6),
+                          ],
+                          stops: const [0.0, 1.0],
+                        ),
               color: isNone ? Colors.white.withValues(alpha: 0.12) : null,
               border: Border.all(
                 color: isCurrent
@@ -218,7 +225,7 @@ class _DecorationCircle extends StatelessWidget {
                 Icon(
                   isNone ? PhosphorIcons.prohibit() : item!.previewIcon,
                   color: Colors.white.withValues(alpha: isNone ? 0.6 : 0.9),
-                  size: 20,
+                  size: isLottie ? 24 : 20,
                 ),
                 if (isSaved)
                   Positioned(
@@ -232,6 +239,13 @@ class _DecorationCircle extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                     ),
+                  ),
+                // Pulsing dot signals that this is a live Lottie animation.
+                if (isLottie && !isSaved)
+                  const Positioned(
+                    top: 2,
+                    right: 2,
+                    child: _AnimatedLottieDot(),
                   ),
               ],
             ),
@@ -253,6 +267,54 @@ class _DecorationCircle extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Pulsing accent dot shown on Lottie mask thumbnails to signal they are
+/// animated. Scales 0.6 → 1.0 → 0.6 on a continuous loop.
+class _AnimatedLottieDot extends StatefulWidget {
+  const _AnimatedLottieDot();
+
+  @override
+  State<_AnimatedLottieDot> createState() => _AnimatedLottieDotState();
+}
+
+class _AnimatedLottieDotState extends State<_AnimatedLottieDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: SeeUColors.accent,
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }

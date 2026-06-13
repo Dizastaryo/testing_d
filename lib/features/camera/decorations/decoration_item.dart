@@ -25,6 +25,10 @@ class DecorationItem {
     this.filterPreset,
     this.mask,
   });
+
+  /// True when this decoration item is a Lottie animated mask (not a static
+  /// CustomPainter mask and not a filter).
+  bool get isLottieAnimated => mask?.lottiePath != null;
 }
 
 /// Каталог всех украшений: сначала фильтры, потом маски.
@@ -56,6 +60,12 @@ class DecorationCatalog {
       'halo': PhosphorIcons.sparkle(),
       'hearts': PhosphorIcons.heart(),
       'bunny': PhosphorIcons.moon(),
+      // Lottie animated masks
+      'lottie_tears': PhosphorIcons.drop(),
+      'lottie_butterflies': PhosphorIcons.sparkle(),
+      'lottie_crown': PhosphorIcons.star(),
+      'lottie_flowers': PhosphorIcons.leaf(),
+      'lottie_bunny': PhosphorIcons.moon(),
     };
 
     for (final m in MaskCatalog.all) {

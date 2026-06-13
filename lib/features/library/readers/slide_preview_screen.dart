@@ -38,6 +38,7 @@ class SlidePreviewScreen extends ConsumerStatefulWidget {
 class _SlidePreviewScreenState extends ConsumerState<SlidePreviewScreen> {
   List<_Slide>? _slides;
   String? _error;
+  bool _reExtracting = false;
   int _currentPage = 0;
   final _pageCtrl = PageController();
   final _positionNotifier = ValueNotifier<Map<String, dynamic>>({});
@@ -80,6 +81,34 @@ class _SlidePreviewScreenState extends ConsumerState<SlidePreviewScreen> {
     return slides;
   }
 
+  Future<void> _reExtract() async {
+    setState(() => _reExtracting = true);
+    try {
+      final dio = ref.read(libraryApiClientProvider);
+      final resp = await dio.post(ApiEndpoints.fileReExtract(widget.fileId));
+      if (!mounted) return;
+      if (resp.statusCode == 204 || resp.data == null) {
+        setState(() {
+          _reExtracting = false;
+          _slides = [];
+        });
+        return;
+      }
+      final rawText = resp.data?['data']?['text'] as String? ?? '';
+      setState(() {
+        _reExtracting = false;
+        _slides = _parseSlides(rawText);
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _reExtracting = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _pageCtrl.dispose();
@@ -115,8 +144,26 @@ class _SlidePreviewScreenState extends ConsumerState<SlidePreviewScreen> {
     if (_slides == null) return const Center(child: CircularProgressIndicator());
     if (_slides!.isEmpty) {
       return Center(
-        child: Text('Текст слайдов не доступен',
-            style: SeeUTypography.body.copyWith(color: c.ink3)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIcons.presentation(), size: 48, color: c.ink3),
+            const SizedBox(height: 12),
+            Text('Текст слайдов недоступен',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+            const SizedBox(height: 16),
+            if (_reExtracting)
+              const CircularProgressIndicator()
+            else
+              FilledButton.icon(
+                onPressed: _reExtract,
+                icon: Icon(PhosphorIconsBold.arrowsClockwise),
+                label: const Text('Извлечь текст'),
+                style: FilledButton.styleFrom(
+                    backgroundColor: SeeUColors.accent),
+              ),
+          ],
+        ),
       );
     }
 
@@ -144,7 +191,13 @@ class _SlidePreviewScreenState extends ConsumerState<SlidePreviewScreen> {
         Expanded(
           child: PageView.builder(
             controller: _pageCtrl,
-            onPageChanged: (i) => setState(() => _currentPage = i),
+            onPageChanged: (i) {
+              setState(() => _currentPage = i);
+              _positionNotifier.value = {
+                'page': i,
+                'total': _slides!.length,
+              };
+            },
             itemCount: _slides!.length,
             itemBuilder: (ctx, i) => _buildSlide(_slides![i], c),
           ),

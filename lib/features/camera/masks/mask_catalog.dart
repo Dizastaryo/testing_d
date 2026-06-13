@@ -5,17 +5,23 @@ import 'package:flutter/material.dart';
 import 'calibration_painter.dart';
 import 'face_tracking_service.dart';
 
+enum LottieAnchorType { fullFace, topOfHead, foreheadCenter }
+
 class MaskDescriptor {
   final String id;
   final String label;
   final IconData previewIcon;
-  final CustomPainter Function() painter;
+  final CustomPainter Function()? painter;
+  final String? lottiePath;
+  final LottieAnchorType? lottieAnchor;
 
   const MaskDescriptor({
     required this.id,
     required this.label,
     required this.previewIcon,
-    required this.painter,
+    this.painter,
+    this.lottiePath,
+    this.lottieAnchor,
   });
 }
 
@@ -653,5 +659,41 @@ class MaskCatalog {
     MaskDescriptor(id: 'hearts', label: 'Любовь', previewIcon: Icons.favorite_border, painter: () => FloatingHeartsPainter()),
     MaskDescriptor(id: 'bunny', label: 'Зайчик', previewIcon: Icons.cruelty_free, painter: () => BunnyEarsPainter()),
     MaskDescriptor(id: 'calibration', label: 'Калибровка', previewIcon: Icons.grid_on, painter: () => CalibrationPainter()),
+    // ── Lottie animated masks ──────────────────────────────────────────────
+    MaskDescriptor(
+      id: 'lottie_tears',
+      label: 'Слёзы',
+      previewIcon: Icons.water_drop,
+      lottiePath: 'assets/masks/anime_tears.json',
+      lottieAnchor: LottieAnchorType.fullFace,
+    ),
+    MaskDescriptor(
+      id: 'lottie_butterflies',
+      label: 'Бабочки',
+      previewIcon: Icons.flutter_dash,
+      lottiePath: 'assets/masks/butterflies.json',
+      lottieAnchor: LottieAnchorType.fullFace,
+    ),
+    MaskDescriptor(
+      id: 'lottie_crown',
+      label: 'Корона 3D',
+      previewIcon: Icons.auto_awesome,
+      lottiePath: 'assets/masks/gold_crown.json',
+      lottieAnchor: LottieAnchorType.topOfHead,
+    ),
+    MaskDescriptor(
+      id: 'lottie_flowers',
+      label: 'Венок',
+      previewIcon: Icons.local_florist,
+      lottiePath: 'assets/masks/flower_crown.json',
+      lottieAnchor: LottieAnchorType.topOfHead,
+    ),
+    MaskDescriptor(
+      id: 'lottie_bunny',
+      label: 'Зайчик 3D',
+      previewIcon: Icons.cruelty_free,
+      lottiePath: 'assets/masks/bunny.json',
+      lottieAnchor: LottieAnchorType.foreheadCenter,
+    ),
   ];
 }

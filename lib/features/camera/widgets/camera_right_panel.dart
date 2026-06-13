@@ -13,6 +13,7 @@ class CameraRightPanel extends StatelessWidget {
   final double videoSpeed;    // 0.5 / 1.0 / 2.0 / 3.0
   final bool beautyOn;
   final bool isVideoMode;
+  final bool presetActive;
   final Animation<double> flashPulseAnim;
 
   final VoidCallback onToggleFlash;
@@ -20,6 +21,7 @@ class CameraRightPanel extends StatelessWidget {
   final VoidCallback onToggleGrid;
   final VoidCallback onToggleSpeed;
   final VoidCallback onToggleBeauty;
+  final VoidCallback onTogglePresets;
 
   const CameraRightPanel({
     super.key,
@@ -30,12 +32,14 @@ class CameraRightPanel extends StatelessWidget {
     required this.videoSpeed,
     required this.beautyOn,
     required this.isVideoMode,
+    required this.presetActive,
     required this.flashPulseAnim,
     required this.onToggleFlash,
     required this.onToggleTimer,
     required this.onToggleGrid,
     required this.onToggleSpeed,
     required this.onToggleBeauty,
+    required this.onTogglePresets,
   });
 
   @override
@@ -150,6 +154,19 @@ class CameraRightPanel extends StatelessWidget {
                 onTap: onToggleBeauty,
               ),
             ],
+
+            // Presets / Effects
+            const SizedBox(height: 12),
+            CameraToolButton(
+              icon: Icon(
+                presetActive ? PhosphorIconsFill.sparkle : PhosphorIconsRegular.sparkle,
+                color: presetActive ? SeeUColors.accent : Colors.white,
+                size: 22,
+              ),
+              active: presetActive,
+              badge: null,
+              onTap: onTogglePresets,
+            ),
           ],
         ),
       ),

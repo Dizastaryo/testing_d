@@ -9,21 +9,31 @@ String formatCount(int n) {
 }
 
 /// Color for file extension badge in library screens.
+/// Covers all formats allowed by the library: pdf, epub, fb2, docx, pptx,
+/// txt, rtf, md, odt, odp.
 Color colorForFileType(String ext) {
   switch (ext) {
     case 'pdf':
-      return const Color(0xFFFF5A3C); // SeeUColors.accent
-    case 'zip':
-    case 'rar':
-      return const Color(0xFFC04CFD);
+      return const Color(0xFFE53935); // red
+    case 'epub':
+      return const Color(0xFF8E24AA); // purple
+    case 'fb2':
+      return const Color(0xFF00ACC1); // cyan
+    case 'docx':
+      return const Color(0xFF1E88E5); // blue
+    case 'pptx':
+      return const Color(0xFFFF7043); // deep orange
     case 'txt':
     case 'md':
-      return const Color(0xFF2FA84F);
-    case 'mp3':
-    case 'wav':
-      return const Color(0xFF4A90E2);
+      return const Color(0xFF43A047); // green
+    case 'rtf':
+      return const Color(0xFF039BE5); // light blue
+    case 'odt':
+      return const Color(0xFF00897B); // teal
+    case 'odp':
+      return const Color(0xFFE91E63); // pink
     default:
-      return const Color(0xFFFFC107);
+      return const Color(0xFF78909C); // blue-grey
   }
 }
 

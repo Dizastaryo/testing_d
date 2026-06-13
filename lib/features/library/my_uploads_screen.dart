@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
@@ -139,12 +140,12 @@ class _UploadCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final c = context.seeuColors;
-    final color = _colorForExt(file.fileExtension);
+    final color = colorForFileType(file.fileExtension);
 
     return GestureDetector(
       onTap: () => canRead(file)
           ? openReader(context, file)
-          : Navigator.of(context).pushNamed('/files/${file.id}'),
+          : context.push('/files/${file.id}'),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -248,15 +249,4 @@ class _UploadCard extends ConsumerWidget {
     }
   }
 
-  Color _colorForExt(String ext) {
-    switch (ext) {
-      case 'pdf':  return const Color(0xFFE53935);
-      case 'epub': return const Color(0xFF8E24AA);
-      case 'fb2':  return const Color(0xFF00ACC1);
-      case 'docx': return const Color(0xFF1E88E5);
-      case 'pptx': return const Color(0xFFFF7043);
-      case 'txt':  return const Color(0xFF43A047);
-      default:     return const Color(0xFF78909C);
-    }
-  }
 }

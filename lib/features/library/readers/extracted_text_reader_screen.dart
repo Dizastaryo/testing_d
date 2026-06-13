@@ -36,6 +36,7 @@ class _ExtractedTextReaderScreenState
     extends ConsumerState<ExtractedTextReaderScreen> {
   String? _text;
   String? _error;
+  bool _reExtracting = false;
   final _scrollCtrl = ScrollController();
   final _positionNotifier = ValueNotifier<Map<String, dynamic>>({});
 
@@ -93,6 +94,33 @@ class _ExtractedTextReaderScreenState
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _reExtract() async {
+    setState(() => _reExtracting = true);
+    try {
+      final dio = ref.read(libraryApiClientProvider);
+      final resp = await dio.post(ApiEndpoints.fileReExtract(widget.fileId));
+      final text = resp.statusCode == 204
+          ? ''
+          : (resp.data?['data']?['text'] as String? ?? '');
+      // Invalidate cache so the fresh text is persisted
+      final cache = await _cacheFile();
+      if (cache != null && await cache.exists()) await cache.delete();
+      if (!mounted) return;
+      setState(() {
+        _reExtracting = false;
+        _text = text;
+      });
+      if (cache != null && text.isNotEmpty) await cache.writeAsString(text);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _reExtracting = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -180,8 +208,35 @@ class _ExtractedTextReaderScreenState
     if (_text == null) return const Center(child: CircularProgressIndicator());
     if (_text!.isEmpty) {
       return Center(
-        child: Text('Текст не был извлечён из файла',
-            style: SeeUTypography.body.copyWith(color: c.ink3)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIcons.fileText(), size: 48, color: c.ink3),
+            const SizedBox(height: 12),
+            Text('Текст не был извлечён',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Файл загружен до появления функции извлечения.\nНажмите кнопку чтобы попробовать сейчас.',
+                style: SeeUTypography.caption.copyWith(color: c.ink3),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_reExtracting)
+              const CircularProgressIndicator()
+            else
+              FilledButton.icon(
+                onPressed: _reExtract,
+                icon: Icon(PhosphorIconsBold.arrowsClockwise),
+                label: const Text('Извлечь текст'),
+                style: FilledButton.styleFrom(
+                    backgroundColor: SeeUColors.accent),
+              ),
+          ],
+        ),
       );
     }
     return SingleChildScrollView(

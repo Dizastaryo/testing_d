@@ -155,6 +155,18 @@ class _GrainPainter extends CustomPainter {
       old.intensity != intensity || old.seed != seed;
 }
 
+/// Запекает grain в финальное фото. Использует фиксированный seed = 42.
+void bakeGrain(Canvas canvas, Size size, double intensity) {
+  if (intensity <= 0) return;
+  _GrainPainter(intensity, 42).paint(canvas, size);
+}
+
+/// Запекает halation в финальное фото.
+void bakeHalation(Canvas canvas, Size size, double intensity) {
+  if (intensity <= 0) return;
+  _HalationPainter(intensity).paint(canvas, size);
+}
+
 /// Halation — тёплый ореол, имитирующий свечение вокруг ярких зон плёнки.
 /// Рисует мягкий радиальный градиент (центр→края) в режиме BlendMode.screen,
 /// что создаёт эффект «засветки» без пересветки тёмных участков.

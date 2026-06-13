@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/utils/format.dart';
 import 'readers/open_reader.dart';
 
 class ReadingListScreen extends ConsumerStatefulWidget {
@@ -137,7 +138,7 @@ class _ReadingFileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = _colorForExt(file.fileExtension);
+    final color = colorForFileType(file.fileExtension);
 
     return GestureDetector(
       onTap: () => canRead(file)
@@ -209,15 +210,4 @@ class _ReadingFileCard extends StatelessWidget {
     );
   }
 
-  Color _colorForExt(String ext) {
-    switch (ext) {
-      case 'pdf': return const Color(0xFFE53935);
-      case 'epub': return const Color(0xFF8E24AA);
-      case 'fb2': return const Color(0xFF00ACC1);
-      case 'docx': return const Color(0xFF1E88E5);
-      case 'pptx': return const Color(0xFFFF7043);
-      case 'txt': return const Color(0xFF43A047);
-      default: return const Color(0xFF78909C);
-    }
-  }
 }

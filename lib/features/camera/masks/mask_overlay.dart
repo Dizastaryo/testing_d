@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'face_tracking_service.dart';
+import 'lottie_face_mask.dart';
 import 'mask_catalog.dart';
 import 'mask_debug_config.dart';
 
@@ -39,7 +40,25 @@ class _MaskOverlayState extends State<MaskOverlay> {
   @override
   Widget build(BuildContext context) {
     if (widget.descriptor == null) return const SizedBox.shrink();
-    final innerPainter = widget.descriptor!.painter();
+    final desc = widget.descriptor!;
+
+    // ── Lottie animated mask ───────────────────────────────────────────────
+    if (desc.lottiePath != null) {
+      return Positioned.fill(
+        child: IgnorePointer(
+          child: LottieFaceMask(
+            assetPath: desc.lottiePath!,
+            anchor: desc.lottieAnchor!,
+            lottieCanvasWidth: _canvasWidth(desc.id),
+            lottieCanvasHeight: _canvasHeight(desc.id),
+          ),
+        ),
+      );
+    }
+
+    // ── CustomPainter mask ─────────────────────────────────────────────────
+    if (desc.painter == null) return const SizedBox.shrink();
+    final innerPainter = desc.painter!();
 
     if (!kMaskTuning) {
       return Positioned.fill(
@@ -57,13 +76,33 @@ class _MaskOverlayState extends State<MaskOverlay> {
             return CustomPaint(
               painter: _AdjustedMaskPainter(
                 inner: innerPainter,
-                maskId: widget.descriptor!.id,
+                maskId: desc.id,
               ),
             );
           },
         ),
       ),
     );
+  }
+
+  // ── Lottie canvas dimensions per mask id ─────────────────────────────────
+
+  double _canvasWidth(String id) => 1200;
+
+  double _canvasHeight(String id) {
+    switch (id) {
+      case 'lottie_tears':
+      case 'lottie_butterflies':
+        return 1600;
+      case 'lottie_crown':
+        return 500;
+      case 'lottie_flowers':
+        return 600;
+      case 'lottie_bunny':
+        return 900;
+      default:
+        return 1200;
+    }
   }
 }
 

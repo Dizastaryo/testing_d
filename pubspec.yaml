@@ -88,6 +88,7 @@ dependencies:
   flutter_markdown: ^0.7.7   # TXT/MD reader
   vocsy_epub_viewer: ^3.0.0  # EPUB reader (wraps native FolioReader/R2)
   mediapipe_face_mesh: ^1.6.0
+  lottie: ^3.3.0
   video_thumbnail: ^0.5.3
   emoji_picker_flutter: ^4.4.0
 
@@ -114,3 +115,4 @@ flutter:
     # C-3.1: ringtone/ringback/endtone (programmatically generated sine-WAVs
     # — CC0 by construction, see assets/sounds/generate_tones.py).
     - assets/sounds/
+    - assets/masks/

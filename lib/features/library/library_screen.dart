@@ -229,7 +229,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         onChanged: _onSearchChanged,
         decoration: InputDecoration(
           hintText: 'Поиск по названию, автору…',
-          prefixIcon: const Icon(Icons.search, size: 20),
+          prefixIcon: const Icon(PhosphorIconsRegular.magnifyingGlass, size: 20),
           isDense: true,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
