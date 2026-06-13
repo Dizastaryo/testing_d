@@ -152,16 +152,14 @@ class FileItem {
     return filename.substring(dot + 1).toLowerCase();
   }
 
-  /// Tier 1 — полноценный встроенный ридер (PDF, EPUB, TXT, MD)
-  bool get isTier1 => const {'pdf', 'epub', 'txt', 'md'}.contains(fileExtension);
+  /// Все поддерживаемые форматы открываются как оригинальный документ.
+  /// PDF/EPUB/TXT/MD — нативный in-app ридер.
+  /// FB2/DOCX/RTF/ODT/PPTX/ODP — конвертация в PDF на бэкенде (LibreOffice).
+  bool get isTier1 =>
+      const {'pdf', 'epub', 'txt', 'md', 'fb2', 'docx', 'rtf', 'odt', 'pptx', 'odp'}
+          .contains(fileExtension);
 
-  /// Tier 2 — text extraction для ридера (FB2, DOCX, RTF, ODT)
-  bool get isTier2 => const {'fb2', 'docx', 'rtf', 'odt'}.contains(fileExtension);
-
-  /// Tier 3 — слайды (PPTX, ODP)
-  bool get isTier3 => const {'pptx', 'odp'}.contains(fileExtension);
-
-  String get readerLabel => isTier3 ? 'Смотреть слайды' : 'Читать';
+  String get readerLabel => 'Читать';
 
   String get formatLabel {
     switch (fileExtension) {

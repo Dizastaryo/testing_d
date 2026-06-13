@@ -58,5 +58,4 @@ void openReader(BuildContext context, FileItem file) {
   }
 }
 
-bool canRead(FileItem file) =>
-    file.isTier1 || file.isTier2 || file.isTier3;
+bool canRead(FileItem file) => file.isTier1;

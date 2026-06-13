@@ -10,7 +10,7 @@ import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
 import 'reader_settings_sheet.dart';
 
-/// Общая обёртка для всех Tier-1/2/3 ридеров.
+/// Общая обёртка для всех ридеров библиотеки.
 /// Показывает AppBar с названием, кнопку закладок, прогресс-бар.
 /// При dispose сохраняет прогресс через PUT /files/:id/progress.
 class ReaderShell extends ConsumerStatefulWidget {
