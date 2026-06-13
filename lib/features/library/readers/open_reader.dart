@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import '../../../core/models/file_item.dart';
+import 'converted_pdf_reader_screen.dart';
 import 'epub_reader_screen.dart';
-import 'extracted_text_reader_screen.dart';
 import 'pdf_reader_screen.dart';
-import 'slide_preview_screen.dart';
 import 'text_reader_screen.dart';
 
 /// Открывает нужный ридер в зависимости от формата файла.
-/// Tier 1: pdf, epub, txt, md — полноценные встроенные ридеры.
-/// Tier 2: fb2, docx, rtf, odt — extracted text ридер.
-/// Tier 3: pptx, odp — карусель слайдов.
+///
+/// PDF/EPUB: нативный ридер, оригинальный документ.
+/// TXT/MD:   скачивает оригинал с R2, рендерит inline.
+/// FB2/DOCX/RTF/ODT/PPTX/ODP: бэкенд конвертирует в PDF через LibreOffice,
+///   Flutter открывает результат через PdfReaderScreen.
+/// ExtractedTextReaderScreen и SlidePreviewScreen оставлены для обратной
+///   совместимости — удаляются в Фазе 3.
 void openReader(BuildContext context, FileItem file) {
   final ext = file.fileExtension;
   switch (ext) {
@@ -43,21 +46,13 @@ void openReader(BuildContext context, FileItem file) {
     case 'docx':
     case 'rtf':
     case 'odt':
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ExtractedTextReaderScreen(
-          fileId: file.id,
-          title: file.displayTitle,
-          format: ext,
-        ),
-      ));
     case 'pptx':
     case 'odp':
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => SlidePreviewScreen(
+        builder: (_) => ConvertedPdfReaderScreen(
           fileId: file.id,
           title: file.displayTitle,
           format: ext,
-          fileUrl: file.fileUrl,
         ),
       ));
   }
