@@ -26,7 +26,6 @@ import 'presets/camera_preset.dart';
 import 'presets/camera_presets_catalog.dart';
 import 'masks/face_tracking_service.dart';
 import 'masks/mask_catalog.dart';
-import 'masks/mask_debug_config.dart';
 import 'masks/mask_overlay.dart';
 import 'widgets/camera_bottom_panel.dart';
 import 'widgets/camera_gallery_preview.dart';
@@ -717,9 +716,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               child: IgnorePointer(child: FrameOverlay(effect: _activePreset.frame!)),
             ),
 
-          if (kMaskTuning && _selectedMask != null)
-            const _FaceTrackDebugOverlay(),
-
           if (_showGrid)
             Positioned.fill(
               child: IgnorePointer(child: CustomPaint(painter: CameraGridPainter())),
@@ -848,10 +844,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
           // Countdown
           if (_countdown > 0) _buildCountdownOverlay(),
-
-          // DEBUG: mask sliders
-          if (kMaskTuning && _selectedMask != null)
-            _MaskDebugSliders(maskId: _selectedMask!.id),
 
           // Gallery preview full-screen
           if (_showGalleryPreview && _galleryFile != null)
@@ -1193,155 +1185,3 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 }
 
-// ─── DEBUG: face tracking overlay ─────────────────────────────────────────
-
-class _FaceTrackDebugOverlay extends StatefulWidget {
-  const _FaceTrackDebugOverlay();
-
-  @override
-  State<_FaceTrackDebugOverlay> createState() => _FaceTrackDebugOverlayState();
-}
-
-class _FaceTrackDebugOverlayState extends State<_FaceTrackDebugOverlay> {
-  late final _sub = FaceTrackingService.instance.stream.listen((_) {
-    if (mounted) setState(() {});
-  });
-
-  @override
-  void initState() { super.initState(); _sub; }
-
-  @override
-  void dispose() { _sub.cancel(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: MediaQuery.of(context).padding.top + 4,
-      left: 4,
-      child: IgnorePointer(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final screen = MediaQuery.of(context).size;
-            final face = maskCurrentTrackedFace;
-            String text;
-            final rotDeg = FaceTrackingService.instance.debugRotDeg;
-            if (face == null || face.points.length < 468) {
-              text = 'FALLBACK rotDeg=$rotDeg\n'
-                  'face=${face == null ? "null" : "pts=${face.points.length}"}';
-            } else {
-              final ff = FaceFrame.fromTracked(face, screen);
-              text = 'TRACKED rotDeg=$rotDeg\n'
-                  'canvas=${screen.width.toInt()}x${screen.height.toInt()}\n'
-                  'mesh=${face.imageWidth}x${face.imageHeight}\n'
-                  'L eye=(${ff.leftEye.dx.toInt()},${ff.leftEye.dy.toInt()})\n'
-                  'R eye=(${ff.rightEye.dx.toInt()},${ff.rightEye.dy.toInt()})\n'
-                  'center=(${ff.center.dx.toInt()},${ff.center.dy.toInt()})\n'
-                  'eyeDist=${ff.eyeDistance.toInt()}\n'
-                  'faceW=${ff.faceWidth.toInt()} faceH=${ff.faceHeight.toInt()}\n'
-                  'roll=${ff.rollRad.toStringAsFixed(2)}\n'
-                  'yaw=${ff.yawRad.toStringAsFixed(2)}';
-            }
-            return Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                text,
-                style: const TextStyle(
-                  color: Colors.greenAccent,
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  height: 1.3,
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-// ─── DEBUG: mask adjustment sliders ───────────────────────────────────────
-
-class _MaskDebugSliders extends StatefulWidget {
-  final String maskId;
-  const _MaskDebugSliders({required this.maskId});
-
-  @override
-  State<_MaskDebugSliders> createState() => _MaskDebugSlidersState();
-}
-
-class _MaskDebugSlidersState extends State<_MaskDebugSliders> {
-  MaskAdjust get _adj => MaskDebugConfig.get(widget.maskId);
-
-  @override
-  Widget build(BuildContext context) {
-    final adj = _adj;
-    return Positioned(
-      bottom: 220,
-      left: 12,
-      right: 12,
-      child: IgnorePointer(
-        ignoring: false,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.70),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildSlider('scale', adj.scale, 0.5, 2.0, (v) {
-                adj.scale = v;
-                MaskDebugConfig.notify();
-                setState(() {});
-              }),
-              _buildSlider('dx', adj.dx, -0.3, 0.3, (v) {
-                adj.dx = v;
-                MaskDebugConfig.notify();
-                setState(() {});
-              }),
-              _buildSlider('dy', adj.dy, -0.3, 0.3, (v) {
-                adj.dy = v;
-                MaskDebugConfig.notify();
-                setState(() {});
-              }),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSlider(String label, double value, double min, double max,
-      ValueChanged<double> onChanged) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 60,
-          child: Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 10)),
-        ),
-        Expanded(
-          child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChanged,
-            activeColor: SeeUColors.accent,
-            inactiveColor: Colors.white24,
-          ),
-        ),
-        SizedBox(
-          width: 36,
-          child: Text(value.toStringAsFixed(2),
-              style: const TextStyle(color: Colors.white54, fontSize: 9)),
-        ),
-      ],
-    );
-  }
-}

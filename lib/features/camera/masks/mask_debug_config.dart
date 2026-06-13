@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Set to true while tuning masks, false when done. Works in release builds.
-const bool kMaskTuning = true;
+const bool kMaskTuning = false;
 
 /// Per-mask adjustment values for debug tuning.
 class MaskAdjust {
