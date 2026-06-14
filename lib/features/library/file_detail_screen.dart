@@ -102,11 +102,14 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
           onPressed: () => context.pop(),
         ),
-        title: Text('Файл',
+        title: Text(
+            async.valueOrNull?.displayTitle ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
                 fontFamily: 'Fraunces',
                 fontWeight: FontWeight.w400,
-                fontSize: 22,
+                fontSize: 20,
                 color: c.ink)),
         actions: [
           if (async.valueOrNull != null)
@@ -137,16 +140,19 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cover — книжные пропорции 2:3
+          // Cover — книжные пропорции 2:3, Hero для анимации перехода
           Center(
-            child: SizedBox(
-              width: 160,
-              height: 240,
-              child: FileCoverWidget(
-                file: file,
+            child: Hero(
+              tag: 'file_cover_${file.id}',
+              child: SizedBox(
                 width: 160,
                 height: 240,
-                borderRadius: 14,
+                child: FileCoverWidget(
+                  file: file,
+                  width: 160,
+                  height: 240,
+                  borderRadius: 14,
+                ),
               ),
             ),
           ),

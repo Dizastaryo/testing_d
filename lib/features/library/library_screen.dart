@@ -596,7 +596,10 @@ class _FileCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Cover
-                  FileCoverWidget(file: file, width: 52, height: 72),
+                  Hero(
+                    tag: 'file_cover_${file.id}',
+                    child: FileCoverWidget(file: file, width: 52, height: 72),
+                  ),
                   const SizedBox(width: 12),
 
                   // Right content
