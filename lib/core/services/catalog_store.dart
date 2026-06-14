@@ -83,13 +83,22 @@ class SqliteCatalogStore implements CatalogStore {
     final dbPath = p.join(appDir.path, 'offline_catalog.db');
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
       onOpen: (db) async {
         // D3: SQLite performance optimizations
-        await db.execute('PRAGMA journal_mode=WAL');
-        await db.execute('PRAGMA synchronous=NORMAL');
-        await db.execute('PRAGMA cache_size=-8000'); // 8 MB cache
+        // rawQuery вместо execute: PRAGMAs возвращают result set.
+        // try-catch: на iOS/macOS WAL может быть уже включен или не поддерживаться.
+        try {
+          await db.rawQuery('PRAGMA journal_mode=WAL');
+        } catch (_) {}
+        try {
+          await db.rawQuery('PRAGMA synchronous=NORMAL');
+        } catch (_) {}
+        try {
+          await db.rawQuery('PRAGMA cache_size=-8000'); // 8 MB cache
+        } catch (_) {}
       },
     );
   }
@@ -117,6 +126,7 @@ class SqliteCatalogStore implements CatalogStore {
         original_format  TEXT,
         cover_url        TEXT,
         cover_local_path TEXT,
+        file_url_original TEXT,
         reading_percent  REAL    NOT NULL DEFAULT 0.0,
         reading_position TEXT
       )
@@ -193,6 +203,19 @@ class SqliteCatalogStore implements CatalogStore {
         'CREATE INDEX idx_tags_tag ON catalog_tags(tag)');
     await db.execute(
         'CREATE INDEX idx_collections_cid ON catalog_collections(collection_id)');
+  }
+
+  // ── Migrations ───────────────────────────────────────────────────────────
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute(
+            'ALTER TABLE offline_catalog ADD COLUMN file_url_original TEXT');
+      } catch (_) {
+        // Column may already exist from a partial migration
+      }
+    }
   }
 
   // ── CRUD ───────────────────────────────────────────────────────────────────

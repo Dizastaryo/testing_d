@@ -98,7 +98,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
       // Подписываемся на обновления позиции (subscription сохраняется для dispose)
       _locatorSub = VocsyEpub.locatorStream.listen((locator) {
-        if (locator != null) {
+        if (locator != null && locator is Map) {
           _positionNotifier.value = {
             'cfi': locator['href'] ?? '',
             'pct': locator['locations']?['progression'] ?? 0,

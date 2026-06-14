@@ -30,6 +30,7 @@ class CatalogEntry {
   final String? originalFormat;
   final String? coverUrl;
   final String? coverLocalPath;
+  final String? fileUrl; // оригинальный URL файла для повторного скачивания
 
   // ── Reading ──
   final double readingPercent;
@@ -47,6 +48,7 @@ class CatalogEntry {
     this.originalFormat,
     this.coverUrl,
     this.coverLocalPath,
+    this.fileUrl,
     this.readingPercent = 0.0,
     this.readingPosition,
   });
@@ -69,6 +71,7 @@ class CatalogEntry {
         originalFormat: originalFormat,
         coverUrl: coverUrl,
         coverLocalPath: coverLocalPath ?? this.coverLocalPath,
+        fileUrl: fileUrl,
         readingPercent: readingPercent ?? this.readingPercent,
         readingPosition: readingPosition ?? this.readingPosition,
       );
@@ -95,6 +98,7 @@ class CatalogEntry {
         originalFormat: row['original_format'] as String?,
         coverUrl: row['cover_url'] as String?,
         coverLocalPath: row['cover_local_path'] as String?,
+        fileUrl: row['file_url_original'] as String?,
         readingPercent: (row['reading_percent'] as num?)?.toDouble() ?? 0.0,
         readingPosition: row['reading_position'] as String?,
       );
@@ -112,6 +116,7 @@ class CatalogEntry {
         'original_format': originalFormat,
         'cover_url': coverUrl,
         'cover_local_path': coverLocalPath,
+        'file_url_original': fileUrl,
         'reading_percent': readingPercent,
         'reading_position': readingPosition,
       };

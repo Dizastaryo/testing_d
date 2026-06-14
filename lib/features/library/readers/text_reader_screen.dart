@@ -114,7 +114,16 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
         await service.saveText(widget.fileId, text);
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        final s = e.toString();
+        if (s.contains('DatabaseException')) {
+          setState(() => _error = 'Ошибка локальной базы данных. Попробуйте перезапустить приложение.');
+        } else if (s.contains('SocketException') || s.contains('Connection refused')) {
+          setState(() => _error = 'Нет подключения к серверу');
+        } else {
+          setState(() => _error = s);
+        }
+      }
     }
   }
 

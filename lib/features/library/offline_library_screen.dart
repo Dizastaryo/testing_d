@@ -734,29 +734,34 @@ class _OfflineReaderLauncher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // fileUrl хранится в каталоге; fallback на localPath для уже скачанных
+    final url = entry.fileUrl ?? entry.localPath;
     switch (entry.kind) {
       case OfflineKind.pdf:
         return PdfReaderScreen(
           fileId: entry.fileId,
           title: entry.title,
-          fileUrl: entry.coverUrl ?? '',
+          fileUrl: url,
           author: entry.author,
+          coverUrl: entry.coverUrl,
           originalFormat: entry.originalFormat ?? 'pdf',
         );
       case OfflineKind.epub:
         return EpubReaderScreen(
           fileId: entry.fileId,
           title: entry.title,
-          fileUrl: entry.coverUrl ?? '',
+          fileUrl: url,
           author: entry.author,
+          coverUrl: entry.coverUrl,
         );
       case OfflineKind.text:
         return TextReaderScreen(
           fileId: entry.fileId,
           title: entry.title,
           format: entry.originalFormat ?? 'txt',
-          fileUrl: entry.coverUrl ?? '',
+          fileUrl: url,
           author: entry.author,
+          coverUrl: entry.coverUrl,
         );
     }
   }

@@ -13,6 +13,7 @@ import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/providers/offline_catalog_provider.dart';
 import '../../core/providers/reading_provider.dart';
+import '../../core/utils/format.dart' show friendlyError;
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
 import 'author_screen.dart';
 import 'collection_add_sheet.dart';
@@ -136,7 +137,15 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Не удалось загрузить файл: $e')),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Не удалось загрузить файл:\n${friendlyError(e)}',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
         data: (file) => _buildBody(file, c),
       ),
     );

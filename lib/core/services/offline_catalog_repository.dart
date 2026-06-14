@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -66,7 +67,7 @@ class DownloadQueueManager {
     this.maxConcurrentDownloads = 3,
   }) : _storage = storage;
 
-  void Function(String fileId, String localPath, DownloadRequest request)?
+  Future<void> Function(String fileId, String localPath, DownloadRequest request)?
       onCompleted;
 
   // ── Public API ──
@@ -228,7 +229,7 @@ class DownloadQueueManager {
 
       final path = await _storage.localPath(fileId, task.request.kind);
       if (path != null) {
-        onCompleted?.call(fileId, path, task.request);
+        await onCompleted?.call(fileId, path, task.request);
       }
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
@@ -329,15 +330,22 @@ class OfflineCatalogRepository {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   Future<void> _init() async {
-    await _store.open();
-    final ids = await _store.allFileIds();
-    _knownIds.addAll(ids);
+    try {
+      await _store.open();
+      final ids = await _store.allFileIds();
+      _knownIds.addAll(ids);
 
-    if (_knownIds.isEmpty) {
-      await _migrateFromFilesystem();
+      if (_knownIds.isEmpty) {
+        await _migrateFromFilesystem();
+      }
+
+      Future.delayed(const Duration(seconds: 5), reconcile);
+    } catch (e) {
+      // SQLite может не открыться (FTS5, PRAGMA и т.д.) —
+      // оффлайн-каталог будет недоступен, но приложение не должно падать.
+      // Ридеры будут скачивать файлы через OfflineStorageService напрямую.
+      debugPrint('[OfflineCatalog] init failed: $e');
     }
-
-    Future.delayed(const Duration(seconds: 5), reconcile);
   }
 
   Future<void> _ensureInit() => _initFuture;
@@ -477,12 +485,16 @@ class OfflineCatalogRepository {
     if (_knownIds.contains(fileId)) {
       final path = await _storage.localPath(fileId, kind);
       if (path != null) {
-        await markOpened(fileId);
+        try { await markOpened(fileId); } catch (_) {}
         return path;
       }
-      await _store.deleteById(fileId);
+      try { await _store.deleteById(fileId); } catch (_) {}
       _knownIds.remove(fileId);
     }
+
+    // 1b. Не в knownIds, но файл есть на диске (store не открылся)
+    final existingPath = await _storage.localPath(fileId, kind);
+    if (existingPath != null) return existingPath;
 
     // 2. В очереди — повысить приоритет, ждать.
     if (_queue.isInQueue(fileId)) {
@@ -531,9 +543,14 @@ class OfflineCatalogRepository {
         author: author,
         originalFormat: originalFormat,
         coverUrl: coverUrl,
+        fileUrl: url,
       );
-      await _store.upsert(entry);
-      _knownIds.add(fileId);
+      try {
+        await _store.upsert(entry);
+        _knownIds.add(fileId);
+      } catch (_) {
+        // Store может быть не открыт — файл всё равно скачан
+      }
 
       if (coverUrl != null && coverUrl.isNotEmpty) {
         _downloadCover(fileId, coverUrl);
@@ -587,6 +604,7 @@ class OfflineCatalogRepository {
       author: request.author,
       originalFormat: request.originalFormat,
       coverUrl: request.coverUrl,
+      fileUrl: request.url,
     );
     await _store.upsert(entry);
     _knownIds.add(fileId);

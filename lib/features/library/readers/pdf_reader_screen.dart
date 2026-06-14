@@ -90,8 +90,25 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       );
       if (mounted) setState(() => _localPath = path);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) {
+        setState(() => _error = _friendlyError(e));
+      }
     }
+  }
+
+  String _friendlyError(Object e) {
+    final s = e.toString();
+    if (s.contains('DatabaseException')) {
+      return 'Ошибка локальной базы данных. Попробуйте перезапустить приложение.';
+    }
+    if (s.contains('SocketException') || s.contains('Connection refused')) {
+      return 'Нет подключения к серверу';
+    }
+    if (s.contains('TimeoutException') || s.contains('timed out')) {
+      return 'Превышено время ожидания';
+    }
+    if (s.contains('404')) return 'Файл не найден на сервере';
+    return s;
   }
 
   @override
