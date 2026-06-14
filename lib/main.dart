@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'core/api/api_client.dart' show networkOnlineProvider;
+import 'core/config/server_config.dart';
 import 'core/design/tokens.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/auth_provider.dart';
@@ -63,6 +64,7 @@ import 'features/chat/room_create_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ServerConfig.init();
   timeago.setLocaleMessages('ru', timeago.RuMessages());
   timeago.setDefaultLocale('ru');
   await SystemChrome.setPreferredOrientations([

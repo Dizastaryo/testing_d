@@ -1,13 +1,13 @@
-import '../config/app_config.dart';
+import '../config/server_config.dart';
 
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // Base URLs come from build-time config (--dart-define).
-  // Defaults target localhost; production builds pass real URLs.
-  static String get baseUrl => AppConfig.apiBaseUrl;
-  static String get videoBaseUrl => AppConfig.videoBaseUrl;
-  static String get libraryBaseUrl => AppConfig.libraryBaseUrl;
+  // Base URLs come from ServerConfig (runtime, persisted in SharedPreferences).
+  // Default falls back to compile-time AppConfig values.
+  static String get baseUrl => ServerConfig.apiBaseUrl;
+  static String get videoBaseUrl => ServerConfig.videoBaseUrl;
+  static String get libraryBaseUrl => ServerConfig.libraryBaseUrl;
 
   // Auth (phone + OTP)
   static const String sendOtp = '/auth/send-otp';

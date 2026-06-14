@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../config/server_config.dart';
 import 'api_endpoints.dart';
 
 const _accessTokenKey = 'access_token';
@@ -20,6 +21,7 @@ final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
 final networkOnlineProvider = StateProvider<bool>((_) => true);
 
 final apiClientProvider = Provider<ApiClient>((ref) {
+  ref.watch(serverIpProvider); // rebuild when IP changes → new baseUrl
   final storage = ref.watch(secureStorageProvider);
   return ApiClient(
     storage: storage,

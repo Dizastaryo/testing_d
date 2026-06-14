@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/config/app_config.dart';
+import '../../core/config/server_config.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/invites_provider.dart';
 import '../../core/design/design.dart';
@@ -95,6 +96,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _showIpDialog(BuildContext context) async {
+    final c = context.seeuColors;
+    final ctrl = TextEditingController(text: ServerConfig.lanIp);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Адрес сервера',
+                style: SeeUTypography.subtitle.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'LAN IP-адрес компьютера с бэкендом',
+                style: SeeUTypography.caption.copyWith(color: c.ink2),
+              ),
+              const SizedBox(height: 16),
+              SeeUInput(
+                controller: ctrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                hintText: '192.168.1.7',
+                prefix: Icon(PhosphorIconsRegular.wifiHigh, size: 18, color: c.ink3),
+              ),
+              const SizedBox(height: 20),
+              SeeUButton(
+                label: 'Сохранить',
+                variant: SeeUButtonVariant.primary,
+                onTap: () async {
+                  final ip = ctrl.text.trim();
+                  if (ip.isEmpty) return;
+                  await ServerConfig.setLanIp(ip);
+                  if (ctx.mounted) {
+                    // Rebuild all Dio providers with new IP
+                    ref.read(serverIpProvider.notifier).state = ip;
+                    Navigator.of(ctx).pop();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    ctrl.dispose();
+  }
+
   Future<void> _openLegal(String path) async {
     final uri = Uri.parse('${AppConfig.apiOrigin}$path');
     await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -138,7 +209,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             children: [
               const SizedBox(height: 72),
 
-              // Logo
+              // Logo (long-press → настройки IP сервера)
               TweenAnimationBuilder<double>(
                 tween: Tween(begin: 0.0, end: 1.0),
                 duration: const Duration(milliseconds: 700),
@@ -150,9 +221,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: child,
                   ),
                 ),
-                child: Text(
-                  'SeeU',
-                  style: SeeUTypography.displayXL,
+                child: GestureDetector(
+                  onLongPress: () => _showIpDialog(context),
+                  child: Text(
+                    'SeeU',
+                    style: SeeUTypography.displayXL,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),

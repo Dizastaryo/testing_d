@@ -2,9 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
+import '../config/server_config.dart';
 import '../models/file_item.dart';
 
 final libraryApiClientProvider = Provider<Dio>((ref) {
+  ref.watch(serverIpProvider); // rebuild when IP changes → new baseUrl
   final apiClient = ref.watch(apiClientProvider);
   final dio = Dio(BaseOptions(
     baseUrl: ApiEndpoints.libraryBaseUrl,
