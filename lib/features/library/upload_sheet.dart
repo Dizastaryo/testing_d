@@ -62,6 +62,8 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
     });
   }
 
+  static const _convertibleExts = {'fb2', 'docx', 'rtf', 'odt', 'pptx', 'odp'};
+
   Future<void> _upload() async {
     if (_picked?.bytes == null) return;
     if (_titleCtrl.text.trim().isEmpty) {
@@ -93,13 +95,13 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
       );
       ref.invalidate(trendingFilesProvider);
       if (!mounted) return;
-      Navigator.of(context).pop(true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('«${_titleCtrl.text.trim()}» загружен'),
-          backgroundColor: const Color(0xFF4CAF50),
-        ),
-      );
+      final ext = _picked!.name.split('.').last.toLowerCase();
+      final needsPrep = _convertibleExts.contains(ext);
+      Navigator.of(context).pop(<String, dynamic>{
+        'uploaded': true,
+        'needsPrep': needsPrep,
+        'title': _titleCtrl.text.trim(),
+      });
     } on DioException catch (e) {
       if (!mounted) return;
       final msg = e.response?.data?['error'] ?? e.message ?? 'Ошибка загрузки';

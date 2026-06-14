@@ -67,6 +67,7 @@ class _ConvertedPdfReaderScreenState
             fileId: widget.fileId,
             title: widget.title,
             fileUrl: pdfUrl,
+            originalFormat: widget.format,
           ),
         ));
       } else if (resp.statusCode == 202) {
@@ -141,7 +142,7 @@ class _ConvertedPdfReaderScreenState
           const CircularProgressIndicator(color: SeeUColors.accent),
           const SizedBox(height: 20),
           Text(
-            _isPolling ? 'Конвертация в очереди...' : 'Готовим документ...',
+            'Подготовка файла к чтению...',
             style: SeeUTypography.body.copyWith(color: c.ink2),
           ),
           const SizedBox(height: 6),
@@ -155,8 +156,9 @@ class _ConvertedPdfReaderScreenState
           if (_isPolling) ...[
             const SizedBox(height: 12),
             Text(
-              'Можно закрыть и вернуться позже',
+              'Файл в очереди. Можно закрыть и вернуться позже.',
               style: SeeUTypography.caption.copyWith(color: c.ink4),
+              textAlign: TextAlign.center,
             ),
           ],
         ],

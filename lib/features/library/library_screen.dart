@@ -10,6 +10,7 @@ import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/utils/format.dart';
 import 'collections_screen.dart';
+import 'file_preparation_screen.dart';
 import 'my_uploads_screen.dart';
 import 'reading_list_screen.dart';
 import 'upload_sheet.dart';
@@ -67,14 +68,40 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void _setSort(String sort) => setState(() => _sort = sort);
 
   Future<void> _openUpload() async {
-    final uploaded = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<Map<String, dynamic>?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const UploadSheet(),
     );
-    if (uploaded == true) {
-      ref.read(libraryListProvider(_params).notifier).load(reset: true);
+    if (result == null || result['uploaded'] != true) return;
+
+    ref.read(libraryListProvider(_params).notifier).load(reset: true);
+
+    if (!mounted) return;
+    final title = result['title'] as String? ?? 'Файл';
+    final needsPrep = result['needsPrep'] == true;
+
+    if (needsPrep) {
+      // Файл требует подготовки — показываем баннер со ссылкой на экран статуса
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('«$title» загружен — подготавливается к чтению'),
+        action: SnackBarAction(
+          label: 'Следить',
+          onPressed: () {
+            if (!mounted) return;
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const FilePreparationScreen(),
+            ));
+          },
+        ),
+        duration: const Duration(seconds: 6),
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('«$title» загружен'),
+        backgroundColor: const Color(0xFF4CAF50),
+      ));
     }
   }
 
@@ -172,6 +199,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ],
           ),
           const Spacer(),
+          IconButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const FilePreparationScreen(),
+            )),
+            icon: Icon(PhosphorIcons.hourglassMedium(),
+                color: theme.colorScheme.onSurface),
+            tooltip: 'Подготовка файлов',
+          ),
           IconButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => const CollectionsScreen(),

@@ -19,12 +19,16 @@ class PdfReaderScreen extends ConsumerStatefulWidget {
   final String fileId;
   final String title;
   final String fileUrl;
+  /// Оригинальный формат документа (например 'docx', 'pptx').
+  /// По умолчанию 'pdf' — показывается в заголовке ридера.
+  final String originalFormat;
 
   const PdfReaderScreen({
     super.key,
     required this.fileId,
     required this.title,
     required this.fileUrl,
+    this.originalFormat = 'pdf',
   });
 
   @override
@@ -114,7 +118,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       if (mounted) setState(() => _savedOffline = true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF сохранён для офлайн')),
+        const SnackBar(content: Text('Файл сохранён для офлайн')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -140,7 +144,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     return ReaderShell(
       fileId: widget.fileId,
       title: widget.title,
-      docFormat: 'pdf',
+      docFormat: widget.originalFormat,
       positionNotifier: _positionNotifier,
       child: Stack(
         children: [
@@ -206,7 +210,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
             children: [
               Icon(PhosphorIcons.warning(), size: 48, color: c.ink3),
               const SizedBox(height: 12),
-              Text('Не удалось загрузить PDF', style: SeeUTypography.subtitle),
+              Text('Не удалось загрузить файл', style: SeeUTypography.subtitle),
               const SizedBox(height: 6),
               Text(_error!,
                   textAlign: TextAlign.center,

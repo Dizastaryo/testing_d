@@ -48,6 +48,8 @@ class FileItem {
   final DateTime createdAt;
   final UserShort? user;
   final FileCategory? category;
+  // Статус фоновой подготовки (конвертации в PDF) — приходит с бэкенда
+  final String pdfConversionStatus; // 'none' | 'pending' | 'converting' | 'done' | 'failed'
   // Заполняется отдельным запросом/handler'ом
   final String? readingStatus; // 'want' | 'reading' | 'done' | null
 
@@ -74,6 +76,7 @@ class FileItem {
     required this.createdAt,
     this.user,
     this.category,
+    this.pdfConversionStatus = 'none',
     this.readingStatus,
   });
 
@@ -100,10 +103,25 @@ class FileItem {
         createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
         user: json['user'] != null ? UserShort.fromJson(json['user']) : null,
         category: json['category'] != null ? FileCategory.fromJson(json['category']) : null,
+        pdfConversionStatus: json['pdf_conversion_status'] as String? ?? 'none',
         readingStatus: json['reading_status'] as String?,
       );
 
   bool get hasCover => coverUrl.isNotEmpty;
+
+  /// Форматы, требующие серверной подготовки (конвертации в PDF).
+  static const _convertibleFormats = {'fb2', 'docx', 'rtf', 'odt', 'pptx', 'odp'};
+
+  /// Файл требует подготовки перед чтением (не PDF/EPUB/TXT/MD).
+  bool get needsPreparation => _convertibleFormats.contains(fileExtension);
+
+  /// Подготовка ещё в процессе.
+  bool get isBeingPrepared =>
+      needsPreparation &&
+      (pdfConversionStatus == 'pending' || pdfConversionStatus == 'converting');
+
+  /// Файл готов к чтению прямо сейчас.
+  bool get isReadyToRead => !needsPreparation || pdfConversionStatus == 'done';
 
   FileItem copyWith({int? likesCount, bool? isLiked, String? readingStatus}) => FileItem(
         id: id,
@@ -128,6 +146,7 @@ class FileItem {
         createdAt: createdAt,
         user: user,
         category: category,
+        pdfConversionStatus: pdfConversionStatus,
         readingStatus: readingStatus ?? this.readingStatus,
       );
 
