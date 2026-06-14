@@ -251,14 +251,17 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
         padding: const EdgeInsets.all(20),
         styleSheet: MarkdownStyleSheet(
           p: TextStyle(
+              fontFamily: settings.fontFamilyName,
               fontSize: settings.fontSize,
               height: settings.lineHeight,
               color: textColor),
           h1: TextStyle(
+              fontFamily: settings.fontFamilyName,
               fontSize: settings.fontSize + 8,
               fontWeight: FontWeight.w700,
               color: textColor),
           h2: TextStyle(
+              fontFamily: settings.fontFamilyName,
               fontSize: settings.fontSize + 4,
               fontWeight: FontWeight.w600,
               color: textColor),
@@ -276,6 +279,7 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
       child: SelectableText(
         _text!,
         style: TextStyle(
+            fontFamily: settings.fontFamilyName,
             fontSize: settings.fontSize,
             height: settings.lineHeight,
             color: textColor),

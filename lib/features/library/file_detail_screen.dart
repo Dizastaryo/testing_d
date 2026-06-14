@@ -10,6 +10,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/reading_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
 import 'collection_add_sheet.dart';
 import 'readers/open_reader.dart';
@@ -220,6 +221,10 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
               ],
             ),
 
+          // Прогресс чтения — показывается когда файл в статусе "Читаю"
+          if (_readingStatus == 'reading' && canRead(file))
+            _buildProgressCard(file.id, c),
+
           // Reading status chips
           if (canRead(file)) ...[
             const SizedBox(height: 16),
@@ -357,6 +362,75 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProgressCard(String fileId, SeeUThemeColors c) {
+    final progressAsync = ref.watch(readingProgressProvider(fileId));
+    return progressAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (progress) {
+        if (progress == null || progress.percentage == 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: SeeUColors.accent.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: SeeUColors.accent.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Читаешь',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(progress.percentage * 100).toInt()}% прочитано',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: SeeUColors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress.percentage,
+                    minHeight: 6,
+                    backgroundColor: SeeUColors.accent.withValues(alpha: 0.15),
+                    valueColor: const AlwaysStoppedAnimation<Color>(SeeUColors.accent),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  progress.displayProgress,
+                  style: TextStyle(fontSize: 12, color: c.ink3),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

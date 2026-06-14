@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/reading_provider.dart';
 import '../../core/utils/format.dart';
 import 'collections_screen.dart';
 import 'file_preparation_screen.dart';
@@ -128,6 +130,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             if (_searchOpen)
               SliverToBoxAdapter(child: _buildSearchBar(theme)),
 
+            // "Продолжить чтение" — карусель книг в статусе "читаю"
+            if (_q.isEmpty)
+              SliverToBoxAdapter(child: _buildContinueReadingRow(theme)),
+
             // Trending row (hidden during search)
             if (_q.isEmpty)
               SliverToBoxAdapter(child: _buildTrendingRow(theme)),
@@ -141,9 +147,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
             // File list
             if (listState.isLoading)
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              )
+              _buildShimmerList(theme)
             else if (listState.items.isEmpty && !listState.isLoadingMore)
               SliverFillRemaining(
                 child: _buildEmptyState(theme),
@@ -546,6 +550,115 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
+  Widget _buildContinueReadingRow(ThemeData theme) {
+    final async = ref.watch(readingListProvider('reading'));
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (files) {
+        if (files.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(PhosphorIconsRegular.bookOpen,
+                      size: 16, color: SeeUColors.accent),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Продолжить чтение',
+                    style: TextStyle(
+                      fontFamily: 'Fraunces',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 188,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: files.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, i) =>
+                      _ContinueReadingCard(file: files[i]),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Shimmer-заглушки вместо CircularProgressIndicator при загрузке списка.
+  Widget _buildShimmerList(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final base = isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE0E0E0);
+    final highlight = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5);
+
+    return SliverToBoxAdapter(
+      child: Shimmer.fromColors(
+        baseColor: base,
+        highlightColor: highlight,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Column(
+            children: List.generate(6, (_) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                height: 96,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      // Cover placeholder
+                      Container(
+                        width: 52,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(height: 14, color: Colors.white,
+                                width: double.infinity),
+                            const SizedBox(height: 6),
+                            Container(height: 12, color: Colors.white,
+                                width: 120),
+                            const SizedBox(height: 8),
+                            Container(height: 10, color: Colors.white,
+                                width: 80),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFileList(LibraryListState state, ThemeData theme) {
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -734,6 +847,94 @@ class _FileCard extends StatelessWidget {
       child: Text(label,
           style: const TextStyle(
               color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ─── Continue Reading Card ───────────────────────────────────────────────────
+
+class _ContinueReadingCard extends ConsumerWidget {
+  final FileItem file;
+  const _ContinueReadingCard({required this.file});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final progressAsync = ref.watch(readingProgressProvider(file.id));
+    final progress = progressAsync.valueOrNull;
+
+    return GestureDetector(
+      onTap: () => context.push('/files/${file.id}'),
+      child: SizedBox(
+        width: 110,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Обложка
+            Hero(
+              tag: 'file_cover_continue_${file.id}',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 110,
+                  height: 145,
+                  child: Stack(
+                    children: [
+                      FileCoverWidget(
+                          file: file, width: 110, height: 145, borderRadius: 0),
+                      // % прогресса поверх обложки (правый нижний угол)
+                      if (progress != null && progress.percentage > 0)
+                        Positioned(
+                          bottom: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              '${(progress.percentage * 100).toInt()}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'JetBrains Mono',
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Название
+            Text(
+              file.displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, height: 1.2),
+            ),
+            const SizedBox(height: 4),
+            // Прогресс-бар
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: progress?.percentage ?? 0,
+                minHeight: 3,
+                backgroundColor:
+                    theme.colorScheme.onSurface.withValues(alpha: 0.1),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                    SeeUColors.accent),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

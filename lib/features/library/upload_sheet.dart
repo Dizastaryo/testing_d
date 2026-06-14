@@ -27,6 +27,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
   String _categoryId = '';
   String _language = 'ru';
   bool _uploading = false;
+  double _uploadProgress = 0.0;
 
   @override
   void dispose() {
@@ -72,7 +73,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
       );
       return;
     }
-    setState(() => _uploading = true);
+    setState(() { _uploading = true; _uploadProgress = 0.0; });
     try {
       final dio = ref.read(libraryApiClientProvider);
       final form = FormData.fromMap({
@@ -92,6 +93,11 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
           sendTimeout: const Duration(minutes: 5),
           receiveTimeout: const Duration(minutes: 2),
         ),
+        onSendProgress: (sent, total) {
+          if (total > 0 && mounted) {
+            setState(() => _uploadProgress = sent / total);
+          }
+        },
       );
       ref.invalidate(trendingFilesProvider);
       if (!mounted) return;
@@ -319,11 +325,46 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Upload button
+            // Upload progress bar + button
+            if (_uploading && _uploadProgress > 0) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: _uploadProgress,
+                  minHeight: 6,
+                  backgroundColor:
+                      SeeUColors.accent.withValues(alpha: 0.12),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                      SeeUColors.accent),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Загрузка файла…',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.5))),
+                  Text(
+                    '${(_uploadProgress * 100).toInt()}%',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
             SeeUButton(
               label: _uploading ? 'Загрузка…' : 'Загрузить',
               onTap: (_uploading || _picked == null) ? null : _upload,
-              isLoading: _uploading,
+              isLoading: _uploading && _uploadProgress == 0,
               width: double.infinity,
             ),
           ],

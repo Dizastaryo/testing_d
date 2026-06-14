@@ -93,6 +93,39 @@ class ReaderSettingsSheet extends ConsumerWidget {
 
           const SizedBox(height: 16),
 
+          // Font family
+          Text('Шрифт', style: TextStyle(fontSize: 13, color: c.ink2)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _FontChip(
+                label: 'Системный',
+                preview: 'Аа',
+                fontFamily: null,
+                selected: settings.fontFamily == ReaderFontFamily.system,
+                onTap: () => notifier.setFontFamily(ReaderFontFamily.system),
+              ),
+              const SizedBox(width: 10),
+              _FontChip(
+                label: 'Serif',
+                preview: 'Аа',
+                fontFamily: 'Georgia',
+                selected: settings.fontFamily == ReaderFontFamily.serif,
+                onTap: () => notifier.setFontFamily(ReaderFontFamily.serif),
+              ),
+              const SizedBox(width: 10),
+              _FontChip(
+                label: 'Моно',
+                preview: 'Аа',
+                fontFamily: 'JetBrains Mono',
+                selected: settings.fontFamily == ReaderFontFamily.mono,
+                onTap: () => notifier.setFontFamily(ReaderFontFamily.mono),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
           // Theme
           Text('Тема', style: TextStyle(fontSize: 13, color: c.ink2)),
           const SizedBox(height: 8),
@@ -158,6 +191,70 @@ class _ToggleChip extends StatelessWidget {
             fontWeight: FontWeight.w500,
             color: selected ? Colors.white : context.seeuColors.ink2,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FontChip extends StatelessWidget {
+  final String label;
+  final String preview;
+  final String? fontFamily;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FontChip({
+    required this.label,
+    required this.preview,
+    required this.fontFamily,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 80,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? SeeUColors.accent.withValues(alpha: 0.1)
+              : Colors.transparent,
+          border: Border.all(
+            color: selected ? SeeUColors.accent : context.seeuColors.line,
+            width: selected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              preview,
+              style: TextStyle(
+                fontFamily: fontFamily,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? SeeUColors.accent
+                    : context.seeuColors.ink2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: selected
+                    ? SeeUColors.accent
+                    : context.seeuColors.ink3,
+              ),
+            ),
+          ],
         ),
       ),
     );
