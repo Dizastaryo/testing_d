@@ -4,10 +4,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import '../../../core/providers/offline_catalog_provider.dart';
 import 'reader_settings_sheet.dart';
 
 /// Общая обёртка для всех ридеров библиотеки.
@@ -58,7 +60,13 @@ class _ReaderShellState extends ConsumerState<ReaderShell> {
     final pos = widget.positionNotifier.value;
     if (pos.isEmpty) return;
     try {
+      // Сохраняем на сервер
       await _dio.put(ApiEndpoints.fileProgress(widget.fileId), data: {'position': pos});
+    } catch (_) {}
+    // Сохраняем локально в SQLite каталог
+    try {
+      final progress = _computeProgress(pos);
+      ref.read(offlineCatalogProvider).updateProgress(widget.fileId, progress, pos);
     } catch (_) {}
   }
 
@@ -135,6 +143,16 @@ class _ReaderShellState extends ConsumerState<ReaderShell> {
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(PhosphorIconsRegular.shareNetwork,
+                                color: c.ink2),
+                            tooltip: 'Поделиться',
+                            onPressed: () => Share.share(
+                              'Читаю «${widget.title}» в SeeU\n'
+                              'seeu://files/${widget.fileId}',
+                              subject: widget.title,
                             ),
                           ),
                           IconButton(

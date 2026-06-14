@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../core/api/api_client.dart' show networkOnlineProvider;
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
@@ -123,6 +124,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         child: CustomScrollView(
           controller: _scrollCtrl,
           slivers: [
+            // Offline banner
+            if (!ref.watch(networkOnlineProvider))
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.wifi_off_rounded,
+                          color: Colors.orange, size: 18),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Офлайн-режим — показаны кэшированные данные',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             // Header
             SliverToBoxAdapter(child: _buildHeader(theme)),
 
@@ -210,6 +239,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             icon: Icon(PhosphorIcons.hourglassMedium(),
                 color: theme.colorScheme.onSurface),
             tooltip: 'Подготовка файлов',
+          ),
+          IconButton(
+            onPressed: () => context.push('/library/offline'),
+            icon: Icon(PhosphorIconsRegular.cloudArrowDown,
+                color: theme.colorScheme.onSurface),
+            tooltip: 'Скачанные',
           ),
           IconButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(

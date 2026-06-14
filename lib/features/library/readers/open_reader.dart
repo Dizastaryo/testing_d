@@ -22,6 +22,8 @@ void openReader(BuildContext context, FileItem file) {
           fileId: file.id,
           title: file.displayTitle,
           fileUrl: file.fileUrl,
+          author: file.authorName,
+          coverUrl: file.coverUrl,
         ),
       ));
     case 'epub':
@@ -30,6 +32,8 @@ void openReader(BuildContext context, FileItem file) {
           fileId: file.id,
           title: file.displayTitle,
           fileUrl: file.fileUrl,
+          author: file.authorName,
+          coverUrl: file.coverUrl,
         ),
       ));
     case 'txt':
@@ -40,6 +44,8 @@ void openReader(BuildContext context, FileItem file) {
           title: file.displayTitle,
           format: ext,
           fileUrl: file.fileUrl,
+          author: file.authorName,
+          coverUrl: file.coverUrl,
         ),
       ));
     case 'fb2':

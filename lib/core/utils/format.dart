@@ -1,5 +1,16 @@
 import 'dart:ui' show Color;
 
+/// Human-readable file size.
+/// 1024 → "1.0 КБ", 1048576 → "1.0 МБ"
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes Б';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} КБ';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} ГБ';
+}
+
 /// Compact number format for likes, followers, views etc.
 /// 1234 → "1.2К", 1500000 → "1.5М"
 String formatCount(int n) {

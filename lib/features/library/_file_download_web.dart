@@ -4,7 +4,11 @@
 
 import 'dart:html' as html;
 
-Future<void> saveDownload({required String url, required String filename}) async {
+Future<void> saveDownload({
+  required String url,
+  required String filename,
+  void Function(int received, int total)? onProgress,
+}) async {
   final anchor = html.AnchorElement(href: url)
     ..download = filename
     ..target = '_blank'

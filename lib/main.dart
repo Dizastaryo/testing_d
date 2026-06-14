@@ -50,6 +50,7 @@ import 'features/videos/video_upload_screen.dart';
 import 'features/videos/watch_screen.dart';
 import 'features/library/file_detail_screen.dart';
 import 'features/library/library_screen.dart';
+import 'features/library/offline_library_screen.dart';
 import 'features/music/music_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
 import 'features/services/services_screen.dart';
@@ -240,6 +241,10 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
         GoRoute(
           path: '/files',
           pageBuilder: (_, __) => const CupertinoPage(child: LibraryScreen()),
+        ),
+        GoRoute(
+          path: '/library/offline',
+          pageBuilder: (_, __) => const CupertinoPage(child: OfflineLibraryScreen()),
         ),
         GoRoute(
           path: '/files/:id',

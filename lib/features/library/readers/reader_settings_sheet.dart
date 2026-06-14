@@ -71,24 +71,29 @@ class ReaderSettingsSheet extends ConsumerWidget {
 
           const SizedBox(height: 4),
 
-          // Line height
-          Text('Межстрочный интервал',
-              style: TextStyle(fontSize: 13, color: c.ink2)),
-          const SizedBox(height: 8),
+          // Line height slider
           Row(
             children: [
-              _ToggleChip(
-                label: 'Обычный',
-                selected: settings.lineHeight < 1.8,
-                onTap: () => notifier.setLineHeight(1.6),
-              ),
-              const SizedBox(width: 10),
-              _ToggleChip(
-                label: 'Широкий',
-                selected: settings.lineHeight >= 1.8,
-                onTap: () => notifier.setLineHeight(1.9),
-              ),
+              Icon(PhosphorIconsRegular.textAlignLeft, size: 14, color: c.ink3),
+              const SizedBox(width: 8),
+              Text('Межстрочный интервал',
+                  style: TextStyle(fontSize: 13, color: c.ink2)),
+              const Spacer(),
+              Text('${settings.lineHeight.toStringAsFixed(1)}×',
+                  style: TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: 12,
+                      color: SeeUColors.accent)),
             ],
+          ),
+          Slider(
+            value: settings.lineHeight,
+            min: 1.2,
+            max: 2.4,
+            divisions: 12,
+            activeColor: SeeUColors.accent,
+            inactiveColor: SeeUColors.accent.withValues(alpha: 0.2),
+            onChanged: (v) => notifier.setLineHeight((v * 10).round() / 10),
           ),
 
           const SizedBox(height: 16),
@@ -138,7 +143,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
                 selected: settings.theme == ReaderTheme.light,
                 onTap: () => notifier.setTheme(ReaderTheme.light),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               _ThemeChip(
                 label: 'Сепия',
                 bgColor: const Color(0xFFF5EDD3),
@@ -146,13 +151,21 @@ class ReaderSettingsSheet extends ConsumerWidget {
                 selected: settings.theme == ReaderTheme.sepia,
                 onTap: () => notifier.setTheme(ReaderTheme.sepia),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               _ThemeChip(
                 label: 'Тёмная',
                 bgColor: const Color(0xFF1A1A1A),
                 textColor: const Color(0xFFE0E0E0),
                 selected: settings.theme == ReaderTheme.dark,
                 onTap: () => notifier.setTheme(ReaderTheme.dark),
+              ),
+              const SizedBox(width: 8),
+              _ThemeChip(
+                label: 'AMOLED',
+                bgColor: Colors.black,
+                textColor: Colors.white,
+                selected: settings.theme == ReaderTheme.amoled,
+                onTap: () => notifier.setTheme(ReaderTheme.amoled),
               ),
             ],
           ),
@@ -162,40 +175,6 @@ class ReaderSettingsSheet extends ConsumerWidget {
   }
 }
 
-class _ToggleChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _ToggleChip(
-      {required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? SeeUColors.accent : Colors.transparent,
-          border: Border.all(
-            color: selected
-                ? SeeUColors.accent
-                : context.seeuColors.line,
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: selected ? Colors.white : context.seeuColors.ink2,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _FontChip extends StatelessWidget {
   final String label;

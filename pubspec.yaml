@@ -25,6 +25,7 @@ dependencies:
   # Storage
   shared_preferences: ^2.2.3
   flutter_secure_storage: ^9.0.0
+  sqflite: ^2.4.1
 
   # Camera
   camera: ^0.11.0+2

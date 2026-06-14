@@ -223,14 +223,23 @@ class _ReadingFileCard extends ConsumerWidget {
                       ],
                       if (showProgress && progress != null) ...[
                         const SizedBox(height: 6),
-                        Text(
-                          progress.displayProgress,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: SeeUColors.accent,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'JetBrains Mono',
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              progress.displayProgress,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: SeeUColors.accent,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: 'JetBrains Mono',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _relativeTime(progress.lastReadAt),
+                              style: TextStyle(fontSize: 10, color: c.ink4),
+                            ),
+                          ],
                         ),
                       ],
                     ],
@@ -286,4 +295,15 @@ class _ReadingFileCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _relativeTime(DateTime dt) {
+  final diff = DateTime.now().difference(dt);
+  if (diff.inMinutes < 1) return 'только что';
+  if (diff.inHours < 1) return '${diff.inMinutes} мин. назад';
+  if (diff.inHours < 24) return '${diff.inHours} ч. назад';
+  if (diff.inDays == 1) return 'вчера';
+  if (diff.inDays < 7) return '${diff.inDays} дн. назад';
+  if (diff.inDays < 30) return '${(diff.inDays / 7).floor()} нед. назад';
+  return '${(diff.inDays / 30).floor()} мес. назад';
 }

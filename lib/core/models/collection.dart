@@ -7,6 +7,7 @@ class Collection {
   final String description;
   final String? coverFileId;
   final int filesCount;
+  final List<String> coverUrls;
   final List<FileItem> files;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -18,6 +19,7 @@ class Collection {
     required this.description,
     this.coverFileId,
     required this.filesCount,
+    this.coverUrls = const [],
     this.files = const [],
     required this.createdAt,
     required this.updatedAt,
@@ -25,6 +27,7 @@ class Collection {
 
   factory Collection.fromJson(Map<String, dynamic> json) {
     final filesRaw = json['files'] as List? ?? [];
+    final coverRaw = json['cover_urls'] as List? ?? [];
     return Collection(
       id: json['id'] ?? '',
       userId: json['user_id'] ?? '',
@@ -32,6 +35,7 @@ class Collection {
       description: json['description'] ?? '',
       coverFileId: json['cover_file_id'] as String?,
       filesCount: (json['files_count'] as num?)?.toInt() ?? filesRaw.length,
+      coverUrls: coverRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList(),
       files: filesRaw
           .map((e) => FileItem.fromJson(e as Map<String, dynamic>))
           .toList(),

@@ -1,17 +1,14 @@
-import 'dart:io' show File;
-
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import '../../../core/providers/offline_catalog_provider.dart';
+import '../../../core/services/offline_storage_service.dart';
 import 'reader_settings.dart';
 import 'reader_shell.dart';
 
@@ -19,6 +16,8 @@ class PdfReaderScreen extends ConsumerStatefulWidget {
   final String fileId;
   final String title;
   final String fileUrl;
+  final String? author;
+  final String? coverUrl;
   /// Оригинальный формат документа (например 'docx', 'pptx').
   /// По умолчанию 'pdf' — показывается в заголовке ридера.
   final String originalFormat;
@@ -28,6 +27,8 @@ class PdfReaderScreen extends ConsumerStatefulWidget {
     required this.fileId,
     required this.title,
     required this.fileUrl,
+    this.author,
+    this.coverUrl,
     this.originalFormat = 'pdf',
   });
 
@@ -41,10 +42,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   int _current = 0;
   int _total = 0;
   PDFViewController? _pdfController;
-  // Баг #1: страница из прогресса, применяется в onRender когда контроллер готов
   int? _initialPage;
-  bool _savedOffline = false;
-  bool _savingOffline = false;
 
   final _positionNotifier = ValueNotifier<Map<String, dynamic>>({});
 
@@ -60,11 +58,6 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       return;
     }
     _init();
-  }
-
-  Future<File> _offlineFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File(p.join(dir.path, '${widget.fileId}.pdf'));
   }
 
   Future<void> _init() async {
@@ -85,48 +78,19 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
 
   Future<void> _loadPdf() async {
     try {
-      // Проверяем офлайн-кэш
-      final offlineFile = await _offlineFile();
-      if (await offlineFile.exists()) {
-        if (mounted) {
-          setState(() {
-            _localPath = offlineFile.path;
-            _savedOffline = true;
-          });
-        }
-        return;
-      }
-
-      // Баг #4 fix: имя файла только из fileId, без небезопасного title
-      final tmpDir = await getTemporaryDirectory();
-      final localFile = File(p.join(tmpDir.path, '${widget.fileId}_tmp.pdf'));
-      final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 3)));
-      await dio.download(widget.fileUrl, localFile.path);
-      if (mounted) setState(() => _localPath = localFile.path);
+      final repo = ref.read(offlineCatalogProvider);
+      final path = await repo.ensureAvailable(
+        widget.fileId,
+        OfflineKind.pdf,
+        widget.fileUrl,
+        title: widget.title,
+        author: widget.author,
+        coverUrl: widget.coverUrl,
+        originalFormat: widget.originalFormat,
+      );
+      if (mounted) setState(() => _localPath = path);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
-    }
-  }
-
-  Future<void> _saveOffline() async {
-    if (_savingOffline || _savedOffline) return;
-    setState(() => _savingOffline = true);
-    try {
-      final offlineFile = await _offlineFile();
-      final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 5)));
-      await dio.download(widget.fileUrl, offlineFile.path);
-      if (mounted) setState(() => _savedOffline = true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл сохранён для офлайн')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить')),
-      );
-    } finally {
-      if (mounted) setState(() => _savingOffline = false);
     }
   }
 
@@ -139,7 +103,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(readerSettingsProvider);
-    final isDark = settings.theme == ReaderTheme.dark;
+    final isDark = settings.isNightMode;
 
     return ReaderShell(
       fileId: widget.fileId,
@@ -175,25 +139,6 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
               ),
             ),
 
-          // Кнопка сохранения офлайн
-          if (_localPath != null && !_savedOffline)
-            Positioned(
-              bottom: 60,
-              right: 16,
-              child: FloatingActionButton.small(
-                backgroundColor: SeeUColors.accent,
-                tooltip: 'Сохранить для офлайн',
-                onPressed: _savingOffline ? null : _saveOffline,
-                child: _savingOffline
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(PhosphorIconsRegular.cloudArrowDown,
-                        color: Colors.white),
-              ),
-            ),
         ],
       ),
     );

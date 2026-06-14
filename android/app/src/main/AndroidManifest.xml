@@ -50,6 +50,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep links: seeu://files/:id → FileDetailScreen -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="seeu"/>
+            </intent-filter>
         </activity>
         <!-- ForegroundService для звонков и голосовых каналов.
              Тип microphone — Android 10+ требует явного объявления типа

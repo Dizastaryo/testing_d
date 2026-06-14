@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ReaderTheme { light, sepia, dark }
+enum ReaderTheme { light, sepia, dark, amoled }
 
 enum ReaderFontFamily { system, serif, mono }
 
@@ -52,6 +52,8 @@ class ReaderSettings {
         return const Color(0xFFF5EDD3);
       case ReaderTheme.dark:
         return const Color(0xFF1A1A1A);
+      case ReaderTheme.amoled:
+        return Colors.black;
     }
   }
 
@@ -63,8 +65,12 @@ class ReaderSettings {
         return const Color(0xFF3D2B1A);
       case ReaderTheme.dark:
         return const Color(0xFFE0E0E0);
+      case ReaderTheme.amoled:
+        return Colors.white;
     }
   }
+
+  bool get isNightMode => theme == ReaderTheme.dark || theme == ReaderTheme.amoled;
 }
 
 class ReaderSettingsNotifier extends StateNotifier<ReaderSettings> {

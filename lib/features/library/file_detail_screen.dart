@@ -2,16 +2,19 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/offline_catalog_provider.dart';
 import '../../core/providers/reading_provider.dart';
 import '_file_download_web.dart' if (dart.library.io) '_file_download_io.dart' as downloader;
+import 'author_screen.dart';
 import 'collection_add_sheet.dart';
 import 'readers/open_reader.dart';
 import 'widgets/file_cover_widget.dart';
@@ -34,6 +37,7 @@ class FileDetailScreen extends ConsumerStatefulWidget {
 
 class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   bool _downloading = false;
+  double _downloadProgress = 0.0; // 0.0–1.0 во время скачивания
   String? _readingStatus; // 'want' | 'reading' | 'done' | null
   bool _loadingStatus = false;
 
@@ -119,10 +123,13 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
               tooltip: 'Поделиться',
               onPressed: () {
                 final file = async.value!;
-                final text = file.authorName.isNotEmpty
+                final info = file.authorName.isNotEmpty
                     ? '${file.displayTitle} — ${file.authorName}'
                     : file.displayTitle;
-                Share.share(text, subject: file.displayTitle);
+                Share.share(
+                  '$info\n\nОткрыть в SeeU: seeu://files/${file.id}',
+                  subject: file.displayTitle,
+                );
               },
             ),
         ],
@@ -169,8 +176,19 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ),
           if (file.authorName.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(file.authorName,
-                style: TextStyle(fontSize: 14, color: c.ink2)),
+            GestureDetector(
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => AuthorScreen(authorName: file.authorName),
+              )),
+              child: Text(
+                file.authorName,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: SeeUColors.accent,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 8),
           Wrap(
@@ -178,10 +196,13 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
             runSpacing: 6,
             children: [
               _Chip(label: file.formatLabel, color: SeeUColors.accent),
+              if (ref.watch(isOfflineProvider(file.id)))
+                _Chip(label: 'Офлайн', color: Colors.green),
               _Chip(label: file.fileSizeFormatted),
               _Chip(label: '↓ ${file.downloadsFormatted}'),
               if (file.pagesCount > 0) _Chip(label: '${file.pagesCount} стр.'),
               if (file.likesCount > 0) _Chip(label: '❤ ${file.likesCount}'),
+              _Chip(label: DateFormat('d MMM yyyy', 'ru').format(file.createdAt)),
               if (file.category?.name.isNotEmpty == true)
                 _Chip(label: file.category!.name),
               if (file.language.isNotEmpty)
@@ -271,6 +292,11 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ],
 
           const SizedBox(height: 20),
+
+          // Похожие файлы (та же категория)
+          if (file.categoryId.isNotEmpty)
+            _SimilarFilesRow(fileId: file.id, categoryId: file.categoryId),
+
           // Main action buttons
           Row(
             children: [
@@ -293,21 +319,32 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                       borderRadius: BorderRadius.circular(SeeURadii.medium),
                       border: Border.all(color: c.line),
                     ),
-                    child: _downloading
-                        ? const Center(
-                            child: SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                    child: _downloading && _downloadProgress > 0
+                        ? Center(
+                            child: Text(
+                              '${(_downloadProgress * 100).toInt()}%',
+                              style: const TextStyle(
+                                fontFamily: 'JetBrains Mono',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: SeeUColors.accent,
+                              ),
                             ),
                           )
-                        : Icon(PhosphorIconsRegular.download, color: c.ink2, size: 20),
+                        : _downloading
+                            ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+                            : Icon(PhosphorIconsRegular.download, color: c.ink2, size: 20),
                   ),
                 ),
               ] else ...[
                 Expanded(
                   child: SeeUButton(
-                    label: _downloading ? 'Скачивание…' : 'Скачать',
-                    isLoading: _downloading,
+                    label: _downloading && _downloadProgress > 0
+                        ? 'Скачивание ${(_downloadProgress * 100).toInt()}%…'
+                        : _downloading
+                            ? 'Скачивание…'
+                            : 'Скачать',
+                    isLoading: _downloading && _downloadProgress == 0,
                     onTap: _downloading ? null : () => _download(file),
                   ),
                 ),
@@ -435,10 +472,9 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   }
 
   Future<void> _download(FileItem file) async {
-    setState(() => _downloading = true);
+    setState(() { _downloading = true; _downloadProgress = 0.0; });
     try {
       final dio = ref.read(libraryApiClientProvider);
-      // Hit /files/:id/download to bump the counter and get the resolved URL.
       final r = await dio.get(ApiEndpoints.fileDownload(file.id));
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
       final url = (data['file_url'] as String?) ?? file.fileUrl;
@@ -446,20 +482,20 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ? ApiEndpoints.libraryBaseUrl.replaceAll('/api/v1', '') + url
           : url;
 
-      // Trigger the actual download. On web — invisible anchor click.
-      // On mobile — open in external browser.
-      try {
-        await downloader.saveDownload(url: absUrl, filename: file.filename);
-      } catch (_) {
-        // Fallback: open the URL.
-        final uri = Uri.parse(absUrl);
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      await downloader.saveDownload(
+        url: absUrl,
+        filename: file.filename,
+        onProgress: (received, total) {
+          if (total > 0 && mounted) {
+            setState(() => _downloadProgress = received / total);
+          }
+        },
+      );
 
       if (!mounted) return;
       ref.invalidate(_fileDetailProvider(widget.id));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Скачивание начато')),
+        const SnackBar(content: Text('Файл сохранён')),
       );
     } on DioException catch (e) {
       if (!mounted) return;
@@ -472,8 +508,75 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
         SnackBar(content: Text('Ошибка: $e')),
       );
     } finally {
-      if (mounted) setState(() => _downloading = false);
+      if (mounted) setState(() { _downloading = false; _downloadProgress = 0.0; });
     }
+  }
+}
+
+class _SimilarFilesRow extends ConsumerWidget {
+  final String fileId;
+  final String categoryId;
+  const _SimilarFilesRow({required this.fileId, required this.categoryId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    final async = ref.watch(
+        similarFilesProvider((fileId: fileId, categoryId: categoryId)));
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (files) {
+        if (files.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Похожие файлы',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: c.ink)),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 145,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: files.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (ctx, i) {
+                  final f = files[i];
+                  return GestureDetector(
+                    onTap: () => ctx.push('/files/${f.id}'),
+                    child: SizedBox(
+                      width: 90,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FileCoverWidget(
+                              file: f, width: 90, height: 112, borderRadius: 8),
+                          const SizedBox(height: 4),
+                          Text(
+                            f.displayTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: c.ink2,
+                                height: 1.3),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        );
+      },
+    );
   }
 }
 

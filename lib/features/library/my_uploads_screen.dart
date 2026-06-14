@@ -8,6 +8,7 @@ import '../../core/models/file_item.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/utils/format.dart';
+import 'edit_file_sheet.dart';
 import 'readers/open_reader.dart';
 
 class MyUploadsScreen extends ConsumerWidget {
@@ -213,6 +214,20 @@ class _UploadCard extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
+            // Edit button
+            IconButton(
+              icon: Icon(PhosphorIconsRegular.pencilSimple,
+                  color: context.seeuColors.ink3, size: 20),
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => EditFileSheet(file: file),
+                );
+                ref.invalidate(userFilesProvider(file.userId));
+              },
             ),
             // Delete button
             IconButton(

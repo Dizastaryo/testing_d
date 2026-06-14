@@ -2,17 +2,17 @@ import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import '../../../core/providers/offline_catalog_provider.dart';
+import '../../../core/services/offline_storage_service.dart';
 import 'reader_settings.dart';
 import 'reader_shell.dart';
 
@@ -21,12 +21,13 @@ import 'reader_shell.dart';
 /// MD рендерится через flutter_markdown, TXT — SelectableText.
 /// Поддерживает UTF-8 и Windows-1251 (кириллица CIS-локали).
 /// Настройки (размер шрифта, тема) — из readerSettingsProvider.
-/// Офлайн кэш: `<appDocDir>/<fileId>_text.txt`
 class TextReaderScreen extends ConsumerStatefulWidget {
   final String fileId;
   final String title;
   final String format; // 'txt' | 'md'
   final String fileUrl; // R2 публичный URL оригинального файла
+  final String? author;
+  final String? coverUrl;
 
   const TextReaderScreen({
     super.key,
@@ -34,6 +35,8 @@ class TextReaderScreen extends ConsumerStatefulWidget {
     required this.title,
     required this.format,
     required this.fileUrl,
+    this.author,
+    this.coverUrl,
   });
 
   @override
@@ -61,11 +64,6 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
     _scrollCtrl.addListener(_onScroll);
   }
 
-  Future<File?> _cacheFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/${widget.fileId}_text.txt');
-  }
-
   Future<void> _init() async {
     final dio = ref.read(libraryApiClientProvider);
     // Загружаем прогресс параллельно, jumpTo делаем ПОСЛЕ рендера текста.
@@ -86,33 +84,35 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
   }
 
   Future<void> _loadText() async {
-    // Проверяем кэш
-    final cache = await _cacheFile();
-    if (cache != null && await cache.exists()) {
-      final cached = await cache.readAsString();
+    final service = ref.read(offlineStorageProvider);
+    final cached = await service.readText(widget.fileId);
+    if (cached != null) {
       if (mounted) setState(() => _text = cached);
       return;
     }
 
     try {
-      // Скачиваем оригинальный файл напрямую с R2
-      final tmpDir = await getTemporaryDirectory();
-      final tmpFile =
-          File('${tmpDir.path}/${widget.fileId}_orig.${widget.format}');
-      final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 3)));
-      await dio.download(widget.fileUrl, tmpFile.path);
+      // Скачиваем через offlineCatalogProvider (автоматически сохраняет в каталог)
+      final repo = ref.read(offlineCatalogProvider);
+      final path = await repo.ensureAvailable(
+        widget.fileId,
+        OfflineKind.text,
+        widget.fileUrl,
+        title: widget.title,
+        author: widget.author,
+        coverUrl: widget.coverUrl,
+        originalFormat: widget.format,
+      );
 
-      final bytes = await tmpFile.readAsBytes();
+      final bytes = await File(path).readAsBytes();
       final text = _decodeText(bytes);
 
       if (mounted) setState(() => _text = text);
 
-      // Кэшируем декодированный текст
-      if (cache != null && text.isNotEmpty) {
-        await cache.writeAsString(text);
+      // Кэшируем декодированный текст для быстрого доступа
+      if (text.isNotEmpty) {
+        await service.saveText(widget.fileId, text);
       }
-      // Удаляем временный файл
-      if (await tmpFile.exists()) await tmpFile.delete();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }

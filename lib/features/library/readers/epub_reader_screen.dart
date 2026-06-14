@@ -1,33 +1,36 @@
 import 'dart:async' show StreamSubscription;
-import 'dart:io' show File;
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vocsy_epub_viewer/epub_viewer.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
+import '../../../core/providers/offline_catalog_provider.dart';
+import '../../../core/services/offline_storage_service.dart';
 import 'reader_settings.dart';
 import 'reader_shell.dart';
 
 /// EPUB ридер через vocsy_epub_viewer (нативный FolioReader/R2).
-/// Скачивает файл в temp-директорию, затем открывает нативный viewer.
+/// Файл хранится постоянно через OfflineCatalogRepository.
+/// При первом открытии скачивается; повторные открытия — без сети.
 class EpubReaderScreen extends ConsumerStatefulWidget {
   final String fileId;
   final String title;
   final String fileUrl;
+  final String? author;
+  final String? coverUrl;
 
   const EpubReaderScreen({
     super.key,
     required this.fileId,
     required this.title,
     required this.fileUrl,
+    this.author,
+    this.coverUrl,
   });
 
   @override
@@ -57,14 +60,16 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
 
   Future<void> _openEpub() async {
     try {
-      // Баг #4 fix: имя файла только из fileId — title может содержать / \ :
-      final tmpDir = await getTemporaryDirectory();
-      final localFile = File(p.join(tmpDir.path, '${widget.fileId}.epub'));
-
-      if (!localFile.existsSync()) {
-        final dio = Dio(BaseOptions(receiveTimeout: const Duration(minutes: 3)));
-        await dio.download(widget.fileUrl, localFile.path);
-      }
+      final repo = ref.read(offlineCatalogProvider);
+      final epubPath = await repo.ensureAvailable(
+        widget.fileId,
+        OfflineKind.epub,
+        widget.fileUrl,
+        title: widget.title,
+        author: widget.author,
+        coverUrl: widget.coverUrl,
+        originalFormat: 'epub',
+      );
 
       // Загружаем сохранённый прогресс
       final libDio = ref.read(libraryApiClientProvider);
@@ -89,7 +94,7 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         enableTts: false,
         nightMode: settings.theme == ReaderTheme.dark,
       );
-      VocsyEpub.open(localFile.path, lastLocation: lastLocator);
+      VocsyEpub.open(epubPath, lastLocation: lastLocator);
 
       // Подписываемся на обновления позиции (subscription сохраняется для dispose)
       _locatorSub = VocsyEpub.locatorStream.listen((locator) {

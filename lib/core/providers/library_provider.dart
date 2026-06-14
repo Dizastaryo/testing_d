@@ -11,7 +11,7 @@ final libraryApiClientProvider = Provider<Dio>((ref) {
   final dio = Dio(BaseOptions(
     baseUrl: ApiEndpoints.libraryBaseUrl,
     connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 60),
+    receiveTimeout: const Duration(minutes: 6), // LibreOffice холодный старт ~60-90с
     headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
   ));
   dio.interceptors.add(InterceptorsWrapper(
@@ -165,6 +165,36 @@ final userFilesProvider = FutureProvider.family<List<FileItem>, String>((ref, us
   return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
+// ─── Similar files (same category, excluding current) ─────────────────────
+final similarFilesProvider =
+    FutureProvider.autoDispose.family<List<FileItem>, ({String fileId, String categoryId})>(
+        (ref, arg) async {
+  if (arg.categoryId.isEmpty) return [];
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.files, queryParameters: {
+    'category_id': arg.categoryId,
+    'exclude_id': arg.fileId,
+    'limit': 8,
+    'sort': 'likes',
+  });
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+});
+
+// ─── Files by author ───────────────────────────────────────────────────────
+final authorFilesProvider =
+    FutureProvider.autoDispose.family<List<FileItem>, String>((ref, author) async {
+  if (author.isEmpty) return [];
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.files, queryParameters: {
+    'author': author,
+    'limit': 20,
+    'sort': 'date',
+  });
+  final data = resp.data['data'] as List? ?? [];
+  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
+});
+
 // ─── Reading list ──────────────────────────────────────────────────────────
 final readingListProvider =
     FutureProvider.family<List<FileItem>, String>((ref, status) async {
@@ -199,6 +229,10 @@ class LibraryActions {
 
   Future<void> deleteReadingStatus(String fileId) async {
     await _dio.delete(ApiEndpoints.fileReadingStatus(fileId));
+  }
+
+  Future<void> updateFileMeta(String fileId, Map<String, dynamic> data) async {
+    await _dio.patch(ApiEndpoints.fileById(fileId), data: data);
   }
 
   Future<String?> getReadingStatus(String fileId) async {
