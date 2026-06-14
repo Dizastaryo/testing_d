@@ -11,12 +11,11 @@ import 'pdf_reader_screen.dart';
 /// fb2, docx, rtf, odt, pptx, odp.
 ///
 /// Алгоритм:
-///  1. GET /files/:id/pdf — бэкенд конвертирует оригинал через LibreOffice
-///     (или отдаёт кэш, если конвертация уже была).
-///  2. По получении pdf_url делает pushReplacement на PdfReaderScreen.
-///
-/// Пользователь видит "Готовим документ..." только при первом открытии
-/// каждого файла. Повторные открытия мгновенны (R2-кэш).
+///  1. GET /files/:id/pdf
+///     - 200 → pdf_url готов, переходим на PdfReaderScreen
+///     - 202 → конвертация в очереди, начинаем опрос /pdf-status каждые 3 с
+///  2. Когда статус = done → повторяем GET /pdf → открываем ридер
+///  3. Когда статус = failed → показываем ошибку
 class ConvertedPdfReaderScreen extends ConsumerStatefulWidget {
   final String fileId;
   final String title;
@@ -37,6 +36,7 @@ class ConvertedPdfReaderScreen extends ConsumerStatefulWidget {
 class _ConvertedPdfReaderScreenState
     extends ConsumerState<ConvertedPdfReaderScreen> {
   String? _error;
+  bool _isPolling = false; // true while waiting for background conversion
 
   @override
   void initState() {
@@ -45,25 +45,69 @@ class _ConvertedPdfReaderScreenState
   }
 
   Future<void> _fetchPdfUrl() async {
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+      _isPolling = false;
+    });
     try {
       final dio = ref.read(libraryApiClientProvider);
       final resp = await dio.get(ApiEndpoints.filePdf(widget.fileId));
-      final pdfUrl = resp.data?['data']?['pdf_url'] as String?;
-      if (pdfUrl == null || pdfUrl.isEmpty) {
-        if (mounted) setState(() => _error = 'Сервер вернул пустой URL PDF');
-        return;
-      }
+
       if (!mounted) return;
-      // Заменяем текущий экран на PDF-ридер — назад ведёт в библиотеку
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => PdfReaderScreen(
-          fileId: widget.fileId,
-          title: widget.title,
-          fileUrl: pdfUrl,
-        ),
-      ));
+
+      if (resp.statusCode == 200) {
+        final pdfUrl = resp.data?['data']?['pdf_url'] as String?;
+        if (pdfUrl == null || pdfUrl.isEmpty) {
+          setState(() => _error = 'Сервер вернул пустой URL PDF');
+          return;
+        }
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => PdfReaderScreen(
+            fileId: widget.fileId,
+            title: widget.title,
+            fileUrl: pdfUrl,
+          ),
+        ));
+      } else if (resp.statusCode == 202) {
+        // Background conversion in progress — start polling
+        setState(() => _isPolling = true);
+        _pollStatus();
+      } else {
+        final msg = resp.data?['error'] as String? ?? 'Ошибка ${resp.statusCode}';
+        setState(() => _error = msg);
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _pollStatus() async {
+    while (mounted && _isPolling && _error == null) {
+      await Future.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      try {
+        final dio = ref.read(libraryApiClientProvider);
+        final resp = await dio.get(ApiEndpoints.filePdfStatus(widget.fileId));
+        final status = resp.data?['data']?['status'] as String? ?? 'pending';
+        if (status == 'done') {
+          // Ready — fetch the actual PDF URL
+          setState(() => _isPolling = false);
+          _fetchPdfUrl();
+          return;
+        } else if (status == 'failed') {
+          if (mounted) {
+            setState(() {
+              _isPolling = false;
+              _error = 'Конвертация не удалась. Попробуйте позже.';
+            });
+          }
+          return;
+        }
+        // status = pending | converting — keep polling
+      } catch (_) {
+        // network glitch — keep polling
+      }
     }
   }
 
@@ -97,7 +141,7 @@ class _ConvertedPdfReaderScreenState
           const CircularProgressIndicator(color: SeeUColors.accent),
           const SizedBox(height: 20),
           Text(
-            'Готовим документ...',
+            _isPolling ? 'Конвертация в очереди...' : 'Готовим документ...',
             style: SeeUTypography.body.copyWith(color: c.ink2),
           ),
           const SizedBox(height: 6),
@@ -108,6 +152,13 @@ class _ConvertedPdfReaderScreenState
               fontFamily: 'JetBrains Mono',
             ),
           ),
+          if (_isPolling) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Можно закрыть и вернуться позже',
+              style: SeeUTypography.caption.copyWith(color: c.ink4),
+            ),
+          ],
         ],
       ),
     );

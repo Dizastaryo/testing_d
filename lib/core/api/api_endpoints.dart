@@ -207,6 +207,7 @@ class ApiEndpoints {
   static String fileLike(String id) => '/files/$id/like';
   static String fileText(String id) => '/files/$id/text';
   static String filePdf(String id) => '/files/$id/pdf';
+  static String filePdfStatus(String id) => '/files/$id/pdf-status';
   static String fileReExtract(String id) => '/files/$id/re-extract';
   static String fileProgress(String id) => '/files/$id/progress';
   static String fileBookmarks(String id) => '/files/$id/bookmarks';
