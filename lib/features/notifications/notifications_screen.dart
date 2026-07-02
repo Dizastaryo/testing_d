@@ -1,0 +1,541 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import '../../core/utils/time_format.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
+import '../../core/design/design.dart';
+import '../../core/models/notification.dart';
+import '../../core/providers/notification_provider.dart';
+
+// "Все" vs "Ответы" (replies/comments/mentions) pill toggle
+enum _NotifFilter { all, replies }
+
+class NotificationsScreen extends ConsumerStatefulWidget {
+  const NotificationsScreen({super.key});
+
+  @override
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  _NotifFilter _activeFilter = _NotifFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    // Открыли экран → бэйдж на колокольчике должен исчезнуть.
+    // Помечаем все как прочитанные сразу при mount (Instagram-pattern).
+    // Guard на unreadCount==0 внутри markAllRead → API не дёргается зря.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notificationProvider.notifier).markAllRead();
+    });
+  }
+
+  List<AppNotification> _filtered(List<AppNotification> all) {
+    switch (_activeFilter) {
+      case _NotifFilter.all:
+        return all;
+      case _NotifFilter.replies:
+        return all
+            .where((n) =>
+                n.type == NotificationType.comment ||
+                n.type == NotificationType.reply ||
+                n.type == NotificationType.mention)
+            .toList();
+    }
+  }
+
+  String _filterLabel(_NotifFilter f) {
+    switch (f) {
+      case _NotifFilter.all:
+        return 'Все';
+      case _NotifFilter.replies:
+        return 'Ответы';
+    }
+  }
+
+  IconData _notifIcon(NotificationType type) {
+    switch (type) {
+      case NotificationType.like:
+        // heart for like
+        return PhosphorIcons.heart(PhosphorIconsStyle.fill);
+      case NotificationType.follow:
+        // user for follow
+        return PhosphorIcons.userPlus(PhosphorIconsStyle.fill);
+      case NotificationType.comment:
+        // chat for comment
+        return PhosphorIcons.chatCircle(PhosphorIconsStyle.fill);
+      case NotificationType.reply:
+        // chat (reply) — maps to remix concept in design
+        return PhosphorIcons.arrowsClockwise(PhosphorIconsStyle.fill);
+      case NotificationType.mention:
+        // at for mention
+        return PhosphorIcons.at(PhosphorIconsStyle.fill);
+      case NotificationType.postTag:
+        // radar-style for post tag (nearby mapping)
+        return PhosphorIcons.tag(PhosphorIconsStyle.fill);
+      case NotificationType.scannerLike:
+        return PhosphorIcons.bluetoothConnected(PhosphorIconsStyle.fill);
+      case NotificationType.spark:
+        return PhosphorIcons.fireSimple(PhosphorIconsStyle.fill);
+      case NotificationType.pairPrompt:
+      case NotificationType.pairConfirmed:
+        return PhosphorIcons.heart(PhosphorIconsStyle.fill);
+    }
+  }
+
+  Color _notifIconColor(NotificationType type) {
+    switch (type) {
+      case NotificationType.like:
+        return SeeUColors.like;
+      case NotificationType.follow:
+        return SeeUColors.accent;
+      case NotificationType.comment:
+        return SeeUColors.amber;
+      case NotificationType.reply:
+        return SeeUColors.plum;
+      case NotificationType.mention:
+        return const Color(0xFF85B7EB);
+      case NotificationType.postTag:
+        return SeeUColors.success;
+      case NotificationType.scannerLike:
+        return SeeUColors.like;
+      case NotificationType.spark:
+        return SeeUColors.accent;
+      case NotificationType.pairPrompt:
+      case NotificationType.pairConfirmed:
+        return SeeUColors.like;
+    }
+  }
+
+  // Group notifications by time period
+  Map<String, List<AppNotification>> _groupByTime(
+      List<AppNotification> notifications) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekAgo = today.subtract(const Duration(days: 7));
+
+    final Map<String, List<AppNotification>> groups = {};
+
+    for (final n in notifications) {
+      final nDate = DateTime(n.createdAt.year, n.createdAt.month, n.createdAt.day);
+      String key;
+      if (nDate.isAtSameMomentAs(today) || nDate.isAfter(today)) {
+        key = 'Сегодня';
+      } else if (nDate.isAfter(weekAgo)) {
+        key = 'На этой неделе';
+      } else {
+        key = 'Ранее';
+      }
+      groups.putIfAbsent(key, () => []);
+      groups[key]!.add(n);
+    }
+
+    // Sort groups in desired order
+    final ordered = <String, List<AppNotification>>{};
+    for (final label in ['Сегодня', 'На этой неделе', 'Ранее']) {
+      if (groups.containsKey(label)) {
+        ordered[label] = groups[label]!;
+      }
+    }
+    return ordered;
+  }
+
+  void _onNotificationTap(AppNotification n) {
+    ref.read(notificationProvider.notifier).markRead(n.id);
+    if (n.type == NotificationType.follow) {
+      context.push('/profile/${n.fromUser.username}');
+    } else if (n.commentId != null && n.postId != null) {
+      // Deep-link: открываем сразу комментарии с автоскроллом к нему.
+      context.push('/post/${n.postId}/comments?commentId=${n.commentId}');
+    } else if (n.postId != null) {
+      context.push('/post/${n.postId}');
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    await ref.read(notificationProvider.notifier).loadNotifications();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final notifState = ref.watch(notificationProvider);
+    final filtered = _filtered(notifState.notifications);
+    final grouped = _groupByTime(filtered);
+    final flatItems = _buildFlatList(grouped);
+
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+            // Header: glass bar with serif "Активность" + accent action
+            SeeUGlassBar(
+              titleText: 'Активность',
+              actions: [
+                if (notifState.unreadCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Tappable(
+                      onTap: () => ref
+                          .read(notificationProvider.notifier)
+                          .markAllRead(),
+                      child: Text(
+                        'Прочитать все',
+                        style: SeeUTypography.caption.copyWith(
+                          color: SeeUColors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            // "Все" | "Ответы" pill toggle
+            _buildFilterRow(),
+            // Content
+            Expanded(
+              child: notifState.isLoading
+                  ? SeeUShimmer(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: 8,
+                        itemBuilder: (_, __) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: c.surface2,
+                              borderRadius: BorderRadius.circular(SeeURadii.small),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : notifState.error != null && filtered.isEmpty
+                  ? SeeUErrorState(onRetry: _onRefresh)
+                  : filtered.isEmpty
+                  ? _buildEmpty()
+                  : SeeURadarRefresh(
+                      onRefresh: _onRefresh,
+                      child: AnimationLimiter(
+                        child: ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(bottom: 100),
+                          itemCount: flatItems.length,
+                          itemBuilder: (context, index) =>
+                              flatItems[index],
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+    );
+  }
+
+  Widget _buildFilterRow() {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: _NotifFilter.values.map((f) {
+            final isActive = f == _activeFilter;
+            return GestureDetector(
+              onTap: () => setState(() => _activeFilter = f),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isActive ? c.ink : Colors.transparent,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                child: Text(
+                  _filterLabel(f),
+                  style: SeeUTypography.caption.copyWith(
+                    fontSize: 13,
+                    color: isActive ? Colors.white : c.ink2,
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  // Pre-build flat list from grouped structure (P06: avoid O(n^2) in itemBuilder)
+  List<Widget> _buildFlatList(Map<String, List<AppNotification>> grouped) {
+    final items = <Widget>[];
+    int position = 0;
+    for (final entry in grouped.entries) {
+      items.add(_buildSectionHeader(entry.key));
+      position++;
+      for (final notif in entry.value) {
+        items.add(
+          AnimationConfiguration.staggeredList(
+            position: position,
+            duration: const Duration(milliseconds: 350),
+            delay: const Duration(milliseconds: 40),
+            child: SlideAnimation(
+              verticalOffset: 20,
+              curve: Curves.easeOutCubic,
+              child: FadeInAnimation(
+                curve: Curves.easeOutCubic,
+                child: _buildNotificationTile(notif),
+              ),
+            ),
+          ),
+        );
+        position++;
+      }
+    }
+    return items;
+  }
+
+  Widget _buildSectionHeader(String title) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: SeeUTypography.kicker.copyWith(color: c.ink3),
+      ),
+    );
+  }
+
+  Widget _buildNotificationTile(AppNotification n) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () => _onNotificationTap(n),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          border: Border(
+            bottom: BorderSide(color: c.line, width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            _buildAvatarBlock(n, c),
+            const SizedBox(width: 12),
+            // Text content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${n.fromUser.username} ',
+                          style: SeeUTypography.caption.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: c.ink,
+                          ),
+                        ),
+                        TextSpan(
+                          text: n.message,
+                          style: SeeUTypography.caption.copyWith(
+                            color: c.ink,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    formatRelativeTime(n.createdAt),
+                    style: SeeUTypography.micro.copyWith(
+                      color: c.ink3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Post thumbnail
+            if (n.postThumbnailUrl != null) ...[
+              const SizedBox(width: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(SeeURadii.small),
+                child: CachedNetworkImage(
+                  imageUrl: n.postThumbnailUrl!,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    width: 48,
+                    height: 48,
+                    color: c.line,
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    width: 48,
+                    height: 48,
+                    color: c.line,
+                    child: Icon(
+                      PhosphorIcons.image(),
+                      size: 18,
+                      color: c.ink3,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            // Unread indicator: accent dot (not a full tint)
+            if (!n.isRead) ...[
+              const SizedBox(width: 10),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: SeeUColors.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmpty() => SeeUEmptyState(
+        icon: PhosphorIconsRegular.bell,
+        title: _activeFilter != _NotifFilter.all
+            ? 'Нет уведомлений этого типа'
+            : 'Нет уведомлений',
+        subtitle: 'Здесь появятся ваши уведомления',
+      );
+
+  /// Аватарка нотификации. Для одиночных — обычный CircleAvatar 48px с
+  /// type-badge. Для батча (otherUsers.isNotEmpty) — стек 2-3 круглых
+  /// avatars (front = fromUser с border'ом, остальные смещены влево-вверх).
+  Widget _buildAvatarBlock(AppNotification n, SeeUThemeColors c) {
+    final badge = Positioned(
+      right: -2,
+      bottom: -2,
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _notifIconColor(n.type),
+          shape: BoxShape.circle,
+          border: Border.all(color: c.bg, width: 2),
+        ),
+        child: Center(
+          child: Icon(_notifIcon(n.type), size: 10, color: Colors.white),
+        ),
+      ),
+    );
+
+    if (n.otherUsers.isEmpty) {
+      return SizedBox(
+        width: 52,
+        height: 52,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _avatarCircle(
+                n.fromUser.avatarUrl, n.fromUser.username, c,
+                radius: 24, withBgBorder: false),
+            badge,
+          ],
+        ),
+      );
+    }
+
+    // Батч: 2-3 overlapping avatars в углу 56×56. fromUser спереди.
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (n.otherUsers.length >= 2)
+            Positioned(
+              left: 0,
+              top: 0,
+              child: _avatarCircle(
+                n.otherUsers[1].avatarUrl.isEmpty
+                    ? null
+                    : n.otherUsers[1].avatarUrl,
+                n.otherUsers[1].username,
+                c,
+                radius: 12,
+                withBgBorder: true,
+              ),
+            ),
+          Positioned(
+            right: 14,
+            top: 0,
+            child: _avatarCircle(
+              n.otherUsers[0].avatarUrl.isEmpty
+                  ? null
+                  : n.otherUsers[0].avatarUrl,
+              n.otherUsers[0].username,
+              c,
+              radius: 14,
+              withBgBorder: true,
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: _avatarCircle(
+                n.fromUser.avatarUrl, n.fromUser.username, c,
+                radius: 18, withBgBorder: true),
+          ),
+          badge,
+        ],
+      ),
+    );
+  }
+
+  Widget _avatarCircle(String? avatarUrl, String username, SeeUThemeColors c,
+      {required double radius, bool withBgBorder = false}) {
+    final ringWidth = withBgBorder ? 2.0 : 0.0;
+    final inner = CircleAvatar(
+      radius: radius,
+      backgroundColor: c.surface2,
+      backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+          ? CachedNetworkImageProvider(avatarUrl)
+          : null,
+      child: (avatarUrl == null || avatarUrl.isEmpty)
+          ? Text(
+              username.isNotEmpty ? username[0].toUpperCase() : '?',
+              style: SeeUTypography.subtitle.copyWith(
+                color: c.ink,
+                fontWeight: FontWeight.w700,
+                fontSize: radius * 0.7,
+              ),
+            )
+          : null,
+    );
+    if (!withBgBorder) return inner;
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: c.bg, width: ringWidth),
+      ),
+      child: inner,
+    );
+  }
+}

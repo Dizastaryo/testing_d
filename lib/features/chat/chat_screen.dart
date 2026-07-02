@@ -1,0 +1,3891 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui';
+
+import 'package:camera/camera.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
+import 'package:image_picker/image_picker.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../core/api/api_client.dart';
+import '../../core/api/api_endpoints.dart';
+import '../../core/design/design.dart';
+import '../../core/utils/format.dart';
+import '../../core/providers/chat_provider.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/realtime_provider.dart';
+import '../calls/call_service.dart';
+import '../calls/group_call_service.dart';
+import 'widgets/chat_message_bubble.dart';
+import 'widgets/swipe_to_reply.dart';
+import 'widgets/typing_dots.dart';
+import 'widgets/chat_search_sheet.dart';
+import 'widgets/emoji_sticker_panel.dart';
+import 'widgets/emoji_aware_controller.dart';
+import 'widgets/voice_recorder.dart';
+import '../sticker/sticker_creator_screen.dart';
+import '../../core/services/upload_queue.dart';
+// Chat uses existing chat_provider; no MockService needed
+
+class ChatScreen extends ConsumerStatefulWidget {
+  final String chatId;
+
+  const ChatScreen({super.key, required this.chatId});
+
+  @override
+  ConsumerState<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends ConsumerState<ChatScreen> {
+  final _textController = EmojiAwareController();
+  // ScrollablePositionedList controllers (CHAT-3.1). reverse=true — index 0
+  // в нижней части viewport'а (newest message). scroll-to-message работает
+  // по индексу + alignment.
+  final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
+  final _focusNode = FocusNode();
+  bool _hasText = false;
+  bool _locationPending = false;     // GPS in progress — shows location pending bubble
+  bool _recording = false;
+  // Round video message: double-tap mic → switch to camera mode,
+  // tap camera icon → open round camera overlay.
+  bool _videoMsgMode = false;
+  bool _roundCameraOpen = false;   // overlay visible (camera initialized)
+  bool _recordingVideoMsg = false; // recording in progress
+  bool _usingFrontCamera = true;
+  int _recordingSeconds = 0;
+  Timer? _recordingTimer;
+  CameraController? _videoCamController;
+  ReplyPreview? _replyingTo;
+  String? _editingMessageId;
+  // Оригинальный текст редактируемого сообщения — показывается в edit-банере,
+  // чтобы юзер видел что редактирует, а не что уже напечатал.
+  String _editingOriginalText = '';
+  // CHAT-3.1: scroll-to-search-result + flash highlight. Timer сбрасывает
+  // подсветку через 2 сек.
+  String? _flashMessageId;
+  Timer? _flashTimer;
+  // CHAT-11: TTL для следующего сообщения. null/0 = вечно. После send'а
+  // сбрасывается обратно в null чтобы случайно не пометить весь чат
+  // disappearing'ом (per-message UX, не chat-wide).
+  int? _ttlSeconds;
+
+  // Multi-select mode
+  final Set<String> _selectedIds = {};
+  bool get _isSelecting => _selectedIds.isNotEmpty;
+
+  bool _emojiPanelOpen = false;
+
+  int _messageCount = 0;
+  bool _atBottom = true;
+  int _unreadCount = 0;
+  bool _sendError = false;
+  String _failedText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _textController.addListener(_onTextChanged);
+    _focusNode.addListener(() {
+      if (_focusNode.hasFocus && _emojiPanelOpen) {
+        setState(() => _emojiPanelOpen = false);
+      } else if (mounted) {
+        setState(() {});
+      }
+    });
+    _itemPositionsListener.itemPositions.addListener(_onScrollPositionsChanged);
+    // Прокрутка вниз происходит через ref.listen когда грузятся первые сообщения.
+    // Вызов здесь бесполезен — контроллер ещё не прикреплён (список не отрендерен).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _itemPositionsListener.itemPositions
+        .removeListener(_onScrollPositionsChanged);
+    _flashTimer?.cancel();
+    _recordingTimer?.cancel();
+    _videoCamController?.dispose();
+    _textController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onScrollPositionsChanged() {
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty || _messageCount == 0) return;
+    final indices = positions.map((p) => p.index);
+    final minVisible = indices.reduce((a, b) => a < b ? a : b);
+    final maxVisible = indices.reduce((a, b) => a > b ? a : b);
+    // With reverse=true, index 0 = newest message. atBottom when index 0 is visible.
+    final atBottom = minVisible == 0;
+    if (atBottom != _atBottom) {
+      if (mounted) {
+        setState(() {
+          _atBottom = atBottom;
+          if (atBottom) _unreadCount = 0;
+        });
+      }
+    }
+    if (maxVisible >= _messageCount - 2) {
+      ref
+          .read(chatMessagesProvider(widget.chatId).notifier)
+          .loadOlderMessages();
+    }
+  }
+
+  /// Throttle typing pings: server can fan out at most once every 2s.
+  /// We send on first keystroke after idle, then suppress until the timer
+  /// expires or the field clears.
+  DateTime _lastTypingSentAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _onTextChanged() {
+    final hasText = _textController.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() => _hasText = hasText);
+    }
+    if (hasText) {
+      final now = DateTime.now();
+      if (now.difference(_lastTypingSentAt) > const Duration(seconds: 2)) {
+        _lastTypingSentAt = now;
+        ref.read(realtimeSenderProvider).send(
+          'chat.typing',
+          {'chat_id': widget.chatId},
+        );
+      }
+    }
+  }
+
+  void _scrollToBottom({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_itemScrollController.isAttached) return;
+      // reverse=true: index 0 = newest message (визуально внизу viewport'а).
+      if (animate) {
+        _itemScrollController.scrollTo(
+          index: 0,
+          alignment: 0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _itemScrollController.jumpTo(index: 0, alignment: 0.0);
+      }
+    });
+  }
+
+  /// Прокручивает chat к сообщению с заданным id и подсвечивает его на 2 сек
+  /// (CHAT-3.1). Если сообщение не в текущем msgState (например, не подгружено
+  /// через pagination — пока не реализовано) — silent no-op.
+  void _scrollToMessage(String messageId) {
+    final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    final positionedIdx = _positionedIndexForMessage(messageId, messages);
+    if (positionedIdx == null) return;
+
+    _flashTimer?.cancel();
+    setState(() => _flashMessageId = messageId);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_itemScrollController.isAttached) return;
+      _itemScrollController.scrollTo(
+        index: positionedIdx,
+        // 0.35 — почти центр viewport'а. Так сообщение видно, плюс есть
+        // 1-2 соседних сверху/снизу для context'а.
+        alignment: 0.35,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
+
+    _flashTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _flashMessageId = null);
+    });
+  }
+
+  /// Возвращает positioned-index (для ScrollablePositionedList с reverse=true)
+  /// сообщения в widget-листе. Walks ту же day-grouping логику что
+  /// `_buildMessageList` чтобы попасть в тот же индекс.
+  int? _positionedIndexForMessage(
+      String messageId, List<ChatMessage> messages) {
+    final groups = <String, List<ChatMessage>>{};
+    for (final m in messages) {
+      final key = _dateKey(m.createdAt);
+      groups.putIfAbsent(key, () => []).add(m);
+    }
+    int idx = 0;
+    int? targetChronIdx;
+    for (final entry in groups.entries) {
+      idx++; // date separator
+      for (final m in entry.value) {
+        if (m.id == messageId) {
+          targetChronIdx = idx;
+        }
+        idx++;
+      }
+    }
+    final total = idx;
+    if (targetChronIdx == null) return null;
+    // reverse=true: positioned_index = total - 1 - chronological_index.
+    return total - 1 - targetChronIdx;
+  }
+
+  /// Bottom-sheet с поиском по этому чату (CHAT-3). Debounced API + результаты.
+  /// CHAT-3.1: тап на результат закрывает sheet, прокручивает chat к
+  /// сообщению через ScrollablePositionedList + flash-highlight 2 сек.
+  // Кнопка звонка для group-чата в хедере.
+  Widget _groupCallHeaderButton(SeeUThemeColors c, Chat chat, CallKind kind) {
+    final isVoice = kind == CallKind.voice;
+    return Semantics(
+      label: isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          final me = ref.read(authProvider).user;
+          if (me == null) return;
+          GroupCallService.instance.startGroupCall(
+            chatId: widget.chatId,
+            chatTitle: chat.title,
+            myId: me.id,
+            myUsername: me.username,
+            kind: kind,
+          );
+        },
+        child: SizedBox(
+          width: 44, height: 44,
+          child: Icon(
+            isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+            size: 22, color: c.ink,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // #39: DRY-хелпер для кнопок звонка в хедере direct-чата.
+  Widget _callHeaderButton(SeeUThemeColors c, dynamic peer, CallKind kind) {
+    final isVoice = kind == CallKind.voice;
+    return Semantics(
+      label: isVoice ? 'Голосовой звонок' : 'Видеозвонок',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          CallService.instance.startCall(
+            peerId: peer.id,
+            peerUsername: peer.username,
+            peerAvatarUrl: peer.avatarUrl ?? '',
+            kind: kind,
+          );
+        },
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            isVoice ? PhosphorIconsRegular.phone : PhosphorIconsRegular.videoCamera,
+            size: 22,
+            color: c.ink,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _leaveGroup({String? sborId, bool isOrganizer = false}) async {
+    final isSbor = sborId != null;
+    final confirmed = await showSeeUConfirm(
+      context,
+      title: isOrganizer
+          ? 'Отменить сбор?'
+          : isSbor
+              ? 'Выйти из сбора?'
+              : 'Выйти из группы?',
+      message: isOrganizer
+          ? 'Сбор будет отменён для всех участников.'
+          : isSbor
+              ? 'Ты покинешь сбор и его групповой чат.'
+              : 'Ты покинешь этот групповой чат.',
+      confirmLabel: isOrganizer ? 'Отменить сбор' : 'Выйти',
+      cancelLabel: 'Нет',
+      destructive: true,
+      icon: PhosphorIconsRegular.signOut,
+    );
+    if (!confirmed || !mounted) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      if (isOrganizer && sborId != null) {
+        // Организатор отменяет сбор → DELETE /sbory/:id
+        await api.delete(ApiEndpoints.cancelSbor(sborId));
+      } else if (isSbor) {
+        // Участник покидает сбор → DELETE /sbory/:id/join
+        await api.delete(ApiEndpoints.leaveSbor(sborId));
+      } else {
+        await api.delete(ApiEndpoints.leaveGroupChat(widget.chatId));
+      }
+      if (mounted) {
+        _focusNode.unfocus();
+        context.go('/chat');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, friendlyError(e), tone: SeeUTone.danger);
+    }
+  }
+
+  void _showSearchSheet() {
+    _focusNode.unfocus();
+    showSeeUBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetCtx) => ChatSearchSheet(
+        chatId: widget.chatId,
+        onResultTap: (m) {
+          Navigator.of(sheetCtx).pop();
+          _scrollToMessage(m.id);
+        },
+      ),
+    );
+  }
+
+  Future<void> _sendMessage([String? overrideText]) async {
+    final text = overrideText ?? _textController.text.trim();
+    if (text.isEmpty) return;
+    HapticFeedback.lightImpact();
+
+    // Режим редактирования: отправляем PATCH вместо нового сообщения.
+    if (_editingMessageId != null) {
+      final editId = _editingMessageId!;
+      setState(() {
+        _editingMessageId = null;
+        _editingOriginalText = '';
+      });
+      _textController.clear();
+      try {
+        await ref
+            .read(chatMessagesProvider(widget.chatId).notifier)
+            .editMessage(editId, text);
+      } catch (_) {
+        if (!mounted) return;
+        showSeeUSnackBar(context, 'Не удалось изменить сообщение',
+            tone: SeeUTone.danger);
+      }
+      return;
+    }
+
+    final reply = _replyingTo;
+    // CHAT-11: TTL prok'ается + сбрасывается после send'а (per-message, не
+    // chat-wide). Если юзер хочет каждое сообщение с TTL — нужно tap'ать
+    // ⏱ перед каждым отправлением. Чтобы не было «забыл выключить»
+    // ситуаций когда disappearing включается случайно для всего чата.
+    final ttl = _ttlSeconds ?? 0;
+    if (overrideText == null) {
+      _textController.clear();
+    }
+    if (mounted && _sendError) setState(() => _sendError = false);
+    try {
+      await ref
+          .read(chatMessagesProvider(widget.chatId).notifier)
+          .sendMessage(text, replyTo: reply, expiresInSeconds: ttl,
+              rethrowOnError: true);
+      if (mounted) {
+        setState(() {
+          if (reply != null) _replyingTo = null;
+          _ttlSeconds = null;
+          _failedText = '';
+          _unreadCount = 0;
+        });
+      }
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      // Restore text so user can retry without retyping.
+      if (overrideText == null && _textController.text.isEmpty) {
+        _textController.text = text;
+        _textController.selection = TextSelection.collapsed(
+            offset: _textController.text.length);
+      }
+      setState(() {
+        _sendError = true;
+        _failedText = text;
+      });
+    }
+  }
+
+  /// Bottom-sheet выбора TTL (CHAT-11). Опции: off / 1h / 24h / 7d.
+  void _showTtlPicker() {
+    HapticFeedback.selectionClick();
+    _focusNode.unfocus();
+    final c = context.seeuColors;
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        Widget option(String label, int? seconds, IconData icon) {
+          final isSelected = _ttlSeconds == seconds;
+          return ListTile(
+            leading: Icon(icon, color: isSelected ? SeeUColors.accent : c.ink),
+            title: Text(label,
+                style: SeeUTypography.subtitle.copyWith(
+                  color: isSelected ? SeeUColors.accent : c.ink,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                )),
+            trailing: isSelected
+                ? Icon(PhosphorIconsBold.check,
+                    color: SeeUColors.accent, size: 18)
+                : null,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              setState(() => _ttlSeconds = seconds);
+            },
+          );
+        }
+
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ТАЙМЕР',
+                      style: SeeUTypography.kicker
+                          .copyWith(color: SeeUColors.accent),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Исчезающее сообщение',
+                        style:
+                            SeeUTypography.displayS.copyWith(color: c.ink)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              option('Вечно (выключить)', null, PhosphorIcons.infinity()),
+              option('1 час', 3600, PhosphorIcons.timer()),
+              option('24 часа', 86400, PhosphorIcons.calendarBlank()),
+              option('7 дней', 604800, PhosphorIcons.calendarX()),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _shortTtlLabel(int seconds) {
+    if (seconds >= 604800) return '7д';
+    if (seconds >= 86400) return '${seconds ~/ 86400}д';
+    if (seconds >= 3600) return '${seconds ~/ 3600}ч';
+    if (seconds >= 60) return '${seconds ~/ 60}м';
+    return '$secondsс';
+  }
+
+  void _toggleEmojiPanel() {
+    if (_emojiPanelOpen) {
+      setState(() => _emojiPanelOpen = false);
+      _focusNode.requestFocus();
+    } else {
+      _focusNode.unfocus();
+      setState(() => _emojiPanelOpen = true);
+    }
+  }
+
+  void _insertEmoji(String emoji) {
+    final sel = _textController.selection;
+    final text = _textController.text;
+    final pos = sel.isValid ? sel.baseOffset : text.length;
+    final newText = text.substring(0, pos) + emoji + text.substring(pos);
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + emoji.length),
+    );
+  }
+
+  Future<void> _sendSticker(String url) async {
+    HapticFeedback.lightImpact();
+    final reply = _replyingTo;
+    try {
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'sticker',
+            replyTo: reply,
+            rethrowOnError: true,
+          );
+      if (mounted) {
+        setState(() => _replyingTo = null);
+        _scrollToBottom();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, 'Не удалось отправить стикер',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _openStickerCreator() async {
+    final result = await Navigator.push<StickerCreatorResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const StickerCreatorScreen()),
+    );
+    if (result != null && mounted) {
+      _sendSticker(result.url);
+    }
+  }
+
+  /// Pick image from gallery → upload to /media/upload → send as image
+  /// message. Caption is the current text input (sent + cleared).
+  Future<void> _attachImage() async {
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
+    HapticFeedback.selectionClick();
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    final caption = _textController.text.trim();
+    final reply = _replyingTo;
+    if (caption.isNotEmpty) _textController.clear();
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.image,
+      thumbnail: bytes,
+      bytes: bytes,
+      fileName: picked.name,
+      mediaType: 'image',
+      caption: caption,
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
+  }
+
+  /// Показывает меню выбора вложения: 8 опций в 4-column grid.
+  void _showAttachMenu() {
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
+    _focusNode.unfocus();
+    final c = context.seeuColors;
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        Widget opt(String label, IconData icon, List<Color> colors, VoidCallback onTap) {
+          return Tappable.scaled(
+            onTap: onTap,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(SeeURadii.card),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: colors,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colors.last.withAlpha(77),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 28),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
+                    letterSpacing: -0.1,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24, right: 24, top: 4,
+            bottom: 28 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'ВЛОЖЕНИЯ',
+                style:
+                    SeeUTypography.kicker.copyWith(color: SeeUColors.accent),
+              ),
+              const SizedBox(height: 4),
+              Text('Прикрепить',
+                  style: SeeUTypography.displayS.copyWith(color: c.ink)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  opt('Фото', PhosphorIconsRegular.image,
+                      const [SeeUColors.plum, SeeUColors.info],
+                      () { Navigator.pop(ctx); _attachImage(); }),
+                  opt('Видео', PhosphorIconsRegular.videoCamera,
+                      const [SeeUColors.info, SeeUColors.info],
+                      () { Navigator.pop(ctx); _attachVideo(); }),
+                  opt('Файл', PhosphorIconsRegular.paperclip,
+                      const [SeeUColors.success, SeeUColors.info],
+                      () { Navigator.pop(ctx); _attachGenericFile(); }),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Pick video file → upload → send as video message.
+  Future<void> _attachVideo() async {
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
+    HapticFeedback.selectionClick();
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      withData: kIsWeb,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final file = result.files.first;
+
+    Uint8List? thumb;
+    if (!kIsWeb && file.path != null) {
+      try {
+        thumb = await vt.VideoThumbnail.thumbnailData(
+          video: file.path!,
+          imageFormat: vt.ImageFormat.JPEG,
+          maxHeight: 320,
+          quality: 80,
+        );
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.video,
+      thumbnail: thumb,
+      bytes: file.bytes,
+      filePath: file.path,
+      fileName: file.name,
+      fileBytes: file.size,
+      mediaType: 'video',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
+  }
+
+  /// Pick any file (documents, PDFs, etc.) → upload → send as file message.
+  Future<void> _attachGenericFile() async {
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
+    HapticFeedback.selectionClick();
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: [
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        'txt', 'rtf', 'csv', 'zip', 'rar', '7z',
+      ],
+      withData: kIsWeb,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final file = result.files.first;
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.file,
+      bytes: file.bytes,
+      filePath: file.path,
+      fileName: file.name,
+      fileBytes: file.size,
+      mediaType: 'file',
+      caption: file.name,
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
+  }
+
+  /// Голосовое сообщение: расшариваем уже-готовый файл (recorder сохранил
+  /// в temp), грузим как multipart на /media/upload и отправляем сообщение
+  /// с attached_media_type='audio' → backend выставит kind='voice'.
+  Future<void> _uploadAndSendVoice(
+      String filePath, int durationSec, List<double> samples) async {
+    if (filePath.isEmpty) return;
+    if (kIsWeb) {
+      showSeeUSnackBar(
+          context, 'Голосовые сообщения пока недоступны в веб-версии');
+      return;
+    }
+    final reply = _replyingTo;
+    if (reply != null && mounted) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.voice,
+      filePath: filePath,
+      fileName: filePath.split('/').last,
+      waveform: samples,
+      durationSec: durationSec,
+      mediaType: 'audio',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
+  }
+
+  /// Расширенный emoji-picker. Не тащим heavy emoji_picker_flutter (300+ kb),
+  /// вместо этого hardcoded grid из ~48 популярных эмодзи 4 категорий.
+  /// Для prod-MVP этого хватает; полный picker — отдельная задача.
+  static const _expandedEmojiCategories = {
+    'Эмоции': [
+      '😀', '😂', '🤣', '😅', '😍', '🥰', '😘', '😎', '🤩', '🥳',
+      '😭', '😡', '🤔', '🥺', '😱', '🤗', '😏', '🙃', '😴', '🤫',
+    ],
+    'Сердечки': [
+      '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '💖',
+      '💕', '💞', '❣️', '❤️‍🔥', '💯', '✨', '🫶', '💝',
+    ],
+    'Жесты': [
+      '👍', '👎', '👏', '🙌', '🙏', '💪', '🤝', '👌', '✌️', '🤘',
+      '🫶', '🤜', '🤛', '👊', '✊', '🤙', '🤞', '🫵',
+    ],
+    'Прочее': [
+      '🔥', '🎉', '🚀', '⭐', '⚡', '💀', '👀', '🎯', '🏆', '🎁',
+      '🌈', '😤', '🤯', '🫡', '😬', '🥴', '🤡', '👾',
+    ],
+  };
+
+  void _showExpandedEmojiPicker(String messageId) {
+    _focusNode.unfocus();
+    final c = context.seeuColors;
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'РЕАКЦИЯ',
+                style:
+                    SeeUTypography.kicker.copyWith(color: SeeUColors.accent),
+              ),
+              const SizedBox(height: 4),
+              Text('Выбрать эмодзи',
+                  style: SeeUTypography.displayS.copyWith(color: c.ink)),
+              ..._expandedEmojiCategories.entries.expand((entry) => [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      child: Text(
+                        entry.key,
+                        style: SeeUTypography.caption.copyWith(
+                          color: c.ink3,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: entry.value
+                          .map((emoji) => GestureDetector(
+                                onTap: () {
+                                  Navigator.of(sheetCtx).pop();
+                                  _onReactionSelected(messageId, emoji);
+                                },
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: c.surface2,
+                                    borderRadius:
+                                        BorderRadius.circular(SeeURadii.small),
+                                  ),
+                                  child: Center(
+                                    child: Text(emoji,
+                                        style: const TextStyle(fontSize: 24)),
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onReactionSelected(String messageId, String emoji) {
+    HapticFeedback.selectionClick();
+    ref
+        .read(chatMessagesProvider(widget.chatId).notifier)
+        .toggleReaction(messageId, emoji);
+  }
+
+  void _toggleSelect(String messageId) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedIds.contains(messageId)) {
+        _selectedIds.remove(messageId);
+      } else {
+        _selectedIds.add(messageId);
+      }
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(() => _selectedIds.clear());
+  }
+
+  void _onMessageLongPress(String messageId) {
+    if (_isSelecting) {
+      _toggleSelect(messageId);
+      return;
+    }
+    _showMessageOptions(messageId);
+  }
+
+  void _showMessageOptions(String messageId) {
+    HapticFeedback.mediumImpact();
+    _focusNode.unfocus();
+    final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    ChatMessage? msg;
+    for (final m in messages) {
+      if (m.id == messageId) {
+        msg = m;
+        break;
+      }
+    }
+    if (msg == null) return;
+    final m = msg;
+    // Username of reply target: own user или peer из direct-чата.
+    final me = ref.read(authProvider).user;
+    final chats = ref.read(chatListProvider).chats;
+    final chat = chats
+        .where((c) => c.id == widget.chatId)
+        .cast<Chat?>()
+        .firstWhere((_) => true, orElse: () => null);
+    // For group chats otherUser is null — use senderUsername from the message.
+    final replyUsername = m.isMe
+        ? (me?.username ?? '')
+        : (m.senderUsername.isNotEmpty
+            ? m.senderUsername
+            : (chat?.otherUser?.username ?? ''));
+
+    final c = context.seeuColors;
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Sender name header — shown in group chats for non-mine messages (UX-026).
+                if (!m.isMe && m.senderUsername.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Row(
+                      children: [
+                        Icon(PhosphorIconsRegular.user,
+                            size: 13, color: c.ink3),
+                        const SizedBox(width: 6),
+                        Text(
+                          m.senderName.isNotEmpty
+                              ? '${m.senderName} · @${m.senderUsername}'
+                              : '@${m.senderUsername}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: c.ink3,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                // Reactions row: 6 popular + «+» для expanded picker
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ...['❤️', '🔥', '😂', '😮', '😢', '👍'].map(
+                        (e) => GestureDetector(
+                          onTap: () {
+                            Navigator.of(sheetCtx).pop();
+                            _onReactionSelected(messageId, e);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child:
+                                Text(e, style: const TextStyle(fontSize: 28)),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(sheetCtx).pop();
+                          _showExpandedEmojiPicker(messageId);
+                        },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: c.surface2,
+                          ),
+                          child: Icon(PhosphorIcons.plus(),
+                              size: 18, color: c.ink),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: c.line),
+                if (!m.isDeletedForAll && m.kind != 'deleted')
+                ListTile(
+                  leading: Icon(PhosphorIcons.arrowBendUpLeft(),
+                      color: SeeUColors.accent),
+                  title: const Text('Ответить'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    setState(() {
+                      _replyingTo = ReplyPreview(
+                        id: m.id,
+                        senderId: m.senderId,
+                        senderUsername: replyUsername,
+                        text: m.text,
+                        kind: m.kind,
+                      );
+                    });
+                    _focusNode.requestFocus();
+                  },
+                ),
+                if (m.text.isNotEmpty)
+                  ListTile(
+                    leading: Icon(PhosphorIcons.copy(), color: c.ink),
+                    title: const Text('Скопировать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      Clipboard.setData(ClipboardData(text: m.text));
+                      showSeeUSnackBar(context, 'Скопировано',
+                          duration: const Duration(seconds: 1));
+                    },
+                  ),
+                // Переслать сообщение в другой чат
+                ListTile(
+                  leading: Icon(PhosphorIcons.arrowBendUpRight(), color: c.ink),
+                  title: const Text('Переслать'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _showForwardPicker(m);
+                  },
+                ),
+                // Редактировать — только своё текстовое сообщение
+                if (m.isMe && m.kind == 'text' && !m.isDeletedForAll)
+                  ListTile(
+                    leading: Icon(PhosphorIcons.pencil(), color: c.ink),
+                    title: const Text('Редактировать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      setState(() {
+                        _editingMessageId = m.id;
+                        _editingOriginalText = m.text;
+                        _replyingTo = null;
+                      });
+                      _textController.text = m.text;
+                      _textController.selection = TextSelection.collapsed(
+                        offset: m.text.length,
+                      );
+                      _focusNode.requestFocus();
+                    },
+                  ),
+                // Закрепить / Открепить — для всех; backend сам отдаст 403,
+                // если в group-чате не админ.
+                Builder(builder: (_) {
+                  final isAlreadyPinned = chat?.pinnedMessage?.id == m.id;
+                  return ListTile(
+                    leading: Icon(PhosphorIconsBold.pushPin,
+                        color: SeeUColors.accent),
+                    title: Text(isAlreadyPinned ? 'Открепить' : 'Закрепить'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _setPin(isAlreadyPinned ? null : m.id);
+                    },
+                  );
+                }),
+                // Выбрать — войти в режим множественного выбора
+                ListTile(
+                  leading: Icon(PhosphorIcons.checkCircle(), color: c.ink),
+                  title: const Text('Выбрать'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    setState(() => _selectedIds.add(messageId));
+                  },
+                ),
+                // Удалить: у своих сообщений < 1ч → для всех; иначе (своё > 1ч
+                // или чужое) → только у себя. Удалённые сообщения нельзя удалить повторно.
+                if (!m.isDeletedForAll) ...[
+                  Divider(height: 1, color: c.line),
+                  Builder(builder: (_) {
+                    final canDeleteForAll = m.isMe &&
+                        DateTime.now().difference(m.createdAt) <
+                            const Duration(hours: 1);
+                    return ListTile(
+                      leading: Icon(PhosphorIcons.trash(),
+                          color: SeeUColors.danger),
+                      title: Text(
+                        canDeleteForAll ? 'Удалить для всех' : 'Удалить у себя',
+                        style: const TextStyle(color: SeeUColors.danger),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        _confirmDeleteMessage(messageId,
+                            forAll: canDeleteForAll);
+                      },
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final msgState = ref.watch(chatMessagesProvider(widget.chatId));
+    final chats = ref.watch(chatListProvider).chats;
+    final chat = chats.where((c) => c.id == widget.chatId).isNotEmpty
+        ? chats.firstWhere((c) => c.id == widget.chatId)
+        : null;
+    final currentUser = ref.watch(authProvider).user;
+    final myId = currentUser?.id ?? 'me';
+    final otherUser = chat?.otherUser;
+    _messageCount = msgState.messages.length;
+
+    // Scroll to bottom on new messages; mark read while chat is open.
+    ref.listen<ChatMessagesState>(chatMessagesProvider(widget.chatId),
+        (prev, next) {
+      _messageCount = next.messages.length;
+      // Show SnackBar when loading older messages fails.
+      if (next.loadOlderFailed && prev?.loadOlderFailed != true) {
+        showSeeUSnackBar(context, 'Не удалось загрузить старые сообщения',
+            tone: SeeUTone.danger);
+      }
+      // Ignore pagination loads — don't jump to bottom when loading older msgs.
+      if (prev?.isLoadingOlder == true && !next.isLoadingOlder) return;
+      final prevCount = prev?.messages.length ?? 0;
+      final nextCount = next.messages.length;
+      if (nextCount > prevCount) {
+        if (prevCount == 0 || _atBottom) {
+          _scrollToBottom(animate: prevCount > 0);
+        } else {
+          // User is scrolled up — show unread badge without forced scroll.
+          setState(() => _unreadCount += nextCount - prevCount);
+        }
+        // Mark read only when the new message is actually visible (we're at
+        // the bottom). Marking read while scrolled up would clear the server
+        // read-state while the local unread badge still shows unread — the two
+        // would then disagree.
+        if (prevCount > 0 && _atBottom) {
+          ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
+        }
+      }
+    });
+
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () => _focusNode.unfocus(),
+      child: Scaffold(
+        backgroundColor: c.bg,
+        body: Container(
+          decoration: BoxDecoration(
+            // A1: subtle warm gradient background
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [c.bg, c.surface2.withValues(alpha: 0.5)],
+            ),
+          ),
+          child: Stack(
+            children: [
+              Column(
+                children: [
+              // A2: frosted glass header
+              ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: c.surface.withValues(alpha: 0.85),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: c.line.withValues(alpha: 0.5),
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        child: Row(
+                          children: [
+                            // Back chevron (or exit select mode)
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                if (_isSelecting) {
+                                  _exitSelectMode();
+                                  return;
+                                }
+                                _focusNode.unfocus();
+                                if (context.canPop()) {
+                                  context.pop();
+                                } else {
+                                  context.go('/chat');
+                                }
+                              },
+                              child: Icon(
+                                  _isSelecting
+                                      ? PhosphorIconsRegular.x
+                                      : PhosphorIconsRegular.caretLeft,
+                                  color: c.ink,
+                                  size: 22,
+                                ),
+                            ),
+                            const SizedBox(width: 2),
+                            // Header-tail: для group тапается всё подряд → /members,
+                            // для direct — статичная плашка с именем (тап на профиль
+                            // оставлен как future task).
+                            Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                // C3: tap header → profile (direct) or members (group)
+                                onTap: chat?.isGroup == true
+                                    ? () => context
+                                        .push('/chat/${widget.chatId}/members')
+                                    : otherUser != null
+                                        ? () => context.push(
+                                            '/profile/${otherUser.username}')
+                                        : null,
+                                child: Row(
+                                  children: [
+                                    // C1: avatar 40px + online dot
+                                    if (chat?.isGroup == true)
+                                      ChatSmallAvatar(
+                                        avatarUrl: chat!.coverUrl,
+                                        isOnline: false,
+                                        size: 40,
+                                        isGroup: true,
+                                      )
+                                    else if (otherUser != null)
+                                      ChatSmallAvatar(
+                                        avatarUrl: otherUser.avatarUrl,
+                                        isOnline: otherUser.isOnline == true,
+                                        size: 40,
+                                      ),
+                                    const SizedBox(width: 10),
+                                    // Name + subtitle
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            chat?.isGroup == true
+                                                ? chat!.title
+                                                : (otherUser?.fullName ??
+                                                    'Чат'),
+                                            style: SeeUTypography.subtitle
+                                                .copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: c.ink,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (chat?.isGroup == true)
+                                            Builder(builder: (ctx) {
+                                              // CHAT-2.1/2.2: для group typing'а
+                                              // показываем «@user печатает…»,
+                                              // «@a и @b печатают…», «@a, @b и
+                                              // ещё N печатают…».
+                                              final typing = ref.watch(
+                                                  typingProvider(
+                                                      widget.chatId));
+                                              final label = typing.buildLabel();
+                                              final isTyping = label != null;
+                                              final subtitle = isTyping
+                                                  ? label
+                                                  : '${chat!.participantsCount} участников';
+                                              return Text(
+                                                subtitle.toUpperCase(),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: SeeUTypography.kicker
+                                                    .copyWith(
+                                                  color: isTyping
+                                                      ? SeeUColors.accent
+                                                      : c.ink3,
+                                                ),
+                                              );
+                                            })
+                                          else if (otherUser != null)
+                                            Builder(builder: (ctx) {
+                                              // Direct: один peer, label короче —
+                                              // «печатает…» без @username (он уже
+                                              // в заголовке) или «@x печатает…»
+                                              // если бэк прислал.
+                                              final typing = ref.watch(
+                                                  typingProvider(
+                                                      widget.chatId));
+                                              final label = typing.buildLabel(
+                                                  fallbackLabel: '');
+                                              final isTyping = label != null;
+                                              // Текст: typing > online > last-seen.
+                                              final presence =
+                                                  otherUser.presenceLabel();
+                                              final subtitle = isTyping
+                                                  ? (label.startsWith('@')
+                                                      ? label
+                                                      : 'печатает…')
+                                                  : (presence.isEmpty
+                                                      ? 'был недавно'
+                                                      : presence);
+                                              final isAccent = isTyping ||
+                                                  otherUser.isOnline;
+                                              // F2: typing dots animation
+                                              if (isTyping) {
+                                                return Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      (label.startsWith('@')
+                                                              ? label
+                                                              : 'печатает')
+                                                          .toUpperCase(),
+                                                      style: SeeUTypography
+                                                          .kicker
+                                                          .copyWith(
+                                                        color:
+                                                            SeeUColors.accent,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    const TypingDots(
+                                                        color:
+                                                            SeeUColors.accent,
+                                                        size: 4),
+                                                  ],
+                                                );
+                                              }
+                                              return Text(
+                                                subtitle.toUpperCase(),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: SeeUTypography.kicker
+                                                    .copyWith(
+                                                  color: isAccent
+                                                      ? SeeUColors.accent
+                                                      : c.ink3,
+                                                ),
+                                              );
+                                            }),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // Поиск в чате (CHAT-3). Bottom-sheet с TextField +
+                            // debounced API + results list.
+                            Semantics(
+                              label: 'Поиск по сообщениям',
+                              button: true,
+                              child: GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  _showSearchSheet();
+                                },
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    PhosphorIconsRegular.magnifyingGlass,
+                                    size: 22,
+                                    color: c.ink,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Для direct: 📞 + 📹 в хедере (всего 3 иконки: поиск+звонок+видео)
+                            if (otherUser != null) ...[
+                              _callHeaderButton(c, otherUser, CallKind.voice),
+                              _callHeaderButton(c, otherUser, CallKind.video),
+                            ],
+                            // Для группы: звонок + видео прямо в хедере (как у direct)
+                            if (chat?.isGroup == true) ...[
+                              _groupCallHeaderButton(c, chat!, CallKind.voice),
+                              _groupCallHeaderButton(c, chat, CallKind.video),
+                              // Меню группы: выход / отмена сбора
+                              PopupMenuButton<String>(
+                                icon: Icon(PhosphorIconsRegular.dotsThreeVertical, size: 22, color: c.ink),
+                                color: c.surface,
+                                onSelected: (value) {
+                                  if (value == 'leave') {
+                                    _leaveGroup(
+                                      sborId: chat.sborId,
+                                      isOrganizer: chat.isOrganizer,
+                                    );
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  PopupMenuItem<String>(
+                                    value: 'leave',
+                                    child: Row(
+                                      children: [
+                                        Icon(PhosphorIconsRegular.signOut, size: 18, color: SeeUColors.error),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          chat.isOrganizer
+                                              ? 'Отменить сбор'
+                                              : chat.sborId != null
+                                                  ? 'Выйти из сбора'
+                                                  : 'Выйти из группы',
+                                          style: const TextStyle(color: SeeUColors.error),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ), // close BackdropFilter
+              ), // close ClipRect
+              // Pinned sticky banner — между header'ом и messages.
+              if (chat?.pinnedMessage != null)
+                _buildPinnedBanner(chat!.pinnedMessage!),
+              // Messages
+              Expanded(
+                child: msgState.isLoading
+                    ? const SeeUMessagesSkeleton()
+                    : msgState.error != null
+                        ? _buildLoadErrorState(msgState.error!)
+                        : msgState.messages.isEmpty
+                        ? _buildEmptyChat(otherUser)
+                        : Stack(
+                            children: [
+                              _buildMessageList(
+                                  msgState.messages, myId, otherUser, chat),
+                              // Sticky load-older indicator: Positioned overlay so it
+                              // stays visible regardless of scroll position (UX-008).
+                              if (msgState.isLoadingOlder)
+                                const Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: LinearProgressIndicator(
+                                    color: SeeUColors.accent,
+                                    backgroundColor: Colors.transparent,
+                                  ),
+                                ),
+                              // Scroll-to-bottom FAB: shown when scrolled up.
+                              if (!_atBottom)
+                                Positioned(
+                                  bottom: 12,
+                                  right: 16,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      SeeUGlassCircleButton(
+                                        size: 40,
+                                        onTap: () => _scrollToBottom(),
+                                        icon: PhosphorIcon(
+                                          PhosphorIconsRegular.arrowDown,
+                                          size: 20,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      if (_unreadCount > 0)
+                                        Positioned(
+                                          top: -6,
+                                          right: -6,
+                                          child: IgnorePointer(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: SeeUColors.accent,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                        SeeURadii.pill),
+                                              ),
+                                              child: Text(
+                                                _unreadCount > 99
+                                                    ? '99+'
+                                                    : '$_unreadCount',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+              ),
+              // Multi-select action bar replaces input bar when selecting
+              if (_isSelecting)
+                _buildSelectionBar()
+              else
+                _buildInputBar(),
+              // Inline emoji/sticker panel (replaces keyboard space)
+              if (_emojiPanelOpen && !_isSelecting)
+                EmojiStickerPanel(
+                  inline: true,
+                  onEmojiSelected: _insertEmoji,
+                  onStickerSelected: (url) {
+                    setState(() => _emojiPanelOpen = false);
+                    _sendSticker(url);
+                  },
+                  onCreateSticker: () {
+                    setState(() => _emojiPanelOpen = false);
+                    _openStickerCreator();
+                  },
+                ),
+                ], // Column children
+              ), // Column
+              // Round video message overlay
+              if (_roundCameraOpen) _buildRoundVideoOverlay(),
+            ], // Stack children
+          ), // Stack
+        ), // close A1 gradient Container
+      ),
+    );
+  }
+
+  Widget _buildEmptyChat(dynamic otherUser) {
+    final c = context.seeuColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (otherUser != null) ...[
+              ChatSmallAvatar(
+                avatarUrl: otherUser.avatarUrl,
+                isOnline: false,
+                size: 64,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                otherUser.fullName,
+                style: SeeUTypography.title,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '@${otherUser.username}',
+                style: SeeUTypography.caption,
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              'Начните диалог',
+              style: SeeUTypography.body.copyWith(
+                color: c.ink2,
+              ),
+            ),
+            // Icebreaker suggestion chips
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                ChatIcebreakerChip(
+                  text: 'Привет! Как дела? \u{1F44B}',
+                  onTap: () => _sendMessage('Привет! Как дела? \u{1F44B}'),
+                ),
+                ChatIcebreakerChip(
+                  text: 'Мы были рядом сегодня! \u{1F4CD}',
+                  onTap: () => _sendMessage('Мы были рядом сегодня! \u{1F4CD}'),
+                ),
+                ChatIcebreakerChip(
+                  text: 'Классный профиль! \u{2728}',
+                  onTap: () => _sendMessage('Классный профиль! \u{2728}'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageList(List<ChatMessage> messages, String myId,
+      dynamic otherUser, Chat? currentChat) {
+    // #30: вместо List<Widget> (O(N) allocation per rebuild) строим плоский
+    // список дескрипторов: String = разделитель даты, ChatMessage = сообщение.
+    // Виджеты создаются лениво в itemBuilder только для видимых элементов.
+    final items = <Object>[];
+    final groups = <String, List<ChatMessage>>{};
+    for (final msg in messages) {
+      // Используем local time — иначе в UTC+N группировка по дням неверна.
+      final key = _dateKey(msg.createdAt.toLocal());
+      groups.putIfAbsent(key, () => []).add(msg);
+    }
+    for (final entry in groups.entries) {
+      items.add(_formatDateLabel(entry.value.first.createdAt)); // separator
+      items.addAll(entry.value);
+    }
+
+    // Pending bubbles: upload queue tasks for this chat + optional location.
+    // reverse=true means index 0 = visual bottom (newest).
+    // Most-recently enqueued task appears at the bottom (index 0).
+    final tasks = ref.watch(uploadQueueProvider)
+        .where((t) => t.chatId == widget.chatId)
+        .toList();
+    final extra = tasks.length + (_locationPending ? 1 : 0);
+    final c = context.seeuColors;
+
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
+      // #22: с reverse=true, EdgeInsets.top — это визуальный низ (под newest msg).
+      // Когда FAB виден (!_atBottom), нижние сообщения перекрываются — даём 60px.
+      padding: EdgeInsets.fromLTRB(16, _atBottom ? 8 : 60, 16, 8),
+      physics: const BouncingScrollPhysics(),
+      // reverse=true: index 0 рендерится в нижней части viewport'а
+      // (newest message внизу — как в любом мессенджере).
+      reverse: true,
+      itemCount: items.length + extra,
+      itemBuilder: (context, index) {
+        if (index < extra) {
+          // tasks are in enqueue order; reversed so newest = index 0 = visual bottom
+          final reversedIdx = tasks.length - 1 - index;
+          if (reversedIdx >= 0) return _buildUploadingBubble(tasks[reversedIdx]);
+          // reversedIdx == -1 means index == tasks.length → location pending
+          return _buildPendingLocation(c, _cancelLocation);
+        }
+
+        final adjustedIndex = index - extra;
+        final item = items[items.length - 1 - adjustedIndex]; // reverse mapping
+        if (item is String) return ChatDateSeparator(label: item);
+
+        final msg = item as ChatMessage;
+        final isMine = msg.senderId == myId;
+        final rawIdx = items.length - 1 - adjustedIndex;
+        // showTail: следующий элемент — разделитель или другой отправитель
+        final nextIdx = rawIdx + 1;
+        final showTail = nextIdx >= items.length ||
+            items[nextIdx] is String ||
+            (items[nextIdx] as ChatMessage).senderId != msg.senderId;
+
+        final isSelected = _selectedIds.contains(msg.id);
+
+        // CHAT-3.1: wrapper с animated bg для flash-highlight на scroll-to.
+        final bubble = GestureDetector(
+          onTap: _isSelecting ? () => _toggleSelect(msg.id) : null,
+          child: AnimatedContainer(
+            key: ValueKey('flash-${msg.id}'),
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? SeeUColors.accent.withValues(alpha: 0.18)
+                  : msg.id == _flashMessageId
+                      ? SeeUColors.accent.withValues(alpha: 0.14)
+                      : SeeUColors.accent.withValues(alpha: 0.0),
+              borderRadius: BorderRadius.circular(SeeURadii.medium),
+            ),
+            child: Row(
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _isSelecting
+                      ? Padding(
+                          key: const ValueKey('chk'),
+                          padding: const EdgeInsets.only(left: 4, right: 2),
+                          child: Icon(
+                            isSelected
+                                ? PhosphorIconsBold.checkCircle
+                                : PhosphorIcons.circle(),
+                            size: 22,
+                            color: isSelected
+                                ? SeeUColors.accent
+                                : context.seeuColors.ink3,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('nochk')),
+                ),
+                Expanded(
+                  child: ChatMessageBubble(
+                    message: msg,
+                    isMine: isMine,
+                    showTail: showTail,
+                    isGroup: currentChat?.isGroup ?? false,
+                    senderName: isMine
+                        ? null
+                        : msg.senderName.isNotEmpty
+                            ? msg.senderName
+                            : null,
+                    senderAvatarUrl: isMine
+                        ? null
+                        : (currentChat?.isGroup == true
+                            ? msg.senderAvatarUrl
+                            : otherUser?.avatarUrl),
+                    reaction: msg.myReaction.isEmpty ? null : msg.myReaction,
+                    allReactions: msg.reactions,
+                    onLongPress: () => _onMessageLongPress(msg.id),
+                    onDoubleTap: _isSelecting
+                        ? null
+                        : () => _onReactionSelected(msg.id, '❤️'),
+                    onReactionSelected: (emoji) =>
+                        _onReactionSelected(msg.id, emoji),
+                    onReplyTap: (id) => _scrollToMessage(id),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        // E1: swipe right → reply (disabled in select mode)
+        if (_isSelecting) return bubble;
+        return SwipeToReply(
+          onReply: () {
+            final me = ref.read(authProvider).user;
+            final username = isMine
+                ? (me?.username ?? '')
+                : (msg.senderUsername.isNotEmpty
+                    ? msg.senderUsername
+                    : (currentChat?.otherUser?.username ?? ''));
+            setState(() {
+              _replyingTo = ReplyPreview(
+                id: msg.id,
+                senderId: msg.senderId,
+                senderUsername: username,
+                text: msg.text,
+                kind: msg.kind,
+              );
+            });
+            _focusNode.requestFocus();
+          },
+          child: bubble,
+        );
+      },
+    );
+  }
+
+  // ─── Round video message ───────────────────────────────────────────────────
+
+  String _fmtRecordingTime(int sec) {
+    final m = (sec ~/ 60).toString().padLeft(2, '0');
+    final s = (sec % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  /// Открывает overlay с круглым превью — ещё не записываем.
+  Future<void> _openRoundCamera() async {
+    if (_roundCameraOpen) return;
+    HapticFeedback.mediumImpact();
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+      final target = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      _usingFrontCamera = target.lensDirection == CameraLensDirection.front;
+      final ctrl = CameraController(
+        target,
+        ResolutionPreset.medium,
+        enableAudio: true,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await ctrl.initialize();
+      if (!mounted) { ctrl.dispose(); return; }
+      _videoCamController = ctrl;
+      setState(() => _roundCameraOpen = true);
+    } catch (_) {
+      _videoCamController?.dispose();
+      _videoCamController = null;
+    }
+  }
+
+  /// Закрывает overlay без отправки.
+  Future<void> _closeRoundCamera() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    final ctrl = _videoCamController;
+    _videoCamController = null;
+    setState(() {
+      _roundCameraOpen = false;
+      _recordingVideoMsg = false;
+      _recordingSeconds = 0;
+    });
+    try {
+      if (ctrl?.value.isRecordingVideo == true) {
+        await ctrl!.stopVideoRecording(); // discard
+      }
+      ctrl?.dispose();
+    } catch (_) { ctrl?.dispose(); }
+  }
+
+  /// Тап на кнопку записи: если не пишем — начать, если пишем — остановить и отправить.
+  Future<void> _toggleRecording() async {
+    HapticFeedback.mediumImpact();
+    if (!_recordingVideoMsg) {
+      // Начать запись
+      try {
+        await _videoCamController?.startVideoRecording();
+        setState(() {
+          _recordingVideoMsg = true;
+          _recordingSeconds = 0;
+        });
+        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          setState(() => _recordingSeconds++);
+          if (_recordingSeconds >= 60) _toggleRecording(); // auto stop at 60s
+        });
+      } catch (_) {}
+    } else {
+      // Остановить и отправить
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      final ctrl = _videoCamController;
+      _videoCamController = null;
+      final int seconds = _recordingSeconds;
+      setState(() {
+        _roundCameraOpen = false;
+        _recordingVideoMsg = false;
+        _recordingSeconds = 0;
+      });
+      try {
+        if (ctrl?.value.isRecordingVideo == true) {
+          final file = await ctrl!.stopVideoRecording();
+          ctrl.dispose();
+          if (seconds >= 1) await _uploadAndSendVideoMsg(file.path);
+        } else {
+          ctrl?.dispose();
+        }
+      } catch (_) { ctrl?.dispose(); }
+    }
+  }
+
+  /// Переключает переднюю / заднюю камеру.
+  Future<void> _flipCamera() async {
+    HapticFeedback.selectionClick();
+    final cameras = await availableCameras();
+    if (cameras.length < 2) return;
+    _usingFrontCamera = !_usingFrontCamera;
+
+    final wasRecording = _videoCamController?.value.isRecordingVideo ?? false;
+    XFile? savedFile;
+
+    if (wasRecording) {
+      try { savedFile = await _videoCamController?.stopVideoRecording(); } catch (_) {}
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+    }
+    await _videoCamController?.dispose();
+
+    final target = cameras.firstWhere(
+      (c) => _usingFrontCamera
+          ? c.lensDirection == CameraLensDirection.front
+          : c.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    final ctrl = CameraController(
+      target,
+      ResolutionPreset.medium,
+      enableAudio: true,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    await ctrl.initialize();
+    if (!mounted) { ctrl.dispose(); return; }
+    _videoCamController = ctrl;
+
+    if (wasRecording) {
+      // Продолжаем запись на новой камере
+      await ctrl.startVideoRecording();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= 60) _toggleRecording();
+      });
+      // discard the tiny fragment from before flip
+      if (savedFile != null) {
+        try { File(savedFile.path).deleteSync(); } catch (_) {}
+      }
+    }
+    setState(() {});
+  }
+
+  Future<void> _uploadAndSendVideoMsg(String filePath) async {
+    if (ref.read(uploadQueueProvider).any((t) => t.chatId == widget.chatId) || _locationPending) return;
+    Uint8List? thumb;
+    if (!kIsWeb) {
+      try {
+        thumb = await vt.VideoThumbnail.thumbnailData(
+          video: filePath,
+          imageFormat: vt.ImageFormat.JPEG,
+          maxHeight: 320,
+          quality: 82,
+        );
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final reply = _replyingTo;
+    if (reply != null) setState(() => _replyingTo = null);
+    ref.read(uploadQueueProvider.notifier).enqueue(UploadTask(
+      id: UploadTask.newId(),
+      chatId: widget.chatId,
+      kind: UploadTaskKind.videoNote,
+      thumbnail: thumb,
+      filePath: filePath,
+      fileName: filePath.split('/').last,
+      mediaType: 'video_note',
+      replyTo: reply,
+      cancelToken: CancelToken(),
+    ));
+    _scrollToBottom();
+  }
+
+  void _cancelLocation() {
+    HapticFeedback.lightImpact();
+    setState(() => _locationPending = false);
+  }
+
+
+  Widget _buildRoundVideoOverlay() {
+    final ctrl = _videoCamController;
+    final initialized = ctrl?.value.isInitialized == true;
+    final isRec = _recordingVideoMsg;
+
+    return Positioned.fill(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.80),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // ── Top bar ──────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: Row(
+                    children: [
+                      // X — закрыть
+                      GestureDetector(
+                        onTap: _closeRoundCamera,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          child: Icon(
+                            PhosphorIcons.x(PhosphorIconsStyle.bold),
+                            size: 15,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Таймер (видно только при записи)
+                      AnimatedOpacity(
+                        opacity: isRec ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 250),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: const BoxDecoration(
+                                color: SeeUColors.danger,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              _fmtRecordingTime(_recordingSeconds),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // Переключить камеру
+                      GestureDetector(
+                        onTap: _flipCamera,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.cameraRotate,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const Spacer(),
+
+                // ── Круглое превью ───────────────────────────────
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Кольцо прогресса (только при записи)
+                    if (isRec)
+                      SizedBox(
+                        width: 332,
+                        height: 332,
+                        child: CircularProgressIndicator(
+                          value: _recordingSeconds / 60.0,
+                          strokeWidth: 4,
+                          backgroundColor: Colors.white.withValues(alpha: 0.10),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              SeeUColors.accent),
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                    // Превью
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: 310,
+                      height: 310,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isRec
+                              ? SeeUColors.accent
+                              : Colors.white.withValues(alpha: 0.20),
+                          width: isRec ? 2.5 : 1.5,
+                        ),
+                        boxShadow: isRec
+                            ? [
+                                BoxShadow(
+                                  color: SeeUColors.accent
+                                      .withValues(alpha: 0.30),
+                                  blurRadius: 24,
+                                  spreadRadius: 4,
+                                )
+                              ]
+                            : null,
+                      ),
+                      child: ClipOval(
+                        child: initialized
+                            ? FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  // previewSize is landscape; swap w/h to get portrait ratio
+                                  width: ctrl?.value.previewSize?.height ?? 310,
+                                  height: ctrl?.value.previewSize?.width ?? 310,
+                                  child: CameraPreview(ctrl!),
+                                ),
+                              )
+                            : Container(
+                                color: const Color(0xFF111111),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white38,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const Spacer(),
+
+                // ── Кнопка записи + подсказка ────────────────────
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isRec
+                          ? 'Нажмите  для отправки'
+                          : 'Нажмите  для начала записи',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    GestureDetector(
+                      onTap: _toggleRecording,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Внешнее кольцо
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isRec ? 84 : 78,
+                            height: isRec ? 84 : 78,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isRec
+                                    ? SeeUColors.danger
+                                    : Colors.white.withValues(alpha: 0.55),
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          // Внутренний кружок / квадрат стоп
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isRec ? 32 : 58,
+                            height: isRec ? 32 : 58,
+                            decoration: BoxDecoration(
+                              color: isRec
+                                  ? SeeUColors.danger
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                  isRec ? 8 : 29),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isRec
+                                          ? SeeUColors.danger
+                                          : Colors.white)
+                                      .withValues(alpha: 0.35),
+                                  blurRadius: 16,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Pending bubble: looks identical to sent message + loading overlay + cancel ──
+
+  Widget _buildUploadingBubble(UploadTask task) {
+    final c = context.seeuColors;
+    final notifier = ref.read(uploadQueueProvider.notifier);
+    void onCancel() => notifier.cancel(task.id);
+    void onRetry() => notifier.retry(task.id);
+    if (task.errorMessage != null) return _buildErrorBubble(task, c, onCancel, onRetry);
+    return switch (task.kind) {
+      UploadTaskKind.videoNote => _buildPendingVideoNote(task, onCancel),
+      UploadTaskKind.voice     => _buildPendingVoice(task, c, onCancel),
+      UploadTaskKind.image     => _buildPendingImage(task, c, onCancel),
+      UploadTaskKind.video     => _buildPendingVideo(task, c, onCancel),
+      UploadTaskKind.audio     => _buildPendingAudio(task, c, onCancel),
+      UploadTaskKind.file      => _buildPendingFile(task, c, onCancel),
+    };
+  }
+
+  Widget _buildErrorBubble(
+    UploadTask task,
+    SeeUThemeColors c,
+    VoidCallback onCancel,
+    VoidCallback onRetry,
+  ) {
+    const errorColor = SeeUColors.danger;
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.small),
+            border: Border.all(color: errorColor.withValues(alpha: 0.45), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(PhosphorIconsBold.warningCircle, color: errorColor, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  task.errorMessage!,
+                  style: const TextStyle(fontSize: 13, color: errorColor),
+                ),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: onRetry,
+                child: Text(
+                  'Повторить',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: SeeUColors.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(width: 0.5, height: 14, color: c.line),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onCancel,
+                child: Icon(PhosphorIconsBold.x, size: 14, color: c.ink3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingVideoNote(UploadTask info, VoidCallback onCancel) {
+    const double size = 220;
+    const double ringSize = size + 14;
+    const double cancelSz = 34.0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      child: Center(
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            // Glow
+            Container(
+              width: ringSize, height: ringSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 24, spreadRadius: 2),
+                  BoxShadow(color: SeeUColors.accent.withValues(alpha: 0.18), blurRadius: 20),
+                ],
+              ),
+            ),
+            // Progress ring — determinate when upload size is known
+            SizedBox(
+              width: ringSize, height: ringSize,
+              child: CircularProgressIndicator(
+                value: info.progress,
+                strokeWidth: 3.5,
+                color: SeeUColors.accent,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+                strokeCap: StrokeCap.round,
+              ),
+            ),
+            // Circle: thumbnail or dark placeholder
+            ClipOval(
+              child: SizedBox(
+                width: size, height: size,
+                child: info.thumbnail != null
+                    ? Stack(fit: StackFit.expand, children: [
+                        Image.memory(info.thumbnail!, fit: BoxFit.cover, gaplessPlayback: true),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              colors: [Colors.transparent, Colors.black.withValues(alpha: 0.35)],
+                              radius: 0.8,
+                            ),
+                          ),
+                        ),
+                      ])
+                    : Container(
+                        decoration: const BoxDecoration(
+                          gradient: RadialGradient(
+                            center: Alignment(-0.3, -0.4),
+                            radius: 1.1,
+                            colors: [Color(0xFF2D3F5A), Color(0xFF0A1220)],
+                          ),
+                        ),
+                        child: Icon(PhosphorIconsRegular.videoCamera, size: 44,
+                            color: Colors.white.withValues(alpha: 0.22)),
+                      ),
+              ),
+            ),
+            // Cancel button — top-right of the circle
+            Positioned(
+              top: (ringSize - size) / 2,
+              right: (ringSize - size) / 2,
+              child: GestureDetector(
+                onTap: onCancel,
+                child: Container(
+                  width: cancelSz, height: cancelSz,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.65),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+                  ),
+                  child: Icon(PhosphorIconsBold.x, size: 13, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingVoice(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
+    final dur = info.durationSec;
+    final mm = dur ~/ 60;
+    final ss = (dur % 60).toString().padLeft(2, '0');
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 210, maxWidth: 300),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            // Единый язык пузыря: свой — мягкий accentSoft-тинт
+            // (как в chat_message_bubble), не заливка-оранж.
+            color: c.accentSoft,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+              bottomRight: Radius.circular(8),
+            ),
+            border: Border.all(
+              color: SeeUColors.accent.withValues(alpha: 0.22),
+              width: 0.5,
+            ),
+            boxShadow: SeeUShadows.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Upload spinner — determinate when size is known
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: CircularProgressIndicator(
+                    value: info.progress,
+                    strokeWidth: 2,
+                    color: SeeUColors.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Waveform + duration
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (info.waveform.isNotEmpty)
+                      SizedBox(
+                        height: 28,
+                        child: CustomPaint(
+                          painter: _WaveformPainter(
+                              samples: info.waveform,
+                              color: SeeUColors.accent
+                                  .withValues(alpha: 0.80)),
+                          size: const Size(double.infinity, 28),
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text('$mm:$ss',
+                        style: TextStyle(fontSize: 12, color: c.ink2)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Cancel button
+              GestureDetector(
+                onTap: onCancel,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.surface,
+                    border: Border.all(color: c.line),
+                  ),
+                  child: Icon(PhosphorIconsBold.x, size: 12, color: c.ink3),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pending video bubble — shows thumbnail preview (same layout as image).
+  Widget _buildPendingVideo(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          child: SizedBox(
+            width: 220, height: 140,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Thumbnail or dark placeholder
+                info.thumbnail != null
+                    ? Image.memory(info.thumbnail!, fit: BoxFit.cover, gaplessPlayback: true)
+                    : Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF1E3050), Color(0xFF0D1A35)],
+                          ),
+                        ),
+                      ),
+                // Vignette
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.5)],
+                    ),
+                  ),
+                ),
+                // Film icon overlay
+                Center(
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.45),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    child: const Icon(PhosphorIconsRegular.filmStrip, color: Colors.white, size: 20),
+                  ),
+                ),
+                // Loading bar at bottom
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: SizedBox(
+                    height: 3,
+                    child: LinearProgressIndicator(
+                      value: info.progress,
+                      color: SeeUColors.accent,
+                      backgroundColor: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                // Cancel button
+                Positioned(
+                  top: 8, right: 8,
+                  child: GestureDetector(
+                    onTap: onCancel,
+                    child: Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+                      ),
+                      child: const Icon(PhosphorIconsBold.x, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pending location bubble — shows map pin while GPS is being fetched.
+  Widget _buildPendingLocation(SeeUThemeColors c, VoidCallback onCancel) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
+            border: Border.all(color: c.line, width: 0.5),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF8060), Color(0xFFFFB547)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: const Icon(PhosphorIconsFill.mapPin, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Геолокация', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
+                  const SizedBox(height: 3),
+                  Text('Определяем...', style: TextStyle(fontSize: 11, color: c.ink3)),
+                ],
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: c.ink3),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onCancel,
+                child: Icon(PhosphorIconsBold.x, size: 16, color: c.ink3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pending image bubble — shows actual image preview + progress overlay.
+  Widget _buildPendingImage(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          child: SizedBox(
+            width: 220, height: 160,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Image preview
+                info.thumbnail != null
+                    ? Image.memory(info.thumbnail!, fit: BoxFit.cover, gaplessPlayback: true)
+                    : Container(color: c.surface2),
+                // Dark vignette
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.45)],
+                    ),
+                  ),
+                ),
+                // Loading bar at bottom
+                Positioned(
+                  left: 0, right: 0, bottom: 0,
+                  child: SizedBox(
+                    height: 3,
+                    child: LinearProgressIndicator(
+                      value: info.progress,
+                      color: SeeUColors.accent,
+                      backgroundColor: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                // Cancel button
+                Positioned(
+                  top: 8, right: 8,
+                  child: GestureDetector(
+                    onTap: onCancel,
+                    child: Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.55),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+                      ),
+                      child: const Icon(PhosphorIconsBold.x, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pending audio bubble — shows filename + waveform placeholder + progress.
+  Widget _buildPendingAudio(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
+    final name = info.fileName.isNotEmpty ? info.fileName : 'Аудио';
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            // Единый язык пузыря: свой — мягкий accentSoft-тинт
+            // (как в chat_message_bubble), не заливка-оранж.
+            color: c.accentSoft,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(20),
+              bottomRight: Radius.circular(8),
+            ),
+            border: Border.all(
+              color: SeeUColors.accent.withValues(alpha: 0.22),
+              width: 0.5,
+            ),
+            boxShadow: SeeUShadows.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: CircularProgressIndicator(
+                    value: info.progress,
+                    strokeWidth: 2,
+                    color: SeeUColors.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 3,
+                        child: LinearProgressIndicator(
+                          value: info.progress,
+                          color: SeeUColors.accent,
+                          backgroundColor:
+                              SeeUColors.accent.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onCancel,
+                child: Icon(PhosphorIconsBold.x, size: 16, color: c.ink3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pending generic file bubble — shows filename + file icon + progress.
+  Widget _buildPendingFile(UploadTask info, SeeUThemeColors c, VoidCallback onCancel) {
+    final name = info.fileName.isNotEmpty ? info.fileName : 'Файл';
+    final ext = name.contains('.') ? name.split('.').last.toUpperCase() : '';
+    final sizeStr = info.fileBytes > 0 ? _formatBytes(info.fileBytes) : '';
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 16, top: 8, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 200, maxWidth: 280),
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: c.surface2,
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
+            border: Border.all(color: c.line, width: 0.5),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(PhosphorIconsRegular.file, size: 22, color: SeeUColors.accent),
+                    if (ext.isNotEmpty)
+                      Positioned(
+                        bottom: 6,
+                        child: Text(ext.length > 4 ? ext.substring(0, 4) : ext,
+                          style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w700, color: SeeUColors.accent),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink), overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Text(sizeStr.isNotEmpty ? sizeStr : 'Отправка...', style: TextStyle(fontSize: 11, color: c.ink3)),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 3,
+                        child: LinearProgressIndicator(
+                          value: info.progress,
+                          color: SeeUColors.accent,
+                          backgroundColor: SeeUColors.accent.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onCancel,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.surface,
+                    border: Border.all(color: c.line),
+                  ),
+                  child: Icon(PhosphorIconsBold.x, size: 12, color: c.ink3),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes Б';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} КБ';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  }
+
+  Widget _buildSelectionBar() {
+    final c = context.seeuColors;
+    final count = _selectedIds.length;
+    final messages = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    final selected = messages.where((m) => _selectedIds.contains(m.id)).toList();
+    final hasText = selected.any((m) => m.text.isNotEmpty && m.kind == 'text');
+    final canDeleteForAll = selected.every((m) =>
+        m.isMe &&
+        DateTime.now().difference(m.createdAt) < const Duration(hours: 1) &&
+        !m.isDeletedForAll);
+    // Стеклянная панель на светлом: blur + полупрозрачный bg + hairline.
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            color: SeeUColors.background.withValues(alpha: 0.72),
+            border: Border(top: BorderSide(color: c.line, width: 0.5)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Text(
+                    '$count выбрано',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: c.ink),
+                  ),
+                  const Spacer(),
+                  if (hasText)
+                    _selBarBtn(
+                      icon: PhosphorIcons.copy(),
+                      label: 'Копировать',
+                      color: c.ink,
+                      onTap: () {
+                        final text = selected
+                            .where((m) => m.text.isNotEmpty)
+                            .map((m) => m.text)
+                            .join('\n');
+                        Clipboard.setData(ClipboardData(text: text));
+                        _exitSelectMode();
+                        showSeeUSnackBar(context, 'Скопировано',
+                            duration: const Duration(seconds: 1));
+                      },
+                    ),
+                  const SizedBox(width: 4),
+                  _selBarBtn(
+                    icon: PhosphorIcons.arrowBendUpRight(),
+                    label: 'Переслать',
+                    color: c.ink,
+                    onTap: () {
+                      if (selected.length == 1) {
+                        _exitSelectMode();
+                        _showForwardPicker(selected.first);
+                      } else {
+                        showSeeUSnackBar(context,
+                            'Выберите одно сообщение для пересылки',
+                            duration: const Duration(seconds: 2));
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _selBarBtn(
+                    icon: PhosphorIcons.trash(),
+                    label: canDeleteForAll ? 'Удалить для всех' : 'Удалить',
+                    color: SeeUColors.danger,
+                    onTap: () {
+                      final ids = List<String>.from(_selectedIds);
+                      _exitSelectMode();
+                      _confirmBulkDelete(ids, forAll: canDeleteForAll);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _selBarBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmBulkDelete(List<String> ids, {required bool forAll}) {
+    final c = context.seeuColors;
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        top: false,
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'УДАЛЕНИЕ',
+                      style: SeeUTypography.kicker
+                          .copyWith(color: SeeUColors.danger),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Удалить ${ids.length} сообщени${ids.length == 1 ? 'е' : 'й'}?',
+                      style:
+                          SeeUTypography.displayS.copyWith(color: c.ink),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: c.line),
+              ListTile(
+                leading: const Icon(PhosphorIconsRegular.trash,
+                    color: SeeUColors.danger),
+                title: Text(
+                  forAll ? 'Удалить для всех' : 'Удалить у себя',
+                  style: const TextStyle(color: SeeUColors.danger),
+                ),
+                onTap: () async {
+                  Navigator.of(sheetCtx).pop();
+                  final notifier =
+                      ref.read(chatMessagesProvider(widget.chatId).notifier);
+                  final snapshot =
+                      ref.read(chatMessagesProvider(widget.chatId)).messages;
+                  // Optimistic update for all selected messages at once.
+                  for (final id in ids) {
+                    if (forAll) {
+                      notifier.markDeletedForAll(id);
+                    } else {
+                      notifier.removeLocally(id);
+                    }
+                  }
+                  try {
+                    final api = ref.read(apiClientProvider);
+                    for (final id in ids) {
+                      final url = forAll
+                          ? ApiEndpoints.chatMessageDelete(id)
+                          : '${ApiEndpoints.chatMessageDelete(id)}?scope=self';
+                      await api.delete(url);
+                    }
+                  } on DioException catch (e) {
+                    notifier.restoreMessages(snapshot);
+                    if (mounted) {
+                      showSeeUSnackBar(
+                        context,
+                        'Не удалось удалить: ${apiErrorMessage(e)}',
+                        tone: SeeUTone.danger,
+                      );
+                    }
+                  }
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.x(), color: c.ink),
+                title: const Text('Отмена'),
+                onTap: () => Navigator.of(sheetCtx).pop(),
+              ),
+            ],
+          ),
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    final c = context.seeuColors;
+    // Recorder mode — заменяем весь input на VoiceRecorderBar.
+    if (_recording) {
+      return VoiceRecorderBar(
+        onCancel: () => setState(() => _recording = false),
+        onSubmit: (path, dur, samples) async {
+          setState(() => _recording = false);
+          await _uploadAndSendVoice(path, dur, samples);
+        },
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Send error banner
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: _sendError
+              ? _buildSendErrorBanner(c)
+              : const SizedBox.shrink(),
+        ),
+        // Edit banner
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: _editingMessageId != null
+              ? _buildEditBanner(c)
+              : const SizedBox.shrink(),
+        ),
+        // D2: reply banner — instant (no animation delay)
+        if (_replyingTo != null) _buildReplyBanner(_replyingTo!),
+        // Стеклянный бар ввода — матовая оболочка (blur) + плоское pill-поле.
+        ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+          decoration: BoxDecoration(
+            color: SeeUColors.background.withValues(alpha: 0.72),
+            border: Border(
+              top: BorderSide(
+                color: c.line,
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Attach button: opens menu.
+                  GestureDetector(
+                    onTap: _showAttachMenu,
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Icon(
+                        PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                        size: 22,
+                        color: c.ink2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // CHAT-11: TTL для следующего сообщения. Active state — accent
+                  // bg + label «1ч/24ч/7д» под icon'ом.
+                  GestureDetector(
+                    onTap: _showTtlPicker,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: _ttlSeconds != null ? BoxDecoration(
+                        color: SeeUColors.accent.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ) : null,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          _VanishIcon(
+                            active: _ttlSeconds != null,
+                            color: _ttlSeconds != null ? SeeUColors.accent : c.ink2,
+                          ),
+                          if (_ttlSeconds != null)
+                            Positioned(
+                              bottom: 2,
+                              right: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 3, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: SeeUColors.accent,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  _shortTtlLabel(_ttlSeconds!),
+                                  style: const TextStyle(
+                                    fontSize: 7,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Input field: text left, emoji/send right inside
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
+                        border: Border.all(
+                          color: _focusNode.hasFocus
+                              ? SeeUColors.accent.withValues(alpha: 0.4)
+                              : c.line,
+                          width: 0.5,
+                        ),
+                        boxShadow: SeeUShadows.sm,
+                      ),
+                      child: TextField(
+                        controller: _textController,
+                        focusNode: _focusNode,
+                        maxLines: null,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: SeeUTypography.body.copyWith(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: _editingMessageId != null
+                              ? 'Редактировать сообщение'
+                              : 'Сообщение…',
+                          hintStyle: SeeUTypography.body.copyWith(
+                            fontSize: 14,
+                            color: c.ink3,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.only(
+                            left: 14,
+                            right: 4,
+                            top: 9,
+                            bottom: 9,
+                          ),
+                          // Emoji icon (right) when not typing, send button when typing
+                          suffixIcon: _hasText
+                              ? GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _sendMessage,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: const BoxDecoration(
+                                        color: SeeUColors.accent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        PhosphorIconsFill.arrowUp,
+                                        size: 15,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _toggleEmojiPanel,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    child: Icon(
+                                      _emojiPanelOpen
+                                          ? PhosphorIconsRegular.keyboard
+                                          : PhosphorIconsRegular.smiley,
+                                      size: 20,
+                                      color: _emojiPanelOpen
+                                          ? SeeUColors.accent
+                                          : c.ink2,
+                                    ),
+                                  ),
+                                ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 36,
+                          ),
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                  ),
+                  // External mic / video-msg button — only when not typing
+                  if (!_hasText) ...[
+                    const SizedBox(width: 4),
+                    if (_videoMsgMode)
+                      // Camera icon: tap → open round camera, double-tap → back to mic
+                      GestureDetector(
+                        onTap: _openRoundCamera,
+                        onDoubleTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _videoMsgMode = false);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: SeeUColors.accent.withValues(alpha: 0.12),
+                          ),
+                          child: Icon(
+                            PhosphorIconsRegular.videoCamera,
+                            size: 22,
+                            color: SeeUColors.accent,
+                          ),
+                        ),
+                      )
+                    else
+                      // Mic icon: tap → voice record, double-tap → switch to video mode
+                      GestureDetector(
+                        onTap: () => setState(() => _recording = true),
+                        onDoubleTap: () {
+                          HapticFeedback.mediumImpact();
+                          setState(() => _videoMsgMode = true);
+                        },
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Icon(
+                            PhosphorIconsRegular.microphone,
+                            size: 22,
+                            color: c.ink2,
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _dateKey(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+
+  String _formatDateLabel(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(date).inDays;
+
+    if (diff == 0) return 'Сегодня';
+    if (diff == 1) return 'Вчера';
+    if (diff < 7) {
+      const days = [
+        'Понедельник',
+        'Вторник',
+        'Среда',
+        'Четверг',
+        'Пятница',
+        'Суббота',
+        'Воскресенье',
+      ];
+      return days[dt.weekday - 1];
+    }
+    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+  }
+
+  /// Sticky pinned-banner на topе чата. Тап = scroll к оригиналу
+  /// (отложено — нужен ScrollController.scrollToIndex по messageId).
+  /// Long-press = unpin (для admin/direct-юзера).
+  Widget _buildPinnedBanner(ReplyPreview pinned) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () => _scrollToMessage(pinned.id),
+      // Стеклянная панель на светлом: blur + полупрозрачный bg + hairline.
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+        decoration: BoxDecoration(
+          color: SeeUColors.background.withValues(alpha: 0.72),
+          border: Border(
+            bottom: BorderSide(color: c.line, width: 0.5),
+          ),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left accent strip
+              Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(2),
+                    bottomRight: Radius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(PhosphorIconsBold.pushPin,
+                              size: 12, color: SeeUColors.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Закреплённое',
+                            style: const TextStyle(
+                              color: SeeUColors.accent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        pinned.shortLabel(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.ink2, fontSize: 12.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Caret-down to dismiss
+              GestureDetector(
+                onTap: () => _confirmUnpin(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Icon(
+                    PhosphorIconsRegular.caretDown,
+                    size: 18,
+                    color: c.ink3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadErrorState(String error) {
+    final c = context.seeuColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIconsRegular.cloudSlash, size: 52, color: c.ink3),
+            const SizedBox(height: 16),
+            Text(
+              'Не удалось загрузить сообщения',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.ink),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              error,
+              style: TextStyle(fontSize: 12, color: c.ink3),
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: () => ref.invalidate(chatMessagesProvider(widget.chatId)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                child: const Text(
+                  'Повторить',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSendErrorBanner(SeeUThemeColors c) {
+    // Show preview of the failed message text (first 40 chars) for context.
+    final preview = _failedText.length > 40
+        ? '${_failedText.substring(0, 40)}…'
+        : _failedText;
+    return Container(
+      color: SeeUColors.error.withValues(alpha: 0.10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(PhosphorIconsRegular.warningCircle, size: 16, color: SeeUColors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Не удалось отправить',
+                  style: TextStyle(fontSize: 13, color: SeeUColors.error, fontWeight: FontWeight.w600),
+                ),
+                if (preview.isNotEmpty)
+                  Text(
+                    preview,
+                    style: TextStyle(fontSize: 11, color: SeeUColors.error.withValues(alpha: 0.7)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _sendMessage(_failedText),
+            child: Text(
+              'Повторить',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: SeeUColors.error,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () => setState(() {
+              _sendError = false;
+              _failedText = '';
+            }),
+            child: Icon(PhosphorIconsRegular.x, size: 16, color: SeeUColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditBanner(SeeUThemeColors c) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 36,
+            decoration: BoxDecoration(
+              color: SeeUColors.accent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Редактирование',
+                  style: const TextStyle(
+                    color: SeeUColors.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  _editingOriginalText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: c.ink2, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _editingMessageId = null;
+                _editingOriginalText = '';
+              });
+              _textController.clear();
+            },
+            icon: Icon(PhosphorIcons.x(), size: 18, color: c.ink3),
+            tooltip: 'Отменить редактирование',
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showForwardPicker(ChatMessage m) {
+    _focusNode.unfocus();
+    final c = context.seeuColors;
+    final api = ref.read(apiClientProvider);
+    showSeeUBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  'Переслать в чат',
+                  style: SeeUTypography.subtitle.copyWith(color: c.ink),
+                ),
+              ),
+              Flexible(
+                child: FutureBuilder<List<Chat>>(
+                  future: api.get(ApiEndpoints.chats).then((r) {
+                    final list = r.data is Map
+                        ? (r.data['data'] as List? ?? [])
+                        : (r.data as List? ?? []);
+                    return list
+                        .map((e) => Chat.fromJson(e as Map<String, dynamic>))
+                        .toList();
+                  }),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (snap.hasError || !snap.hasData) {
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text('Не удалось загрузить чаты',
+                            style: SeeUTypography.body.copyWith(color: c.ink3)),
+                      );
+                    }
+                    final chats = snap.data!;
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: chats.length,
+                      itemBuilder: (_, i) {
+                        final chat = chats[i];
+                        final name = chat.isGroup
+                            ? chat.title
+                            : (chat.otherUser?.fullName ?? '');
+                        return ListTile(
+                          leading: ChatSmallAvatar(
+                            avatarUrl: chat.isGroup
+                                ? chat.coverUrl
+                                : chat.otherUser?.avatarUrl,
+                            isGroup: chat.isGroup,
+                          ),
+                          title: Text(name,
+                              style: SeeUTypography.body.copyWith(color: c.ink)),
+                          subtitle: chat.isGroup
+                              ? Text('${chat.participantsCount} участников',
+                                  style: SeeUTypography.caption
+                                      .copyWith(color: c.ink3))
+                              : null,
+                          onTap: () async {
+                            Navigator.of(sheetCtx).pop();
+                            final messenger = ScaffoldMessenger.of(context);
+                            final forwardText = m.text.isNotEmpty
+                                ? m.text
+                                : '';
+                            // Имя оригинального отправителя для баннера
+                            final originSender = m.isMe
+                                ? (ref.read(authProvider).user?.username ?? '')
+                                : (m.senderUsername.isNotEmpty
+                                    ? m.senderUsername
+                                    : m.senderName);
+                            try {
+                              await ref
+                                  .read(chatMessagesProvider(chat.id).notifier)
+                                  .sendMessage(
+                                    forwardText,
+                                    attachedPostId: m.attachedPost?.id,
+                                    attachedMediaUrl: m.attachedMediaUrl
+                                            .isNotEmpty
+                                        ? m.attachedMediaUrl
+                                        : null,
+                                    attachedMediaType: m.attachedMediaUrl
+                                            .isNotEmpty
+                                        ? m.attachedMediaType
+                                        : null,
+                                    mediaDurationSeconds:
+                                        m.mediaDurationSeconds,
+                                    waveform: m.waveform,
+                                    forwardedFromMessageId: m.id,
+                                    forwardedFromSender: originSender,
+                                    // Surface upload/send failures so the catch
+                                    // below shows "Ошибка пересылки" instead of
+                                    // a misleading green "Переслано".
+                                    rethrowOnError: true,
+                                  );
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  const SnackBar(content: Text('Переслано')),
+                                );
+                              }
+                            } catch (_) {
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Ошибка пересылки'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteMessage(String messageId,
+      {bool forAll = true}) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: Text(forAll ? 'Удалить для всех?' : 'Удалить у себя?'),
+        content: Text(
+          forAll
+              ? 'Сообщение станет видно как «Сообщение удалено» для всех участников.'
+              : 'Сообщение исчезнет только у вас.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: SeeUColors.danger),
+            onPressed: () => Navigator.pop(dlgCtx, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(chatMessagesProvider(widget.chatId).notifier);
+    final snapshot = ref.read(chatMessagesProvider(widget.chatId)).messages;
+    // Optimistic update
+    if (forAll) {
+      notifier.markDeletedForAll(messageId);
+    } else {
+      notifier.removeLocally(messageId);
+    }
+    try {
+      final api = ref.read(apiClientProvider);
+      final url = forAll
+          ? ApiEndpoints.chatMessageDelete(messageId)
+          : '${ApiEndpoints.chatMessageDelete(messageId)}?scope=self';
+      await api.delete(url);
+    } on DioException catch (e) {
+      notifier.restoreMessages(snapshot);
+      messenger.showSnackBar(
+          SnackBar(content: Text('Не удалось удалить: ${apiErrorMessage(e)}')));
+    }
+  }
+
+  Future<void> _confirmUnpin() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Открепить сообщение?'),
+        content: const Text('Закреплённое сообщение исчезнет из шапки чата.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Открепить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _setPin(null);
+  }
+
+  Future<void> _setPin(String? messageId) async {
+    HapticFeedback.mediumImpact();
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.put(
+        ApiEndpoints.chatPin(widget.chatId),
+        data: {'message_id': messageId},
+      );
+      // Чат-лист обновится через chat.pinned WS-event.
+      if (!mounted) return;
+      showSeeUSnackBar(
+          context, messageId == null ? 'Сообщение откреплено' : 'Сообщение закреплено',
+          duration: const Duration(seconds: 1));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = e.response?.statusCode ?? 0;
+      showSeeUSnackBar(
+          context,
+          code == 403
+              ? 'Только админ группы может закреплять'
+              : 'Не удалось: ${apiErrorMessage(e)}',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  /// Reply-banner над input'ом. Показывает превью оригинала + кнопка ✕.
+  Widget _buildReplyBanner(ReplyPreview reply) {
+    final c = context.seeuColors;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(
+          top: BorderSide(color: c.line, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: SeeUGradients.heroOrange,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Ответ @${reply.senderUsername}',
+                  style: const TextStyle(
+                    color: SeeUColors.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  reply.shortLabel(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.ink2,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _replyingTo = null),
+            icon: Icon(PhosphorIcons.x(), size: 18, color: c.ink3),
+            tooltip: 'Отменить ответ',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Widgets extracted to:
+//   widgets/chat_message_bubble.dart — ChatMessageBubble, ChatSmallAvatar,
+//       ChatSharedPostPreview, ChatImageAttachment, ChatIcebreakerChip,
+//       ChatDateSeparator, ChatTtlCountdown
+//   widgets/chat_search_sheet.dart  — ChatSearchSheet
+
+// ─── Vanish / disappearing-message icon ──────────────────────────────────────
+
+class _VanishIcon extends StatelessWidget {
+  final bool active;
+  final Color color;
+  const _VanishIcon({required this.active, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(22, 22),
+      painter: _VanishPainter(active: active, color: color),
+    );
+  }
+}
+
+class _VanishPainter extends CustomPainter {
+  final bool active;
+  final Color color;
+  const _VanishPainter({required this.active, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final bodyPaint = Paint()
+      ..color = color
+      ..style = active ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    // Ghost body: semicircle head → wavy bottom
+    final path = Path();
+    path.addArc(
+      Rect.fromLTWH(w * 0.05, h * 0.03, w * 0.90, h * 0.60),
+      math.pi, math.pi,
+    );
+    path.lineTo(w * 0.95, h * 0.82);
+    // Three wavy bumps left-to-right (right → middle → left)
+    path.cubicTo(w * 0.87, h * 1.03, w * 0.76, h * 0.90, w * 0.67, h * 0.79);
+    path.cubicTo(w * 0.57, h * 0.67, w * 0.43, h * 0.67, w * 0.33, h * 0.79);
+    path.cubicTo(w * 0.24, h * 0.90, w * 0.13, h * 1.03, w * 0.05, h * 0.82);
+    path.close();
+    canvas.drawPath(path, bodyPaint);
+
+    // Eyes — white when filled, same color when outlined
+    final eyePaint = Paint()
+      ..color = active ? Colors.white.withValues(alpha: 0.92) : color
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    final r = w * 0.072;
+    canvas.drawCircle(Offset(w * 0.36, h * 0.36), r, eyePaint);
+    canvas.drawCircle(Offset(w * 0.64, h * 0.36), r, eyePaint);
+  }
+
+  @override
+  bool shouldRepaint(_VanishPainter old) =>
+      old.active != active || old.color != color;
+}
+
+// ---------------------------------------------------------------------------
+// Waveform painter for uploading voice bubble
+// ---------------------------------------------------------------------------
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> samples;
+  final Color color;
+  const _WaveformPainter({required this.samples, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.fill;
+
+    final barCount = math.min(samples.length, 28);
+    final barWidth = (size.width - barCount * 1.5) / barCount;
+    final maxH = size.height;
+
+    for (int i = 0; i < barCount; i++) {
+      final idx = (i / barCount * samples.length).toInt().clamp(0, samples.length - 1);
+      final h = math.max(3.0, samples[idx] * maxH);
+      final x = i * (barWidth + 1.5);
+      final y = (maxH - h) / 2;
+      final rr = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y, barWidth, h),
+        const Radius.circular(1.5),
+      );
+      canvas.drawRRect(rr, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPainter old) => old.samples != samples;
+}

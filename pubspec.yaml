@@ -1,0 +1,174 @@
+name: seeu
+description: SeeU - Social Network
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_blue_plus: ^1.35.2
+
+  # Navigation
+  go_router: ^17.2.3
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Network
+  dio: ^5.4.3+1
+
+  # Storage
+  shared_preferences: ^2.2.3
+  flutter_secure_storage: ^9.0.0
+  sqflite: ^2.4.1
+
+  # Camera
+  camera: ^0.11.0+2
+
+  # Media
+  image_picker: ^1.1.2
+  file_picker: ^8.3.7
+  cached_network_image: ^3.3.1
+  video_player: ^2.8.6
+  chewie: ^1.8.5
+  visibility_detector: ^0.4.0+2
+  # ScrollablePositionedList — для scroll-to-message-by-index в chat
+  # (CHAT-3.1: tap на результат поиска прокручивает чат к этому сообщению).
+  # ListView.builder не умеет «прыгнуть к индексу N» без known item-heights.
+  scrollable_positioned_list: ^0.3.8
+  just_audio: ^0.9.46
+  # BUG-2: audio_session нужен для ringtone на iOS — без category .playback
+  # звук режется во время silent-mode (mute switch). Android — category
+  # routes ring через speaker даже при подключённых наушниках.
+  audio_session: ^0.1.21
+  # audio_service: background isolate/ForegroundService + MediaSession (Android)
+  # + MPNowPlayingInfoCenter / MPRemoteCommandCenter (iOS). Даёт lock-screen
+  # контролы и уведомление в шторке при воспроизведении музыки.
+  audio_service: ^0.18.15
+  # record 6.x синхронизирует federated реализации (record_linux 1.3+ есть
+  # startStream + hasPermission(request:) от record_platform_interface 1.5).
+  # 5.x всё ещё тянет старый record_linux 0.7.2 → build fail на iOS-actions
+  # из-за несовпадения сигнатур.
+  record: ^6.0.0
+
+  # WebRTC для video/voice calls 1-1. Signaling через наш WS hub
+  # (call.invite/offer/answer/ice/end), STUN — публичный Google.
+  # ВАЖНО: версия зафиксирована под livekit_client (прямой эфир) — оба плагина
+  # на iOS тянут pod WebRTC-SDK и должны указывать ОДИН и тот же его билд
+  # (livekit_client 2.5.0 → WebRTC-SDK 137.7151.03). Не повышать в отрыве от
+  # livekit_client, иначе CocoaPods падает с конфликтом версий WebRTC-SDK.
+  flutter_webrtc: 1.1.0
+  photo_view: ^0.14.0
+
+  # UI
+  shimmer: ^3.0.0
+  timeago: ^3.6.1
+  flutter_animate: ^4.5.0
+  smooth_page_indicator: ^1.1.0
+  google_fonts: ^6.2.1
+  phosphor_flutter: ^2.1.0
+  flutter_staggered_animations: ^1.1.1
+  flutter_staggered_grid_view: ^0.7.0
+
+  # Geolocation — определение города для экрана Сборов
+  geolocator: ^13.0.1
+
+  # Utils
+  uuid: ^4.4.0
+  intl: ^0.20.2
+  mime: ^1.0.5
+  path: ^1.9.0
+  http_parser: ^4.0.2
+  url_launcher: ^6.3.0
+  share_plus: ^10.1.4
+  web_socket_channel: ^3.0.1
+  # LIB-1: inline PDF preview в library (тап на PDF → bottom-sheet с
+  # scrollable страницами вместо download). Native iOS PDFKit + Android
+  # PDFViewer. На web не работает — fall back на url_launcher.
+  flutter_pdfview: ^1.3.2
+  # Temp-dir для cache PDF перед PDFView.fromPath. Уже транзитивно есть у
+  # многих пакетов, но указываем явно чтобы import был чистый.
+  path_provider: ^2.1.4
+  # LIB Sprint 6: Tier-1 ридеры
+  flutter_markdown: ^0.7.7   # TXT/MD reader
+  # vocsy_epub_viewer: ^3.0.0  # TEMP: отключено (битая транзитивная зависимость NanoHttpd под Android). Вернуть после фикса.
+  video_thumbnail: ^0.5.3
+  emoji_picker_flutter: ^4.4.0
+  mobile_scanner: ^6.0.2  # Сканер QR (привязка браслета). Только реальное устройство.
+  image: ^4.3.0   # JPEG encoding for composed photos (pure Dart)
+  crypto: ^3.0.3  # SHA-256 хэш телефонов для приватного матчинга контактов (Фаза 2)
+  lottie: ^3.1.3  # Анимация огонька Spark 🔥 (Фаза 3)
+  flutter_contacts: ^1.1.9+2  # Чтение адресной книги для матчинга контактов (Фаза 2)
+  nfc_manager: ^3.5.0  # Чтение NFC-тега браслета: знакомство + пара (Фазы 4/5)
+  ffmpeg_kit_flutter_new: ^4.2.1  # Обрезка/склейка видео при создании постов. Только реальное устройство.
+  livekit_client: ^2.5.0+hotfix.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.6.5
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#FF5A3C"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/images/
+    # C-3.1: ringtone/ringback/endtone (programmatically generated sine-WAVs
+    # — CC0 by construction, see assets/sounds/generate_tones.py).
+    - assets/sounds/
+    - assets/masks/3d/
+    - assets/small flame.json  # Lottie-огонёк Spark 🔥 (Фаза 3)
+
+  # Editorial-типографика редизайна. Fraunces не содержит кириллицы, поэтому
+  # русские серифные заголовки рендерятся через fallback Playfair Display
+  # (задан в SeeUTypography.display* как fontFamilyFallback).
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Fraunces-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Fraunces-Italic.ttf
+          weight: 400
+          style: italic
+    - family: Playfair Display
+      fonts:
+        - asset: assets/fonts/PlayfairDisplay-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/PlayfairDisplay-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlayfairDisplay-Italic.ttf
+          weight: 400
+          style: italic
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
+          weight: 600

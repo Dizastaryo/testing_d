@@ -1,0 +1,114 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Foreground service для media playback (mini-player продолжает играть
+         когда приложение свёрнуто). Android 14+ требует TYPE-permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 14+ TYPE-permission для звонков с микрофоном в foreground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Android 13+ runtime permission для push-нотификаций (APNs/FCM). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Wake/network для WS-keep-alive + ML Kit (face detection). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Чтение контактов для приватного матчинга друзей по хэшу номера (Фаза 2). -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- NFC: чтение тега браслета (знакомство + пара, Фазы 4–5). -->
+    <uses-permission android:name="android.permission.NFC" />
+
+    <!-- ARCore: optional so app installs on devices without AR support -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false"/>
+
+    <application
+        android:label="SeeU"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        <!-- ARCore: optional — masks gracefully disabled on unsupported devices -->
+        <meta-data android:name="com.google.ar.core" android:value="optional"/>
+        <!-- Android embedding v2 - required by file_picker and other plugins. -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2"/>
+        <!-- Disable Impeller/Vulkan: on many MIUI/Adreno/Mali devices it renders
+             the whole UI washed-out/semi-transparent. Falls back to Skia, which
+             renders correctly. Remove once Impeller is stable on these GPUs. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false"/>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Deep links: seeu://files/:id → FileDetailScreen -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="seeu"/>
+            </intent-filter>
+        </activity>
+        <!-- ForegroundService для звонков и голосовых каналов.
+             Тип microphone — Android 10+ требует явного объявления типа
+             если сервис захватывает микрофон в background'е. -->
+        <service
+            android:name=".CallForegroundService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+        <!-- audio_service: MediaBrowserService для фоновой музыки.
+             foregroundServiceType="mediaPlayback" обязателен на Android 10+. -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <!-- Перехватывает кнопки наушников / Bluetooth когда приложение в фоне. -->
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

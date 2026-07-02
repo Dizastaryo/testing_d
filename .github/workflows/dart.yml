@@ -1,0 +1,61 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 📱 iOS Build (No Codesign)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: stable
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        run: |
+          pod repo update
+          pod install
+        working-directory: ios
+
+      # Диагностика реальных build settings (помогает понять, кто включает подпись)
+      - name: Show signing build settings (Release)
+        run: |
+          xcodebuild -showBuildSettings -workspace Runner.xcworkspace -scheme Runner -configuration Release | grep -E 'CODE_SIGN|DEVELOPMENT_TEAM|PROVISION' || true
+        working-directory: ios
+
+      # Архивирование через xcodebuild без подписи (гарантированный способ получить Runner.app)
+      - name: Xcode archive (unsigned)
+        run: |
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release \
+            -archivePath ../build/Runner.xcarchive -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
+            archive
+        working-directory: ios
+
+      - name: Create Payload directory
+        run: mkdir -p Payload
+
+      - name: Copy app to Payload
+        run: cp -R build/Runner.xcarchive/Products/Applications/Runner.app Payload/
+
+      - name: Create IPA archive
+        run: zip -r app.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: app.ipa

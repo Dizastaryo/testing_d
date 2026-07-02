@@ -1,0 +1,326 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+import '../api/api_client.dart';
+import '../config/app_config.dart';
+import 'auth_provider.dart';
+
+/// One incoming server message: `{type, payload}` from `internal/ws/hub.go`.
+class RealtimeEvent {
+  final String type;
+  final dynamic payload;
+  const RealtimeEvent(this.type, this.payload);
+}
+
+/// Stream of every event the backend pushes to this user. Subscribe from
+/// any provider/widget to react to realtime traffic. Stays empty when
+/// the user is logged out; connection auto-restarts on login.
+final realtimeEventsProvider = StreamProvider<RealtimeEvent>((ref) {
+  // Watch ONLY isAuthenticated — watching the whole AuthState would rebuild
+  // this provider on every updateUser/reloadMe, tearing down & resubscribing
+  // the broadcast event stream and dropping events (e.g. call.end) in the gap.
+  final isAuthenticated =
+      ref.watch(authProvider.select((s) => s.isAuthenticated));
+  if (!isAuthenticated) {
+    return const Stream<RealtimeEvent>.empty();
+  }
+  final controller = ref.read(_realtimeConnectionProvider);
+  return controller.events;
+});
+
+/// Holds the underlying connection. Separate provider so callers can both
+/// listen (events) and send (upstream) without recreating the socket.
+final _realtimeConnectionProvider = Provider<_RealtimeConnection>((ref) {
+  final controller = _RealtimeConnection(ref);
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
+/// Public API for pushing client-originated events upstream to the server
+/// (typing indicators, future "now playing" announcements, etc.).
+final realtimeSenderProvider = Provider<RealtimeSender>((ref) {
+  // Watching auth here means a logout disposes the sender; next login spins up
+  // a fresh connection lazily on first send/listen.
+  ref.watch(authProvider);
+  return RealtimeSender(ref);
+});
+
+class RealtimeSender {
+  final Ref _ref;
+  RealtimeSender(this._ref);
+
+  /// Best-effort send. If the socket isn't open yet (still reconnecting),
+  /// the frame is dropped — caller should treat upstream events as advisory.
+  void send(String type, Map<String, dynamic> payload) {
+    final auth = _ref.read(authProvider);
+    if (!auth.isAuthenticated) return;
+    final conn = _ref.read(_realtimeConnectionProvider);
+    conn.send(type, payload);
+  }
+}
+
+/// Long-lived WebSocket holder. Owns reconnect logic with exponential backoff.
+/// Errors and onDone trigger reconnect; events are forwarded into a broadcast
+/// stream so multiple listeners can subscribe.
+class _RealtimeConnection {
+  final Ref _ref;
+  final _events = StreamController<RealtimeEvent>.broadcast();
+  WebSocketChannel? _channel;
+  StreamSubscription? _sub;
+  Timer? _reconnect;
+  Duration _backoff = const Duration(seconds: 1);
+  bool _disposed = false;
+  /// H-7: хранит call-ключи (from_user_id|kind) которые уже были re-injected
+  /// в текущей сессии, чтобы reconnect не показывал один и тот же звонок дважды.
+  final Map<String, DateTime> _replayedInvites = {};
+  /// Wall-clock time the last `_connect` attempt opened a channel. Used to
+  /// detect "WS handshake closes immediately" — a signature of token expiry.
+  DateTime? _connectStartedAt;
+  /// Set true while we've already triggered a refresh in the current
+  /// reconnect cycle, so we don't ping `/auth/refresh` repeatedly when the
+  /// refresh-token itself is also dead.
+  bool _refreshAttempted = false;
+
+  /// Listener on auth so a logout→login *in the same process* re-establishes a
+  /// fresh socket. The provider holding this connection is never invalidated,
+  /// so without this a re-login would otherwise reuse a dormant (token-less)
+  /// instance whose `_connect()` early-returned during the logout — leaving
+  /// chat live updates, incoming/group calls, typing & now_playing dead until
+  /// an app restart.
+  ProviderSubscription<AuthState>? _authSub;
+
+  _RealtimeConnection(this._ref) {
+    _connect();
+    _authSub = _ref.listen<AuthState>(authProvider, (prev, next) {
+      final wasAuthed = prev?.isAuthenticated ?? false;
+      if (wasAuthed && !next.isAuthenticated) {
+        // Logout: tear down the live socket so a stale token isn't reused and
+        // no events leak across sessions.
+        _teardownSocket();
+      } else if (!wasAuthed && next.isAuthenticated) {
+        // Login / re-login: spin up a brand-new authenticated socket.
+        _refreshAttempted = false;
+        _backoff = const Duration(seconds: 1);
+        _replayedInvites.clear();
+        _teardownSocket();
+        _connect();
+      }
+    });
+  }
+
+  Stream<RealtimeEvent> get events => _events.stream;
+
+  /// Closes the active channel + cancels pending reconnect without disposing
+  /// the broadcast events stream (listeners survive across sessions).
+  void _teardownSocket() {
+    _reconnect?.cancel();
+    _reconnect = null;
+    _sub?.cancel();
+    _sub = null;
+    final ch = _channel;
+    _channel = null;
+    ch?.sink.close();
+  }
+
+  Future<void> _connect() async {
+    if (_disposed) return;
+    try {
+      // Read through the ApiClient so we hit the in-memory token cache first,
+      // with a keychain fallback. Reading the keychain directly here can fail
+      // when the cache holds the only valid token.
+      final token = await _ref.read(apiClientProvider).getAccessToken();
+      if (token == null || token.isEmpty) {
+        // No token — user just logged out mid-reconnect. Stop.
+        return;
+      }
+
+      final base = AppConfig.apiBaseUrl;
+      // ws[s]://host/api/v1/ws?token=<jwt>. Token via query param because
+      // browser WebSocket can't send custom headers in the handshake.
+      final wsUrl = base
+          .replaceFirst('http://', 'ws://')
+          .replaceFirst('https://', 'wss://');
+      final uri = Uri.parse('$wsUrl/ws?token=$token');
+
+      // Never log the token — redact the query param so the JWT can't leak.
+      debugPrint('[realtime] connecting to $wsUrl/ws?token=<redacted>');
+      _channel = WebSocketChannel.connect(uri);
+      _connectStartedAt = DateTime.now();
+
+      _sub = _channel!.stream.listen(
+        _onMessage,
+        onError: _onError,
+        onDone: _onDone,
+        cancelOnError: false,
+      );
+
+      // Reset backoff once we got a connection. Real "connected" signal would
+      // be a server-sent hello, but for now successful subscribe = good.
+      _backoff = const Duration(seconds: 1);
+
+      // BUG-5: после connect / reconnect — догнать pending call.invite которые
+      // пришли пока WS был down. Backend хранит invitations в DB (60-сек window).
+      // Fire-and-forget, ошибка endpoint'а не должна влиять на WS-flow.
+      unawaited(_probePendingCalls());
+    } catch (e) {
+      debugPrint('[realtime] connect error: $e');
+      _scheduleReconnect();
+    }
+  }
+
+  /// BUG-5: после reconnect'а спрашиваем backend — был ли пропущенный звонок.
+  /// Возвращённые pending invitations re-инжектим в events-stream как
+  /// синтетические `call.invite` события — CallService обработает их
+  /// идентично real-time. Если ничего нет — endpoint вернёт пустой массив.
+  Future<void> _probePendingCalls() async {
+    if (_disposed) return;
+    try {
+      final api = _ref.read(apiClientProvider);
+      final resp = await api.get('/users/me/calls/pending');
+      final data = resp.data;
+      List<dynamic> items = const [];
+      if (data is Map && data['data'] is List) {
+        items = data['data'] as List;
+      }
+      // H-7: чистим устаревшие записи (> 2 минут) чтобы не накапливать память.
+      final now = DateTime.now();
+      _replayedInvites.removeWhere(
+          (_, ts) => now.difference(ts) > const Duration(minutes: 2));
+
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        final from = raw['from_user_id']?.toString() ?? '';
+        if (from.isEmpty) continue;
+        final kind = raw['kind']?.toString() ?? 'video';
+        // H-7: дедуплицируем — один и тот же pending invite не должен
+        // показываться повторно при каждом reconnect в течение 2 минут.
+        final dedupeKey = '$from|$kind';
+        if (_replayedInvites.containsKey(dedupeKey)) {
+          debugPrint('[realtime] skipping duplicate pending call.invite from=$from');
+          continue;
+        }
+        _replayedInvites[dedupeKey] = now;
+        final synthetic = <String, dynamic>{
+          'from_user_id': from,
+          'from_username': raw['peer_username'] ?? '',
+          'from_full_name': raw['peer_full_name'] ?? '',
+          'from_avatar': raw['peer_avatar_url'] ?? '',
+          'kind': kind,
+        };
+        debugPrint('[realtime] replaying missed call.invite from=$from');
+        _events.add(RealtimeEvent('call.invite', synthetic));
+      }
+    } catch (e) {
+      // Не критично — звонок просто пропадёт. Логируем для debug'а.
+      debugPrint('[realtime] probe pending-calls failed: $e');
+    }
+  }
+
+  /// Heuristic: if the connection died within 3 seconds of opening AND we
+  /// haven't already attempted a refresh in this cycle, the access token is
+  /// most likely expired (server's `middleware.Auth` rejected the upgrade).
+  /// A long-lived connection that dies from network blip would last longer.
+  bool _looksLikeAuthFailure() {
+    final start = _connectStartedAt;
+    if (start == null) return false;
+    final lifespan = DateTime.now().difference(start);
+    return lifespan < const Duration(seconds: 3) && !_refreshAttempted;
+  }
+
+  void _onMessage(dynamic raw) {
+    try {
+      // Hub batches messages with '\n' between each — split if needed.
+      final text = raw is String ? raw : utf8.decode(raw as List<int>);
+      for (final chunk in text.split('\n')) {
+        if (chunk.trim().isEmpty) continue;
+        final body = jsonDecode(chunk);
+        if (body is! Map) continue;
+        final type = body['type']?.toString() ?? '';
+        final payload = body['payload'];
+        if (type.isEmpty) continue;
+        _events.add(RealtimeEvent(type, payload));
+      }
+    } catch (e) {
+      debugPrint('[realtime] parse error: $e raw=$raw');
+    }
+  }
+
+  void _onError(Object error) {
+    debugPrint('[realtime] socket error: $error');
+    _scheduleReconnect();
+  }
+
+  void _onDone() {
+    final code = _channel?.closeCode;
+    final reason = _channel?.closeReason;
+    debugPrint('[realtime] socket closed code=$code reason=$reason');
+    _scheduleReconnect();
+  }
+
+  /// Triggers an immediate refresh-token flow before the next reconnect when
+  /// we suspect the access token is the reason the WS keeps dying. Marks
+  /// `_refreshAttempted` so we don't loop refresh attempts within one cycle.
+  Future<void> _refreshAndReconnect() async {
+    if (_disposed) return;
+    _refreshAttempted = true;
+    debugPrint('[realtime] suspect token expiry — refreshing');
+    final ok = await _ref.read(apiClientProvider).refreshTokens();
+    if (_disposed) return;
+    if (ok) {
+      // Reset backoff on successful refresh — next attempt should succeed.
+      _backoff = const Duration(seconds: 1);
+      _connect();
+    } else {
+      // Refresh-token also dead: stop trying. Next user action will trigger
+      // a 401 on REST → auth_provider drops to login screen.
+      debugPrint('[realtime] refresh failed — giving up reconnect cycle');
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    _reconnect?.cancel();
+    if (_looksLikeAuthFailure()) {
+      _refreshAndReconnect();
+      return;
+    }
+    final delay = _backoff;
+    debugPrint('[realtime] reconnecting in ${delay.inSeconds}s');
+    _reconnect = Timer(delay, () {
+      // A new attempt opens a window for refresh-on-quick-disconnect again,
+      // but only if backoff has grown past first try (i.e. multiple immediate
+      // disconnects in a row could each individually justify a refresh).
+      if (_backoff > const Duration(seconds: 4)) {
+        _refreshAttempted = false;
+      }
+      _connect();
+    });
+    // Exponential backoff capped at 30s.
+    _backoff = Duration(seconds: (_backoff.inSeconds * 2).clamp(1, 30));
+  }
+
+  /// Sends `{type, payload}` to the server. Drops silently if the socket
+  /// is mid-reconnect — clients should treat realtime as advisory.
+  void send(String type, Map<String, dynamic> payload) {
+    final ch = _channel;
+    if (ch == null || _disposed) return;
+    try {
+      ch.sink.add(jsonEncode({'type': type, 'payload': payload}));
+    } catch (e) {
+      debugPrint('[realtime] send error: $e');
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _authSub?.close();
+    _reconnect?.cancel();
+    _sub?.cancel();
+    _channel?.sink.close();
+    _events.close();
+  }
+}
