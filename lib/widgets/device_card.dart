@@ -244,7 +244,7 @@ class _DeviceCardState extends State<DeviceCard> {
       child: Text(
         _badgeLabel,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: fg,
@@ -306,7 +306,7 @@ class _DeviceCardState extends State<DeviceCard> {
               Text(
                 'Управлять',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: AppFonts.I.sans,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,

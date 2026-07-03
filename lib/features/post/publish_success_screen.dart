@@ -484,7 +484,7 @@ class _FlyToFeedCard extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                   boxShadow: SeeUShadows.md,
                 ),
                 clipBehavior: Clip.antiAlias,

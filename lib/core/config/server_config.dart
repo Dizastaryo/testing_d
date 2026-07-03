@@ -17,7 +17,6 @@ class ServerConfig {
 
   static String get lanIp => _lanIp;
   static String get apiBaseUrl => 'http://$_lanIp:8001/api/v1';
-  static String get videoBaseUrl => 'http://$_lanIp:8002/api/v1';
   static String get libraryBaseUrl => 'http://$_lanIp:8003/api/v1';
 
   /// Вызывается в main() до runApp. Загружает сохранённый IP из SharedPreferences.

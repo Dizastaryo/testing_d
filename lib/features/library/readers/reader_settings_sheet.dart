@@ -174,17 +174,17 @@ class ReaderSettingsSheet extends ConsumerWidget {
               _FontChip(
                 label: 'Serif',
                 preview: 'Аа',
-                fontFamily: 'Georgia',
+                fontFamily: AppFonts.I.serif,
                 selected: settings.fontFamily == ReaderFontFamily.serif,
                 onTap: () => notifier.setFontFamily(ReaderFontFamily.serif),
               ),
               const SizedBox(width: 10),
               _FontChip(
-                label: 'Моно',
+                label: 'Sans',
                 preview: 'Аа',
-                fontFamily: 'JetBrains Mono',
-                selected: settings.fontFamily == ReaderFontFamily.mono,
-                onTap: () => notifier.setFontFamily(ReaderFontFamily.mono),
+                fontFamily: AppFonts.I.sans,
+                selected: settings.fontFamily == ReaderFontFamily.sans,
+                onTap: () => notifier.setFontFamily(ReaderFontFamily.sans),
               ),
             ],
           ),
@@ -264,8 +264,8 @@ class _TextPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final (bg, text) = _themeColors(settings.theme);
     final fontFamily = switch (settings.fontFamily) {
-      ReaderFontFamily.serif => 'Georgia',
-      ReaderFontFamily.mono => 'JetBrains Mono',
+      ReaderFontFamily.serif => AppFonts.I.serif,
+      ReaderFontFamily.sans => AppFonts.I.sans,
       _ => null,
     };
 
@@ -275,7 +275,7 @@ class _TextPreview extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SeeURadii.small),
         border: Border.all(
           color: context.seeuColors.line.withValues(alpha: 0.5),
         ),
@@ -337,8 +337,8 @@ class _SettingRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(valueText,
-              style: const TextStyle(
-                  fontFamily: 'JetBrains Mono',
+              style: TextStyle(
+                  fontFamily: AppFonts.I.sans,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: SeeUColors.accent)),

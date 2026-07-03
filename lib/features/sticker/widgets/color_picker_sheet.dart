@@ -11,8 +11,8 @@ import '../providers/sticker_editor_provider.dart';
 const List<Color> _kPalette = [
   Colors.white,
   Colors.black,
-  Color(0xFFFF5A3C), // accent orange
-  Color(0xFFFF3B30), // red
+  SeeUColors.accent, // accent orange
+  SeeUColors.danger, // red
   Color(0xFFFF9F0A), // orange
   Color(0xFFFFD60A), // yellow
   Color(0xFF34C759), // green

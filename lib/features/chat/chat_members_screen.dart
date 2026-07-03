@@ -537,7 +537,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     Widget sectionHeader(String label) => Padding(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
       child: Text(label, style: TextStyle(
-        fontFamily: 'JetBrains Mono', fontSize: 11,
+        fontFamily: AppFonts.I.sans, fontSize: 11,
         fontWeight: FontWeight.w600, letterSpacing: 0.5, color: c.ink3,
       )),
     );

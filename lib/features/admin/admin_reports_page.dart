@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
@@ -40,7 +41,7 @@ class AdminReportsPage extends ConsumerWidget {
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                   onPressed: () => ref.invalidate(_reportsProvider),
                 ),
               ],
@@ -250,7 +251,7 @@ class _ReportTile extends ConsumerWidget {
                     await launchUrl(uri,
                         mode: LaunchMode.externalApplication);
                   },
-                  icon: const Icon(Icons.open_in_new, size: 16),
+                  icon: const Icon(PhosphorIconsRegular.arrowSquareOut, size: 16),
                   label: const Text('Открыть в SeeU'),
                 ),
               const Spacer(),
@@ -285,7 +286,7 @@ Widget _missingTarget(String type) => Container(
       ),
       child: Row(
         children: [
-          Icon(Icons.warning_amber, size: 16, color: Colors.orange.shade700),
+          Icon(PhosphorIconsRegular.warning, size: 16, color: Colors.orange.shade700),
           const SizedBox(width: 6),
           Text(
             'Цель ($type) удалена или недоступна',
@@ -342,7 +343,7 @@ class _PreviewCard extends StatelessWidget {
                         children: [
                           Container(color: Colors.black87),
                           const Center(
-                              child: Icon(Icons.play_arrow,
+                              child: Icon(PhosphorIconsRegular.play,
                                   color: Colors.white, size: 36)),
                         ],
                       )
@@ -416,7 +417,7 @@ class _PreviewCard extends StatelessWidget {
                         children: [
                           Container(color: Colors.black87),
                           const Center(
-                              child: Icon(Icons.play_arrow,
+                              child: Icon(PhosphorIconsRegular.play,
                                   color: Colors.white, size: 32)),
                         ],
                       )
@@ -457,7 +458,7 @@ class _PreviewCard extends StatelessWidget {
           backgroundColor: Colors.grey.shade200,
           backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
           child: avatar.isEmpty
-              ? Icon(Icons.person, color: Colors.grey.shade500)
+              ? Icon(PhosphorIconsRegular.user, color: Colors.grey.shade500)
               : null,
         ),
         const SizedBox(width: 10),

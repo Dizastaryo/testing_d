@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'admin_audio_page.dart';
 import 'admin_audit_page.dart';
@@ -19,11 +20,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   int _index = 0;
 
   static const _pages = [
-    _NavEntry('Жалобы', Icons.flag_outlined, AdminReportsPage()),
-    _NavEntry('Юзеры', Icons.people_outline, AdminUsersPage()),
-    _NavEntry('Треки', Icons.library_music_outlined, AdminAudioPage()),
-    _NavEntry('Метрики', Icons.insights_outlined, AdminMetricsPage()),
-    _NavEntry('Аудит', Icons.receipt_long_outlined, AdminAuditPage()),
+    _NavEntry('Жалобы', PhosphorIconsRegular.flag, AdminReportsPage()),
+    _NavEntry('Юзеры', PhosphorIconsRegular.usersThree, AdminUsersPage()),
+    _NavEntry('Треки', PhosphorIconsRegular.musicNotes, AdminAudioPage()),
+    _NavEntry('Метрики', PhosphorIconsRegular.chartLine, AdminMetricsPage()),
+    _NavEntry('Аудит', PhosphorIconsRegular.receipt, AdminAuditPage()),
   ];
 
   @override
@@ -39,7 +40,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
               child: Column(
                 children: [
-                  const Icon(Icons.shield, size: 28, color: Color(0xFFFF5A3C)),
+                  const Icon(PhosphorIconsRegular.shield, size: 28, color: Color(0xFFFF5A3C)),
                   if (MediaQuery.of(context).size.width >= 900) ...[
                     const SizedBox(height: 4),
                     const Text('SeeU Admin', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -53,7 +54,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: IconButton(
-                    icon: const Icon(Icons.logout),
+                    icon: const Icon(PhosphorIconsRegular.signOut),
                     tooltip: 'Выйти',
                     onPressed: () =>
                         ref.read(adminAuthProvider.notifier).logout(),

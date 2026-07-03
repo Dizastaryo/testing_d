@@ -54,16 +54,16 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
   ];
 
   static const _subcategories = {
-    'music': ['Поп', 'Рэп / Hip-Hop', 'R&B', 'Рок', 'Электронная', 'House', 'Techno', 'Jazz', 'Classical', 'K-pop', 'Indie', 'Soundtrack', 'Другое'],
-    'memes': ['Funny', 'Reaction', 'Voice meme', 'Sound effect', 'Viral'],
-    'audiobooks': ['Fiction', 'Business', 'Self-development', 'Kids', 'Fantasy', 'Detective', 'History', 'Science'],
-    'podcasts': ['Interview', 'Talk show', 'Technology', 'Business', 'Sport', 'Comedy'],
-    'education': ['Language', 'Programming', 'School', 'University', 'Science', 'Finance'],
-    'meditation': ['Sleep', 'Focus', 'Breathing', 'Ambient', 'Nature'],
-    'instrumental': ['Beat', 'Lo-fi', 'Cinematic', 'Game music', 'Background'],
+    'music': ['Поп', 'Рэп / Hip-Hop', 'R&B', 'Рок', 'Электронная', 'House', 'Techno', 'Jazz', 'Classical', 'K-pop', 'Indie', 'Саундтреки', 'Другое'],
+    'memes': ['Смешное', 'Реакция', 'Голосовой мем', 'Звуковой эффект', 'Виральное'],
+    'audiobooks': ['Художественная', 'Бизнес', 'Саморазвитие', 'Детям', 'Фэнтези', 'Детектив', 'История', 'Наука'],
+    'podcasts': ['Интервью', 'Ток-шоу', 'Технологии', 'Бизнес', 'Спорт', 'Комедия'],
+    'education': ['Языки', 'Программирование', 'Школа', 'Университет', 'Наука', 'Финансы'],
+    'meditation': ['Сон', 'Фокус', 'Дыхание', 'Эмбиент', 'Природа'],
+    'instrumental': ['Бит', 'Lo-fi', 'Киношное', 'Игровая', 'Фоновая'],
   };
 
-  static const _moods = ['', 'Happy', 'Sad', 'Energetic', 'Calm', 'Dark', 'Romantic', 'Aggressive', 'Chill'];
+  static const _moods = ['', 'Радостное', 'Грустное', 'Энергичное', 'Спокойное', 'Мрачное', 'Романтичное', 'Агрессивное', 'Чилл'];
 
   @override
   void dispose() {
@@ -145,16 +145,7 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
           SeeUGlassBar(
             titleText: 'Загрузить трек',
             kicker: 'МУЗЫКА',
-            leading: Tappable.scaled(
-              onTap: isUploading ? null : () => context.pop(),
-              scaleFactor: 0.9,
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child:
-                    Icon(PhosphorIcons.caretLeft(), color: c.ink, size: 22),
-              ),
-            ),
+            leading: SeeUBackButton(enabled: !isUploading),
             actions: [
               if (!isUploading && _canSubmit)
                 TextButton(
@@ -466,7 +457,7 @@ class _FileTile extends StatelessWidget {
               ),
             ),
             if (hasFile)
-              Icon(Icons.check_circle, color: SeeUColors.accent, size: 20)
+              Icon(PhosphorIconsFill.checkCircle, color: SeeUColors.accent, size: 20)
             else
               Icon(PhosphorIcons.caretRight(), color: theme.colorScheme.outline, size: 18),
           ],

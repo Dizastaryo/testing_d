@@ -148,7 +148,7 @@ class _ReportSheetState extends State<_ReportSheet> {
               decoration: InputDecoration(
                 hintText: 'Уточнения (необязательно)',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                 ),
               ),
             ),

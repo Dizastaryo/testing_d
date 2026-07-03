@@ -111,15 +111,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
       color: theme.scaffoldBackgroundColor,
       child: Row(
         children: [
-          Tappable.scaled(
-            onTap: () => context.pop(),
-            scaleFactor: 0.9,
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: Icon(PhosphorIcons.caretLeft(), color: c.ink, size: 22),
-            ),
-          ),
+          const SeeUBackButton(),
           const SizedBox(width: 8),
           Expanded(
             child: SeeUGlassSearchBar(

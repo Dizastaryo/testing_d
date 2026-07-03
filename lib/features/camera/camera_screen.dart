@@ -20,6 +20,8 @@ import '../post/services/video_trim_service.dart';
 import '../post/media_prepare_screen.dart';
 import '../post/widgets/music_picker_sheet.dart';
 import 'decorations/decoration_item.dart';
+import 'decorations/decoration_picker.dart';
+import 'presets/preset_picker_bar.dart';
 import 'filters/filter_overlay.dart';
 import 'filters/frame_effect.dart';
 import 'filters/overlay_effect.dart';
@@ -375,7 +377,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final cameraFlash = const [FlashMode.off, FlashMode.torch, FlashMode.auto][next];
     try {
       await _controller!.setFlashMode(cameraFlash);
-      setState(() => _flashMode = next);
+      if (mounted) setState(() => _flashMode = next);
     } catch (_) {}
   }
 
@@ -1287,6 +1289,61 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                       _buildZoomIndicator(),
                       _buildZoomPresets(),
 
+                      // Effects / mask picker — floats over the viewfinder,
+                      // right above the bottom panel. No background of its
+                      // own (только кружки), and it never resizes the frame
+                      // or the panel below it since it lives in this Stack,
+                      // not inside CameraBottomPanel's Column.
+                      if (_showPresetPicker || _showDecorationPicker)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 8,
+                          child: AnimatedSwitcher(
+                            duration: SeeUMotion.normal,
+                            transitionBuilder: (child, anim) => FadeTransition(
+                              opacity: anim,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.15),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                    parent: anim, curve: Curves.easeOut)),
+                                child: child,
+                              ),
+                            ),
+                            child: _showPresetPicker
+                                ? PresetPickerBar(
+                                    key: const ValueKey('presets'),
+                                    activePreset: _activePreset,
+                                    onPresetSelected: _applyPreset,
+                                  )
+                                : DecorationPicker(
+                                    key: const ValueKey('masks'),
+                                    allItems: DecorationCatalog.all
+                                        .where((i) =>
+                                            i.category ==
+                                            DecorationCategory.mask)
+                                        .toList(),
+                                    savedIds: _savedDecorationIds,
+                                    selectedId: _selectedDecorationId,
+                                    onChanged: _applyDecoration,
+                                    onToggleSave: (id) => setState(() {
+                                      if (_savedDecorationIds.contains(id)) {
+                                        _savedDecorationIds =
+                                            _savedDecorationIds
+                                                .difference({id});
+                                      } else {
+                                        _savedDecorationIds = {
+                                          ..._savedDecorationIds,
+                                          id
+                                        };
+                                      }
+                                    }),
+                                  ),
+                          ),
+                        ),
+
                       // Camera switch fade overlay
                       if (_isSwitching)
                         AnimatedBuilder(
@@ -1311,9 +1368,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             isRecording: _isRecording,
             totalPct: _totalPct,
             totalWithCurrent: _totalWithCurrent,
-            showDecorationPicker: _showDecorationPicker,
-            selectedDecorationId: _selectedDecorationId,
-            savedDecorationIds: _savedDecorationIds,
             galleryThumbnailBytes: _galleryThumbnailBytes,
             hasSegments: _segments.isNotEmpty,
             showPresetPicker: _showPresetPicker,
@@ -1322,21 +1376,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             onTakePicture: _onShutterTap,
             onRecordStart: _onRecordStart,
             onRecordStop: _onRecordStop,
-            onDecorationChanged: _applyDecoration,
-            onToggleSaveDecoration: (id) => setState(() {
-              if (_savedDecorationIds.contains(id)) {
-                _savedDecorationIds = _savedDecorationIds.difference({id});
-              } else {
-                _savedDecorationIds = {..._savedDecorationIds, id};
-              }
-            }),
-            onToggleDecorationPicker: () => setState(() {
-              _showDecorationPicker = !_showDecorationPicker;
-              if (_showDecorationPicker) _showPresetPicker = false;
-            }),
             onTogglePresets: _togglePresetPicker,
             onUndo: _undoLastSegment,
-            onPresetSelected: _applyPreset,
           ),
         ],
       ),

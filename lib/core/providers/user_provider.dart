@@ -159,6 +159,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
             .toList();
       } catch (_) {}
 
+      if (!mounted) return;
       state = UserProfileState(
         user: user,
         posts: posts,
@@ -166,7 +167,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
         isLocked: isLocked,
       );
     } catch (e) {
-      state = UserProfileState(error: e.toString());
+      if (mounted) state = UserProfileState(error: e.toString());
     }
   }
 
@@ -176,9 +177,9 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
       final posts = _extractList(resp.data)
           .map((j) => Post.fromJson(j as Map<String, dynamic>))
           .toList();
-      state = state.copyWith(savedPosts: posts);
+      if (mounted) state = state.copyWith(savedPosts: posts);
     } catch (_) {
-      state = state.copyWith(savedPosts: []);
+      if (mounted) state = state.copyWith(savedPosts: []);
     }
   }
 
@@ -234,7 +235,7 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
                 ? (raw['data'] as Map)['status']?.toString()
                 : null)
             : null;
-        if (status == 'requested') {
+        if (status == 'requested' && mounted) {
           // Приватный → запрос отправлен. Откатываем optimistic isFollowing
           // и счётчик; вместо этого выставляем pending=true.
           state = state.copyWith(
@@ -244,13 +245,13 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
       }
       return null;
     } on DioException catch (e) {
-      state = state.copyWith(user: user);
+      if (mounted) state = state.copyWith(user: user);
       if (e.response?.statusCode == 403) {
         return 'Нельзя подписаться: пользователь вас заблокировал или вы его';
       }
       return apiErrorMessage(e);
     } catch (_) {
-      state = state.copyWith(user: user);
+      if (mounted) state = state.copyWith(user: user);
       return 'Что-то пошло не так';
     }
   }
@@ -478,7 +479,7 @@ class ExploreNotifier extends StateNotifier<ExploreState> {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final r = await _api.get(ApiEndpoints.explore,
+      final r = await _api.get(ApiEndpoints.postsExplore,
           queryParameters: {'page': '1', 'limit': '$_limit'});
       final data = r.data is Map && r.data.containsKey('data')
           ? r.data['data']
@@ -497,7 +498,7 @@ class ExploreNotifier extends StateNotifier<ExploreState> {
     if (state.isLoadingMore || !state.hasMore || state.isLoading) return;
     state = state.copyWith(isLoadingMore: true);
     try {
-      final r = await _api.get(ApiEndpoints.explore,
+      final r = await _api.get(ApiEndpoints.postsExplore,
           queryParameters: {'page': '${state.page}', 'limit': '$_limit'});
       final data = r.data is Map && r.data.containsKey('data')
           ? r.data['data']

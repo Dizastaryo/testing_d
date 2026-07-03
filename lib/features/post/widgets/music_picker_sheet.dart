@@ -43,6 +43,7 @@ class _MusicPickerSheetState extends ConsumerState<MusicPickerSheet> {
     if (_playingId == track.id) {
       // Stop currently playing
       await _player.stop();
+      if (!mounted) return;
       setState(() { _playingId = null; _isLoadingAudio = false; });
       return;
     }

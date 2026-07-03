@@ -13,7 +13,7 @@ class AppTheme {
   static const LinearGradient storyGradient = SeeUColors.storyGradient;
 
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [SeeUColors.accent, Color(0xFFC04CFD)],
+    colors: [SeeUColors.accent, SeeUColors.plum],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -27,7 +27,7 @@ class AppTheme {
         brightness: Brightness.light,
         primary: SeeUColors.accent,
         onPrimary: Colors.white,
-        secondary: const Color(0xFFC04CFD),
+        secondary: SeeUColors.plum,
         onSecondary: Colors.white,
         error: SeeUColors.error,
         onError: Colors.white,
@@ -39,6 +39,12 @@ class AppTheme {
         outlineVariant: SeeUColors.borderSubtle,
       ),
       scaffoldBackgroundColor: SeeUColors.background,
+      // Курсор и выделение текста — брендовый акцент во всех полях ввода.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: SeeUColors.accent,
+        selectionColor: SeeUColors.accent.withValues(alpha: 0.22),
+        selectionHandleColor: SeeUColors.accent,
+      ),
       // Swipe-back gesture на всех платформах (iOS-style).
       pageTransitionsTheme: PageTransitionsTheme(
         builders: {
@@ -57,7 +63,7 @@ class AppTheme {
           statusBarIconBrightness: Brightness.dark,
         ),
         titleTextStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           color: SeeUColors.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -85,20 +91,23 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide:
-              BorderSide(color: SeeUColors.accentSoft, width: 2),
+          borderSide: const BorderSide(color: SeeUColors.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: SeeUColors.error, width: 1.5),
+        ),
         hintStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
         labelStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           color: SeeUColors.textTertiary,
           fontSize: 15,
         ),
@@ -127,7 +136,7 @@ class AppTheme {
         brightness: Brightness.dark,
         primary: SeeUColors.accent,
         onPrimary: Colors.white,
-        secondary: Color(0xFFC04CFD),
+        secondary: SeeUColors.plum,
         onSecondary: Colors.white,
         error: SeeUColors.error,
         onError: Colors.white,
@@ -139,6 +148,11 @@ class AppTheme {
         outlineVariant: SeeUColors.darkLine,
       ),
       scaffoldBackgroundColor: SeeUColors.darkBg,
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: SeeUColors.accent,
+        selectionColor: SeeUColors.accent.withValues(alpha: 0.28),
+        selectionHandleColor: SeeUColors.accent,
+      ),
       pageTransitionsTheme: PageTransitionsTheme(
         builders: {
           for (final p in TargetPlatform.values)
@@ -156,7 +170,7 @@ class AppTheme {
           statusBarIconBrightness: Brightness.light,
         ),
         titleTextStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           color: SeeUColors.darkInk,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -184,14 +198,18 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: SeeUColors.accent.withValues(alpha: 0.5), width: 2),
+          borderSide: const BorderSide(color: SeeUColors.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: SeeUColors.error, width: 1),
         ),
-        hintStyle: TextStyle(fontFamily: 'Inter', color: SeeUColors.darkInk3, fontSize: 15),
-        labelStyle: TextStyle(fontFamily: 'Inter', color: SeeUColors.darkInk3, fontSize: 15),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: SeeUColors.error, width: 1.5),
+        ),
+        hintStyle: TextStyle(fontFamily: AppFonts.I.sans, color: SeeUColors.darkInk3, fontSize: 15),
+        labelStyle: TextStyle(fontFamily: AppFonts.I.sans, color: SeeUColors.darkInk3, fontSize: 15),
       ),
       textTheme: baseTextTheme.copyWith(
         headlineLarge: SeeUTypography.displayXL.copyWith(color: SeeUColors.darkInk),

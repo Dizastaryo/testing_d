@@ -60,7 +60,7 @@ class ContentFeedNotifier extends StateNotifier<ContentFeedState> {
     try {
       final params = <String, dynamic>{'page': '1', 'limit': '$_limit'};
       if (_mediaTypeParam != null) params['media_type'] = _mediaTypeParam;
-      final r = await _api.get(ApiEndpoints.explore, queryParameters: params);
+      final r = await _api.get(ApiEndpoints.postsExplore, queryParameters: params);
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
       final list = data is List
           ? data.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList()
@@ -78,7 +78,7 @@ class ContentFeedNotifier extends StateNotifier<ContentFeedState> {
     try {
       final params = <String, dynamic>{'page': '${state.page}', 'limit': '$_limit'};
       if (_mediaTypeParam != null) params['media_type'] = _mediaTypeParam;
-      final r = await _api.get(ApiEndpoints.explore, queryParameters: params);
+      final r = await _api.get(ApiEndpoints.postsExplore, queryParameters: params);
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
       final list = data is List
           ? data.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList()

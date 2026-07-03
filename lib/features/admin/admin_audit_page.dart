@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 
@@ -44,7 +45,7 @@ class AdminAuditPage extends ConsumerWidget {
                         TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                   onPressed: () => ref.invalidate(_auditProvider),
                 ),
               ],

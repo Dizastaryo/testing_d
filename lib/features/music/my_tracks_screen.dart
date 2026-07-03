@@ -49,14 +49,7 @@ class _MyTracksScreenState extends ConsumerState<MyTracksScreen> {
           SeeUGlassBar(
             titleText: 'Мои треки',
             kicker: 'МУЗЫКА',
-            leading: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Icon(PhosphorIconsRegular.caretLeft,
-                    size: 22, color: c.ink),
-              ),
-            ),
+            leading: const SeeUBackButton(),
             actions: [
               IconButton(
                 icon: Icon(PhosphorIcons.plus(), color: SeeUColors.accent),
@@ -70,7 +63,7 @@ class _MyTracksScreenState extends ConsumerState<MyTracksScreen> {
           ),
           Expanded(
             child: tracksAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const SeeUListSkeleton(),
               error: (e, _) => SeeUErrorState(
                 onRetry: () => ref.invalidate(myTracksProvider),
               ),
@@ -95,7 +88,7 @@ class _MyTracksScreenState extends ConsumerState<MyTracksScreen> {
                   children: [
                     _buildSearchBar(context),
                     Expanded(
-                      child: RefreshIndicator(
+                      child: SeeURadarRefresh(
                         onRefresh: () async =>
                             ref.invalidate(myTracksProvider),
                         child: visible.isEmpty

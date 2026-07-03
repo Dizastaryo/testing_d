@@ -294,34 +294,47 @@ class _ContactTileState extends ConsumerState<_ContactTile> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: c.surface2,
-            backgroundImage: m.avatarUrl.isNotEmpty
-                ? CachedNetworkImageProvider(m.avatarUrl)
-                : null,
-            child: m.avatarUrl.isEmpty
-                ? Text(
-                    m.username.isNotEmpty ? m.username[0].toUpperCase() : '?',
-                    style: TextStyle(color: c.ink3, fontWeight: FontWeight.w600),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  m.fullName.isNotEmpty ? m.fullName : m.username,
-                  style: SeeUTypography.body
-                      .copyWith(fontWeight: FontWeight.w600, color: c.ink),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text('@${m.username}',
-                    style: SeeUTypography.caption.copyWith(color: c.ink3)),
-              ],
+            child: Tappable(
+              onTap: () => context.push('/profile/${m.username}'),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: c.surface2,
+                    backgroundImage: m.avatarUrl.isNotEmpty
+                        ? CachedNetworkImageProvider(m.avatarUrl)
+                        : null,
+                    child: m.avatarUrl.isEmpty
+                        ? Text(
+                            m.username.isNotEmpty
+                                ? m.username[0].toUpperCase()
+                                : '?',
+                            style: TextStyle(
+                                color: c.ink3, fontWeight: FontWeight.w600),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          m.fullName.isNotEmpty ? m.fullName : m.username,
+                          style: SeeUTypography.body.copyWith(
+                              fontWeight: FontWeight.w600, color: c.ink),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text('@${m.username}',
+                            style: SeeUTypography.caption
+                                .copyWith(color: c.ink3)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),

@@ -1837,8 +1837,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   // Edit existing location sticker name.
   Future<void> _editLayerLocation(_CanvasLayer layer) async {
     final ctrl = TextEditingController(text: layer.locationName);
-    final result = await showDialog<String>(
+    final result = await showSeeUBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => _SimpleInputDialog(
         title: 'Геометка',
         hint: 'Название места',
@@ -1857,77 +1858,67 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   Future<void> _editLayerLink(_CanvasLayer layer) async {
     final textCtrl = TextEditingController(text: layer.linkText);
     final urlCtrl  = TextEditingController(text: layer.linkUrl);
-    final c = context.seeuColors;
-    final result = await showDialog<({String text, String url})>(
+    final result = await showSeeUBottomSheet<({String text, String url})>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(PhosphorIconsRegular.link,
-                color: SeeUColors.accent, size: 20),
-            const SizedBox(width: 8),
-            Text('Изменить ссылку',
-                style: SeeUTypography.body
-                    .copyWith(fontWeight: FontWeight.w700)),
-          ],
-        ),
-        content: Column(
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 8, 20,
+            MediaQuery.of(ctx).padding.bottom +
+                MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
+            Row(
+              children: [
+                Icon(PhosphorIconsRegular.link,
+                    color: SeeUColors.accent, size: 20),
+                const SizedBox(width: 8),
+                Text('Изменить ссылку', style: SeeUTypography.displayXS),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SeeUInput(
               controller: textCtrl,
               autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Текст ссылки',
-                hintStyle: SeeUTypography.body.copyWith(color: c.ink3),
-                filled: true,
-                fillColor: c.surface2,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-                isDense: true,
-              ),
+              hintText: 'Текст ссылки',
             ),
             const SizedBox(height: 10),
-            TextField(
+            SeeUInput(
               controller: urlCtrl,
               keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                hintText: 'https://...',
-                hintStyle: SeeUTypography.body.copyWith(color: c.ink3),
-                filled: true,
-                fillColor: c.surface2,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-                isDense: true,
-              ),
+              hintText: 'https://...',
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Отмена',
+                    onTap: () => Navigator.pop(ctx),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Сохранить',
+                    filled: true,
+                    onTap: () {
+                      var url = urlCtrl.text.trim();
+                      if (url.isEmpty) return;
+                      if (!url.startsWith('http://') &&
+                          !url.startsWith('https://')) {
+                        url = 'https://$url';
+                      }
+                      Navigator.pop(
+                          ctx, (text: textCtrl.text.trim(), url: url));
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Отмена', style: TextStyle(color: c.ink3)),
-          ),
-          TextButton(
-            onPressed: () {
-              var url = urlCtrl.text.trim();
-              if (url.isEmpty) return;
-              if (!url.startsWith('http://') &&
-                  !url.startsWith('https://')) {
-                url = 'https://$url';
-              }
-              Navigator.pop(ctx, (text: textCtrl.text.trim(), url: url));
-            },
-            child: Text('Сохранить',
-                style: TextStyle(
-                    color: SeeUColors.accent,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ],
       ),
     );
     textCtrl.dispose();
@@ -2105,8 +2096,9 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     if (!mounted) return;
 
     final ctrl = TextEditingController(text: detected ?? '');
-    final result = await showDialog<String>(
+    final result = await showSeeUBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => _SimpleInputDialog(
         title: 'Геометка',
         hint: 'Название места',
@@ -2256,86 +2248,76 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   Future<void> _addStoryLink() async {
     final textCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
-    final result = await showDialog<({String text, String url})>(
+    final result = await showSeeUBottomSheet<({String text, String url})>(
       context: context,
-      builder: (ctx) {
-        final c = ctx.seeuColors;
-        return AlertDialog(
-          backgroundColor: c.surface,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              const Icon(PhosphorIconsRegular.link,
-                  color: Color(0xFF0A84FF), size: 20),
-              const SizedBox(width: 8),
-              Text('Ссылка', style: SeeUTypography.body.copyWith(fontWeight: FontWeight.w700)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: textCtrl,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Текст ссылки',
-                  hintStyle: SeeUTypography.body.copyWith(color: c.ink3),
-                  filled: true,
-                  fillColor: c.surface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: urlCtrl,
-                keyboardType: TextInputType.url,
-                decoration: InputDecoration(
-                  hintText: 'https://...',
-                  hintStyle: SeeUTypography.body.copyWith(color: c.ink3),
-                  filled: true,
-                  fillColor: c.surface2,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Отмена', style: TextStyle(color: c.ink3)),
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 8, 20,
+            MediaQuery.of(ctx).padding.bottom +
+                MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(PhosphorIconsRegular.link,
+                    color: SeeUColors.accent, size: 20),
+                const SizedBox(width: 8),
+                Text('Ссылка', style: SeeUTypography.displayXS),
+              ],
             ),
-            TextButton(
-              onPressed: () {
-                var url = urlCtrl.text.trim();
-                if (url.isEmpty) return;
-                // Auto-add scheme if missing.
-                if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                  url = 'https://$url';
-                }
-                final uri = Uri.tryParse(url);
-                if (uri == null || !uri.hasAuthority) {
-                  showSeeUSnackBar(ctx, 'Введите корректный адрес ссылки',
-                      tone: SeeUTone.danger);
-                  return;
-                }
-                Navigator.pop(ctx, (text: textCtrl.text.trim(), url: url));
-              },
-              child: Text('Добавить',
-                  style: TextStyle(
-                      color: SeeUColors.accent, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 16),
+            SeeUInput(
+              controller: textCtrl,
+              autofocus: true,
+              hintText: 'Текст ссылки',
+            ),
+            const SizedBox(height: 10),
+            SeeUInput(
+              controller: urlCtrl,
+              keyboardType: TextInputType.url,
+              hintText: 'https://...',
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Отмена',
+                    onTap: () => Navigator.pop(ctx),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Добавить',
+                    filled: true,
+                    onTap: () {
+                      var url = urlCtrl.text.trim();
+                      if (url.isEmpty) return;
+                      // Auto-add scheme if missing.
+                      if (!url.startsWith('http://') &&
+                          !url.startsWith('https://')) {
+                        url = 'https://$url';
+                      }
+                      final uri = Uri.tryParse(url);
+                      if (uri == null || !uri.hasAuthority) {
+                        showSeeUSnackBar(
+                            ctx, 'Введите корректный адрес ссылки',
+                            tone: SeeUTone.danger);
+                        return;
+                      }
+                      Navigator.pop(
+                          ctx, (text: textCtrl.text.trim(), url: url));
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
     textCtrl.dispose();
     urlCtrl.dispose();
@@ -3128,9 +3110,13 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       ),
     );
     if (result == null || !mounted) return;
-    if (result.outputPath == null) {
+    if (result.trimFailed) {
       showSeeUSnackBar(context, 'Не удалось обрезать видео',
           tone: SeeUTone.danger, duration: const Duration(seconds: 2));
+      return;
+    }
+    if (result.outputPath == null) {
+      // Full clip selected — nothing to trim, keep the original file as-is.
       return;
     }
 
@@ -4135,7 +4121,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                 height: 120,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                   boxShadow: SeeUShadows.md,
                 ),
                 child: thumbBytes != null
@@ -5272,47 +5258,50 @@ class _SimpleInputDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return AlertDialog(
-      backgroundColor: c.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20,
+          MediaQuery.of(context).padding.bottom +
+              MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: iconColor, size: 20),
-          const SizedBox(width: 8),
-          Text(title,
-              style: SeeUTypography.body
-                  .copyWith(fontWeight: FontWeight.w700)),
+          Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 8),
+              Text(title, style: SeeUTypography.displayXS),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SeeUInput(
+            controller: ctrl,
+            autofocus: true,
+            hintText: hint,
+            onSubmitted: (v) => Navigator.pop(context, v.trim()),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: SeeUDialogAction(
+                  label: 'Отмена',
+                  onTap: () => Navigator.pop(context),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SeeUDialogAction(
+                  label: 'Добавить',
+                  color: iconColor,
+                  filled: true,
+                  onTap: () => Navigator.pop(context, ctrl.text.trim()),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
-      content: TextField(
-        controller: ctrl,
-        autofocus: true,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: SeeUTypography.body.copyWith(color: c.ink3),
-          filled: true,
-          fillColor: c.surface2,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          isDense: true,
-        ),
-        onSubmitted: (v) => Navigator.pop(context, v.trim()),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Отмена', style: TextStyle(color: c.ink3)),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-          child: Text('Добавить',
-              style: TextStyle(
-                  color: iconColor, fontWeight: FontWeight.w700)),
-        ),
-      ],
     );
   }
 }
@@ -5372,7 +5361,7 @@ class _PollCreatorSheetState extends State<_PollCreatorSheet> {
         filled: true,
         fillColor: c.surface2,
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SeeURadii.small),
             borderSide: BorderSide.none),
         isDense: true,
         contentPadding:

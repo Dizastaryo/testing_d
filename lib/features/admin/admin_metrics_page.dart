@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 
@@ -62,7 +63,7 @@ class AdminMetricsPage extends ConsumerWidget {
                         TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                   onPressed: () {
                     ref.invalidate(_metricsProvider);
                     ref.invalidate(_timeSeriesProvider);

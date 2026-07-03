@@ -214,20 +214,29 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
     super.dispose();
   }
 
-  void _submitComment() {
+  Future<void> _submitComment() async {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
-    if (_replyToId != null) {
-      ref.read(_commentsProvider(widget.postId).notifier)
-          .addReply(_replyToId!, text);
-    } else {
-      ref.read(_commentsProvider(widget.postId).notifier).addComment(text);
-    }
+    final replyId = _replyToId;
     _commentCtrl.clear();
     setState(() {
       _replyToId = null;
       _replyToUsername = null;
     });
+    try {
+      if (replyId != null) {
+        await ref.read(_commentsProvider(widget.postId).notifier)
+            .addReply(replyId, text);
+      } else {
+        await ref.read(_commentsProvider(widget.postId).notifier)
+            .addComment(text);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _commentCtrl.text = text;
+      showSeeUSnackBar(context, 'Не удалось отправить комментарий',
+          tone: SeeUTone.danger);
+    }
   }
 
   @override

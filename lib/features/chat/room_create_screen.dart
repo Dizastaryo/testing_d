@@ -433,7 +433,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                             horizontal: 13, vertical: 7),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.52),
-                          borderRadius: BorderRadius.circular(99),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
                           border: Border.all(
                               color: Colors.white.withValues(alpha: 0.2),
                               width: 0.5),
@@ -614,7 +614,7 @@ class _RoomCreateScreenState extends ConsumerState<RoomCreateScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                   decoration: BoxDecoration(
                     color: SeeUColors.accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
                   ),
                   child: Text(
                     'Выбрано ${_selectedIds.length}',
@@ -960,7 +960,7 @@ class _InputField extends StatelessWidget {
       height: fieldHeight,
       decoration: BoxDecoration(
         color: c.surface2,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SeeURadii.small),
         border: Border.all(color: c.line, width: 0.5),
       ),
       child: Row(

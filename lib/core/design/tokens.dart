@@ -130,23 +130,46 @@ class SeeUColors {
   ];
 }
 
+// ─── Fonts (singleton) ─────────────────────────────────────────────────────
+//
+// Единственный источник семейств шрифтов на всё приложение. Синглтон:
+// доступ только через `AppFonts.I`. В приложении ровно ДВА шрифта —
+// `sans` (Inter, весь UI/текст/метки) и `serif` (Playfair Display, заголовки).
+// Оба содержат полную кириллицу, поэтому fallback не нужен. Никаких сырых
+// строк с именами шрифтов в коде — только `AppFonts.I.sans` / `.serif`.
+
+class AppFonts {
+  AppFonts._();
+
+  static final AppFonts _instance = AppFonts._();
+
+  /// Единственный экземпляр (singleton).
+  static AppFonts get I => _instance;
+
+  /// Основной sans — весь UI, body, kicker/eyebrow-метки.
+  final String sans = 'Inter';
+
+  /// Серифный — крупные editorial-заголовки (display*). Кириллица есть.
+  final String serif = 'Playfair Display';
+
+  /// Signature-шрифт бренда — ТОЛЬКО для wordmark названия «SeeU» (логотип).
+  /// Не использовать для обычного текста.
+  final String brand = 'Pacifico';
+}
+
 // ─── Typography ───────────────────────────────────────────────────────────
 
 class SeeUTypography {
   SeeUTypography._();
 
-  static const String _serifFamily = 'Fraunces';
-  static const String _uiFamily = 'Inter';
-  static const String _monoFamily = 'JetBrains Mono';
-
-  /// Fraunces не содержит кириллицы — русский текст серифных заголовков
-  /// рендерится через Playfair Display (editorial-сериф с полной кириллицей).
-  /// Латиница (никнеймы, названия треков) остаётся во Fraunces.
-  static const List<String> _serifFallback = ['Playfair Display'];
+  // Ровно два шрифта, оба через синглтон AppFonts.I. Mono-метки (kicker)
+  // тоже идут на sans — отдельного моно-шрифта в приложении больше нет.
+  static String get _serifFamily => AppFonts.I.serif;
+  static String get _uiFamily => AppFonts.I.sans;
+  static String get _monoFamily => AppFonts.I.sans;
 
   static TextStyle get displayXL => TextStyle(
     fontFamily: _serifFamily,
-    fontFamilyFallback: _serifFallback,
     fontSize: 42,
     fontWeight: FontWeight.w400,
     letterSpacing: -1.5,
@@ -155,7 +178,6 @@ class SeeUTypography {
 
   static TextStyle get displayL => TextStyle(
     fontFamily: _serifFamily,
-    fontFamilyFallback: _serifFallback,
     fontSize: 32,
     fontWeight: FontWeight.w400,
     letterSpacing: -0.5,
@@ -164,7 +186,6 @@ class SeeUTypography {
 
   static TextStyle get displayM => TextStyle(
     fontFamily: _serifFamily,
-    fontFamilyFallback: _serifFallback,
     fontSize: 28,
     fontWeight: FontWeight.w400,
     letterSpacing: -0.3,
@@ -173,7 +194,6 @@ class SeeUTypography {
 
   static TextStyle get displayS => TextStyle(
     fontFamily: _serifFamily,
-    fontFamilyFallback: _serifFallback,
     fontSize: 22,
     fontWeight: FontWeight.w400,
     letterSpacing: -0.2,
@@ -186,7 +206,6 @@ class SeeUTypography {
   /// молча терял сериф).
   static TextStyle get displayXS => TextStyle(
     fontFamily: _serifFamily,
-    fontFamilyFallback: _serifFallback,
     fontSize: 20,
     fontWeight: FontWeight.w400,
     letterSpacing: -0.2,

@@ -776,19 +776,19 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2FA84F).withValues(alpha: 0.16),
+                          color: SeeUColors.success.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(SeeURadii.pill),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(PhosphorIconsBold.checkCircle,
-                                color: Color(0xFF2FA84F), size: 14),
+                                color: SeeUColors.success, size: 14),
                             const SizedBox(width: 5),
                             const Text(
                               'Фон удалён',
                               style: TextStyle(
-                                color: Color(0xFF2FA84F),
+                                color: SeeUColors.success,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -964,19 +964,19 @@ class _StickerCreatorScreenState extends ConsumerState<StickerCreatorScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2FA84F).withValues(alpha: 0.16),
+                        color: SeeUColors.success.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(SeeURadii.pill),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(PhosphorIconsBold.checkCircle,
-                              color: Color(0xFF2FA84F), size: 14),
+                              color: SeeUColors.success, size: 14),
                           SizedBox(width: 5),
                           Text(
                             'Фон удалён',
                             style: TextStyle(
-                              color: Color(0xFF2FA84F),
+                              color: SeeUColors.success,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),

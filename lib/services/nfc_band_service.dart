@@ -23,6 +23,12 @@ class NfcBandService {
         await NfcManager.instance.stopSession();
         if (!completer.isCompleted) completer.complete(hash);
       },
+      // Without this, a cancelled/timed-out session (e.g. user dismisses the
+      // iOS NFC sheet) never calls onDiscovered, so the completer — and the
+      // caller's await — would hang forever instead of surfacing a failure.
+      onError: (_) async {
+        if (!completer.isCompleted) completer.complete(null);
+      },
     );
     return completer.future;
   }

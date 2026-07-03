@@ -343,7 +343,7 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
           // кириллический fallback (Playfair), иначе русские заголовки теряют
           // сериф (у Fraunces нет кириллицы).
           h1: TextStyle(
-              fontFamily: 'Fraunces',
+              fontFamily: AppFonts.I.serif,
               fontFamilyFallback: const ['Playfair Display'],
               fontSize: settings.fontSize + 12,
               fontWeight: FontWeight.w500,
@@ -351,7 +351,7 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
               height: 1.15,
               color: textColor),
           h2: TextStyle(
-              fontFamily: 'Fraunces',
+              fontFamily: AppFonts.I.serif,
               fontFamilyFallback: const ['Playfair Display'],
               fontSize: settings.fontSize + 7,
               fontWeight: FontWeight.w500,
@@ -359,13 +359,13 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
               height: 1.2,
               color: textColor),
           h3: TextStyle(
-              fontFamily: 'Fraunces',
+              fontFamily: AppFonts.I.serif,
               fontFamilyFallback: const ['Playfair Display'],
               fontSize: settings.fontSize + 3,
               fontWeight: FontWeight.w600,
               color: textColor),
           code: TextStyle(
-              fontFamily: 'JetBrains Mono',
+              fontFamily: AppFonts.I.sans,
               fontSize: settings.fontSize - 2,
               color: SeeUColors.accent),
           a: const TextStyle(

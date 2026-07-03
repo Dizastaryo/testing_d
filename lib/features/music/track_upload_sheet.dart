@@ -110,15 +110,17 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
 
       // Probe duration from uploaded file
       int durationSeconds = 0;
+      final probePlayer = AudioPlayer();
       try {
-        final probePlayer = AudioPlayer();
         final absUrl = audioUrl.startsWith('/')
             ? ApiEndpoints.baseUrl.replaceAll('/api/v1', '') + audioUrl
             : audioUrl;
         final d = await probePlayer.setUrl(absUrl);
         durationSeconds = d?.inSeconds ?? 0;
+      } catch (_) {
+      } finally {
         await probePlayer.dispose();
-      } catch (_) {}
+      }
 
       String coverUrl = '';
       if (_cover != null && _coverBytes != null) {
@@ -208,7 +210,6 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
               decoration: const InputDecoration(
                 labelText: 'Название',
                 isDense: true,
-                border: OutlineInputBorder(),
               ),
               maxLength: 100,
             ),
@@ -219,7 +220,6 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
               decoration: const InputDecoration(
                 labelText: 'Артист',
                 isDense: true,
-                border: OutlineInputBorder(),
               ),
               maxLength: 100,
             ),
@@ -230,7 +230,6 @@ class _TrackUploadFormState extends ConsumerState<_TrackUploadForm> {
               decoration: const InputDecoration(
                 labelText: 'Жанр (опционально)',
                 isDense: true,
-                border: OutlineInputBorder(),
               ),
               maxLength: 40,
             ),

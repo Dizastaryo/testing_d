@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'admin_auth_provider.dart';
 
@@ -152,7 +153,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: Color(0xFFE74C3C), size: 18),
+          const Icon(PhosphorIconsRegular.warningCircle, color: Color(0xFFE74C3C), size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(message, style: const TextStyle(color: Color(0xFFB02F1F))),

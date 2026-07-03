@@ -134,19 +134,10 @@ flutter:
     - assets/masks/3d/
     - assets/small flame.json  # Lottie-огонёк Spark 🔥 (Фаза 3)
 
-  # Editorial-типографика редизайна. Fraunces не содержит кириллицы, поэтому
-  # русские серифные заголовки рендерятся через fallback Playfair Display
-  # (задан в SeeUTypography.display* как fontFamilyFallback).
+  # Ровно два шрифта на всё приложение (см. синглтон AppFonts в tokens.dart):
+  # Inter (sans, весь UI/текст) и Playfair Display (serif, заголовки). Оба с
+  # полной кириллицей — fallback не нужен. Fraunces и JetBrains Mono удалены.
   fonts:
-    - family: Fraunces
-      fonts:
-        - asset: assets/fonts/Fraunces-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Fraunces-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Fraunces-Italic.ttf
-          weight: 400
-          style: italic
     - family: Playfair Display
       fonts:
         - asset: assets/fonts/PlayfairDisplay-Regular.ttf
@@ -166,9 +157,9 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
-    - family: JetBrains Mono
+    # Бренд-wordmark «SeeU» — отдельный signature-шрифт (только логотип названия
+    # приложения, см. AppFonts.I.brand). Не для обычного текста.
+    - family: Pacifico
       fonts:
-        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/Pacifico-Regular.ttf
           weight: 400
-        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
-          weight: 600

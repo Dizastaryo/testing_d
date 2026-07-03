@@ -235,7 +235,7 @@ class SeeURoomCardSkeleton extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
           ),
           child: Row(
             children: const [
@@ -279,7 +279,7 @@ class SeeUSborCardSkeleton extends StatelessWidget {
             // Beige background so white ShimmerBoxes are visually distinct
             // and the shimmer sweep (white→beige) is clearly animated.
             color: SeeUColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(SeeURadii.card),
           ),
           clipBehavior: Clip.antiAlias,
           child: const Column(
@@ -376,7 +376,7 @@ class SeeURequestListSkeleton extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(SeeURadii.medium),
           ),
           child: Row(
             children: const [

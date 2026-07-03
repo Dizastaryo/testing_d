@@ -306,7 +306,7 @@ class _SboryDateFilterSheetState extends State<SboryDateFilterSheet> {
                     width: 40, height: 40,
                     decoration: BoxDecoration(
                       color: SeeUColors.accent.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(SeeURadii.small),
                     ),
                     child: Icon(PhosphorIcons.calendarBlank(),
                         size: 20, color: SeeUColors.accent),

@@ -554,11 +554,11 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                     const Spacer(),
                     Text(
                       '${(progress.percentage * 100).toInt()}%',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: SeeUColors.accent,
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: AppFonts.I.sans,
                       ),
                     ),
                   ],
@@ -621,11 +621,11 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                     ),
                     child: Text(
                       '${bookmarks.length}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: SeeUColors.accent,
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: AppFonts.I.sans,
                       ),
                     ),
                   ),
@@ -653,7 +653,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: c.surface2,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                 ),
                 child: Column(
                   children: [
@@ -675,11 +675,11 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                             child: Center(
                               child: Text(
                                 '${i + 1}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: SeeUColors.accent,
-                                  fontFamily: 'JetBrains Mono',
+                                  fontFamily: AppFonts.I.sans,
                                 ),
                               ),
                             ),
@@ -879,7 +879,7 @@ class _StatColumn extends StatelessWidget {
             Text(
               value,
               style: TextStyle(
-                fontFamily: 'JetBrains Mono',
+                fontFamily: AppFonts.I.sans,
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: c.ink,
@@ -1017,7 +1017,7 @@ class _RatingWidgetState extends ConsumerState<_RatingWidget> {
                   Text(
                     avg.toStringAsFixed(1),
                     style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: AppFonts.I.sans,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: c.ink,
@@ -1064,7 +1064,7 @@ class _RatingWidgetState extends ConsumerState<_RatingWidget> {
           Container(
             decoration: BoxDecoration(
               color: c.surface2,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
               border: Border.all(color: c.line.withValues(alpha: 0.5)),
             ),
             child: Column(
@@ -1200,7 +1200,7 @@ class _ReviewTile extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: c.surface2,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SeeURadii.small),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1308,7 +1308,7 @@ class _AllReviewsSheet extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: c.ink3,
-                        fontFamily: 'JetBrains Mono'),
+                        fontFamily: AppFonts.I.sans),
                   ),
                 ),
               ],
@@ -1464,8 +1464,8 @@ class _ActionButton extends StatelessWidget {
                 ? Center(
                     child: Text(
                       progressText!,
-                      style: const TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                      style: TextStyle(
+                        fontFamily: AppFonts.I.sans,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         color: SeeUColors.accent,
@@ -1557,7 +1557,7 @@ class _InfoChip extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontFamily: 'JetBrains Mono',
+          fontFamily: AppFonts.I.sans,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: c,
@@ -1596,7 +1596,7 @@ class _CategoryChip extends StatelessWidget {
             Text(
               category.name,
               style: TextStyle(
-                fontFamily: 'JetBrains Mono',
+                fontFamily: AppFonts.I.sans,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: ink,
@@ -1811,11 +1811,11 @@ class _FileNotesSectionState extends ConsumerState<_FileNotesSection> {
               hintText: 'Личные заметки к файлу (только для вас)…',
               hintStyle: TextStyle(color: c.ink4, fontSize: 13),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
                 borderSide: BorderSide(color: c.line),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
                 borderSide:
                     const BorderSide(color: SeeUColors.accent, width: 1.5),
               ),
@@ -1888,7 +1888,7 @@ class _FileNotesSectionState extends ConsumerState<_FileNotesSection> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: c.surface2.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
               border: Border.all(color: c.line.withValues(alpha: 0.4)),
             ),
             child: Text(

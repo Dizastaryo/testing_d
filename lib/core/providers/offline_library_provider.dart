@@ -76,6 +76,7 @@ class OfflineLibraryNotifier extends StateNotifier<OfflineLibraryState> {
       offset: 0,
     );
     final total = await _repo.count(kind: state.kindFilter);
+    if (!mounted) return;
     state = state.copyWith(
       items: items,
       isLoading: false,
@@ -95,6 +96,7 @@ class OfflineLibraryNotifier extends StateNotifier<OfflineLibraryState> {
       limit: _pageSize,
       offset: state.offset,
     );
+    if (!mounted) return;
     state = state.copyWith(
       items: [...state.items, ...items],
       isLoadingMore: false,

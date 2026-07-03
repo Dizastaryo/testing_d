@@ -22,7 +22,6 @@ import '../../core/providers/explore_feed_provider.dart';
 import '../../core/providers/live_streams_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../live/live_viewer_screen.dart';
-import '../video/short_viewer_screen.dart';
 
 // ===========================================================================
 // ExploreScreen widget
@@ -212,25 +211,10 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         context.push('/view/${it.postId}?type=${it.isVideoPost ? 'video' : 'photo'}');
         break;
       case ExploreItemType.short:
-        tracker.track(
-          eventType: 'video_open_from_explore',
-          entityType: 'short',
-          entityId: it.videoId,
-          authorId: it.author.id,
-          source: 'explore',
-          metadata: {'filter': filter},
-        );
-        // Shorts are vertical: open the full-screen vertical viewer instead of
-        // the watch page, so 9:16 clips fill the screen instead of being
-        // letterboxed. No go_router route needed — pushed directly.
-        final videoId = it.videoId;
-        if (videoId != null && videoId.isNotEmpty) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ShortViewerScreen(videoId: videoId),
-            ),
-          );
-        }
+        // Shorts (and the standalone video service that served them) were
+        // removed. Such items are now filtered out of the Explore feed
+        // upstream, so this case is unreachable — kept only for enum
+        // exhaustiveness, same as ExploreItemType.video below.
         break;
       case ExploreItemType.video:
         // Long videos (the Видеотека section) were removed. Such items are now
@@ -290,8 +274,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Browse-mode category chips (no query). Each maps to a BACKEND filter on the
   // unified /explore feed — no client-side composition. People are reached via
   // search, so there is no "Люди" chip here.
-  static const List<String> _browseFilters = ['Все', 'Видео', 'Популярное', 'Прямой эфир'];
-  static const List<String> _browseFilterKeys = ['all', 'videos', 'popular', 'live'];
+  static const List<String> _browseFilters = ['Все', 'Reels', 'Посты', 'Прямой эфир'];
+  static const List<String> _browseFilterKeys = ['all', 'reels', 'posts', 'live'];
   // TODO(tags): re-add a 'Теги' tab once the backend supports tag search.
   // The /search endpoint currently returns only {users, posts} (type ∈
   // users|posts|all; anything else is coerced to 'all') and SearchResult has
@@ -373,19 +357,28 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   (i) {
                     final activeFilter = ref.watch(
                         exploreFeedProvider.select((s) => s.filter));
+                    final key = _browseFilterKeys[i];
+                    // «Рилс»/«Посты» — не гридовые фильтры, а быстрый переход:
+                    // тап сразу открывает полноэкранную видео- / фото-ленту.
+                    // Поэтому они не подсвечиваются как активный фильтр грида.
+                    final isFeedShortcut = key == 'reels' || key == 'posts';
                     return _filterChip(
                       label: _browseFilters[i],
-                      active: _browseFilterKeys[i] == activeFilter,
+                      active: !isFeedShortcut && key == activeFilter,
                       onTap: () {
-                        final key = _browseFilterKeys[i];
-                        ref.read(interestTrackerProvider).resetImpressions();
-                        ref.read(exploreFeedProvider.notifier).setFilter(key);
                         ref.read(interestTrackerProvider).track(
                           eventType: 'explore_filter_select',
                           entityType: 'filter',
                           source: 'explore',
                           metadata: {'filter': key},
                         );
+                        if (isFeedShortcut) {
+                          final type = key == 'reels' ? 'video' : 'photo';
+                          context.push('/view/first?type=$type');
+                          return;
+                        }
+                        ref.read(interestTrackerProvider).resetImpressions();
+                        ref.read(exploreFeedProvider.notifier).setFilter(key);
                       },
                     );
                   },

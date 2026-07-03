@@ -96,11 +96,11 @@ class _ReadingListScreenState extends ConsumerState<ReadingListScreen>
                       ),
                       child: Text(
                         '$count',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           color: SeeUColors.accent,
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: AppFonts.I.sans,
                         ),
                       ),
                     ),
@@ -146,13 +146,13 @@ class _ReadingStreakBadge extends ConsumerWidget {
         children: [
           if (streak > 0) ...[
             Icon(PhosphorIconsFill.flame,
-                size: 12, color: const Color(0xFFF57C00)),
+                size: 12, color: SeeUColors.warning),
             const SizedBox(width: 3),
             Text(
               '$streak дн. подряд',
               style: const TextStyle(
                 fontSize: 11,
-                color: Color(0xFFF57C00),
+                color: SeeUColors.warning,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -160,13 +160,13 @@ class _ReadingStreakBadge extends ConsumerWidget {
           ],
           if (done > 0) ...[
             Icon(PhosphorIconsFill.checkCircle,
-                size: 12, color: const Color(0xFF43A047)),
+                size: 12, color: SeeUColors.success),
             const SizedBox(width: 3),
             Text(
               '$done прочитано',
               style: const TextStyle(
                 fontSize: 11,
-                color: Color(0xFF43A047),
+                color: SeeUColors.success,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -227,7 +227,7 @@ class _ReadingListTab extends ConsumerWidget {
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE53935),
+                    color: SeeUColors.error,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Column(
@@ -283,12 +283,12 @@ class _ReadingListTab extends ConsumerWidget {
         message = 'Список желаний пуст';
         sub = 'Добавляй книги которые хочешь прочитать';
         icon = PhosphorIconsRegular.bookmarkSimple;
-        iconColor = const Color(0xFF1E88E5);
+        iconColor = SeeUColors.info;
       default:
         message = 'Ещё ничего не прочитано';
         sub = 'Прочитанные книги появятся здесь';
         icon = PhosphorIconsRegular.checkCircle;
-        iconColor = const Color(0xFF43A047);
+        iconColor = SeeUColors.success;
     }
     return Center(
       child: Column(
@@ -407,11 +407,11 @@ class _ReadingFileCard extends ConsumerWidget {
                           children: [
                             Text(
                               progress.displayProgress,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 color: SeeUColors.accent,
                                 fontWeight: FontWeight.w600,
-                                fontFamily: 'JetBrains Mono',
+                                fontFamily: AppFonts.I.sans,
                               ),
                             ),
                             const SizedBox(width: 8),

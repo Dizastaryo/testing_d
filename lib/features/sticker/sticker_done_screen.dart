@@ -64,19 +64,19 @@ class StickerDoneScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2FA84F).withValues(alpha: 0.10),
+                        color: SeeUColors.success.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(SeeURadii.medium),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(PhosphorIconsBold.checkCircle,
-                              color: Color(0xFF2FA84F), size: 18),
+                              color: SeeUColors.success, size: 18),
                           const SizedBox(width: 8),
                           Text(
                             'Стикер готов — добавьте в набор и отправьте!',
                             style: SeeUTypography.caption.copyWith(
-                              color: const Color(0xFF2FA84F),
+                              color: SeeUColors.success,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -214,11 +214,11 @@ class _PackCardState extends State<_PackCard> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(SeeURadii.small),
                       gradient: const LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFFFFB547), SeeUColors.accent],
+                        colors: [SeeUColors.amber, SeeUColors.accent],
                       ),
                     ),
                     child: Center(
@@ -294,7 +294,7 @@ class _PackCardState extends State<_PackCard> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(SeeURadii.small),
                       color: c.accentSoft,
                     ),
                     child: const Center(

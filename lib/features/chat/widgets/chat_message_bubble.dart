@@ -540,7 +540,7 @@ class ChatMessageBubble extends StatelessWidget {
           height: 140,
           decoration: BoxDecoration(
             color: const Color(0x14000000),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SeeURadii.small),
           ),
           child: const Icon(
             PhosphorIconsRegular.imageBroken,

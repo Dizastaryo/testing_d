@@ -53,6 +53,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final picked = await ImagePicker().pickImage(source: source, maxWidth: 800);
     if (picked != null && mounted) {
       final bytes = await picked.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _pickedFile = picked;
         _pickedBytes = bytes;
@@ -125,7 +126,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           'file': MultipartFile.fromBytes(_pickedBytes!, filename: _pickedFile!.name),
         });
         final uploadResp = await api.post(ApiEndpoints.mediaUpload, data: form);
-        avatarUrl = uploadResp.data['url'] as String?;
+        final uploadData = uploadResp.data;
+        avatarUrl = (uploadData is Map && uploadData['data'] is Map)
+            ? uploadData['data']['url'] as String?
+            : uploadData is Map
+                ? uploadData['url'] as String?
+                : null;
       } else if (_avatarRemoved) {
         avatarUrl = '';
       }

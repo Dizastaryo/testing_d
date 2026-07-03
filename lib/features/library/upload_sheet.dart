@@ -245,7 +245,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
               controller: _titleCtrl,
               decoration: InputDecoration(
                 labelText: 'Название *',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
               ),
             ),
@@ -256,7 +256,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
               controller: _authorCtrl,
               decoration: InputDecoration(
                 labelText: 'Автор (необязательно)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
               ),
             ),
@@ -269,7 +269,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
                 value: _categoryId.isEmpty ? null : _categoryId,
                 decoration: InputDecoration(
                   labelText: 'Категория',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                   isDense: true,
                 ),
                 hint: const Text('Без категории'),
@@ -284,7 +284,7 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
               maxLines: 3,
               decoration: InputDecoration(
                 labelText: 'Описание (необязательно)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
                 alignLabelWithHint: true,
               ),

@@ -303,8 +303,8 @@ class _CameraCountdownNumberState extends State<CameraCountdownNumber>
                 ),
                 Text(
                   '${widget.value}',
-                  style: const TextStyle(
-                    fontFamily: 'Fraunces',
+                  style: TextStyle(
+                    fontFamily: AppFonts.I.serif,
                     fontSize: 120,
                     color: Colors.white,
                     fontWeight: FontWeight.w400,

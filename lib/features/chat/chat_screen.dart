@@ -1384,37 +1384,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             if (chat?.isGroup == true) ...[
                               _groupCallHeaderButton(c, chat!, CallKind.voice),
                               _groupCallHeaderButton(c, chat, CallKind.video),
-                              // Меню группы: выход / отмена сбора
-                              PopupMenuButton<String>(
-                                icon: Icon(PhosphorIconsRegular.dotsThreeVertical, size: 22, color: c.ink),
-                                color: c.surface,
-                                onSelected: (value) {
-                                  if (value == 'leave') {
-                                    _leaveGroup(
-                                      sborId: chat.sborId,
-                                      isOrganizer: chat.isOrganizer,
-                                    );
-                                  }
-                                },
-                                itemBuilder: (_) => [
-                                  PopupMenuItem<String>(
-                                    value: 'leave',
-                                    child: Row(
-                                      children: [
-                                        Icon(PhosphorIconsRegular.signOut, size: 18, color: SeeUColors.error),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          chat.isOrganizer
-                                              ? 'Отменить сбор'
-                                              : chat.sborId != null
-                                                  ? 'Выйти из сбора'
-                                                  : 'Выйти из группы',
-                                          style: const TextStyle(color: SeeUColors.error),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                              // Выход / отмена сбора — единственное действие,
+                              // сразу иконка (подтверждение — в _leaveGroup).
+                              Tappable(
+                                onTap: () => _leaveGroup(
+                                  sborId: chat.sborId,
+                                  isOrganizer: chat.isOrganizer,
+                                ),
+                                child: Icon(PhosphorIconsRegular.signOut,
+                                    size: 22, color: c.ink),
                               ),
                             ],
                           ],
@@ -2511,7 +2489,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFFF8060), Color(0xFFFFB547)],
+                    colors: [SeeUColors.accentSecondary, SeeUColors.amber],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -3634,28 +3612,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _confirmDeleteMessage(String messageId,
       {bool forAll = true}) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dlgCtx) => AlertDialog(
-        title: Text(forAll ? 'Удалить для всех?' : 'Удалить у себя?'),
-        content: Text(
-          forAll
-              ? 'Сообщение станет видно как «Сообщение удалено» для всех участников.'
-              : 'Сообщение исчезнет только у вас.',
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(dlgCtx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: SeeUColors.danger),
-            onPressed: () => Navigator.pop(dlgCtx, true),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
+    final ok = await showSeeUConfirm(
+      context,
+      title: forAll ? 'Удалить для всех?' : 'Удалить у себя?',
+      message: forAll
+          ? 'Сообщение станет видно как «Сообщение удалено» для всех участников.'
+          : 'Сообщение исчезнет только у вас.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+      icon: PhosphorIconsRegular.trash,
     );
-    if (ok != true) return;
+    if (!ok) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(chatMessagesProvider(widget.chatId).notifier);
@@ -3680,23 +3647,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _confirmUnpin() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Открепить сообщение?'),
-        content: const Text('Закреплённое сообщение исчезнет из шапки чата.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Открепить'),
-          ),
-        ],
-      ),
+    final ok = await showSeeUConfirm(
+      context,
+      title: 'Открепить сообщение?',
+      message: 'Закреплённое сообщение исчезнет из шапки чата.',
+      confirmLabel: 'Открепить',
+      icon: PhosphorIconsRegular.pushPinSlash,
     );
-    if (ok != true) return;
+    if (!ok) return;
     await _setPin(null);
   }
 

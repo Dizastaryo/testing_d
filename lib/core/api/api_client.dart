@@ -407,30 +407,30 @@ class _RetryInterceptor extends Interceptor {
 String apiErrorMessage(DioException e) {
   if (e.type == DioExceptionType.connectionError ||
       e.type == DioExceptionType.unknown) {
-    return 'No internet connection. Please check your network.';
+    return 'Нет соединения с интернетом. Проверьте сеть.';
   }
   if (e.type == DioExceptionType.connectionTimeout ||
       e.type == DioExceptionType.receiveTimeout) {
-    return 'Connection timed out. Please try again.';
+    return 'Время ожидания истекло. Попробуйте ещё раз.';
   }
   final statusCode = e.response?.statusCode;
-  if (statusCode == 401) return 'Session expired. Please log in again.';
-  if (statusCode == 403) return 'You do not have permission to do that.';
-  if (statusCode == 404) return 'Not found.';
+  if (statusCode == 401) return 'Сессия истекла. Войдите снова.';
+  if (statusCode == 403) return 'У вас нет прав для этого действия.';
+  if (statusCode == 404) return 'Не найдено.';
   if (statusCode == 422) {
     final errors = e.response?.data?['errors'];
     if (errors is Map) {
-      return errors.values.first?.toString() ?? 'Validation error.';
+      return errors.values.first?.toString() ?? 'Ошибка валидации.';
     }
     return e.response?.data?['error']?.toString() ??
         e.response?.data?['message']?.toString() ??
-        'Validation error.';
+        'Ошибка валидации.';
   }
   if (statusCode != null && statusCode >= 500) {
     return e.response?.data?['error']?.toString() ??
-        'Something went wrong on the server. Please try again.';
+        'Ошибка на сервере. Попробуйте ещё раз.';
   }
   return e.response?.data?['error']?.toString() ??
       e.response?.data?['message']?.toString() ??
-      'Something went wrong.';
+      'Что-то пошло не так.';
 }

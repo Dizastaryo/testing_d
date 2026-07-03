@@ -17,14 +17,21 @@ class VideoTrimResult {
   final double startSec;
   final double endSec;
 
-  /// Path to the physically trimmed file (ffmpeg). Null if the cut failed —
-  /// caller may then fall back to the original file + offsets.
+  /// Path to the physically trimmed file (ffmpeg). Null if no cut was needed
+  /// (full clip selected) or if the cut failed — check [trimFailed] to tell
+  /// the two cases apart.
   final String? outputPath;
+
+  /// True when the user selected less than the full clip but the ffmpeg cut
+  /// itself failed. False when [outputPath] is null simply because the full
+  /// clip was selected (nothing to trim).
+  final bool trimFailed;
 
   const VideoTrimResult({
     required this.startSec,
     required this.endSec,
     this.outputPath,
+    this.trimFailed = false,
   });
 }
 
@@ -177,18 +184,21 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     // If the whole video is selected, skip the cut entirely.
     final full = _startSec <= 0.05 && _endSec >= _durSec - 0.05;
     String? outPath;
+    bool trimFailed = false;
     if (!full) {
       outPath = await VideoTrimService.trim(
         inputPath: widget.filePath,
         startSec: _startSec,
         endSec: _endSec,
       );
+      trimFailed = outPath == null;
     }
     if (!mounted) return;
     Navigator.of(context).pop(VideoTrimResult(
       startSec: _startSec,
       endSec: _endSec,
       outputPath: outPath,
+      trimFailed: trimFailed,
     ));
   }
 

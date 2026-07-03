@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/design/tokens.dart';
+
 enum ReaderTheme { light, sepia, dark, amoled }
 
-enum ReaderFontFamily { system, serif, mono }
+/// Шрифт чтения. В приложении два шрифта (AppFonts): serif = Playfair,
+/// sans = Inter; плюс системный по умолчанию.
+enum ReaderFontFamily { system, serif, sans }
 
 class ReaderSettings {
   final double fontSize;
@@ -38,9 +42,9 @@ class ReaderSettings {
       case ReaderFontFamily.system:
         return null;
       case ReaderFontFamily.serif:
-        return 'Georgia';
-      case ReaderFontFamily.mono:
-        return 'JetBrains Mono';
+        return AppFonts.I.serif;
+      case ReaderFontFamily.sans:
+        return AppFonts.I.sans;
     }
   }
 

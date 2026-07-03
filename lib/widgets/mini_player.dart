@@ -175,7 +175,7 @@ class _Cover extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(SeeURadii.small),
       child: SizedBox(
         width: 48,
         height: 48,

@@ -334,7 +334,7 @@ class _LibraryServiceCard extends StatelessWidget {
                       Text(
                         hasStats
                             ? '$reading читаю · $done прочитано'
-                            : 'Файлы, документы, материалы',
+                            : 'Книги, документы, чтение',
                         style: SeeUTypography.caption.copyWith(
                           color: Colors.white.withValues(alpha: 0.85),
                         ),

@@ -295,7 +295,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
                       ),
                       child: Text(
                         '${meta.name} · ${s.type == SborType.online ? "онлайн" : "оффлайн"}',
@@ -305,9 +305,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                       ),
                     ),
                     const Spacer(),
-                    // Поделиться / Отправить — в popup, чтобы не перегружать хедер.
-                    PopupMenuButton<String>(
-                      icon: Container(
+                    // Поделиться / Отправить — в стеклянном шите, чтобы не перегружать хедер.
+                    Tappable(
+                      onTap: () => _showSborActionsSheet(s),
+                      child: Container(
                         width: 34, height: 34,
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.22),
@@ -318,29 +319,6 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                           size: 18, color: Colors.white,
                         ),
                       ),
-                      color: context.seeuColors.surface,
-                      onSelected: (v) {
-                        if (v == 'send') _sendToChatDirect(s);
-                        if (v == 'share') _showShareSheet(s);
-                      },
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          value: 'send',
-                          child: Row(children: [
-                            Icon(PhosphorIcons.paperPlaneTilt(), size: 18, color: context.seeuColors.ink2),
-                            const SizedBox(width: 10),
-                            Text('Отправить другу', style: TextStyle(color: context.seeuColors.ink)),
-                          ]),
-                        ),
-                        PopupMenuItem(
-                          value: 'share',
-                          child: Row(children: [
-                            Icon(PhosphorIcons.shareFat(), size: 18, color: context.seeuColors.ink2),
-                            const SizedBox(width: 10),
-                            Text('Поделиться', style: TextStyle(color: context.seeuColors.ink)),
-                          ]),
-                        ),
-                      ],
                     ),
                     const SizedBox(width: 6),
                     _bookmarkLoading
@@ -466,7 +444,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             width: 40, height: 40,
             decoration: BoxDecoration(
               color: c.surface2,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
             ),
             child: Icon(icon, size: 19, color: SeeUColors.accent),
           ),
@@ -515,7 +493,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             width: 40, height: 40,
             decoration: BoxDecoration(
               color: c.surface2,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
             ),
             child: Icon(PhosphorIcons.usersThree(), size: 19, color: SeeUColors.accent),
           ),
@@ -680,7 +658,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: c.surface2,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
                 ),
                 child: Text(
                   '${s.joined}',
@@ -1362,6 +1340,41 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     );
   }
 
+  void _showSborActionsSheet(Sbor s) {
+    showSeeUBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.paperPlaneTilt(), color: c.ink2),
+                title: Text('Отправить другу',
+                    style: SeeUTypography.body.copyWith(color: c.ink)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _sendToChatDirect(s);
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.shareFat(), color: c.ink2),
+                title: Text('Поделиться',
+                    style: SeeUTypography.body.copyWith(color: c.ink)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showShareSheet(s);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _showShareSheet(Sbor s) async {
     final c = context.seeuColors;
     final chats = ref.read(chatListProvider).chats;
@@ -1404,7 +1417,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                 leading: Container(
                   width: 44, height: 44,
                   decoration: BoxDecoration(
-                    color: c.surface2, borderRadius: BorderRadius.circular(12),
+                    color: c.surface2, borderRadius: BorderRadius.circular(SeeURadii.small),
                   ),
                   child: Icon(PhosphorIcons.export(), size: 20, color: c.ink2),
                 ),

@@ -66,13 +66,9 @@ class _MyBraceletSheetState extends ConsumerState<MyBraceletSheet> {
 
   void _openGattSheet(BleDeviceModel device) {
     Navigator.pop(context);
-    showModalBottomSheet(
+    showSeeUBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: SeeUColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
       builder: (_) => ChipControlSheetWrapper(device: device.bleDevice!),
     );
   }
@@ -286,7 +282,7 @@ class _MyBraceletSheetState extends ConsumerState<MyBraceletSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: c.surface2,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
               ),
               child: Row(
                 children: [
@@ -325,7 +321,7 @@ class _InfoBanner extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: c.surface2,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SeeURadii.small),
         border: Border.all(color: c.line),
       ),
       child: Row(

@@ -128,8 +128,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                           child: Text(
                             'SeeU',
                             style: SeeUTypography.displayXL.copyWith(
+                              fontFamily: AppFonts.I.brand,
                               fontSize: 64,
-                              letterSpacing: -2,
+                              letterSpacing: 0,
                               color: Colors.white,
                             ),
                           ),

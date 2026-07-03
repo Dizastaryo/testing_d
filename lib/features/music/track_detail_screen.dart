@@ -13,6 +13,7 @@ import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/providers/audio_provider.dart';
 import '../../widgets/audio_waveform.dart'; // Phase 9
+import '../camera/widgets/camera_ui_kit.dart' show BrandedLoader;
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ class TrackDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       body: trackAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: BrandedLoader(onDark: false)),
         error: (e, _) => SeeUErrorState(
           title: 'Не удалось загрузить трек',
           onRetry: () => ref.invalidate(_trackDetailProvider(trackId)),

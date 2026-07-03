@@ -22,62 +22,66 @@ class AccessListScreen extends ConsumerWidget {
       length: 3,
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        appBar: AppBar(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
-            onPressed: () => context.pop(),
-          ),
-          titleSpacing: 0,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('КРУГ ОБЩЕНИЯ',
-                  style:
-                      SeeUTypography.kicker.copyWith(color: SeeUColors.accent)),
-              Text(
-                'Доступы',
-                style: SeeUTypography.displayS.copyWith(color: c.ink),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Знакомство по NFC',
-              icon: Icon(PhosphorIcons.wifiHigh(), size: 22, color: c.ink),
-              onPressed: () => context.push('/nfc/scan'),
-            ),
-            IconButton(
-              tooltip: 'Стать парой',
-              icon: Icon(PhosphorIcons.fireSimple(), size: 22, color: c.ink),
-              onPressed: () => context.push('/pairs/prompts'),
-            ),
-            IconButton(
-              tooltip: 'Найти из контактов',
-              icon: Icon(PhosphorIcons.addressBook(), size: 22, color: c.ink),
-              onPressed: () => context.push('/access/contacts'),
-            ),
-          ],
-          bottom: TabBar(
-            labelColor: SeeUColors.accent,
-            unselectedLabelColor: c.ink3,
-            indicatorColor: SeeUColors.accent,
-            labelStyle: SeeUTypography.body.copyWith(fontWeight: FontWeight.w600),
-            tabs: const [
-              Tab(text: 'Входящие'),
-              Tab(text: 'Контакты'),
-              Tab(text: 'Отправленные'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
+        body: Column(
           children: [
-            _IncomingTab(),
-            _PartnersTab(),
-            _SentTab(),
+            SeeUGlassBar(
+              kicker: 'Доступ',
+              titleText: 'Доступы',
+              hairline: false,
+              leading: Tappable(
+                onTap: () => context.pop(),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(PhosphorIconsRegular.arrowLeft,
+                      size: 20, color: c.ink),
+                ),
+              ),
+              actions: [
+                _HeaderAction(
+                  icon: PhosphorIcons.wifiHigh(),
+                  tooltip: 'Знакомство по NFC',
+                  onTap: () => context.push('/nfc/scan'),
+                ),
+                _HeaderAction(
+                  icon: PhosphorIcons.fireSimple(),
+                  tooltip: 'Стать парой',
+                  onTap: () => context.push('/pairs/prompts'),
+                ),
+                _HeaderAction(
+                  icon: PhosphorIcons.plusCircle(PhosphorIconsStyle.fill),
+                  tooltip: 'Найти по контактам',
+                  accent: true,
+                  onTap: () => context.push('/access/contacts'),
+                ),
+              ],
+            ),
+            Container(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: c.line, width: 0.5)),
+              ),
+              child: TabBar(
+                labelColor: SeeUColors.accent,
+                unselectedLabelColor: c.ink3,
+                indicatorColor: SeeUColors.accent,
+                labelStyle:
+                    SeeUTypography.body.copyWith(fontWeight: FontWeight.w600),
+                tabs: const [
+                  Tab(text: 'Заявки'),
+                  Tab(text: 'Доступные'),
+                  Tab(text: 'Отправленные'),
+                ],
+              ),
+            ),
+            const Expanded(
+              child: TabBarView(
+                children: [
+                  _IncomingTab(),
+                  _PartnersTab(),
+                  _SentTab(),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -156,27 +160,38 @@ class _RequestTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _Avatar(username: u.username, avatarUrl: u.avatarUrl),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'НОВАЯ ЗАЯВКА'.toUpperCase(),
-                  style: SeeUTypography.kicker.copyWith(color: SeeUColors.accent),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  u.fullName.isNotEmpty ? u.fullName : u.username,
-                  style: SeeUTypography.body
-                      .copyWith(fontWeight: FontWeight.w600, color: c.ink),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text('@${u.username}',
-                    style: SeeUTypography.caption.copyWith(color: c.ink3)),
-              ],
+            child: Tappable(
+              onTap: () => context.push('/profile/${u.username}'),
+              child: Row(
+                children: [
+                  _Avatar(username: u.username, avatarUrl: u.avatarUrl),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'НОВАЯ ЗАЯВКА'.toUpperCase(),
+                          style: SeeUTypography.kicker
+                              .copyWith(color: SeeUColors.accent),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          u.fullName.isNotEmpty ? u.fullName : u.username,
+                          style: SeeUTypography.body.copyWith(
+                              fontWeight: FontWeight.w600, color: c.ink),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text('@${u.username}',
+                            style: SeeUTypography.caption
+                                .copyWith(color: c.ink3)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -197,7 +212,7 @@ class _RequestTile extends StatelessWidget {
   }
 }
 
-// ── Мои контакты (открытый доступ) ──────────────────────────────────────────────
+// ── Доступные (открытый доступ) ───────────────────────────────────────────────
 
 class _PartnersTab extends ConsumerWidget {
   const _PartnersTab();
@@ -366,6 +381,7 @@ class _SentTab extends ConsumerWidget {
                     style: SeeUTypography.caption.copyWith(color: c.ink3)),
                 trailing: Text('ОЖИДАНИЕ'.toUpperCase(),
                     style: SeeUTypography.kicker.copyWith(color: c.ink4)),
+                onTap: () => context.push('/profile/${u.username}'),
               ),
             );
           },
@@ -396,6 +412,36 @@ class _Avatar extends StatelessWidget {
               style: TextStyle(color: c.ink3, fontWeight: FontWeight.w600),
             )
           : null,
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool accent;
+  const _HeaderAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.accent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Tooltip(
+      message: tooltip,
+      child: Tappable(
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 44,
+          child: Icon(icon,
+              size: 20, color: accent ? SeeUColors.accent : c.ink),
+        ),
+      ),
     );
   }
 }

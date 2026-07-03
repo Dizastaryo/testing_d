@@ -60,7 +60,7 @@ class SeeUInput extends StatelessWidget {
       textCapitalization: textCapitalization,
       inputFormatters: inputFormatters,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: AppFonts.I.sans,
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: SeeUColors.textPrimary,
@@ -68,7 +68,7 @@ class SeeUInput extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: AppFonts.I.sans,
           fontSize: 15,
           fontWeight: FontWeight.w400,
           color: SeeUColors.textTertiary,
@@ -90,7 +90,7 @@ class SeeUInput extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: SeeUColors.accentSoft, width: 2),
+          borderSide: const BorderSide(color: SeeUColors.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

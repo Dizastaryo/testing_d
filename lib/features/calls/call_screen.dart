@@ -508,7 +508,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
               color: pillColor,
-              borderRadius: BorderRadius.circular(99),
+              borderRadius: BorderRadius.circular(SeeURadii.pill),
               boxShadow: isSpeaking
                   ? [
                       BoxShadow(
@@ -551,7 +551,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         color: noAnswer
             ? SeeUColors.accent.withValues(alpha: 0.18)
             : Colors.white.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(99),
+        borderRadius: BorderRadius.circular(SeeURadii.pill),
         border: Border.all(
           color: noAnswer
               ? SeeUColors.accent.withValues(alpha: 0.4)

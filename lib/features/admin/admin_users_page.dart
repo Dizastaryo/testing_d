@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 
@@ -61,7 +62,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                 onPressed: () => ref.invalidate(_usersProvider),
               ),
             ],
@@ -75,7 +76,7 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
                   controller: _searchCtrl,
                   decoration: const InputDecoration(
                     hintText: 'Поиск: username, имя или телефон',
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(PhosphorIconsRegular.magnifyingGlass),
                   ),
                   onSubmitted: (v) {
                     ref.read(_usersFilterProvider.notifier).state =
@@ -203,7 +204,7 @@ class _UserRow extends ConsumerWidget {
               child: const Text('Забанить'),
             ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: Color(0xFFE74C3C)),
+            icon: const Icon(PhosphorIconsRegular.trash, color: Color(0xFFE74C3C)),
             tooltip: 'Удалить аккаунт',
             onPressed: () => _confirmDelete(context, ref),
           ),

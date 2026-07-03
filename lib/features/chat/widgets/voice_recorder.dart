@@ -90,6 +90,14 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
         ),
         path: filePath,
       );
+      // Widget may have been disposed while awaiting the platform call (e.g.
+      // user left the chat) — bail before wiring subscriptions/timers, else
+      // they leak (never cancelled) and the recorder keeps running.
+      if (!mounted) {
+        await _recorder.stop();
+        _deleteFile(filePath);
+        return;
+      }
       _path = filePath;
       HapticFeedback.mediumImpact();
       _ampSub = _recorder
@@ -126,6 +134,12 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
     _ampSub?.cancel();
     _tick?.cancel();
     final pathFinal = p ?? _path;
+    if (!mounted) {
+      // Widget disposed while awaiting recorder.stop() — don't create a
+      // preview AudioPlayer nobody will ever dispose, just clean up the file.
+      if (pathFinal != null) _deleteFile(pathFinal);
+      return;
+    }
     if (pathFinal == null || pathFinal.isEmpty) {
       widget.onCancel();
       return;
@@ -524,7 +538,7 @@ class _VoiceRecorderBarState extends State<VoiceRecorderBar> {
                         color: _previewSpeed != 1.0
                             ? SeeUColors.accent
                             : SeeUColors.accent.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(99),
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
                       ),
                       child: Text(
                         _fmtSpeed(_previewSpeed),

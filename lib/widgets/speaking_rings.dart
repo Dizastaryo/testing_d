@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../core/design/tokens.dart';
+
 /// Пульсирующие кольца вокруг аватара — визуализация голосовой активности.
 /// [audioLevel] 0.0..1.0 — нормализованный уровень звука.
 /// Кольца видны только когда level > 0.05; масштаб и прозрачность
@@ -22,7 +24,7 @@ class SpeakingRings extends StatelessWidget {
     required this.audioLevel,
     required this.child,
     required this.size,
-    this.color = const Color(0xFF2FA84F),
+    this.color = SeeUColors.success,
   });
 
   @override

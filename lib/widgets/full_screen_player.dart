@@ -169,6 +169,46 @@ class _FullScreenPlayerSheetState
     showAddToPlaylistSheet(ctx, ref, track.id);
   }
 
+  void _showTrackActionsSheet(BuildContext ctx, AudioTrack track) {
+    showSeeUBottomSheet<void>(
+      context: ctx,
+      builder: (sheetCtx) {
+        final c = sheetCtx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.queue(), color: c.ink2),
+                title: Text('Добавить в плейлист',
+                    style: SeeUTypography.body.copyWith(color: c.ink)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _addToPlaylist(ctx, track);
+                },
+              ),
+              if (track.usesCount > 0)
+                ListTile(
+                  leading: Icon(PhosphorIcons.filmStrip(), color: c.ink2),
+                  title: Text(
+                    'Видео с этим звуком (${track.usesCount})',
+                    style: SeeUTypography.body.copyWith(color: c.ink),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    final router = GoRouter.of(ctx);
+                    await Navigator.of(ctx).maybePop();
+                    router.push('/music/track/${track.id}');
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _speedLabel(double speed) {
     if ((speed - speed.roundToDouble()).abs() < 0.001) {
       return '${speed.toStringAsFixed(0)}x';
@@ -333,47 +373,11 @@ class _FullScreenPlayerSheetState
                           ),
                           const Spacer(),
                           // More actions
-                          PopupMenuButton<String>(
-                            icon: Icon(PhosphorIcons.dotsThreeVertical(),
+                          Tappable(
+                            onTap: () =>
+                                _showTrackActionsSheet(context, track),
+                            child: Icon(PhosphorIcons.dotsThreeVertical(),
                                 color: _kInk70),
-                            color: Colors.black87,
-                            onSelected: (v) async {
-                              if (v == 'playlist') {
-                                _addToPlaylist(context, track);
-                                return;
-                              }
-                              if (v == 'detail') {
-                                final router = GoRouter.of(context);
-                                await Navigator.of(context).maybePop();
-                                router.push('/music/track/${track.id}');
-                                return;
-                              }
-                            },
-                            itemBuilder: (_) => [
-                              PopupMenuItem(
-                                value: 'playlist',
-                                child: Row(children: [
-                                  Icon(PhosphorIcons.queue(),
-                                      color: Colors.white70, size: 18),
-                                  const SizedBox(width: 10),
-                                  const Text('Добавить в плейлист',
-                                      style: TextStyle(color: Colors.white)),
-                                ]),
-                              ),
-                              if (track.usesCount > 0)
-                                PopupMenuItem(
-                                  value: 'detail',
-                                  child: Row(children: [
-                                    Icon(PhosphorIcons.filmStrip(),
-                                        color: Colors.white70, size: 18),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      'Видео с этим звуком (${track.usesCount})',
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                  ]),
-                                ),
-                            ],
                           ),
                         ],
                       ),

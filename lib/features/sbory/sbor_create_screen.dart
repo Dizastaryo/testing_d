@@ -86,27 +86,16 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       context.pop();
       return;
     }
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Отменить создание?'),
-        content: const Text('Введённые данные будут потеряны.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Продолжить'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              'Отменить',
-              style: TextStyle(color: SeeUColors.error),
-            ),
-          ),
-        ],
-      ),
+    final leave = await showSeeUConfirm(
+      context,
+      title: 'Отменить создание?',
+      message: 'Введённые данные будут потеряны.',
+      confirmLabel: 'Отменить',
+      cancelLabel: 'Продолжить',
+      destructive: true,
+      icon: PhosphorIconsRegular.warning,
     );
-    if (leave == true && mounted) context.pop();
+    if (leave && mounted) context.pop();
   }
 
   // ─── Error helpers ─────────────────────────────────────────────────────────
@@ -184,7 +173,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       maxHeight: 1080,
       imageQuality: 85,
     );
-    if (file != null) setState(() => _coverImage = file);
+    if (file != null && mounted) setState(() => _coverImage = file);
   }
 
   Future<void> _pickDate() async {
@@ -411,7 +400,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: kSborCategories[_category!]!.soft,
-                borderRadius: BorderRadius.circular(99),
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -478,7 +467,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                             horizontal: 13, vertical: 7),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.52),
-                          borderRadius: BorderRadius.circular(99),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
                           border: Border.all(
                               color: Colors.white.withValues(alpha: 0.2),
                               width: 0.5),
@@ -731,7 +720,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 13),
                 decoration: BoxDecoration(
                   color: active ? meta.color : meta.soft,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
                   boxShadow: active
                       ? [
                           BoxShadow(
@@ -1010,7 +999,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
                       color: _noLimit
                           ? SeeUColors.accent.withValues(alpha: 0.12)
                           : c.surface2,
-                      borderRadius: BorderRadius.circular(99),
+                      borderRadius: BorderRadius.circular(SeeURadii.pill),
                     ),
                     child: Text(
                       '∞',

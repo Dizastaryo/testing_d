@@ -322,7 +322,7 @@ class _ForwardChatPickerState extends ConsumerState<_ForwardChatPicker> {
                           horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: SeeUColors.accent.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(99),
+                        borderRadius: BorderRadius.circular(SeeURadii.pill),
                       ),
                       child: Text(
                         '$count выбрано',
@@ -411,7 +411,7 @@ class _ForwardChatPickerState extends ConsumerState<_ForwardChatPicker> {
                                   decoration: BoxDecoration(
                                     color: SeeUColors.accent
                                         .withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(99),
+                                    borderRadius: BorderRadius.circular(SeeURadii.pill),
                                   ),
                                   child: const Text(
                                     'группа',

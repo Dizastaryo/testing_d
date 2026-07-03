@@ -211,12 +211,14 @@ class LibraryListNotifier extends StateNotifier<LibraryListState> {
       final nextCursor = resp.data['meta']?['next_cursor'] as String? ?? '';
       final fetched = data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 
+      if (!mounted) return;
       state = LibraryListState(
         items: reset ? fetched : [...state.items, ...fetched],
         cursor: nextCursor,
         hasMore: nextCursor.isNotEmpty,
       );
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         isLoadingMore: false,

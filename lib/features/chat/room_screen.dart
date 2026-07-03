@@ -873,7 +873,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: c.surface2,
-                    borderRadius: BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
                   ),
                   child: Text(
                     '${voiceUsers.length}',
@@ -1079,7 +1079,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             width: 40, height: 40,
             decoration: BoxDecoration(
               color: voiceCount > 0 ? c.accentSoft : c.surface2,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
             ),
             child: Icon(
               PhosphorIcons.microphone(PhosphorIconsStyle.fill),
@@ -1718,7 +1718,7 @@ class _MessageBubble extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             decoration: BoxDecoration(
                               color: c.surface2,
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius: BorderRadius.circular(SeeURadii.card),
                               boxShadow: SeeUShadows.md,
                             ),
                             child: Row(
@@ -1759,7 +1759,7 @@ class _MessageBubble extends StatelessWidget {
                                       horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: isMine ? SeeUColors.accentSoft : c.surface,
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(SeeURadii.small),
                                     boxShadow: SeeUShadows.sm,
                                     border: isMine
                                         ? Border.all(color: SeeUColors.accent, width: 0.8)
@@ -2077,7 +2077,7 @@ class _RoomEditSheetState extends ConsumerState<_RoomEditSheet> {
     return Container(
       decoration: BoxDecoration(
         color: c.surface2,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SeeURadii.small),
       ),
       child: TextField(
         controller: controller,

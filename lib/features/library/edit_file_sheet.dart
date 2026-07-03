@@ -124,7 +124,7 @@ class _EditFileSheetState extends ConsumerState<EditFileSheet> {
                       Text(
                         widget.file.formatLabel,
                         style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: AppFonts.I.sans,
                           fontSize: 10,
                           color: SeeUColors.accent,
                           fontWeight: FontWeight.w600,
@@ -142,7 +142,7 @@ class _EditFileSheetState extends ConsumerState<EditFileSheet> {
               decoration: InputDecoration(
                 labelText: 'Название *',
                 border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
               ),
             ),
@@ -153,7 +153,7 @@ class _EditFileSheetState extends ConsumerState<EditFileSheet> {
               decoration: InputDecoration(
                 labelText: 'Автор',
                 border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
               ),
             ),
@@ -166,7 +166,7 @@ class _EditFileSheetState extends ConsumerState<EditFileSheet> {
                 decoration: InputDecoration(
                   labelText: 'Категория',
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(SeeURadii.small)),
                   isDense: true,
                 ),
                 hint: const Text('Без категории'),
@@ -184,7 +184,7 @@ class _EditFileSheetState extends ConsumerState<EditFileSheet> {
               decoration: InputDecoration(
                 labelText: 'Описание',
                 border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
                 isDense: true,
                 alignLabelWithHint: true,
               ),

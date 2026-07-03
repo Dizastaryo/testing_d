@@ -126,7 +126,7 @@ class _FilePreparationScreenState extends ConsumerState<FilePreparationScreen> {
                 // Готовые
                 if (done.isNotEmpty) ...[
                   _sectionHeader('Готово к чтению', done.length,
-                      const Color(0xFF43A047)),
+                      SeeUColors.success),
                   const SizedBox(height: 8),
                   ...done.map((f) => _FileCard(
                         file: f,
@@ -291,7 +291,7 @@ class _FileCard extends StatelessWidget {
               child: Text(
                 file.formatLabel,
                 style: TextStyle(
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: AppFonts.I.sans,
                   fontSize: 8,
                   fontWeight: FontWeight.w700,
                   color: fmtColor,
@@ -365,13 +365,13 @@ class _FileCard extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color: const Color(0xFFE53935).withValues(alpha: 0.1),
+              color: SeeUColors.error.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
               'Повторить',
               style: TextStyle(
-                color: Color(0xFFE53935),
+                color: SeeUColors.error,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -395,9 +395,9 @@ class _FileCard extends StatelessWidget {
   Color get _statusColor {
     switch (status) {
       case _PrepStatus.done:
-        return const Color(0xFF43A047);
+        return SeeUColors.success;
       case _PrepStatus.failed:
-        return const Color(0xFFE53935);
+        return SeeUColors.error;
       case _PrepStatus.preparing:
         return SeeUColors.accent;
     }

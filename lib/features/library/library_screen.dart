@@ -267,7 +267,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: SeeUColors.amber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(SeeURadii.small),
                     border: Border.all(
                         color: SeeUColors.amber.withValues(alpha: 0.3)),
                   ),
@@ -416,7 +416,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 Text(
                   'БИБЛИОТЕКА',
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 10,
                     letterSpacing: 2.5,
                     color: SeeUColors.accent,
@@ -733,7 +733,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: active ? SeeUColors.accent : c.ink3,
@@ -1143,7 +1143,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: c.ink3,
-                                      fontFamily: 'JetBrains Mono',
+                                      fontFamily: AppFonts.I.sans,
                                     )),
                                 const SizedBox(width: 10),
                                 Icon(PhosphorIconsFill.heart,
@@ -1153,7 +1153,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: c.ink3,
-                                      fontFamily: 'JetBrains Mono',
+                                      fontFamily: AppFonts.I.sans,
                                     )),
                               ],
                             ),
@@ -1312,7 +1312,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
                   color: SeeUColors.accent,
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(SeeURadii.card),
                   boxShadow: [
                     BoxShadow(
                       color: SeeUColors.accent.withValues(alpha: 0.3),
@@ -1396,7 +1396,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       _StatItem(
                         value: want,
                         label: 'Хочу',
-                        color: const Color(0xFF1E88E5),
+                        color: SeeUColors.info,
                       ),
                       _statDivider(c),
                       _StatItem(
@@ -1517,49 +1517,67 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _showGoalDialog(int current, int done) async {
+    final c = context.seeuColors;
     final ctrl = TextEditingController(
         text: current > 0 ? '$current' : '');
-    final result = await showDialog<int>(
+    final result = await showSeeUBottomSheet<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Цель чтения на год', style: SeeUTypography.displayS),
-        content: Column(
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 8, 20,
+            MediaQuery.of(ctx).padding.bottom +
+                MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('Цель чтения на год',
+                style: SeeUTypography.displayS.copyWith(color: c.ink)),
+            const SizedBox(height: 4),
             Text('Уже прочитано: $done книг',
-                style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 12),
-            TextField(
+                style: SeeUTypography.caption.copyWith(color: c.ink3)),
+            const SizedBox(height: 16),
+            SeeUInput(
               controller: ctrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Сколько книг хочешь прочитать?',
-                border: OutlineInputBorder(),
-              ),
+              hintText: 'Сколько книг хочешь прочитать?',
               autofocus: true,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                if (current > 0) ...[
+                  Expanded(
+                    child: SeeUDialogAction(
+                      label: 'Удалить',
+                      color: SeeUColors.danger,
+                      onTap: () => Navigator.of(ctx).pop(-1),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Отмена',
+                    onTap: () => Navigator.of(ctx).pop(0),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Сохранить',
+                    color: SeeUColors.accent,
+                    filled: true,
+                    onTap: () {
+                      final v = int.tryParse(ctrl.text.trim());
+                      Navigator.of(ctx).pop(v);
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        actions: [
-          if (current > 0)
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(-1),
-              child: const Text('Удалить', style: TextStyle(color: SeeUColors.danger)),
-            ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(0),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () {
-              final v = int.tryParse(ctrl.text.trim());
-              Navigator.of(ctx).pop(v);
-            },
-            child: const Text('Сохранить',
-                style: TextStyle(color: SeeUColors.accent)),
-          ),
-        ],
       ),
     );
     ctrl.dispose();
@@ -1674,7 +1692,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: Row(
                   children: [
                     Icon(PhosphorIconsFill.usersThree,
-                        size: 16, color: const Color(0xFF1E88E5)),
+                        size: 16, color: SeeUColors.info),
                     const SizedBox(width: 8),
                     Text(
                       'Читают друзья',
@@ -1911,10 +1929,10 @@ class _CategoryGridCard extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(SeeURadii.medium),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(SeeURadii.medium),
         splashColor: accent.withValues(alpha: 0.12),
         highlightColor: accent.withValues(alpha: 0.06),
         child: Opacity(
@@ -1930,7 +1948,7 @@ class _CategoryGridCard extends StatelessWidget {
                   accent.withValues(alpha: c.isDark ? 0.07 : 0.04),
                 ],
               ),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(SeeURadii.medium),
               border: Border.all(color: accent.withValues(alpha: 0.22)),
             ),
             child: Column(
@@ -2001,7 +2019,7 @@ class _HeaderButton extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           color: isActive ? SeeUColors.accent : c.surface2,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
         ),
         child: Icon(
           icon,
@@ -2074,7 +2092,7 @@ class _TrendingCard extends StatelessWidget {
               tag: 'file_cover_trending_${file.id}',
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.1),
@@ -2330,7 +2348,7 @@ class _FileCard extends StatelessWidget {
   TextStyle _statStyle(SeeUThemeColors c) => TextStyle(
         fontSize: 11,
         color: c.ink4,
-        fontFamily: 'JetBrains Mono',
+        fontFamily: AppFonts.I.sans,
         fontWeight: FontWeight.w500,
       );
 
@@ -2409,7 +2427,7 @@ class _FileCard extends StatelessWidget {
         bg = SeeUColors.success;
         label = 'Прочитано';
       case 'want':
-        bg = const Color(0xFF1E88E5);
+        bg = SeeUColors.info;
         label = 'Хочу';
       default:
         return const SizedBox.shrink();
@@ -2449,7 +2467,7 @@ class _FormatBadge extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: color,
-          fontFamily: 'JetBrains Mono',
+          fontFamily: AppFonts.I.sans,
         ),
       ),
     );
@@ -2488,7 +2506,7 @@ class _ContinueReadingCard extends ConsumerWidget {
             // Cover
             Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.1),
@@ -2498,7 +2516,7 @@ class _ContinueReadingCard extends ConsumerWidget {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
                 child: SizedBox(
                   width: 110,
                   height: 145,
@@ -2549,11 +2567,11 @@ class _ContinueReadingCard extends ConsumerWidget {
                               if (progress != null && progress.percentage > 0)
                                 Text(
                                   '${(progress.percentage * 100).toInt()}%',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
-                                    fontFamily: 'JetBrains Mono',
+                                    fontFamily: AppFonts.I.sans,
                                   ),
                                 ),
                             ],
@@ -2699,7 +2717,7 @@ class _StatItem extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              fontFamily: 'JetBrains Mono',
+              fontFamily: AppFonts.I.sans,
               color: color,
             ),
           ),
@@ -2737,7 +2755,7 @@ class _ContextMenuItem extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 4),
         decoration: BoxDecoration(
           color: c.surface2,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
         ),
         child: Row(
           children: [

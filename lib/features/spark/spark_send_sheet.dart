@@ -85,7 +85,7 @@ class _SparkSendSheetState extends ConsumerState<SparkSendSheet> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
       decoration: BoxDecoration(
         color: colors.surface,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(SeeURadii.card),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),

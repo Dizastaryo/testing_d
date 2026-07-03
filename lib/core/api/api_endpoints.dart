@@ -6,7 +6,6 @@ class ApiEndpoints {
   // Base URLs come from ServerConfig (runtime, persisted in SharedPreferences).
   // Default falls back to compile-time AppConfig values.
   static String get baseUrl => ServerConfig.apiBaseUrl;
-  static String get videoBaseUrl => ServerConfig.videoBaseUrl;
   static String get libraryBaseUrl => ServerConfig.libraryBaseUrl;
 
   // Auth (phone + OTP)
@@ -95,7 +94,9 @@ class ApiEndpoints {
 
   // Explore
   static const String explore = '/explore';
-  static const String exploreShorts = '/explore/shorts';
+  // Post-shaped Explore feed for the full-screen vertical viewer (returns full
+  // Post objects with media). Supports ?media_type=video|image + ?page.
+  static const String postsExplore = '/posts/explore';
   static const String interestEvents = '/interest/events';
   static const String leaderboard = '/leaderboard';
   static const String dailyPrompt = '/daily-prompt';
@@ -173,10 +174,11 @@ class ApiEndpoints {
   static const String myCalls = '/users/me/calls'; // C-1 история звонков
   static String viewPost(String id) => '/posts/$id/view'; // FEED-5
 
-  // === Video Service endpoints ===
-  // The long-video "Видеотека" section was removed. Only the vertical Shorts
-  // viewer remains and it streams from the same service via `videoBaseUrl`
-  // (see videoApiClientProvider) + a hardcoded `/videos/:id` fetch.
+  // === Video endpoints ===
+  // The long-video "Видеотека" section was removed. The vertical Shorts
+  // viewer fetches its single video by id from the main API (`baseUrl`,
+  // see singleVideoProvider) — the standalone video service (`videoBaseUrl`,
+  // port 8002) is no longer required for this.
 
   // Reels
   // Reels endpoints removed (migration 23 unified them with posts).

@@ -128,12 +128,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           : 'отключена',
                       onTap: () => context.push('/settings/scan-profile'),
                     ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.lockKey(),
-                      label: 'Доступы',
-                      value: 'Заявки и контакты',
-                      onTap: () => context.push('/access/list'),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -496,7 +490,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('SeeU', style: SeeUTypography.displayL),
+              Text('SeeU',
+                  style: SeeUTypography.displayL
+                      .copyWith(fontFamily: AppFonts.I.brand, letterSpacing: 0)),
               const SizedBox(height: 8),
               Text(
                 'Социальная сеть с BLE-сканером',

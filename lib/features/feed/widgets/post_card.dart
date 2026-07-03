@@ -300,7 +300,7 @@ class _PostCardState extends ConsumerState<PostCard>
   Widget _buildWaveCard(BuildContext context, Post post) {
     const Color darkBg = Color(0xFF2B1610);
     const Color warmCream = Color(0xFFE6D6BE);
-    const Color defaultAmber = Color(0xFFFFB547);
+    const Color defaultAmber = SeeUColors.amber;
 
     final waveColor = post.waveColorValue != null
         ? Color(post.waveColorValue!)
@@ -376,7 +376,7 @@ class _PostCardState extends ConsumerState<PostCard>
                         child: Text(
                           '?',
                           style: TextStyle(
-                            fontFamily: 'Fraunces',
+                            fontFamily: AppFonts.I.serif,
                             fontFamilyFallback: const ['Playfair Display'],
                             fontSize: 280,
                             fontStyle: FontStyle.italic,
@@ -436,8 +436,8 @@ class _PostCardState extends ConsumerState<PostCard>
                                         if (parsed.big.isNotEmpty)
                                           Text(
                                             parsed.big,
-                                            style: const TextStyle(
-                                              fontFamily: 'Fraunces',
+                                            style: TextStyle(
+                                              fontFamily: AppFonts.I.serif,
                                               fontFamilyFallback: [
                                                 'Playfair Display'
                                               ],
@@ -467,8 +467,8 @@ class _PostCardState extends ConsumerState<PostCard>
                                           const SizedBox(height: 2),
                                           Text(
                                             parsed.big2,
-                                            style: const TextStyle(
-                                              fontFamily: 'Fraunces',
+                                            style: TextStyle(
+                                              fontFamily: AppFonts.I.serif,
                                               fontFamilyFallback: [
                                                 'Playfair Display'
                                               ],
@@ -565,8 +565,8 @@ class _PostCardState extends ConsumerState<PostCard>
                                 opacity: _heartOpacityAnim.value,
                                 child: Transform.scale(
                                   scale: _heartScaleAnim.value,
-                                  child: const Icon(
-                                    Icons.favorite,
+                                  child: Icon(
+                                    PhosphorIcons.heart(PhosphorIconsStyle.fill),
                                     color: Colors.white,
                                     size: 80,
                                   ),

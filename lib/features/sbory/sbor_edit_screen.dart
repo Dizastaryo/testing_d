@@ -556,7 +556,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   color: active ? meta.color : c.surface,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
                   border: active ? null : Border.all(color: c.line),
                 ),
                 child: Row(

@@ -140,9 +140,11 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
     try {
       final r = await _api.get(ApiEndpoints.roomById(roomId));
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
-      state = RoomDetailState(room: Room.fromJson(data as Map<String, dynamic>));
+      if (mounted) {
+        state = RoomDetailState(room: Room.fromJson(data as Map<String, dynamic>));
+      }
     } catch (_) {
-      state = state.copyWith(isLoading: false);
+      if (mounted) state = state.copyWith(isLoading: false);
     }
   }
 
@@ -236,7 +238,9 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
       'cover_url': coverUrl,
     });
     final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
-    state = RoomDetailState(room: Room.fromJson(data as Map<String, dynamic>));
+    if (mounted) {
+      state = RoomDetailState(room: Room.fromJson(data as Map<String, dynamic>));
+    }
   }
 
   /// Optimistically update own mute state, then confirm via server
@@ -373,9 +377,9 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
       final msgs = (data as List<dynamic>)
           .map((e) => RoomMessage.fromJson(e as Map<String, dynamic>))
           .toList();
-      state = RoomMessagesState(messages: msgs);
+      if (mounted) state = RoomMessagesState(messages: msgs);
     } catch (_) {
-      state = state.copyWith(isLoading: false);
+      if (mounted) state = state.copyWith(isLoading: false);
     }
   }
 
@@ -481,6 +485,7 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
   }
 
   void _appendIfAbsent(RoomMessage msg) {
+    if (!mounted) return;
     if (state.messages.any((m) => m.id == msg.id)) return;
     state = state.copyWith(messages: [...state.messages, msg]);
   }
@@ -569,9 +574,9 @@ class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
       final members = (data as List<dynamic>)
           .map((e) => RoomMember.fromJson(e as Map<String, dynamic>))
           .toList();
-      state = RoomMembersState(members: members);
+      if (mounted) state = RoomMembersState(members: members);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (mounted) state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -582,9 +587,11 @@ class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
 
   Future<void> remove(String userId) async {
     await _api.delete(ApiEndpoints.roomMember(roomId, userId));
-    state = state.copyWith(
-      members: state.members.where((m) => m.userId != userId).toList(),
-    );
+    if (mounted) {
+      state = state.copyWith(
+        members: state.members.where((m) => m.userId != userId).toList(),
+      );
+    }
   }
 
   Future<void> setAdmin(String userId, {required bool grant}) async {

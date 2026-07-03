@@ -177,29 +177,45 @@ class _CollectionAddSheetState extends ConsumerState<CollectionAddSheet> {
 
   Future<void> _createNew(BuildContext context) async {
     final nameCtrl = TextEditingController();
-    final result = await showDialog<bool>(
+    final result = await showSeeUBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Новая коллекция', style: SeeUTypography.displayS),
-        content: TextField(
-          controller: nameCtrl,
-          decoration: InputDecoration(
-              labelText: 'Название',
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12))),
-          autofocus: true,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 8, 20,
+            MediaQuery.of(ctx).padding.bottom +
+                MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Новая коллекция', style: SeeUTypography.displayS),
+            const SizedBox(height: 16),
+            SeeUInput(
+              controller: nameCtrl,
+              hintText: 'Название',
+              autofocus: true,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Отмена',
+                    onTap: () => Navigator.of(ctx).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SeeUDialogAction(
+                    label: 'Создать',
+                    filled: true,
+                    onTap: () => Navigator.of(ctx).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style:
-                FilledButton.styleFrom(backgroundColor: SeeUColors.accent),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Создать'),
-          ),
-        ],
       ),
     );
     if (result == true && nameCtrl.text.trim().isNotEmpty) {

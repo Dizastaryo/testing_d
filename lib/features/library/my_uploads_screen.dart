@@ -301,7 +301,7 @@ class _StatItem extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value,
               style: TextStyle(
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: AppFonts.I.sans,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: color)),
@@ -420,7 +420,7 @@ class _UploadCard extends ConsumerWidget {
                             style: TextStyle(
                                 fontSize: 11,
                                 color: c.ink3,
-                                fontFamily: 'JetBrains Mono')),
+                                fontFamily: AppFonts.I.sans)),
                         const SizedBox(width: 10),
                         Icon(PhosphorIconsFill.heart,
                             size: 12,
@@ -431,7 +431,7 @@ class _UploadCard extends ConsumerWidget {
                             style: TextStyle(
                                 fontSize: 11,
                                 color: c.ink3,
-                                fontFamily: 'JetBrains Mono')),
+                                fontFamily: AppFonts.I.sans)),
                         const SizedBox(width: 10),
                         Icon(PhosphorIconsRegular.eye,
                             size: 12, color: c.ink4),
@@ -440,7 +440,7 @@ class _UploadCard extends ConsumerWidget {
                             style: TextStyle(
                                 fontSize: 11,
                                 color: c.ink3,
-                                fontFamily: 'JetBrains Mono')),
+                                fontFamily: AppFonts.I.sans)),
                         if (file.ratingsCount > 0) ...[
                           const SizedBox(width: 10),
                           const Icon(PhosphorIconsFill.star,
@@ -450,7 +450,7 @@ class _UploadCard extends ConsumerWidget {
                               style: TextStyle(
                                   fontSize: 11,
                                   color: c.ink3,
-                                  fontFamily: 'JetBrains Mono')),
+                                  fontFamily: AppFonts.I.sans)),
                         ],
                       ],
                     ),

@@ -57,9 +57,9 @@ class _GeneratedCover extends StatelessWidget {
 
   static const _gradients = <String, List<Color>>{
     'pdf': [Color(0xFFE53935), Color(0xFF8B1A1A)],
-    'epub': [Color(0xFFFF5A3C), Color(0xFFBF360C)],
+    'epub': [SeeUColors.accent, Color(0xFFBF360C)],
     'fb2': [Color(0xFF8E24AA), Color(0xFF4A148C)],
-    'docx': [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+    'docx': [SeeUColors.info, Color(0xFF0D47A1)],
     'pptx': [Color(0xFF43A047), Color(0xFF1B5E20)],
     'txt': [Color(0xFF546E7A), Color(0xFF263238)],
     'rtf': [Color(0xFF6D4C41), Color(0xFF3E2723)],

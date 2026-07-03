@@ -789,7 +789,7 @@ class _InvitePickerSheetState extends ConsumerState<_InvitePickerSheet> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: SeeUColors.accent,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(SeeURadii.small),
                       ),
                       child: _inviting
                           ? const SizedBox(
@@ -818,7 +818,7 @@ class _InvitePickerSheetState extends ConsumerState<_InvitePickerSheet> {
               height: 40,
               decoration: BoxDecoration(
                 color: c.surface2,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(SeeURadii.small),
               ),
               child: TextField(
                 controller: _searchCtrl,

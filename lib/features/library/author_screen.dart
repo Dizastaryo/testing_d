@@ -294,7 +294,7 @@ class _MiniStat extends StatelessWidget {
             const SizedBox(width: 4),
             Text(value,
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: c.ink)),
@@ -369,7 +369,7 @@ class _AuthorFileCard extends StatelessWidget {
                 child: Text(
                   file.formatLabel,
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 8,
                     fontWeight: FontWeight.w700,
                     color: colorForFileType(file.fileExtension),

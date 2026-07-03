@@ -92,7 +92,7 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
                 fillColor: c.surface2,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -215,7 +215,7 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
                   Text(
                     'Всего: ${state.totalCount} книг',
                     style: TextStyle(
-                        fontSize: 12, color: c.ink3, fontFamily: 'JetBrains Mono'),
+                        fontSize: 12, color: c.ink3, fontFamily: AppFonts.I.sans),
                   ),
                   const SizedBox(width: 12),
                   totalSize.when(
@@ -224,7 +224,7 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
                       style: TextStyle(
                           fontSize: 12,
                           color: SeeUColors.accent,
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: AppFonts.I.sans,
                           fontWeight: FontWeight.w600),
                     ),
                     loading: () => const SizedBox.shrink(),
@@ -494,7 +494,7 @@ class _BookCard extends StatelessWidget {
           color: isSelected
               ? SeeUColors.accent.withValues(alpha: 0.08)
               : c.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
           border: Border.all(
             color: isSelected ? SeeUColors.accent : c.line,
             width: isSelected ? 1.5 : 0.5,
@@ -540,11 +540,11 @@ class _BookCard extends StatelessWidget {
                         ),
                         child: Text(
                           entry.kind.name.toUpperCase(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             color: SeeUColors.accent,
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: AppFonts.I.sans,
                           ),
                         ),
                       ),
@@ -554,7 +554,7 @@ class _BookCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           color: c.ink4,
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: AppFonts.I.sans,
                         ),
                       ),
                     ],
@@ -582,7 +582,7 @@ class _BookCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10,
                             color: SeeUColors.accent,
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: AppFonts.I.sans,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -614,7 +614,7 @@ class _BookCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
           color: SeeUColors.danger.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SeeURadii.small),
         ),
         child:
             const Icon(PhosphorIconsRegular.trash, color: SeeUColors.danger),
@@ -676,7 +676,7 @@ class _CoverThumbnail extends StatelessWidget {
             fontSize: 10,
             fontWeight: FontWeight.w700,
             color: c.ink4,
-            fontFamily: 'JetBrains Mono',
+            fontFamily: AppFonts.I.sans,
           ),
         ),
       ),

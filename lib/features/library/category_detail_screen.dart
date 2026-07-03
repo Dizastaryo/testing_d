@@ -144,9 +144,9 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
         title: 'Категория не найдена',
         subtitle: 'Возможно, она была удалена или переименована',
         action: SeeUStateAction(
-          label: 'В медиатеку',
+          label: 'В библиотеку',
           icon: PhosphorIconsRegular.books,
-          onTap: () => context.go('/library'),
+          onTap: () => context.go('/files'),
         ),
       ),
     );
@@ -492,7 +492,7 @@ class _CategoryFileCard extends StatelessWidget {
                           child: Text(
                             file.formatLabel,
                             style: TextStyle(
-                              fontFamily: 'JetBrains Mono',
+                              fontFamily: AppFonts.I.sans,
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                               color: colorForFileType(file.fileExtension),

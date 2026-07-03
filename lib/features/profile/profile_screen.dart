@@ -12,9 +12,11 @@ import '../../core/providers/pair_provider.dart';
 import '../spark/spark_senders_sheet.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/user_provider.dart';
+import 'widgets/profile_access_card.dart';
 import 'widgets/profile_buttons.dart';
 import 'widgets/profile_content_tabs.dart';
 import 'widgets/profile_highlights.dart';
+import 'widgets/profile_passport_header.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/blocks_provider.dart';
 import '../../core/providers/story_provider.dart';
@@ -184,15 +186,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
       ),
     );
-  }
-
-  /// «март 2025» → байлайн «С марта 2025» под именем (editorial).
-  String _memberSince(DateTime dt) {
-    const months = [
-      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-    ];
-    return '${months[dt.month - 1]} ${dt.year}';
   }
 
   String _resolveUsername() {
@@ -422,81 +415,65 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ],
             ),
           ),
-        // ── Hero: avatar + stats ──────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Avatar with story ring
-              GestureDetector(
-                onTap: hasStories
-                    ? () {
-                        final groupIndex = storyState.storyGroups
-                            .indexOf(userStoryGroup.first);
-                        Navigator.of(context).push(
-                          CupertinoPageRoute(
-                            builder: (_) => StoryViewerRoute(
-                              groups: storyState.storyGroups,
-                              initialGroupIndex: groupIndex,
-                              currentUserId: ref.read(authProvider).user?.id,
-                            ),
-                          ),
-                        );
-                      }
-                    : null,
-                child: Hero(
-                  tag: 'avatar-${user.username}',
-                  child: _buildAvatar(user,
-                      hasStories: hasStories,
-                      hasUnseenStories: hasUnseenStories),
-                ),
-              ),
-              const SizedBox(width: 18),
-              // Stats
-              Expanded(
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        ProfileStatItem(
-                            count: user.postsCount, label: 'ПОСТЫ'),
-                        Container(
-                            width: 0.5, height: 24, color: c.line),
-                        GestureDetector(
-                          onTap: () => context
-                              .push('/profile/${user.username}/followers'),
-                          child: ProfileStatItem(
-                              count: user.followersCount,
-                              label: 'ПОДПИСЧИКИ'),
-                        ),
-                        Container(
-                            width: 0.5, height: 24, color: c.line),
-                        GestureDetector(
-                          onTap: () => context
-                              .push('/profile/${user.username}/following'),
-                          child: ProfileStatItem(
-                              count: user.followingCount,
-                              label: 'ПОДПИСКИ'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    // Spark 🔥 — единый сигнал тепла (заменил монеты). Список
-                    // отправителей виден только владельцу профиля.
-                    Center(
-                      child: _SparkStatItem(
-                        count: user.sparksCount,
-                        isPaired: ref
-                            .watch(pairCheckProvider(user.id))
-                            .maybeWhen(data: (v) => v, orElse: () => false),
-                        onTap: isOwnProfile
-                            ? () => SparkSendersSheet.show(context)
-                            : null,
+        // ── Паспорт: фото + ИМЯ/ЛОГИН ────────────────────────────────
+        ProfilePassportHeader(
+          user: user,
+          hasStories: hasStories,
+          hasUnseenStories: hasUnseenStories,
+          onAvatarTap: hasStories
+              ? () {
+                  final groupIndex =
+                      storyState.storyGroups.indexOf(userStoryGroup.first);
+                  Navigator.of(context).push(
+                    CupertinoPageRoute(
+                      builder: (_) => StoryViewerRoute(
+                        groups: storyState.storyGroups,
+                        initialGroupIndex: groupIndex,
+                        currentUserId: ref.read(authProvider).user?.id,
                       ),
                     ),
-                  ],
+                  );
+                }
+              : null,
+        ),
+
+        // ── Статистика ────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  ProfileStatItem(count: user.postsCount, label: 'ПОСТЫ'),
+                  Container(width: 0.5, height: 24, color: c.line),
+                  GestureDetector(
+                    onTap: () => context
+                        .push('/profile/${user.username}/followers'),
+                    child: ProfileStatItem(
+                        count: user.followersCount, label: 'ПОДПИСЧИКИ'),
+                  ),
+                  Container(width: 0.5, height: 24, color: c.line),
+                  GestureDetector(
+                    onTap: () => context
+                        .push('/profile/${user.username}/following'),
+                    child: ProfileStatItem(
+                        count: user.followingCount, label: 'ПОДПИСКИ'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Spark 🔥 — единый сигнал тепла (заменил монеты). Список
+              // отправителей виден только владельцу профиля.
+              Center(
+                child: _SparkStatItem(
+                  count: user.sparksCount,
+                  isPaired: ref
+                      .watch(pairCheckProvider(user.id))
+                      .maybeWhen(data: (v) => v, orElse: () => false),
+                  onTap: isOwnProfile
+                      ? () => SparkSendersSheet.show(context)
+                      : null,
                 ),
               ),
             ],
@@ -504,37 +481,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         ),
 
         // ── Bio ────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                user.fullName.isNotEmpty ? user.fullName : user.username,
-                style: SeeUTypography.displayL,
+        if (user.bio != null && user.bio!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+            child: Text(
+              user.bio!,
+              style: SeeUTypography.body.copyWith(
+                color: c.ink2,
+                height: 1.4,
+                fontSize: 13,
               ),
-              const SizedBox(height: 4),
-              // Editorial-байлайн: ник как есть (без капса) + дата регистрации.
-              Text(
-                '@${user.username} · С ${_memberSince(user.createdAt)}',
-                style: SeeUTypography.kicker.copyWith(color: c.ink3),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (user.bio != null && user.bio!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  user.bio!,
-                  style: SeeUTypography.body.copyWith(
-                    color: c.ink2,
-                    height: 1.4,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
-        ),
 
         // ── Action buttons ─────────────────────────────────────────
         Padding(
@@ -543,6 +501,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ? ProfileOwnButtons(user: user)
               : ProfileOtherButtons(user: user),
         ),
+
+        // ── Круг общения (управление доступом) ──────────────────────
+        if (isOwnProfile)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+            child: ProfileAccessCard(),
+          ),
 
         // ── Highlights ─────────────────────────────────────────────
         if (profileState.highlights.isNotEmpty || isOwnProfile) ...[
@@ -555,87 +520,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           const SizedBox(height: 4),
         ],
       ],
-    );
-  }
-
-  Widget _buildAvatar(User user,
-      {bool hasStories = false, bool hasUnseenStories = false}) {
-    final c = context.seeuColors;
-    const double size = 84;
-    const double ringPad = 2.5;
-    const double innerBorder = 3;
-
-    Widget avatarImage = ClipOval(
-      child: user.avatarUrl != null
-          ? CachedNetworkImage(
-              imageUrl: user.avatarUrl!,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              placeholder: (_, __) =>
-                  Container(color: c.line),
-              errorWidget: (_, __, ___) => _avatarPlaceholder(user, size),
-            )
-          : _avatarPlaceholder(user, size),
-    );
-
-    // Inner white border ring
-    Widget withBorder = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: c.surface,
-        border: Border.all(
-          color: c.bg,
-          width: innerBorder,
-        ),
-      ),
-      child: ClipOval(child: avatarImage),
-    );
-
-    if (hasUnseenStories || hasStories) {
-      // Conic-gradient story ring via CustomPaint
-      return SizedBox(
-        width: size + ringPad * 2 + 2,
-        height: size + ringPad * 2 + 2,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CustomPaint(
-              size: Size(size + ringPad * 2 + 2, size + ringPad * 2 + 2),
-              painter: ProfileStoryRingPainter(seen: !hasUnseenStories),
-            ),
-            withBorder,
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: c.line, width: 1),
-      ),
-      child: ClipOval(child: avatarImage),
-    );
-  }
-
-  Widget _avatarPlaceholder(User user, double size) {
-    final c = context.seeuColors;
-    return Container(
-      width: size,
-      height: size,
-      color: c.ink3.withValues(alpha: 0.3),
-      child: Center(
-        child: Text(
-          user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
-          style: SeeUTypography.displayL
-              .copyWith(fontWeight: FontWeight.w600, color: Colors.white),
-        ),
-      ),
     );
   }
 

@@ -383,7 +383,7 @@ class _TextInputRow extends StatelessWidget {
                   filled: true,
                   fillColor: c.surface2,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(SeeURadii.small),
                     borderSide: BorderSide.none,
                   ),
                   contentPadding: const EdgeInsets.symmetric(

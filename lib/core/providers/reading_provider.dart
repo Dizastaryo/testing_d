@@ -34,10 +34,11 @@ class BookmarksNotifier extends StateNotifier<AsyncValue<List<FileBookmark>>> {
     try {
       final resp = await _dio.get(ApiEndpoints.fileBookmarks(fileId));
       final items = resp.data?['data']?['items'] as List? ?? [];
+      if (!mounted) return;
       state = AsyncValue.data(
           items.map((e) => FileBookmark.fromJson(e as Map<String, dynamic>)).toList());
     } catch (e, s) {
-      state = AsyncValue.error(e, s);
+      if (mounted) state = AsyncValue.error(e, s);
     }
   }
 
@@ -59,8 +60,10 @@ class BookmarksNotifier extends StateNotifier<AsyncValue<List<FileBookmark>>> {
   Future<String?> deleteBookmark(String bookmarkId) async {
     try {
       await _dio.delete(ApiEndpoints.bookmarkById(bookmarkId));
-      state = state.whenData(
-          (list) => list.where((b) => b.id != bookmarkId).toList());
+      if (mounted) {
+        state = state.whenData(
+            (list) => list.where((b) => b.id != bookmarkId).toList());
+      }
       return null;
     } catch (e) {
       return 'Не удалось удалить закладку';
@@ -91,13 +94,14 @@ class ReadingStatusNotifier extends StateNotifier<String?> {
   Future<void> _load() async {
     try {
       final resp = await _dio.get(ApiEndpoints.fileReadingStatus(fileId));
+      if (!mounted) return;
       if (resp.statusCode == 204) {
         state = null;
         return;
       }
       state = resp.data?['data']?['status'] as String?;
     } catch (_) {
-      state = null;
+      if (mounted) state = null;
     }
   }
 
@@ -115,7 +119,7 @@ class ReadingStatusNotifier extends StateNotifier<String?> {
             data: {'status': newStatus});
       }
     } catch (_) {
-      state = prev;
+      if (mounted) state = prev;
     } finally {
       _loading = false;
     }
@@ -211,18 +215,26 @@ class FileNoteNotifier extends StateNotifier<String> {
   }
 
   Future<void> save(String content) async {
+    final prev = state;
     state = content;
     try {
       await _dio.put(ApiEndpoints.fileNotes(_fileId),
           data: {'content': content});
-    } catch (_) {}
+    } catch (_) {
+      // Server rejected/failed the save — roll back so the UI doesn't keep
+      // showing an unsaved note as if it had persisted.
+      if (mounted) state = prev;
+    }
   }
 
   Future<void> delete() async {
+    final prev = state;
     state = '';
     try {
       await _dio.delete(ApiEndpoints.fileNotes(_fileId));
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) state = prev;
+    }
   }
 
   bool get isLoaded => _loaded;

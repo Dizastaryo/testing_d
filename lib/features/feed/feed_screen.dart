@@ -213,9 +213,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(),
                           slivers: [
-                            // M1: журнальная pinned-шапка — mono-kicker
-                            // рубрика вместо лого/wordmark «SeeU»; матовое
-                            // стекло (blur 28) над лентой с hairline снизу.
+                            // Матовая шапка (blur 28) в самом верху ленты —
+                            // не закреплена, уезжает вверх со скроллом.
                             _buildGlassHeader(context, notifState),
                             const SliverToBoxAdapter(child: StoriesRow()),
                             // FEED-3: banner новых постов от подписок.
@@ -315,7 +314,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     );
   }
 
-  /// Pinned матовая шапка ленты (blur 28, светлый градиент, hairline снизу).
+  /// Матовая шапка ленты (blur 28, светлый градиент, hairline снизу). Не
+  /// закреплена — уезжает вверх со скроллом, видна только у начала ленты.
   /// Слева — стеклянная кнопка «+» (открывает камеру), по центру — серифный
   /// wordmark «SeeU» с фирменным градиентом, справа — стеклянные кнопки чата и
   /// уведомлений с их staggered-входом.
@@ -332,9 +332,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       child: Text(
         'SeeU',
         style: SeeUTypography.displayM.copyWith(
+          fontFamily: AppFonts.I.brand,
           color: Colors.white,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -396,7 +396,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     );
 
     return SliverPersistentHeader(
-      pinned: true,
+      // Не pinned: шапка живёт в самом верху ленты и уезжает вверх вместе с
+      // контентом при скролле, а не залипает поверх постов. Видна только когда
+      // лента прокручена к началу.
+      pinned: false,
       delegate: _FeedHeaderDelegate(
         extent: topInset + contentHeight,
         child: ClipRect(
@@ -640,7 +643,7 @@ class _HeaderIconButton extends StatelessWidget {
                   child: Text(
                     badge > 9 ? '9+' : badge.toString(),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: AppFonts.I.sans,
                       color: Colors.white,
                       fontSize: 9,
                       fontWeight: FontWeight.w800,

@@ -158,7 +158,7 @@ class ProfileFilesTab extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: SeeUColors.accent.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(SeeURadii.small),
                   border: Border.all(
                       color: SeeUColors.accent.withValues(alpha: 0.18)),
                 ),

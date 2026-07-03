@@ -212,7 +212,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
                   // Стеклянный pill: реальный blur подложки + вертикальный
                   // градиент и тонкий светлый бордюр — читается на любом фоне.
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
                     child: BackdropFilter(
                       filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                       child: Container(
@@ -227,7 +227,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
                               Colors.black.withValues(alpha: 0.28),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(SeeURadii.pill),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.18),
                             width: 0.8,

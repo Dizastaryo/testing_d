@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../core/design/tokens.dart';
+
 /// PROFILE-5: голубая verified-галочка для подтверждённых аккаунтов.
 /// Renders inline (вписывается в row с username). Размер настраивается через
 /// `size`, дефолт 14 — для compact-контекстов (chat-tile, comment-row).
@@ -17,7 +19,7 @@ class VerifiedBadge extends StatelessWidget {
         width: size,
         height: size,
         decoration: const BoxDecoration(
-          color: Color(0xFF1DA1F2),
+          color: SeeUColors.info,
           shape: BoxShape.circle,
         ),
         child: Icon(

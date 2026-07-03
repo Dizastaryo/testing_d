@@ -124,7 +124,7 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
         ApiEndpoints.audioTracksUpload,
         data: formData,
         onSendProgress: (sent, total) {
-          if (total > 0) {
+          if (total > 0 && mounted) {
             state = state.copyWith(isUploading: true, progress: sent / total);
           }
         },
@@ -135,16 +135,20 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
       );
 
       final track = AudioTrack.fromJson(resp.data['data']);
-      state = AudioUploadState(isUploading: false, progress: 1.0, uploaded: track);
+      if (mounted) {
+        state = AudioUploadState(isUploading: false, progress: 1.0, uploaded: track);
+      }
       return track;
     } on DioException catch (e) {
       final raw = e.response?.data?['error']?.toString() ?? e.message ?? '';
       debugPrint('[AudioUpload] DioException: $raw');
-      state = AudioUploadState(error: _friendlyError(raw, e));
+      if (mounted) state = AudioUploadState(error: _friendlyError(raw, e));
       return null;
     } catch (e) {
       debugPrint('[AudioUpload] error: $e');
-      state = AudioUploadState(error: 'Не удалось загрузить трек. Проверьте файл и попробуйте ещё раз.');
+      if (mounted) {
+        state = AudioUploadState(error: 'Не удалось загрузить трек. Проверьте файл и попробуйте ещё раз.');
+      }
       return null;
     }
   }

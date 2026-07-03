@@ -85,6 +85,50 @@ Future<bool> showSeeUConfirm(
   return result ?? false;
 }
 
+/// Пилюля-действие для кастомных стеклянных шитов (напр. диалог с полем
+/// ввода), где `showSeeUConfirm` не подходит из-за отсутствия произвольного
+/// контента. `filled: true` — сплошная заливка [color] (по умолчанию accent);
+/// иначе — outline с текстом [color] (по умолчанию — обычный ink).
+class SeeUDialogAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+  final bool filled;
+
+  const SeeUDialogAction({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.color,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final Color fg = filled ? Colors.white : (color ?? c.ink);
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: filled ? (color ?? SeeUColors.accent) : Colors.transparent,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: filled ? null : Border.all(color: c.line, width: 1),
+        ),
+        child: Text(
+          label,
+          style: SeeUTypography.subtitle.copyWith(
+            color: fg,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ConfirmButton extends StatelessWidget {
   final String label;
   final bool filled;

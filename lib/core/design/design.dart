@@ -14,6 +14,7 @@ export 'seeu_heart_burst.dart';
 export 'seeu_like_button.dart';
 export 'seeu_bento.dart';
 export 'swipe_to_dismiss.dart';
+export 'seeu_back_button.dart';
 export 'seeu_glass_bar.dart';
 export 'seeu_glass_circle_button.dart';
 export 'seeu_section_header.dart';

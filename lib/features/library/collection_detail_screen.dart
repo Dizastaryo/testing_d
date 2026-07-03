@@ -162,7 +162,7 @@ class _FileRow extends StatelessWidget {
                 child: Text(
                   file.formatLabel,
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 7,
                     fontWeight: FontWeight.w700,
                     color: color,

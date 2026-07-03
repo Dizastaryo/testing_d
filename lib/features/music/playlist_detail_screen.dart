@@ -7,6 +7,8 @@ import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/providers/playlist_provider.dart';
+import '../../core/services/logger.dart';
+import '../camera/widgets/camera_ui_kit.dart' show BrandedLoader;
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   final String playlistId;
@@ -153,16 +155,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               orElse: () => const SizedBox.shrink(),
             ),
-            leading: Tappable.scaled(
-              onTap: () => Navigator.of(context).pop(),
-              scaleFactor: 0.9,
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child:
-                    Icon(PhosphorIcons.caretLeft(), color: c.ink, size: 22),
-              ),
-            ),
+            leading: const SeeUBackButton(),
             actions: [
               async.maybeWhen(
                 data: (d) => IconButton(
@@ -175,14 +168,15 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
           ),
           Expanded(
             child: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('Ошибка: $e',
-                style: SeeUTypography.body.copyWith(color: c.ink2)),
-          ),
-        ),
+        loading: () => const Center(child: BrandedLoader(onDark: false)),
+        error: (e, _) {
+          appLog.error('playlistDetailProvider failed', e);
+          return SeeUErrorState(
+            title: 'Не удалось загрузить плейлист',
+            onRetry: () =>
+                ref.read(playlistDetailProvider(widget.playlistId).notifier).load(),
+          );
+        },
         data: (d) => Column(
           children: [
             Expanded(

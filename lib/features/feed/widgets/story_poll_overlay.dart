@@ -39,7 +39,12 @@ class _StoryPollOverlayState extends ConsumerState<StoryPollOverlay> {
       final pollJson = r.data is Map && r.data['data'] is Map
           ? (r.data['data']['poll'] as Map<String, dynamic>?) : null;
       if (pollJson != null) widget.onVoted(StoryPoll.fromJson(pollJson));
-    } catch (_) {} finally {
+    } catch (_) {
+      if (mounted) {
+        showSeeUSnackBar(context, 'Не удалось проголосовать',
+            tone: SeeUTone.danger);
+      }
+    } finally {
       if (mounted) setState(() => _voting = false);
     }
   }

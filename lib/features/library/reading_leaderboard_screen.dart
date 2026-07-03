@@ -202,11 +202,11 @@ class _LeaderboardEntry extends StatelessWidget {
     final streakDays = entry['streak_days'] as int? ?? 0;
     final userId = entry['user_id'] as String? ?? '';
 
-    final isTop3 = rank <= 3;
+    final isTop3 = rank >= 1 && rank <= 3;
     final medalColors = [
-      const Color(0xFFFFD700), // gold
-      const Color(0xFFC0C0C0), // silver
-      const Color(0xFFCD7F32), // bronze
+      SeeUColors.medalGold, // gold
+      SeeUColors.medalSilver, // silver
+      SeeUColors.medalBronze, // bronze
     ];
 
     return GestureDetector(
@@ -239,7 +239,7 @@ class _LeaderboardEntry extends StatelessWidget {
                   : Text(
                       '#$rank',
                       style: TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: AppFonts.I.sans,
                         fontSize: 12,
                         color: c.ink4,
                         fontWeight: FontWeight.w600,
@@ -303,7 +303,7 @@ class _LeaderboardEntry extends StatelessWidget {
                           ? '$streakDays'
                           : '$booksDone',
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: isTop3 ? medalColors[rank - 1] : c.ink,

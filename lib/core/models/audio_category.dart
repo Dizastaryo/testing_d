@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/tokens.dart';
+
 class AudioSubcategoryModel {
   final String id;
   final String titleRu;
@@ -78,11 +80,11 @@ const _iconMap = <String, IconData>{
 };
 
 const _colorMap = <String, Color>{
-  'music': Color(0xFFFF5A3C),
+  'music': SeeUColors.accent,
   'memes': Color(0xFFFF8C42),
   'audiobooks': Color(0xFF4A90D9),
   'podcasts': Color(0xFF7B5EA7),
-  'education': Color(0xFF2FA84F),
+  'education': SeeUColors.success,
   'meditation': Color(0xFF58B4AE),
   'news': Color(0xFF3A7BD5),
   'instrumental': Color(0xFFE67E22),

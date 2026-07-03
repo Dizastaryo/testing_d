@@ -217,7 +217,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onLongPress: () => _showIpDialog(context),
                   child: Text(
                     'SeeU',
-                    style: SeeUTypography.displayXL,
+                    style: SeeUTypography.displayXL
+                        .copyWith(fontFamily: AppFonts.I.brand, letterSpacing: 0),
                   ),
                 ),
               ),
@@ -310,14 +311,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Phone input
       Row(
         children: [
-          // Country code
+          // Country code — тот же fill/радиус, что у SeeUInput рядом (единый вид).
           Container(
-            height: 56,
+            height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: c.surface,
-              borderRadius: BorderRadius.circular(SeeURadii.medium),
-              border: Border.all(color: c.line),
+              color: c.surface2,
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Center(
               child: Text(

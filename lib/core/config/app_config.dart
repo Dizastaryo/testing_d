@@ -15,7 +15,6 @@
 ///
 ///   flutter run \                                    # для другого IP / прода
 ///       --dart-define=API_BASE_URL=https://api.seeu.kz/api/v1 \
-///       --dart-define=VIDEO_BASE_URL=https://video.seeu.kz/api/v1 \
 ///       --dart-define=LIBRARY_BASE_URL=https://library.seeu.kz/api/v1
 class AppConfig {
   AppConfig._();
@@ -28,11 +27,6 @@ class AppConfig {
   static const String r2PublicUrl = String.fromEnvironment(
     'R2_PUBLIC_URL',
     defaultValue: 'https://pub-5eaec9d0e404430aae5675661d189e8f.r2.dev',
-  );
-
-  static const String videoBaseUrl = String.fromEnvironment(
-    'VIDEO_BASE_URL',
-    defaultValue: 'http://172.20.10.3:8002/api/v1',
   );
 
   static const String libraryBaseUrl = String.fromEnvironment(
@@ -95,7 +89,6 @@ class AppConfig {
   /// Strips `/api/v1` from the base URL so callers can build absolute media URLs
   /// from server-relative paths like `/uploads/2026/05/04/foo.png`.
   static String get apiOrigin => _stripApiPrefix(apiBaseUrl);
-  static String get videoOrigin => _stripApiPrefix(videoBaseUrl);
   static String get libraryOrigin => _stripApiPrefix(libraryBaseUrl);
 
   static String _stripApiPrefix(String url) {

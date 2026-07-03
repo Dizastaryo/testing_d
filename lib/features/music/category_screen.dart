@@ -115,7 +115,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: RefreshIndicator(
+      body: SeeURadarRefresh(
         onRefresh: () async => ref.invalidate(audioCategoryTracksProvider(_params)),
         child: CustomScrollView(
           slivers: [
@@ -155,6 +155,11 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                         icon: PhosphorIconsRegular.musicNote,
                         title: 'Пока здесь нет треков',
                         subtitle: 'Загрузите первый трек в эту категорию',
+                        action: SeeUStateAction(
+                          label: 'Загрузить трек',
+                          icon: PhosphorIconsRegular.uploadSimple,
+                          onTap: () => context.push('/music/upload'),
+                        ),
                       ),
                     ),
                   );
@@ -195,10 +200,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         children: [
           Row(
             children: [
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: Icon(PhosphorIconsRegular.arrowLeft, color: c.ink),
-              ),
+              const SeeUBackButton(),
               const Spacer(),
               // Search access — navigates to the shared MusicSearchScreen.
               // Placed inside _buildHeader (a normal box widget) so it is
@@ -225,7 +227,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Категория'.toUpperCase(),
+            'КАТЕГОРИЯ',
             style: SeeUTypography.kicker.copyWith(color: c.ink3),
           ),
           const SizedBox(height: 4),

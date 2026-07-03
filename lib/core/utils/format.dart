@@ -1,5 +1,7 @@
 import 'dart:ui' show Color;
 
+import '../design/tokens.dart';
+
 /// Human-readable file size.
 /// 1024 → "1.0 КБ", 1048576 → "1.0 МБ"
 String formatBytes(int bytes) {
@@ -31,7 +33,7 @@ Color colorForFileType(String ext) {
     case 'fb2':
       return const Color(0xFF00ACC1); // cyan
     case 'docx':
-      return const Color(0xFF1E88E5); // blue
+      return SeeUColors.info; // blue
     case 'pptx':
       return const Color(0xFFFF7043); // deep orange
     case 'txt':

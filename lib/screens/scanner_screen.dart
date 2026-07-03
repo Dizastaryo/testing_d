@@ -128,9 +128,19 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
   List<ScannerResolvedEntry> get _sortedDevices {
     if (_cachedVersion == _devicesMapVersion) return _cachedSortedDevices;
     final entries = <ScannerResolvedEntry>[];
+    // Real signed-in user's device ids (NOT the legacy AccountSession mock
+    // that _resolver.resolve() below still compares against) — used to make
+    // sure our own bracelet never lists itself as "someone nearby".
+    final me = ref.read(authProvider).user;
+    final myPublicId = me?.devicePublicId?.toUpperCase() ?? '';
+    final myPrivateId = me?.devicePrivateId?.toUpperCase() ?? '';
     for (final d in _devicesMap.values) {
       final resolved = _resolver.resolve(d);
-      if (resolved.isMyChip) continue;
+      final packetId = d.seeuPacket?.idHex.toUpperCase() ?? '';
+      final isMine = packetId.isNotEmpty &&
+          ((myPublicId.isNotEmpty && packetId == myPublicId) ||
+              (myPrivateId.isNotEmpty && packetId == myPrivateId));
+      if (isMine) continue;
       if (resolved.relationship == Relationship.unknown &&
           resolved.hasValidPacket &&
           resolved.mode == 0xFF) {

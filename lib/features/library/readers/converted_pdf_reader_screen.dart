@@ -281,8 +281,8 @@ class _ConvertedPdfReaderScreenState
                   ),
                   child: Text(
                     widget.format.toUpperCase(),
-                    style: const TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                    style: TextStyle(
+                      fontFamily: AppFonts.I.sans,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: SeeUColors.accent,
@@ -295,7 +295,7 @@ class _ConvertedPdfReaderScreenState
                   style: TextStyle(
                     fontSize: 12,
                     color: c.ink3,
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                   ),
                 ),
               ],
@@ -323,7 +323,7 @@ class _ConvertedPdfReaderScreenState
                           style: TextStyle(
                             fontSize: 12,
                             color: c.ink3,
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: AppFonts.I.sans,
                           ),
                         ),
                       ],

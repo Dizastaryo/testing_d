@@ -140,6 +140,64 @@ class _LayerItem extends StatelessWidget {
     required this.onMoveDown,
   });
 
+  void _showLayerActionsSheet(BuildContext context) {
+    showSeeUBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final sc = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canMoveUp)
+                ListTile(
+                  leading: Icon(PhosphorIconsRegular.arrowUp, color: sc.ink2),
+                  title: Text('Переместить выше',
+                      style: SeeUTypography.body.copyWith(color: sc.ink)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    onMoveUp();
+                  },
+                ),
+              if (canMoveDown)
+                ListTile(
+                  leading:
+                      Icon(PhosphorIconsRegular.arrowDown, color: sc.ink2),
+                  title: Text('Переместить ниже',
+                      style: SeeUTypography.body.copyWith(color: sc.ink)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    onMoveDown();
+                  },
+                ),
+              ListTile(
+                leading: Icon(PhosphorIconsRegular.copySimple, color: sc.ink2),
+                title: Text('Дублировать',
+                    style: SeeUTypography.body.copyWith(color: sc.ink)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDuplicate();
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIconsRegular.trash,
+                    color: SeeUColors.danger),
+                title: Text('Удалить',
+                    style:
+                        SeeUTypography.body.copyWith(color: SeeUColors.danger)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDelete();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final preview = layer.text.isEmpty
@@ -210,35 +268,16 @@ class _LayerItem extends StatelessWidget {
             ),
 
             // ── Меню ─────────────────────────────────────────
-            PopupMenuButton<String>(
-              icon: Icon(
-                PhosphorIconsRegular.dotsThreeVertical,
-                color: c.ink3,
-                size: 18,
-              ),
-              padding: EdgeInsets.zero,
-              onSelected: (value) {
-                if (value == 'up') {
-                  onMoveUp();
-                } else if (value == 'down') {
-                  onMoveDown();
-                } else if (value == 'dup') {
-                  onDuplicate();
-                } else if (value == 'del') {
-                  onDelete();
-                }
-              },
-              itemBuilder: (ctx) => [
-                if (canMoveUp)
-                  const PopupMenuItem(value: 'up', child: Text('Переместить выше')),
-                if (canMoveDown)
-                  const PopupMenuItem(value: 'down', child: Text('Переместить ниже')),
-                const PopupMenuItem(value: 'dup', child: Text('Дублировать')),
-                PopupMenuItem(
-                  value: 'del',
-                  child: Text('Удалить', style: TextStyle(color: SeeUColors.danger)),
+            Tappable(
+              onTap: () => _showLayerActionsSheet(context),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  PhosphorIconsRegular.dotsThreeVertical,
+                  color: c.ink3,
+                  size: 18,
                 ),
-              ],
+              ),
             ),
           ],
         ),

@@ -864,7 +864,7 @@ class _ChatTile extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 5),
                     decoration: BoxDecoration(
                       color: SeeUColors.accent,
-                      borderRadius: BorderRadius.circular(99),
+                      borderRadius: BorderRadius.circular(SeeURadii.pill),
                     ),
                     alignment: Alignment.center,
                     child: Text(
@@ -1734,7 +1734,7 @@ class _RoomCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
                             color: SeeUColors.accent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(SeeURadii.pill),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,

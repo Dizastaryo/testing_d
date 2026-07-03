@@ -154,7 +154,7 @@ class _BookmarkCard extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFFF5A3C), Color(0xFFFF8A65)],
+                  colors: [SeeUColors.accent, Color(0xFFFF8A65)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -163,11 +163,11 @@ class _BookmarkCard extends StatelessWidget {
               child: Center(
                 child: Text(
                   '$index',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: AppFonts.I.sans,
                   ),
                 ),
               ),

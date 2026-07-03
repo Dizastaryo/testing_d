@@ -738,7 +738,7 @@ class _GroupCallScreenState extends State<GroupCallScreen>
                     horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(99),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
                 ),
                 child: Text(
                   name,

@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/config/app_config.dart';
@@ -52,7 +53,7 @@ class AdminAudioPage extends ConsumerWidget {
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(PhosphorIconsRegular.arrowClockwise),
                   onPressed: () => ref.invalidate(_audioListProvider),
                 ),
               ],
@@ -134,6 +135,7 @@ class _AudioRowState extends ConsumerState<_AudioRow> {
     _player ??= AudioPlayer();
     if (_playing) {
       await _player!.pause();
+      if (!mounted) return;
       setState(() => _playing = false);
       return;
     }
@@ -142,6 +144,7 @@ class _AudioRowState extends ConsumerState<_AudioRow> {
         await _player!.setUrl(url);
       }
       await _player!.play();
+      if (!mounted) return;
       setState(() => _playing = true);
       _player!.playerStateStream.listen((s) {
         if (s.processingState == ProcessingState.completed) {
@@ -229,7 +232,7 @@ class _AudioRowState extends ConsumerState<_AudioRow> {
               child: cover.isEmpty
                   ? Container(
                       color: Colors.grey.shade200,
-                      child: Icon(Icons.music_note,
+                      child: Icon(PhosphorIconsRegular.musicNote,
                           color: Colors.grey.shade500),
                     )
                   : Image.network(
@@ -279,8 +282,8 @@ class _AudioRowState extends ConsumerState<_AudioRow> {
           if (audio.isNotEmpty)
             IconButton(
               icon: Icon(_playing
-                  ? Icons.pause_circle_filled
-                  : Icons.play_circle_fill),
+                  ? PhosphorIconsFill.pauseCircle
+                  : PhosphorIconsFill.playCircle),
               iconSize: 32,
               color: const Color(0xFFFF5A3C),
               onPressed: () => _togglePlay(audio),

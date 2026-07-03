@@ -103,47 +103,64 @@ class CollectionsScreen extends ConsumerWidget {
                 ),
               ),
               actions: [
-                PopupMenuButton<_CollectionsSort>(
-                  icon: Icon(PhosphorIconsRegular.funnel,
-                      size: 20, color: c.ink3),
-                  tooltip: 'Сортировка',
-                  onSelected: (v) =>
-                      ref.read(_collectionsSortProvider.notifier).state = v,
-                  itemBuilder: (_) => [
-                    for (final (s, label) in [
-                      (_CollectionsSort.updated, 'Недавно изменённые'),
-                      (_CollectionsSort.name, 'По названию'),
-                      (_CollectionsSort.size, 'Больше файлов'),
-                    ])
-                      PopupMenuItem(
-                        value: s,
-                        child: Row(
-                          children: [
-                            if (s == sort)
-                              const Icon(PhosphorIconsBold.checkCircle,
-                                  size: 14, color: SeeUColors.accent)
-                            else
-                              const SizedBox(width: 14),
-                            const SizedBox(width: 8),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontWeight: s == sort
-                                    ? FontWeight.w700
-                                    : FontWeight.w400,
-                                color: s == sort ? SeeUColors.accent : c.ink,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                Tappable(
+                  onTap: () => _showSortSheet(context, ref, sort),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Icon(PhosphorIconsRegular.funnel,
+                        size: 20, color: c.ink3),
+                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  void _showSortSheet(
+      BuildContext context, WidgetRef ref, _CollectionsSort current) {
+    showSeeUBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (s, label) in [
+                (_CollectionsSort.updated, 'Недавно изменённые'),
+                (_CollectionsSort.name, 'По названию'),
+                (_CollectionsSort.size, 'Больше файлов'),
+              ])
+                ListTile(
+                  leading: Icon(
+                    s == current
+                        ? PhosphorIconsBold.checkCircle
+                        : PhosphorIconsRegular.circle,
+                    size: 20,
+                    color: s == current ? SeeUColors.accent : c.ink3,
+                  ),
+                  title: Text(
+                    label,
+                    style: SeeUTypography.body.copyWith(
+                      fontWeight:
+                          s == current ? FontWeight.w700 : FontWeight.w400,
+                      color: s == current ? SeeUColors.accent : c.ink,
+                    ),
+                  ),
+                  onTap: () {
+                    ref.read(_collectionsSortProvider.notifier).state = s;
+                    Navigator.pop(ctx);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 

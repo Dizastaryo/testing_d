@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,34 +11,6 @@ import '../../../core/providers/blocks_provider.dart';
 import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/user_provider.dart';
 
-class ProfileStoryRingPainter extends CustomPainter {
-  final bool seen;
-  const ProfileStoryRingPainter({required this.seen});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final Paint paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..shader = seen
-          ? LinearGradient(
-              colors: [SeeUColors.borderSubtle, SeeUColors.borderSubtle],
-            ).createShader(rect)
-          : const SweepGradient(
-              colors: [
-                SeeUColors.amber, SeeUColors.accent,
-                SeeUColors.plum, SeeUColors.amber,
-              ],
-              stops: [0.0, 0.33, 0.66, 1.0],
-            ).createShader(rect);
-    canvas.drawOval(
-      Rect.fromLTWH(1.25, 1.25, size.width - 2.5, size.height - 2.5), paint);
-  }
-
-  @override
-  bool shouldRepaint(ProfileStoryRingPainter old) => old.seen != seen;
-}
 
 class ProfileHeaderIconButton extends StatelessWidget {
   final IconData icon;
@@ -124,30 +94,20 @@ class ProfileActionButton extends StatelessWidget {
       );
     }
 
-    // Secondary — матовое стекло (blur 18, pill), плавает над контентом.
+    // Secondary — тёплая сплошная заливка (surface2) с акцентным бордюром.
+    // Кнопка стоит на плоском фоне экрана (не над медиа) — стекло здесь не
+    // нужно и на светлом фоне читалось как серая пилюля вместо брендовой.
     return Tappable.scaled(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(SeeURadii.pill),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: 0.14),
-                  Colors.black.withValues(alpha: 0.05),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(SeeURadii.pill),
-              border: Border.all(color: c.line, width: 0.8),
-            ),
-            child: Center(child: label0),
-          ),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: c.surface2,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(
+              color: SeeUColors.accent.withValues(alpha: 0.22), width: 1),
         ),
+        child: Center(child: label0),
       ),
     );
   }

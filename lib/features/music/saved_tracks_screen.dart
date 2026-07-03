@@ -50,16 +50,7 @@ class _SavedTracksScreenState extends ConsumerState<SavedTracksScreen> {
           SeeUGlassBar(
             titleText: 'Сохранённые треки',
             kicker: 'МУЗЫКА',
-            leading: Tappable.scaled(
-              onTap: () => context.pop(),
-              scaleFactor: 0.9,
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child:
-                    Icon(PhosphorIcons.caretLeft(), color: c.ink, size: 22),
-              ),
-            ),
+            leading: const SeeUBackButton(),
           ),
           Expanded(
             child: tracksAsync.when(
@@ -80,7 +71,7 @@ class _SavedTracksScreenState extends ConsumerState<SavedTracksScreen> {
             children: [
               _buildSearchBar(context),
               Expanded(
-                child: RefreshIndicator(
+                child: SeeURadarRefresh(
                   onRefresh: () async => ref.invalidate(savedTracksProvider),
                   child: visible.isEmpty
                       ? ListView(

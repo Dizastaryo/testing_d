@@ -168,7 +168,7 @@ class _SborChatScreenState extends ConsumerState<SborChatScreen>
                     ? [meta.color, SeeUColors.amber]
                     : [SeeUColors.accent, SeeUColors.amber],
               ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SeeURadii.small),
             ),
             child: Icon(
               meta?.icon ?? PhosphorIcons.usersThree(),
@@ -454,7 +454,7 @@ class _MessagesTabState extends ConsumerState<_MessagesTab> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
                   color: SeeUColors.accent,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
                 ),
                 child: const Center(
                   child: Text(
@@ -498,7 +498,7 @@ class _MessagesTabState extends ConsumerState<_MessagesTab> {
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: c.surface,
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(SeeURadii.medium),
                 border: Border.all(color: c.line),
               ),
               child: TextField(
@@ -952,6 +952,7 @@ class _MembersTabState extends ConsumerState<_MembersTab> {
           : data is List
               ? data
               : <dynamic>[];
+      if (!mounted) return;
       setState(() {
         _members = list
             .map((e) => _ChatMember.fromJson(e as Map<String, dynamic>))
@@ -981,7 +982,7 @@ class _MembersTabState extends ConsumerState<_MembersTab> {
             Container(
               decoration: BoxDecoration(
                 color: c.surface,
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(SeeURadii.medium),
                 border: Border.all(color: c.line, width: 0.5),
               ),
               child: Column(
@@ -1012,7 +1013,7 @@ class _MembersTabState extends ConsumerState<_MembersTab> {
             Container(
               decoration: BoxDecoration(
                 color: c.surface,
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(SeeURadii.medium),
                 border: Border.all(color: c.line, width: 0.5),
               ),
               child: Column(
@@ -1066,7 +1067,7 @@ class _MembersTabState extends ConsumerState<_MembersTab> {
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
                                 color: SeeUColors.accentSoft,
-                                borderRadius: BorderRadius.circular(999),
+                                borderRadius: BorderRadius.circular(SeeURadii.pill),
                               ),
                               child: const Text(
                                 'организатор',
@@ -1298,7 +1299,7 @@ class _VoiceMemberRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: SeeUColors.accentSoft,
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(SeeURadii.pill),
               ),
               child: Text(
                 '★ ${p.role}',

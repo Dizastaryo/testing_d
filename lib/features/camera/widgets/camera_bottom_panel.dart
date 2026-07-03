@@ -4,10 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/design/tokens.dart';
-import '../decorations/decoration_item.dart';
-import '../decorations/decoration_picker.dart';
 import '../presets/camera_preset.dart';
-import '../presets/preset_picker_bar.dart';
 import 'camera_record_button.dart';
 
 // Unified glass constants (keep in sync with camera_top_bar.dart)
@@ -41,13 +38,13 @@ extension CameraModeExt on CameraMode {
 }
 
 /// Нижняя область камеры — glassmorphism панель с controls.
+/// Пикеры эффектов/масок живут НЕ здесь, а поверх видоискателя
+/// (см. camera_screen.dart) — панель держит постоянную высоту,
+/// рамка кадра не двигается при их открытии.
 class CameraBottomPanel extends StatelessWidget {
   final bool isRecording;
   final double totalPct;
   final double totalWithCurrent;
-  final bool showDecorationPicker;
-  final String? selectedDecorationId;
-  final Set<String> savedDecorationIds;
   final Uint8List? galleryThumbnailBytes;
   final bool hasSegments;
   final bool showPresetPicker;
@@ -57,21 +54,14 @@ class CameraBottomPanel extends StatelessWidget {
   final VoidCallback onTakePicture;
   final VoidCallback onRecordStart;
   final VoidCallback onRecordStop;
-  final ValueChanged<DecorationItem?> onDecorationChanged;
-  final ValueChanged<String> onToggleSaveDecoration;
-  final VoidCallback onToggleDecorationPicker;
   final VoidCallback onTogglePresets;
   final VoidCallback onUndo;
-  final ValueChanged<CameraPreset> onPresetSelected;
 
   const CameraBottomPanel({
     super.key,
     required this.isRecording,
     required this.totalPct,
     required this.totalWithCurrent,
-    required this.showDecorationPicker,
-    required this.selectedDecorationId,
-    required this.savedDecorationIds,
     required this.galleryThumbnailBytes,
     required this.hasSegments,
     required this.showPresetPicker,
@@ -80,12 +70,8 @@ class CameraBottomPanel extends StatelessWidget {
     required this.onTakePicture,
     required this.onRecordStart,
     required this.onRecordStop,
-    required this.onDecorationChanged,
-    required this.onToggleSaveDecoration,
-    required this.onToggleDecorationPicker,
     required this.onTogglePresets,
     required this.onUndo,
-    required this.onPresetSelected,
   });
 
   @override
@@ -125,27 +111,6 @@ class CameraBottomPanel extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Preset / Mask picker strips (animated collapse).
-                      _GlassStrip(
-                        visible: showPresetPicker,
-                        child: PresetPickerBar(
-                          activePreset: activePreset,
-                          onPresetSelected: onPresetSelected,
-                        ),
-                      ),
-                      _GlassStrip(
-                        visible: showDecorationPicker,
-                        child: DecorationPicker(
-                          allItems: DecorationCatalog.all
-                              .where((i) => i.category == DecorationCategory.mask)
-                              .toList(),
-                          savedIds: savedDecorationIds,
-                          selectedId: selectedDecorationId,
-                          onChanged: onDecorationChanged,
-                          onToggleSave: onToggleSaveDecoration,
-                        ),
-                      ),
-
                       const SizedBox(height: 4),
 
                       // REC timer pill (hidden when not recording).
@@ -180,61 +145,6 @@ class CameraBottomPanel extends StatelessWidget {
             ),
           ),
         ),
-    );
-  }
-}
-
-// ── Glass strip wrapper for pickers ──────────────────────────────────────────
-
-class _GlassStrip extends StatelessWidget {
-  final bool visible;
-  final Widget child;
-  const _GlassStrip({required this.visible, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRect(
-      child: AnimatedAlign(
-        alignment: Alignment.topCenter,
-        heightFactor: visible ? 1.0 : 0.0,
-        duration: SeeUMotion.normal,
-        curve: SeeUMotion.smooth,
-        child: AnimatedOpacity(
-          opacity: visible ? 1.0 : 0.0,
-          duration: SeeUMotion.quick,
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(22),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(
-                    sigmaX: _kPanelBlur, sigmaY: _kPanelBlur),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
-                  decoration: BoxDecoration(
-                    // Настоящее стекло: blur + мягкий вертикальный градиент +
-                    // светлый бордюр — полоса читается как парящая карточка.
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.black.withValues(alpha: 0.30),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      width: 0.7,
-                    ),
-                  ),
-                  child: child,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -626,8 +536,8 @@ class _RecordingIndicatorState extends State<_RecordingIndicator>
             const SizedBox(width: 6),
             Text(
               'REC $timeStr',
-              style: const TextStyle(
-                fontFamily: 'JetBrains Mono',
+              style: TextStyle(
+                fontFamily: AppFonts.I.sans,
                 color: Colors.white,
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
