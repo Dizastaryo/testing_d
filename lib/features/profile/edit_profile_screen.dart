@@ -28,6 +28,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   Uint8List? _pickedBytes;
   bool _avatarRemoved = false;
   bool _isSaving = false;
+  // Кэш URL уже загруженного на прошлой попытке аватара. Если PUT /users/me
+  // упал после успешной загрузки файла, повторный тап "Сохранить" не должен
+  // заново заливать тот же файл — иначе на каждый ретрай плодятся сиротские
+  // медиа-загрузки на бэке. Сбрасывается только при выборе нового файла или
+  // удалении аватара.
+  String? _uploadedAvatarUrl;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -58,6 +64,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         _pickedFile = picked;
         _pickedBytes = bytes;
         _avatarRemoved = false;
+        // Новый файл — предыдущая загрузка (если была) больше не актуальна.
+        _uploadedAvatarUrl = null;
       });
     }
   }
@@ -102,6 +110,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     _pickedFile = null;
                     _pickedBytes = null;
                     _avatarRemoved = true;
+                    _uploadedAvatarUrl = null;
                   });
                 },
               ),
@@ -119,9 +128,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     try {
       final api = ref.read(apiClientProvider);
 
-      // Upload avatar if a new file was picked
+      // Upload avatar if a new file was picked. Если файл уже был успешно
+      // загружен на прошлой (неудачной) попытке сохранения, переиспользуем
+      // готовый URL вместо повторной заливки того же файла.
       String? avatarUrl;
-      if (_pickedFile != null && _pickedBytes != null) {
+      if (_uploadedAvatarUrl != null) {
+        avatarUrl = _uploadedAvatarUrl;
+      } else if (_pickedFile != null && _pickedBytes != null) {
         final form = FormData.fromMap({
           'file': MultipartFile.fromBytes(_pickedBytes!, filename: _pickedFile!.name),
         });
@@ -132,6 +145,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             : uploadData is Map
                 ? uploadData['url'] as String?
                 : null;
+        _uploadedAvatarUrl = avatarUrl;
       } else if (_avatarRemoved) {
         avatarUrl = '';
       }
@@ -220,10 +234,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       backgroundColor: SeeUColors.surfaceElevated,
                       backgroundImage: _pickedBytes != null
                           ? MemoryImage(_pickedBytes!)
-                          : (_avatarRemoved || user?.avatarUrl == null
+                          : (_avatarRemoved ||
+                                  user?.avatarUrl == null ||
+                                  user!.avatarUrl!.isEmpty
                               ? null
-                              : NetworkImage(user!.avatarUrl!)) as ImageProvider?,
-                      child: (_pickedBytes == null && (_avatarRemoved || user?.avatarUrl == null))
+                              : NetworkImage(user.avatarUrl!)) as ImageProvider?,
+                      child: (_pickedBytes == null &&
+                              (_avatarRemoved ||
+                                  user?.avatarUrl == null ||
+                                  user!.avatarUrl!.isEmpty))
                           ? Text(
                               (user?.username.isNotEmpty ?? false)
                                   ? user!.username[0].toUpperCase()
@@ -287,6 +306,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               controller: _fullNameCtrl,
               textCapitalization: TextCapitalization.words,
               hintText: 'Полное имя',
+              maxLength: 50,
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Обязательное поле' : null,
             ),
@@ -300,6 +320,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               controller: _usernameCtrl,
               autocorrect: false,
               hintText: 'Имя пользователя',
+              maxLength: 30,
               validator: (v) {
                 final val = v?.trim() ?? '';
                 if (val.isEmpty) return 'Обязательное поле';
@@ -333,6 +354,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               keyboardType: TextInputType.url,
               autocorrect: false,
               hintText: 'Ссылка на сайт',
+              maxLength: 200,
             ),
             const SizedBox(height: 40),
 

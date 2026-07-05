@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:lottie/lottie.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api/api_client.dart';
 import '../../core/providers/pair_provider.dart';
 import '../spark/spark_senders_sheet.dart';
@@ -355,6 +356,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     );
   }
 
+  Future<void> _openWebsite(String website) async {
+    var url = website.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      showSeeUSnackBar(context, 'Не удалось открыть ссылку',
+          tone: SeeUTone.danger);
+    }
+  }
+
   Widget _buildProfileBody(
     BuildContext context,
     User user,
@@ -490,6 +506,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 color: c.ink2,
                 height: 1.4,
                 fontSize: 13,
+              ),
+            ),
+          ),
+
+        // ── Website ────────────────────────────────────────────────
+        if (user.website != null && user.website!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+            child: GestureDetector(
+              onTap: () => _openWebsite(user.website!),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIcons.link(), size: 13, color: SeeUColors.accent),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      user.website!,
+                      overflow: TextOverflow.ellipsis,
+                      style: SeeUTypography.body.copyWith(
+                        color: SeeUColors.accent,
+                        height: 1.4,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

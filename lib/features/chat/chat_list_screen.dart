@@ -665,6 +665,8 @@ String _kindLabel(String kind) {
       return '🎙 Голосовое';
     case 'video_note':
       return '📹 Видеосообщение';
+    case 'gif':
+      return '🎞 GIF';
     default:
       return '';
   }

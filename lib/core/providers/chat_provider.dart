@@ -1014,6 +1014,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     bool rethrowOnError = false,
     String? forwardedFromMessageId,
     String forwardedFromSender = '',
+    String forwardedFromSourceKind = '',
   }) async {
     final hasMedia = attachedMediaUrl != null && attachedMediaUrl.isNotEmpty;
     // Derive kind from attachedMediaType for correct optimistic bubble.
@@ -1024,6 +1025,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
                 'audio' => 'voice',
                 'video_note' => 'video_note',
                 'video' => 'video',
+                'gif' => 'gif',
                 _ => 'image',
               }
             : 'text';
@@ -1064,6 +1066,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             'forwarded_from_message_id': forwardedFromMessageId,
           if (forwardedFromSender.isNotEmpty)
             'forwarded_from_sender': forwardedFromSender,
+          if (forwardedFromSourceKind.isNotEmpty)
+            'forwarded_from_source_kind': forwardedFromSourceKind,
         },
       );
       // Replace the optimistic message with the real one from server
@@ -1432,3 +1436,10 @@ final currentlyPlayingVoiceProvider = StateProvider<String?>((_) => null);
 /// Если когда-нибудь надо persist — переехать на колонку
 /// `messages.voice_listened_by UUID[]` (отдельная задача).
 final listenedVoiceIdsProvider = StateProvider<Set<String>>((_) => const {});
+
+/// BUGFIX-F: черновик текста инпута чата, ключ — chatId. Session-only
+/// (живёт пока живо приложение, без persist на диск) — этого достаточно,
+/// чтобы уйти с экрана чата (например, ответить на входящий звонок или
+/// заглянуть в другой чат) и вернуться, не потеряв набранный текст.
+/// `ChatScreen` пишет сюда в dispose() и читает в initState().
+final chatDraftsProvider = StateProvider<Map<String, String>>((_) => {});

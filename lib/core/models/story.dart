@@ -18,6 +18,12 @@ class Story {
   final String? textOverlay;
   final bool isSeen;
   final int viewsCount;
+  final int likesCount;
+  /// Persisted like state — whether the *current viewer* has liked this
+  /// story, hydrated by the backend on every fetch (mirrors Post.isLiked).
+  /// Previously stories had no such field, so the viewer had to track likes
+  /// in a purely in-memory Set that reset on every viewer session.
+  final bool isLiked;
   final DateTime createdAt;
   final DateTime expiresAt;
   /// Aggregate emoji-reaction counts per emoji (server-aggregated). Visible
@@ -48,6 +54,8 @@ class Story {
     this.textOverlay,
     this.isSeen = false,
     this.viewsCount = 0,
+    this.likesCount = 0,
+    this.isLiked = false,
     required this.createdAt,
     required this.expiresAt,
     this.reactions = const {},
@@ -79,6 +87,8 @@ class Story {
       isSeen: (json['is_seen'] ?? json['isSeen'] as bool?) ?? false,
       // BUG-20: num? для счётчика.
       viewsCount: (json['views_count'] as num?)?.toInt() ?? 0,
+      likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
+      isLiked: (json['is_liked'] as bool?) ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -113,6 +123,8 @@ class Story {
     'text_overlay': textOverlay,
     'is_seen': isSeen,
     'views_count': viewsCount,
+    'likes_count': likesCount,
+    'is_liked': isLiked,
     'created_at': createdAt.toIso8601String(),
     'expires_at': expiresAt.toIso8601String(),
     'audio_track_id': audioTrackId,
@@ -121,6 +133,8 @@ class Story {
   Story copyWith({
     bool? isSeen,
     int? viewsCount,
+    int? likesCount,
+    bool? isLiked,
     Map<String, int>? reactions,
     String? myReaction,
     StoryPoll? poll,
@@ -133,6 +147,8 @@ class Story {
       textOverlay: textOverlay,
       isSeen: isSeen ?? this.isSeen,
       viewsCount: viewsCount ?? this.viewsCount,
+      likesCount: likesCount ?? this.likesCount,
+      isLiked: isLiked ?? this.isLiked,
       createdAt: createdAt,
       expiresAt: expiresAt,
       reactions: reactions ?? this.reactions,

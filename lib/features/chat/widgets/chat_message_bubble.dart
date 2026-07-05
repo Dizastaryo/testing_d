@@ -320,13 +320,14 @@ class ChatMessageBubble extends StatelessWidget {
     final isVideo = (msg.kind == 'video') && msg.attachedMediaUrl.isNotEmpty;
     final isSticker =
         msg.kind == 'image' && msg.attachedMediaType == 'sticker';
+    final isGif = msg.kind == 'gif' && msg.attachedMediaType == 'gif';
     final isMedia = (msg.kind == 'shared_post' && msg.attachedPost != null) ||
         (msg.kind == 'image' && msg.attachedMediaUrl.isNotEmpty &&
             msg.attachedMediaType != 'video_note' &&
             msg.attachedMediaType != 'video' &&
             msg.attachedMediaType != 'sticker');
 
-    final bubblePadding = isSticker
+    final bubblePadding = isSticker || isGif
         ? EdgeInsets.zero
         : isMedia
             ? const EdgeInsets.all(4)
@@ -345,7 +346,7 @@ class ChatMessageBubble extends StatelessWidget {
       padding: bubblePadding,
       // Единый язык пузыря: свой — мягкий accentSoft-тинт (не заливка-оранж),
       // чужой — surface. Оранжевый живёт только на read-check и hairline-акценте.
-      decoration: isVoice || isSticker || isVideo || isVideoNote
+      decoration: isVoice || isSticker || isGif || isVideo || isVideoNote
           ? null
           : BoxDecoration(
               color: mine ? c.accentSoft : c.surface,
@@ -374,7 +375,7 @@ class ChatMessageBubble extends StatelessWidget {
           // B4: inline time + receipts inside bubble (для голосовых и видео — внутри их виджетов)
           if (!isVoice && !isVideoNote)
             Padding(
-              padding: isSticker
+              padding: isSticker || isGif
                   ? const EdgeInsets.fromLTRB(4, 2, 4, 0)
                   : isMedia
                       ? const EdgeInsets.fromLTRB(8, 4, 4, 2)
@@ -526,6 +527,32 @@ class ChatMessageBubble extends StatelessWidget {
     }
     if (message.kind == 'image' &&
         message.attachedMediaType == 'sticker' &&
+        message.attachedMediaUrl.isNotEmpty) {
+      final absUrl = AppConfig.absUrl(message.attachedMediaUrl);
+      return CachedNetworkImage(
+        imageUrl: absUrl,
+        width: 140,
+        height: 140,
+        fit: BoxFit.contain,
+        placeholder: (_, __) =>
+            const SizedBox(width: 140, height: 140),
+        errorWidget: (_, __, ___) => Container(
+          width: 140,
+          height: 140,
+          decoration: BoxDecoration(
+            color: const Color(0x14000000),
+            borderRadius: BorderRadius.circular(SeeURadii.small),
+          ),
+          child: const Icon(
+            PhosphorIconsRegular.imageBroken,
+            size: 36,
+            color: Color(0x55000000),
+          ),
+        ),
+      );
+    }
+    if (message.kind == 'gif' &&
+        message.attachedMediaType == 'gif' &&
         message.attachedMediaUrl.isNotEmpty) {
       final absUrl = AppConfig.absUrl(message.attachedMediaUrl);
       return CachedNetworkImage(

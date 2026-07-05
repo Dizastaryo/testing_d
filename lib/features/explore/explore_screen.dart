@@ -1082,10 +1082,10 @@ class _UserSearchCard extends StatelessWidget {
             CircleAvatar(
               radius: 24,
               backgroundColor: c.surface2,
-              backgroundImage: user.avatarUrl != null
+              backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
                   ? CachedNetworkImageProvider(user.avatarUrl!)
                   : null,
-              child: user.avatarUrl == null
+              child: (user.avatarUrl == null || user.avatarUrl!.isEmpty)
                   ? Text(
                       user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
                       style: SeeUTypography.subtitle,

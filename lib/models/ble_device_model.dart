@@ -28,9 +28,13 @@ class SeeUPacket {
     final crcValid = crc == full[11];
 
     final mode = payload[0];
+    // Lowercase — must match backend's hex.EncodeToString convention (Go
+    // always produces lowercase) since idHex is sent verbatim to
+    // POST /scanner/resolve and compared against device_public_id in
+    // Postgres, which is case-sensitive.
     final idHex = payload
         .sublist(1, 9)
-        .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
         .join();
 
     return SeeUPacket(mode: mode, idHex: idHex, crcValid: crcValid);

@@ -25,6 +25,10 @@ import '../../core/providers/post_compose_provider.dart';
 import '../../core/providers/sbory_city_provider.dart' show kKazakhstanCities;
 import '../camera/widgets/camera_bottom_panel.dart' show kStoryMaxVideoSeconds;
 import '../camera/widgets/camera_ui_kit.dart';
+import '../camera/filters/filter_overlay.dart' show bakeGrain, bakeHalation;
+import '../camera/presets/camera_preset.dart';
+import '../camera/presets/camera_presets_catalog.dart';
+import '../camera/presets/preset_picker_bar.dart';
 import 'services/draft_service.dart';
 import 'services/video_trim_service.dart';
 import 'video_trim_screen.dart';
@@ -88,6 +92,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   double _contrast   = 0.0;
   double _saturation = 0.0;
   double _warmth     = 0.0;
+  // Re-applied camera preset (grain/vignette/frame/overlay + color grade) —
+  // photo-only post-capture editing, reuses the same CameraPreset system as
+  // the in-camera preset picker. null = no preset (identity).
+  CameraPreset? _selectedPreset;
 
   // ── Story audience ─────────────────────────────────────────────────────────
   bool _closeFriendsOnly = false;
@@ -587,6 +595,26 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         _stylizedFilename = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.png';
       }
 
+      // 0b2. Bake brightness/contrast/saturation/warmth into the video via
+      // ffmpeg. Unlike photos (composited through the RepaintBoundary
+      // screenshot above), video has no equivalent "compose" step — without
+      // this pass the enhancer sliders only affect the live preview.
+      if (widget.isVideo &&
+          (_brightness != 0 || _contrast != 0 || _saturation != 0 || _warmth != 0)) {
+        final src = _trimmedVideoPath ?? widget.file.path;
+        final graded = await VideoTrimService.applyColorGrade(
+          inputPath: src,
+          brightness: _brightness,
+          contrast: _contrast,
+          saturation: _saturation,
+          warmth: _warmth,
+        );
+        if (graded != null) {
+          _trimmedVideoPath = graded;
+          _stylizedFilename = 'graded_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        }
+      }
+
       // 0c. Mute original audio if music track is selected.
       if (widget.isVideo && _selectedTrack != null && _muteOriginal) {
         final src = _trimmedVideoPath ?? widget.file.path;
@@ -785,49 +813,62 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    return Scaffold(
-      backgroundColor: c.bg,
-      resizeToAvoidBottomInset: !_isEditingText,
-      body: Stack(
-        children: [
-          GestureDetector(
-            // Pull-to-dismiss: fast downward swipe navigates back / to edit step
-            onVerticalDragEnd: (d) {
-              if ((d.primaryVelocity ?? 0) > 900 && !_isEditingText) {
-                if (_step == _EditStep.details) {
-                  setState(() { _stepForward = false; _step = _EditStep.edit; });
-                } else {
-                  _confirmBack();
+    // BUGFIX-C: без PopScope системная кнопка "назад" (Android) и
+    // edge-swipe (iOS) обходили _confirmBack() полностью и мгновенно
+    // закрывали экран, теряя несохранённый черновик без предупреждения.
+    // canPop: false перехватывает системный pop; _confirmBack() сам решает —
+    // если несохранённой работы нет (_hasUnsavedWork == false), он тут же
+    // зовёт Navigator.pop() напрямую, иначе показывает диалог "Сохранить
+    // черновик?" и завершает pop только по подтверждению пользователя.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (!didPop) _confirmBack();
+      },
+      child: Scaffold(
+        backgroundColor: c.bg,
+        resizeToAvoidBottomInset: !_isEditingText,
+        body: Stack(
+          children: [
+            GestureDetector(
+              // Pull-to-dismiss: fast downward swipe navigates back / to edit step
+              onVerticalDragEnd: (d) {
+                if ((d.primaryVelocity ?? 0) > 900 && !_isEditingText) {
+                  if (_step == _EditStep.details) {
+                    setState(() { _stepForward = false; _step = _EditStep.edit; });
+                  } else {
+                    _confirmBack();
+                  }
                 }
-              }
-            },
-            child: SafeArea(
-              child: AnimatedSwitcher(
-                duration: SeeUMotion.slow,
-                transitionBuilder: (child, animation) {
-                  final fwd = _stepForward;
-                  final entering = child.key == ValueKey(_step);
-                  final dx = fwd
-                      ? (entering ? 1.0 : -1.0)
-                      : (entering ? -1.0 : 1.0);
-                  return SlideTransition(
-                    position: Tween<Offset>(
-                      begin: Offset(dx, 0),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                        parent: animation, curve: SeeUMotion.smooth)),
-                    child: child,
-                  );
-                },
-                child: _step == _EditStep.edit
-                    ? _buildEditPage(c)
-                    : _buildDetailsPage(c),
+              },
+              child: SafeArea(
+                child: AnimatedSwitcher(
+                  duration: SeeUMotion.slow,
+                  transitionBuilder: (child, animation) {
+                    final fwd = _stepForward;
+                    final entering = child.key == ValueKey(_step);
+                    final dx = fwd
+                        ? (entering ? 1.0 : -1.0)
+                        : (entering ? -1.0 : 1.0);
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: Offset(dx, 0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                          parent: animation, curve: SeeUMotion.smooth)),
+                      child: child,
+                    );
+                  },
+                  child: _step == _EditStep.edit
+                      ? _buildEditPage(c)
+                      : _buildDetailsPage(c),
+                ),
               ),
             ),
-          ),
-          // Full-screen inline text editor (story + post photo mode).
-          if (_isEditingText) _buildFullScreenTextEditor(c),
-        ],
+            // Full-screen inline text editor (story + post photo mode).
+            if (_isEditingText) _buildFullScreenTextEditor(c),
+          ],
+        ),
       ),
     );
   }
@@ -1112,6 +1153,18 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     ),
                   ),
                 ),
+                // Preset grain/vignette/halation/overlay/frame — baked the
+                // same way CameraScreen._composeCapture bakes them for
+                // in-camera presets. Sits above the media, below user layers
+                // (text/stickers stay crisp, unaffected by film grain).
+                if (!widget.isVideo && _selectedPreset != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _PresetEffectsPainter(_selectedPreset!),
+                      ),
+                    ),
+                  ),
                 ..._storyLayers.map((l) => _buildLayerWidget(l, size)),
               ],
             ),
@@ -1307,6 +1360,16 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     ),
                   ),
                 ),
+                // Preset grain/vignette/halation/overlay/frame — see the
+                // matching comment in _buildStoryStack.
+                if (!widget.isVideo && _selectedPreset != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _PresetEffectsPainter(_selectedPreset!),
+                      ),
+                    ),
+                  ),
                 ..._postLayers.map((l) => _buildLayerWidget(l, size)),
               ],
             ),
@@ -2754,6 +2817,21 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                 maxLabelWidth: 90,
                 onTap: _openMusicPicker,
               ),
+              // Trim (video only) — same _openVideoTrim() as the Post row;
+              // it already caps selection at kStoryMaxVideoSeconds for
+              // _publishMode == 0, so an over-long Story video can be trimmed
+              // to fit instead of silently bouncing to Post mode.
+              if (widget.isVideo) ...[
+                const SizedBox(width: 8),
+                _ActionChip(
+                  icon: PhosphorIconsRegular.scissors,
+                  label: _trimmedDurationSec > 0
+                      ? '${_trimmedDurationSec.round()}с'
+                      : 'Обрезать',
+                  color: _trimmedDurationSec > 0 ? SeeUColors.accent : c.ink2,
+                  onTap: _videoReady ? _openVideoTrim : null,
+                ),
+              ],
               // Poll
               const SizedBox(width: 8),
               _ActionChip(
@@ -3899,12 +3977,13 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         _buildTopBarEdit(c),
         // Preview fills all remaining vertical space
         Expanded(child: _buildPreviewLarge(c)),
-        // Photo enhancement slider — only when a tool is active
-        if (!widget.isVideo && _activeTool != _EnhanceTool.none)
+        // Enhancement slider — only when a tool is active. Photo and video
+        // both get brightness/contrast/saturation/warmth; grain/vignette/
+        // frame (via _EnhanceTool.preset) are photo-only.
+        if (_activeTool != _EnhanceTool.none)
           _buildEnhancerSlider(c),
-        // Photo enhancement toolbar — always visible for photos
-        if (!widget.isVideo)
-          _buildEnhancerToolbar(c),
+        // Enhancement toolbar — always visible (photo and video)
+        _buildEnhancerToolbar(c),
         // Video cover frame picker (toggle via chip in action row)
         if (widget.isVideo && _coverPickerVisible)
           _buildCoverFramePicker(c),
@@ -4636,10 +4715,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  // PHOTO ENHANCEMENT
+  // MEDIA ENHANCEMENT (photo + video)
   // ════════════════════════════════════════════════════════════════════════════
 
-  // ── Enhancer toolbar (photos only, shown in edit step) ────────────────────
+  // ── Enhancer toolbar (photo + video, shown in edit step) ──────────────────
 
   Widget _buildEnhancerToolbar(SeeUThemeColors c) {
     final tools = [
@@ -4648,6 +4727,10 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
       (_EnhanceTool.contrast,   PhosphorIconsRegular.circle,         'Контраст'),
       (_EnhanceTool.saturation, PhosphorIconsRegular.dropHalf,       'Цвет'),
       (_EnhanceTool.warmth,     PhosphorIconsRegular.thermometer,    'Тепло'),
+      // Grain/vignette/frame/overlay (via CameraPreset) are baked through a
+      // RepaintBoundary screenshot — only available for photos, not video.
+      if (!widget.isVideo)
+        (_EnhanceTool.preset,   PhosphorIconsRegular.sparkle,        'Пресеты'),
     ];
 
     return SizedBox(
@@ -4735,6 +4818,20 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   // ── Enhancer slider (shown when a tool is active) ─────────────────────────
 
   Widget _buildEnhancerSlider(SeeUThemeColors c) {
+    // Preset tool shows the same preset picker used in-camera, reused as-is —
+    // grain/vignette/frame/overlay come along with the preset, not sliders.
+    if (_activeTool == _EnhanceTool.preset) {
+      return PresetPickerBar(
+        activePreset: _selectedPreset ?? CameraPresetsCollection.none,
+        onPresetSelected: (preset) {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _selectedPreset = preset.isNone ? null : preset;
+            _compositedBytes = null; // invalidate; re-composited on "Далее →"
+          });
+        },
+      );
+    }
     double currentValue;
     String label;
     switch (_activeTool) {
@@ -4746,6 +4843,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
         currentValue = _saturation; label = 'Цвет';
       case _EnhanceTool.warmth:
         currentValue = _warmth;     label = 'Тепло';
+      case _EnhanceTool.preset:
       case _EnhanceTool.none:
         return const SizedBox.shrink();
     }
@@ -4774,6 +4872,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                       case _EnhanceTool.contrast:   _contrast   = 0;
                       case _EnhanceTool.saturation: _saturation = 0;
                       case _EnhanceTool.warmth:     _warmth     = 0;
+                      case _EnhanceTool.preset:
                       case _EnhanceTool.none: break;
                     }
                   });
@@ -4811,6 +4910,7 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
                     case _EnhanceTool.contrast:   _contrast   = v;
                     case _EnhanceTool.saturation: _saturation = v;
                     case _EnhanceTool.warmth:     _warmth     = v;
+                    case _EnhanceTool.preset:
                     case _EnhanceTool.none: break;
                   }
                 });
@@ -4831,11 +4931,21 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
   // ── Enhancement color filter wrapper ─────────────────────────────────────
 
   Widget _wrapWithEnhancement(Widget child) {
+    Widget result = child;
+    // Preset's own color grade (FilterState) — applied first, underneath the
+    // manual brightness/contrast/saturation/warmth tweaks. Photo-only: the
+    // preset picker tool is hidden for video (see _buildEnhancerToolbar).
+    final preset = _selectedPreset;
+    if (!widget.isVideo && preset != null && !preset.filter.isIdentity) {
+      result = ColorFiltered(
+        colorFilter: ColorFilter.matrix(preset.filter.toMatrix()),
+        child: result,
+      );
+    }
     if (_brightness == 0 && _contrast == 0 &&
         _saturation == 0 && _warmth == 0) {
-      return child;
+      return result;
     }
-    Widget result = child;
     if (_brightness != 0) {
       result = ColorFiltered(
         colorFilter:
@@ -4901,6 +5011,44 @@ class _MediaPrepareScreenState extends ConsumerState<MediaPrepareScreen>
     0, 0, 1 - v * 0.18, 0, 0,
     0, 0, 0, 1, 0,
   ];
+}
+
+// ─── Preset effects painter (grain/vignette/frame/overlay) ─────────────────
+//
+// Bakes the non-color-matrix parts of a CameraPreset (vignette, grain,
+// halation, overlay, frame) into the composited photo. Mirrors exactly what
+// CameraScreen._composeCapture bakes for in-camera presets — same bakeGrain/
+// bakeHalation functions and the same OverlayEffect/FrameEffect.bake() calls —
+// so a preset applied here looks identical to one applied at capture time.
+class _PresetEffectsPainter extends CustomPainter {
+  final CameraPreset preset;
+
+  const _PresetEffectsPainter(this.preset);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final filter = preset.filter;
+    if (filter.vignette > 0) {
+      final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+      canvas.drawRect(rect, Paint()
+        ..shader = RadialGradient(
+          radius: 0.9,
+          colors: [
+            Colors.black.withValues(alpha: 0),
+            Colors.black.withValues(alpha: filter.vignette * 0.75),
+          ],
+          stops: const [0.55, 1.0],
+        ).createShader(rect));
+    }
+    if (preset.hasGrain) bakeGrain(canvas, size, preset.grainAmount);
+    if (preset.hasHalation) bakeHalation(canvas, size, preset.halationAmount);
+    preset.overlay?.bake(canvas, size);
+    preset.frame?.bake(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PresetEffectsPainter old) =>
+      old.preset.id != preset.id;
 }
 
 // ─── Action chip widget ────────────────────────────────────────────────────
@@ -5514,7 +5662,7 @@ enum _PublishState { idle, preparing, uploading, processing, success, failed }
 enum _EditStep { edit, details }
 
 // ── Photo enhancement tools ───────────────────────────────────────────────
-enum _EnhanceTool { none, brightness, contrast, saturation, warmth }
+enum _EnhanceTool { none, brightness, contrast, saturation, warmth, preset }
 
 // ── Crop frame painters ────────────────────────────────────────────────────
 //

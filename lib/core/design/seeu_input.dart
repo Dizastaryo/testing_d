@@ -77,7 +77,11 @@ class SeeUInput extends StatelessWidget {
         suffixIcon: suffix,
         filled: true,
         fillColor: SeeUColors.surfaceElevated,
-        counterText: '',
+        // Раньше здесь был counterText: '', который безусловно скрывал
+        // счётчик символов — из-за этого maxLength-поля (например, био)
+        // выглядели как "сломанные": ввод молча обрывался на лимите без
+        // какой-либо подсказки. Показываем стандартный счётчик Flutter,
+        // он появляется автоматически только когда задан maxLength.
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(

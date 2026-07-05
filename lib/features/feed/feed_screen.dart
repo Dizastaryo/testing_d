@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/daily_prompt_provider.dart';
@@ -16,6 +17,19 @@ import '../camera/camera_screen.dart';
 import '../../widgets/main_scaffold.dart' show bottomNavHiddenNotifier;
 import 'widgets/stories_row.dart';
 import 'widgets/post_card.dart';
+
+// Ключ в SharedPreferences — хранит дату (YYYY-MM-DD, UTC) последнего
+// закрытия daily-prompt карточки. Промпт меняется каждый день (см.
+// daily_prompt_provider.dart), поэтому дизмисс не «навсегда», а до конца
+// текущего дня — на следующий день снова покажется уже с новым текстом.
+const _dailyPromptDismissedDateKey = 'daily_prompt_dismissed_date';
+
+String _todayDateKey() {
+  final now = DateTime.now().toUtc();
+  final mm = now.month.toString().padLeft(2, '0');
+  final dd = now.day.toString().padLeft(2, '0');
+  return '${now.year}-$mm-$dd';
+}
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -47,6 +61,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     super.initState();
     _pageController = PageController(initialPage: 1);
     _scrollController.addListener(_onScroll);
+    _loadDailyPromptDismissed();
 
     // Header icons entrance animation controller
     _headerIconsController = AnimationController(
@@ -99,6 +114,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     _pageController.dispose();
     _headerIconsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDailyPromptDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dismissedDate = prefs.getString(_dailyPromptDismissedDateKey);
+    if (mounted && dismissedDate == _todayDateKey()) {
+      setState(() => _dailyPromptDismissed = true);
+    }
+  }
+
+  Future<void> _dismissDailyPrompt() async {
+    setState(() => _dailyPromptDismissed = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_dailyPromptDismissedDateKey, _todayDateKey());
   }
 
   void _onPageChanged(int page) {
@@ -240,7 +269,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                               ),
                             if (!_dailyPromptDismissed)
                               SliverToBoxAdapter(child: _DailyPromptCard(
-                                onDismiss: () => setState(() => _dailyPromptDismissed = true),
+                                onDismiss: _dismissDailyPrompt,
                               )),
                             SliverList(
                               delegate: SliverChildBuilderDelegate(

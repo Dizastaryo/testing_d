@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/story.dart';
+import '../services/logger.dart';
 import 'realtime_provider.dart';
 
 class StoryState {
@@ -119,11 +120,16 @@ class StoryNotifier extends StateNotifier<StoryState> {
     }
   }
 
+  /// Optimistically marks [storyId] as seen. On network failure, rolls back
+  /// to the pre-mutation state — mirrors the rollback pattern in
+  /// [toggleReaction] below (save original before mutating, restore in catch).
   Future<void> markSeen(String storyId) async {
+    Story? original;
     final updatedGroups = state.storyGroups.map((group) {
       final updatedStories = group.stories.map((story) {
-        if (story.id == storyId) return story.copyWith(isSeen: true);
-        return story;
+        if (story.id != storyId) return story;
+        original = story;
+        return story.copyWith(isSeen: true);
       }).toList();
       return StoryGroup(
         author: group.author,
@@ -132,11 +138,25 @@ class StoryNotifier extends StateNotifier<StoryState> {
       );
     }).toList();
 
+    if (original == null) return;
     state = state.copyWith(storyGroups: updatedGroups);
 
     try {
       await _api.post(ApiEndpoints.viewStory(storyId));
-    } catch (_) {}
+    } catch (_) {
+      // Rollback on failure — preserve previous state (author under-counts
+      // the view instead of the viewer wrongly believing it registered).
+      final rolled = state.storyGroups.map((g) {
+        final stories =
+            g.stories.map((s) => s.id == storyId ? original! : s).toList();
+        return StoryGroup(
+          author: g.author,
+          stories: stories,
+          allSeen: stories.every((s) => s.isSeen),
+        );
+      }).toList();
+      state = state.copyWith(storyGroups: rolled);
+    }
   }
 
   /// Optimistic emoji-reaction toggle on a story. Same emoji = unreact
@@ -183,6 +203,62 @@ class StoryNotifier extends StateNotifier<StoryState> {
       }
     } catch (_) {
       // Rollback on failure — preserve previous state.
+      final rolled = state.storyGroups.map((g) {
+        final stories = g.stories
+            .map((s) => s.id == storyId ? original! : s)
+            .toList();
+        return StoryGroup(
+          author: g.author,
+          stories: stories,
+          allSeen: g.allSeen,
+        );
+      }).toList();
+      state = state.copyWith(storyGroups: rolled);
+    }
+  }
+
+  /// Optimistic like/unlike toggle on a story — mirrors [toggleReaction]'s
+  /// optimistic-then-reconcile pattern (and FeedNotifier.toggleLike for posts).
+  /// The server hydrates `is_liked` on every story fetch now, so this just
+  /// keeps the in-memory state in sync with what the backend already
+  /// persists — no more purely-local `_likedStoryIds` set that reset every
+  /// time the viewer was reopened.
+  Future<void> toggleLike(String storyId) async {
+    Story? original;
+    final newGroups = state.storyGroups.map((g) {
+      final stories = g.stories.map((s) {
+        if (s.id != storyId) return s;
+        original = s;
+        final newLiked = !s.isLiked;
+        return s.copyWith(
+          isLiked: newLiked,
+          likesCount: newLiked
+              ? s.likesCount + 1
+              : (s.likesCount > 0 ? s.likesCount - 1 : 0),
+        );
+      }).toList();
+      return StoryGroup(
+        author: g.author,
+        stories: stories,
+        allSeen: g.allSeen,
+      );
+    }).toList();
+
+    if (original == null) return;
+    state = state.copyWith(storyGroups: newGroups);
+
+    final newLiked = !original!.isLiked;
+    try {
+      if (newLiked) {
+        await _api.post(ApiEndpoints.likeStory(storyId));
+      } else {
+        await _api.delete(ApiEndpoints.likeStory(storyId));
+      }
+    } catch (e, st) {
+      // Server rejected the like/unlike (e.g. duplicate like → 409) — log it
+      // instead of silently swallowing, and roll back the optimistic update
+      // so the UI doesn't keep a state the backend never recorded.
+      appLog.error('[StoryNotifier] toggleLike error', e, st);
       final rolled = state.storyGroups.map((g) {
         final stories = g.stories
             .map((s) => s.id == storyId ? original! : s)

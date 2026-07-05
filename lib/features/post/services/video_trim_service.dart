@@ -57,6 +57,58 @@ class VideoTrimService {
     return File(out).existsSync() ? out : null;
   }
 
+  /// Отражает [inputPath] по горизонтали. Используется для фронтальной камеры:
+  /// нативный camera-плагин зеркалит только live-превью, сохранённые байты —
+  /// никогда, так что без этого шага селфи-видео выглядит "перевёрнутым".
+  /// Возвращает путь к результату либо null.
+  static Future<String?> hflip(String inputPath) async {
+    final out = await _outPath('hflip');
+    final ok = await _run(
+      '-y -i "$inputPath" -vf hflip '
+      '-c:v libx264 -preset veryfast -c:a copy -movflags +faststart "$out"',
+    );
+    if (!ok) return null;
+    return File(out).existsSync() ? out : null;
+  }
+
+  /// Запекает цветокоррекцию (brightness/contrast/saturation/warmth — те же
+  /// параметры, что и `FilterState`/пресеты камеры) в видео через ffmpeg.
+  /// Живой `ColorFiltered`/`FilterOverlay` работает только для превью — у
+  /// видео нет эквивалента "compose" для фото, так что без этого прохода
+  /// пресеты и слайдеры цвета не долетают до сохранённого файла.
+  /// Значения параметров — как в `FilterState`: -1..+1 (0 = identity).
+  /// Возвращает путь к результату либо null (в т.ч. если все параметры нулевые).
+  static Future<String?> applyColorGrade({
+    required String inputPath,
+    double brightness = 0,
+    double contrast = 0,
+    double saturation = 0,
+    double warmth = 0,
+  }) async {
+    if (brightness == 0 && contrast == 0 && saturation == 0 && warmth == 0) {
+      return null;
+    }
+    final out = await _outPath('grade');
+    // eq: brightness ∈ [-1..1], contrast ∈ [-2..2] (1.0 = identity),
+    // saturation ∈ [0..3] (1.0 = identity) — те же диапазоны, что и в
+    // FilterState.toMatrix(), просто в терминах ffmpeg.
+    final eqB = brightness.clamp(-1.0, 1.0);
+    final eqC = (contrast + 1.0).clamp(0.0, 2.0);
+    final eqS = (saturation + 1.0).clamp(0.0, 3.0);
+    // warmth не имеет прямого аналога в eq — приближаем через colorbalance
+    // (сдвиг красного вверх / синего вниз в мидтонах), как в _warmthMatrix.
+    final wr = (warmth * 0.30).clamp(-1.0, 1.0);
+    final wb = (-warmth * 0.30).clamp(-1.0, 1.0);
+    final vf = 'eq=brightness=$eqB:contrast=$eqC:saturation=$eqS'
+        '${warmth != 0 ? ',colorbalance=rm=$wr:bm=$wb' : ''}';
+    final ok = await _run(
+      '-y -i "$inputPath" -vf "$vf" '
+      '-c:v libx264 -preset veryfast -c:a copy -movflags +faststart "$out"',
+    );
+    if (!ok) return null;
+    return File(out).existsSync() ? out : null;
+  }
+
   /// Склеивает [paths] в один файл. Один путь возвращается как есть. При ошибке —
   /// null. Перекодирует, чтобы корректно склеить клипы с разными кодеками.
   static Future<String?> concat(List<String> paths) async {

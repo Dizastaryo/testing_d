@@ -7,6 +7,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/design/design.dart';
 import '../../../core/providers/sticker_provider.dart';
+import '../../../widgets/gif_picker_sheet.dart';
 
 // ---------------------------------------------------------------------------
 // Public widget
@@ -15,6 +16,7 @@ import '../../../core/providers/sticker_provider.dart';
 class EmojiStickerPanel extends ConsumerStatefulWidget {
   final ValueChanged<String> onEmojiSelected;
   final ValueChanged<String> onStickerSelected;
+  final ValueChanged<String> onGifSelected;
   final VoidCallback onCreateSticker;
   /// When true: встроен в Column (нет handle, нет скруглений сверху, фикс. высота 300).
   final bool inline;
@@ -23,6 +25,7 @@ class EmojiStickerPanel extends ConsumerStatefulWidget {
     super.key,
     required this.onEmojiSelected,
     required this.onStickerSelected,
+    required this.onGifSelected,
     required this.onCreateSticker,
     this.inline = false,
   });
@@ -38,7 +41,7 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -97,6 +100,13 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
                       c: c,
                       onTap: () => _tabController.animateTo(1),
                     ),
+                    const SizedBox(width: 8),
+                    _PanelTabChip(
+                      label: 'GIF',
+                      active: idx == 2,
+                      c: c,
+                      onTap: () => _tabController.animateTo(2),
+                    ),
                     const Spacer(),
                   ],
                 ),
@@ -112,6 +122,7 @@ class _EmojiStickerPanelState extends ConsumerState<EmojiStickerPanel>
                   onSelected: widget.onStickerSelected,
                   onCreate: widget.onCreateSticker,
                 ),
+                GifPickerGrid(onSelected: widget.onGifSelected),
               ],
             ),
           ),
@@ -330,6 +341,9 @@ class _StickerTab extends ConsumerWidget {
     }
   }
 }
+
+// GIF tab — extracted to ../../../widgets/gif_picker_sheet.dart's
+// GifPickerGrid, shared with the comments composer's GIF picker sheet.
 
 // ---------------------------------------------------------------------------
 // Panel tab chip

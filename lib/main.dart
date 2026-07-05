@@ -25,7 +25,6 @@ import 'features/feed/feed_screen.dart';
 import 'features/explore/explore_screen.dart';
 import 'features/explore/leaderboard_screen.dart';
 import 'features/post/post_detail_screen.dart';
-import 'features/post/create_post_screen.dart';
 import 'features/post/comments_screen.dart';
 import 'features/camera/camera_screen.dart';
 import 'features/profile/profile_screen.dart';
@@ -49,6 +48,7 @@ import 'features/nfc/pair_prompts_screen.dart';
 import 'features/settings/follow_requests_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'features/onboarding/complete_profile_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'core/providers/reels_provider.dart';
 import 'features/explore/publication_viewer.dart';
@@ -114,6 +114,17 @@ class _StoryCreateCameraWrapper extends StatelessWidget {
   }
 }
 
+class _PostCreateCameraWrapper extends StatelessWidget {
+  const _PostCreateCameraWrapper();
+  @override
+  Widget build(BuildContext context) {
+    return CameraScreen(
+      storyMode: false,
+      onClose: () => context.pop(),
+    );
+  }
+}
+
 class SeeUApp extends ConsumerStatefulWidget {
   const SeeUApp({super.key});
 
@@ -163,6 +174,15 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
         final isAuthRoute = loc == '/login';
         if (!isAuth && !isAuthRoute) return '/login';
         if (isAuth && isAuthRoute) return '/feed';
+        // New accounts get an auto-generated username and empty full_name
+        // (see AuthService.VerifyOTP) — force profile completion before
+        // anything else. fullName-empty is durable (re-checked from
+        // /users/me on every launch), unlike the one-shot isNewUser flag
+        // from the verify-otp response.
+        final needsProfile =
+            isAuth && (authState.user?.fullName.trim().isEmpty ?? false);
+        if (needsProfile && loc != '/complete-profile') return '/complete-profile';
+        if (!needsProfile && loc == '/complete-profile') return '/feed';
         return null;
       },
       routes: [
@@ -177,6 +197,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           path: '/onboarding',
           pageBuilder: (_, __) => CustomTransitionPage(
             child: const OnboardingScreen(),
+            transitionsBuilder: _fadeTransition,
+          ),
+        ),
+        GoRoute(
+          path: '/complete-profile',
+          pageBuilder: (_, __) => CustomTransitionPage(
+            child: const CompleteProfileScreen(),
             transitionsBuilder: _fadeTransition,
           ),
         ),
@@ -404,7 +431,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             GoRoute(
               path: '/post/create',
               pageBuilder: (_, __) => const CupertinoPage(
-                child: CreatePostScreen(),
+                child: _PostCreateCameraWrapper(),
               ),
             ),
             GoRoute(

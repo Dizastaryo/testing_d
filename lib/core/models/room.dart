@@ -97,6 +97,33 @@ class RoomParticipant {
       );
 }
 
+/// Compact pinned-message summary embedded in [Room] (mirrors chat's
+/// `ReplyPreview`) — just enough to render a pin banner without a second
+/// round-trip for the full message.
+class RoomMessagePreview {
+  final String id;
+  final String senderId;
+  final String senderUsername;
+  final String text;
+  final String kind;
+
+  const RoomMessagePreview({
+    required this.id,
+    required this.senderId,
+    required this.senderUsername,
+    required this.text,
+    required this.kind,
+  });
+
+  factory RoomMessagePreview.fromJson(Map<String, dynamic> j) => RoomMessagePreview(
+        id: j['id'] as String? ?? '',
+        senderId: j['sender_id'] as String? ?? '',
+        senderUsername: j['sender_username'] as String? ?? '',
+        text: j['text'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'text',
+      );
+}
+
 class Room {
   final String id;
   final String creatorId;
@@ -118,6 +145,9 @@ class Room {
   final int voiceCount;
   final List<RoomParticipant> voiceParticipants;
   final bool isInVoice;
+  // BUGS_AUDIT #11 parity — one pinned message per room.
+  final String? pinnedMessageId;
+  final RoomMessagePreview? pinnedMessage;
 
   const Room({
     required this.id,
@@ -139,6 +169,8 @@ class Room {
     this.voiceCount = 0,
     this.voiceParticipants = const [],
     this.isInVoice = false,
+    this.pinnedMessageId,
+    this.pinnedMessage,
   });
 
   bool get isVoice => type == 'voice';
@@ -171,6 +203,10 @@ class Room {
                 .toList() ??
             [],
         isInVoice: j['is_in_voice'] as bool? ?? false,
+        pinnedMessageId: j['pinned_message_id'] as String?,
+        pinnedMessage: j['pinned_message'] is Map<String, dynamic>
+            ? RoomMessagePreview.fromJson(j['pinned_message'] as Map<String, dynamic>)
+            : null,
       );
 
   Room copyWith({
@@ -189,6 +225,9 @@ class Room {
     int? voiceCount,
     List<RoomParticipant>? voiceParticipants,
     bool? isInVoice,
+    String? pinnedMessageId,
+    RoomMessagePreview? pinnedMessage,
+    bool clearPinnedMessage = false,
   }) =>
       Room(
         id: id,
@@ -210,6 +249,8 @@ class Room {
         voiceCount: voiceCount ?? this.voiceCount,
         voiceParticipants: voiceParticipants ?? this.voiceParticipants,
         isInVoice: isInVoice ?? this.isInVoice,
+        pinnedMessageId: clearPinnedMessage ? null : (pinnedMessageId ?? this.pinnedMessageId),
+        pinnedMessage: clearPinnedMessage ? null : (pinnedMessage ?? this.pinnedMessage),
       );
 }
 
@@ -221,6 +262,7 @@ class RoomMessage {
   final String senderUsername;
   final String? senderAvatar;
   final String text;
+  final String kind;
   final String? attachedMediaUrl;
   final String? attachedMediaType;
   final DateTime createdAt;
@@ -228,6 +270,16 @@ class RoomMessage {
   final Map<String, int> reactions;
   /// Реакция текущего пользователя (пустая строка = нет реакции).
   final String myReaction;
+
+  // BUGS_AUDIT #11 parity fields (mirror ChatMessage).
+  final bool isDeletedForAll;
+  final String? forwardedFromMessageId;
+  final String forwardedFromSender;
+  final bool isRead;
+  final bool isDelivered;
+  final int deliveredCount;
+  final int readCount;
+  final int recipientsCount;
 
   const RoomMessage({
     required this.id,
@@ -237,16 +289,33 @@ class RoomMessage {
     required this.senderUsername,
     this.senderAvatar,
     required this.text,
+    this.kind = 'text',
     this.attachedMediaUrl,
     this.attachedMediaType,
     required this.createdAt,
     this.reactions = const {},
     this.myReaction = '',
+    this.isDeletedForAll = false,
+    this.forwardedFromMessageId,
+    this.forwardedFromSender = '',
+    this.isRead = false,
+    this.isDelivered = false,
+    this.deliveredCount = 0,
+    this.readCount = 0,
+    this.recipientsCount = 0,
   });
 
   RoomMessage copyWith({
+    String? text,
+    String? kind,
     Map<String, int>? reactions,
     String? myReaction,
+    bool? isDeletedForAll,
+    bool? isRead,
+    bool? isDelivered,
+    int? deliveredCount,
+    int? readCount,
+    int? recipientsCount,
   }) => RoomMessage(
     id: id,
     roomId: roomId,
@@ -254,12 +323,21 @@ class RoomMessage {
     senderName: senderName,
     senderUsername: senderUsername,
     senderAvatar: senderAvatar,
-    text: text,
+    text: text ?? this.text,
+    kind: kind ?? this.kind,
     attachedMediaUrl: attachedMediaUrl,
     attachedMediaType: attachedMediaType,
     createdAt: createdAt,
     reactions: reactions ?? this.reactions,
     myReaction: myReaction ?? this.myReaction,
+    isDeletedForAll: isDeletedForAll ?? this.isDeletedForAll,
+    forwardedFromMessageId: forwardedFromMessageId,
+    forwardedFromSender: forwardedFromSender,
+    isRead: isRead ?? this.isRead,
+    isDelivered: isDelivered ?? this.isDelivered,
+    deliveredCount: deliveredCount ?? this.deliveredCount,
+    readCount: readCount ?? this.readCount,
+    recipientsCount: recipientsCount ?? this.recipientsCount,
   );
 
   factory RoomMessage.fromJson(Map<String, dynamic> j) {
@@ -282,11 +360,20 @@ class RoomMessage {
       senderUsername: j['sender_username'] as String? ?? '',
       senderAvatar: j['sender_avatar_url'] as String?,
       text: j['text'] as String? ?? '',
+      kind: j['kind'] as String? ?? 'text',
       attachedMediaUrl: j['attached_media_url'] as String?,
       attachedMediaType: j['attached_media_type'] as String?,
       createdAt: DateTime.parse(j['created_at'] as String),
       reactions: reactions,
       myReaction: j['my_reaction'] as String? ?? '',
+      isDeletedForAll: j['is_deleted_for_all'] as bool? ?? false,
+      forwardedFromMessageId: j['forwarded_from_message_id'] as String?,
+      forwardedFromSender: j['forwarded_from_sender'] as String? ?? '',
+      isRead: j['is_read'] as bool? ?? false,
+      isDelivered: j['is_delivered'] as bool? ?? false,
+      deliveredCount: (j['delivered_count'] as num?)?.toInt() ?? 0,
+      readCount: (j['read_count'] as num?)?.toInt() ?? 0,
+      recipientsCount: (j['recipients_count'] as num?)?.toInt() ?? 0,
     );
   }
 }

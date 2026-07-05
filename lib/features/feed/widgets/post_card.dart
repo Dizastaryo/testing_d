@@ -733,7 +733,8 @@ class _PostCardState extends ConsumerState<PostCard>
               tag: 'avatar-${post.author.username}',
               child: CircleAvatar(
                 radius: 18,
-                backgroundImage: post.author.avatarUrl != null
+                backgroundImage: post.author.avatarUrl != null &&
+                        post.author.avatarUrl!.isNotEmpty
                     ? CachedNetworkImageProvider(
                         post.author.avatarUrl!,
                         // Avatar paints at 36 logical px — decode to that size
@@ -747,7 +748,8 @@ class _PostCardState extends ConsumerState<PostCard>
                       )
                     : null,
                 backgroundColor: c.surface2,
-                child: post.author.avatarUrl == null
+                child: (post.author.avatarUrl == null ||
+                        post.author.avatarUrl!.isEmpty)
                     ? Icon(PhosphorIcons.user(),
                         color: c.ink3, size: 18)
                     : null,

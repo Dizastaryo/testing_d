@@ -13,6 +13,7 @@ import '../../../core/api/api_endpoints.dart';
 import '../../../core/utils/time_format.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/audio_track.dart';
+import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
 import 'story_poll_overlay.dart';
@@ -211,14 +212,20 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   final TextEditingController _replyController = TextEditingController();
   final FocusNode _replyFocusNode = FocusNode();
 
-  // Like state: track liked story IDs
-  final Set<String> _likedStoryIds = {};
-
   /// Per-session realtime override of `views_count`. When the server
   /// pushes `story.view.added`, we stash the new count here and use it in
   /// build over `widget.groups[i].viewsCount`. Stays empty until at least
   /// one event arrives. Cleared on dispose with the State itself.
   final Map<String, int> _liveViewsOverride = {};
+
+  /// Optimistic like override, keyed by story id — `widget.groups` is a
+  /// static snapshot captured when the viewer was opened (StoryProvider's
+  /// state is immutable and re-created on every mutation), so a like/unlike
+  /// during this viewing session needs a local layer on top of the
+  /// server-hydrated `story.isLiked` to show up immediately. Reconciled
+  /// against the provider's authoritative state after each toggle (see
+  /// [_toggleLike]) since StoryNotifier.toggleLike rolls back on failure.
+  final Map<String, bool> _likedOverride = {};
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
   // Like animation
@@ -517,33 +524,59 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     _progressController.forward();
   }
 
-  void _sendReply() {
-    if (_replyController.text.trim().isEmpty) return;
+  /// Отправляет ответ на сторис как обычное личное сообщение автору
+  /// (нет отдельного backend-эндпоинта "ответить на сторис" — переиспользуем
+  /// DM с текстовым контекстом). Успех показывается ТОЛЬКО после того как
+  /// запрос реально прошёл — до этого поле/панель не трогаем, чтобы при
+  /// ошибке пользователь мог повторить отправку без повторного набора текста.
+  Future<void> _sendReply() async {
+    final text = _replyController.text.trim();
+    if (text.isEmpty) return;
     HapticFeedback.lightImpact();
-    _replyController.clear();
-    _replyFocusNode.unfocus();
-    setState(() => _isReplyOpen = false);
-    _progressController.forward();
-    // M16: mounted check before ScaffoldMessenger
-    if (!mounted) return;
-    showSeeUSnackBar(
-      context,
-      'Сообщение отправлено',
-      icon: PhosphorIcons.paperPlaneTilt(),
-      tone: SeeUTone.success,
-      duration: const Duration(seconds: 2),
-    );
+
+    final authorId = _currentGroup.author.id;
+    try {
+      final chatId = await ref
+          .read(chatListProvider.notifier)
+          .getOrCreateChat(authorId);
+      if (chatId == null) {
+        throw Exception('Не удалось открыть чат с автором истории');
+      }
+      await ref.read(chatMessagesProvider(chatId).notifier).sendMessage(
+            'Ответ на историю:\n$text',
+            rethrowOnError: true,
+          );
+
+      if (!mounted) return;
+      _replyController.clear();
+      _replyFocusNode.unfocus();
+      setState(() => _isReplyOpen = false);
+      _progressController.forward();
+      showSeeUSnackBar(
+        context,
+        'Сообщение отправлено',
+        icon: PhosphorIcons.paperPlaneTilt(),
+        tone: SeeUTone.success,
+        duration: const Duration(seconds: 2),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showSeeUSnackBar(
+        context,
+        'Не удалось отправить сообщение. Попробуйте ещё раз',
+        tone: SeeUTone.danger,
+      );
+    }
   }
 
   void _toggleLike() {
     HapticFeedback.mediumImpact();
     final storyId = _currentStory.id;
-    final bool wasLiked = _likedStoryIds.contains(storyId);
+    final bool wasLiked = _likedOverride[storyId] ?? _currentStory.isLiked;
+    final bool newLiked = !wasLiked;
     setState(() {
-      if (wasLiked) {
-        _likedStoryIds.remove(storyId);
-      } else {
-        _likedStoryIds.add(storyId);
+      _likedOverride[storyId] = newLiked;
+      if (newLiked) {
         _showCenterHeart = true;
         _likeAnimController!.reset();
         _likeAnimController!.forward();
@@ -551,19 +584,29 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     });
     _heartBtnAnimController!.reset();
     _heartBtnAnimController!.forward();
-    // Call API in background
-    _likeStoryApi(storyId, !wasLiked);
+    // Delegate to StoryNotifier — it does the actual POST/DELETE, persists
+    // `is_liked`/`likes_count` server-side (BACK: liked stories previously
+    // never came back on refetch, so this used to be purely a local Set that
+    // reset every time the viewer reopened), and rolls its own state back on
+    // failure. We reconcile our local override against that authoritative
+    // state afterwards instead of duplicating the error handling here.
+    _likeStoryApi(storyId);
   }
 
-  Future<void> _likeStoryApi(String storyId, bool isNowLiked) async {
-    try {
-      final api = ref.read(apiClientProvider);
-      if (isNowLiked) {
-        await api.post(ApiEndpoints.likeStory(storyId));
-      } else {
-        await api.delete(ApiEndpoints.likeStory(storyId));
+  Future<void> _likeStoryApi(String storyId) async {
+    await ref.read(storyProvider.notifier).toggleLike(storyId);
+    if (!mounted) return;
+    // Reconcile: if the request failed, StoryNotifier already rolled its own
+    // state back to the pre-toggle value — mirror that here so this viewer
+    // doesn't keep showing a filled heart the backend never recorded.
+    for (final group in ref.read(storyProvider).storyGroups) {
+      for (final s in group.stories) {
+        if (s.id == storyId) {
+          setState(() => _likedOverride[storyId] = s.isLiked);
+          return;
+        }
       }
-    } catch (_) {}
+    }
   }
 
   Widget _buildOwnStoryBottom(Story story) {
@@ -649,7 +692,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   Widget build(BuildContext context) {
     final story = _currentStory;
     final group = _currentGroup;
-    final isLiked = _likedStoryIds.contains(story.id);
+    final isLiked = _likedOverride[story.id] ?? story.isLiked;
     final isOwnStory = widget.currentUserId != null &&
         group.author.id == widget.currentUserId;
 

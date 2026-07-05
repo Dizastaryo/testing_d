@@ -19,9 +19,11 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/utils/format.dart';
+import '../../core/models/room.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
+import '../../core/providers/room_provider.dart';
 import '../calls/call_service.dart';
 import '../calls/group_call_service.dart';
 import 'widgets/chat_message_bubble.dart';
@@ -93,6 +95,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    // BUGFIX-F: restore any in-memory draft for this chat left over from a
+    // previous visit in this session (see dispose() below and
+    // `chatDraftsProvider`). Must run BEFORE addListener(_onTextChanged) —
+    // setting .text would otherwise synchronously fire that listener's
+    // setState() while the widget is still mid-initState.
+    final draft = ref.read(chatDraftsProvider)[widget.chatId];
+    if (draft != null && draft.isNotEmpty) {
+      _textController.text = draft;
+      _textController.selection =
+          TextSelection.collapsed(offset: draft.length);
+      _hasText = true;
+    }
     _textController.addListener(_onTextChanged);
     _focusNode.addListener(() {
       if (_focusNode.hasFocus && _emojiPanelOpen) {
@@ -113,6 +127,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    // BUGFIX-F: persist whatever's left in the input as a session-only draft
+    // keyed by chatId, so leaving the chat (back button, incoming call, etc.)
+    // and returning restores it instead of silently discarding what the user
+    // typed. Empty text clears any stale draft instead of storing "".
+    final leftoverText = _textController.text;
+    final drafts = Map<String, String>.from(ref.read(chatDraftsProvider));
+    if (leftoverText.trim().isEmpty) {
+      drafts.remove(widget.chatId);
+    } else {
+      drafts[widget.chatId] = leftoverText;
+    }
+    ref.read(chatDraftsProvider.notifier).state = drafts;
+
     _itemPositionsListener.itemPositions
         .removeListener(_onScrollPositionsChanged);
     _flashTimer?.cancel();
@@ -533,6 +560,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (_) {
       if (!mounted) return;
       showSeeUSnackBar(context, 'Не удалось отправить стикер',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _sendGif(String url) async {
+    HapticFeedback.lightImpact();
+    final reply = _replyingTo;
+    try {
+      await ref.read(chatMessagesProvider(widget.chatId).notifier).sendMessage(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'gif',
+            replyTo: reply,
+            rethrowOnError: true,
+          );
+      if (mounted) {
+        setState(() => _replyingTo = null);
+        _scrollToBottom();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, 'Не удалось отправить GIF',
           tone: SeeUTone.danger);
     }
   }
@@ -1494,6 +1543,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   onStickerSelected: (url) {
                     setState(() => _emojiPanelOpen = false);
                     _sendSticker(url);
+                  },
+                  onGifSelected: (url) {
+                    setState(() => _emojiPanelOpen = false);
+                    _sendGif(url);
                   },
                   onCreateSticker: () {
                     setState(() => _emojiPanelOpen = false);
@@ -3487,124 +3540,234 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(sheetCtx).size.height * 0.7,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  'Переслать в чат',
-                  style: SeeUTypography.subtitle.copyWith(color: c.ink),
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    'Переслать',
+                    style: SeeUTypography.subtitle.copyWith(color: c.ink),
+                  ),
                 ),
-              ),
-              Flexible(
-                child: FutureBuilder<List<Chat>>(
-                  future: api.get(ApiEndpoints.chats).then((r) {
-                    final list = r.data is Map
-                        ? (r.data['data'] as List? ?? [])
-                        : (r.data as List? ?? []);
-                    return list
-                        .map((e) => Chat.fromJson(e as Map<String, dynamic>))
-                        .toList();
-                  }),
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    if (snap.hasError || !snap.hasData) {
-                      return Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text('Не удалось загрузить чаты',
-                            style: SeeUTypography.body.copyWith(color: c.ink3)),
-                      );
-                    }
-                    final chats = snap.data!;
-                    return ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: chats.length,
-                      itemBuilder: (_, i) {
-                        final chat = chats[i];
-                        final name = chat.isGroup
-                            ? chat.title
-                            : (chat.otherUser?.fullName ?? '');
-                        return ListTile(
-                          leading: ChatSmallAvatar(
-                            avatarUrl: chat.isGroup
-                                ? chat.coverUrl
-                                : chat.otherUser?.avatarUrl,
-                            isGroup: chat.isGroup,
-                          ),
-                          title: Text(name,
-                              style: SeeUTypography.body.copyWith(color: c.ink)),
-                          subtitle: chat.isGroup
-                              ? Text('${chat.participantsCount} участников',
-                                  style: SeeUTypography.caption
-                                      .copyWith(color: c.ink3))
-                              : null,
-                          onTap: () async {
-                            Navigator.of(sheetCtx).pop();
-                            final messenger = ScaffoldMessenger.of(context);
-                            final forwardText = m.text.isNotEmpty
-                                ? m.text
-                                : '';
-                            // Имя оригинального отправителя для баннера
-                            final originSender = m.isMe
-                                ? (ref.read(authProvider).user?.username ?? '')
-                                : (m.senderUsername.isNotEmpty
-                                    ? m.senderUsername
-                                    : m.senderName);
-                            try {
-                              await ref
-                                  .read(chatMessagesProvider(chat.id).notifier)
-                                  .sendMessage(
-                                    forwardText,
-                                    attachedPostId: m.attachedPost?.id,
-                                    attachedMediaUrl: m.attachedMediaUrl
-                                            .isNotEmpty
-                                        ? m.attachedMediaUrl
-                                        : null,
-                                    attachedMediaType: m.attachedMediaUrl
-                                            .isNotEmpty
-                                        ? m.attachedMediaType
-                                        : null,
-                                    mediaDurationSeconds:
-                                        m.mediaDurationSeconds,
-                                    waveform: m.waveform,
-                                    forwardedFromMessageId: m.id,
-                                    forwardedFromSender: originSender,
-                                    // Surface upload/send failures so the catch
-                                    // below shows "Ошибка пересылки" instead of
-                                    // a misleading green "Переслано".
-                                    rethrowOnError: true,
-                                  );
-                              if (mounted) {
-                                messenger.showSnackBar(
-                                  const SnackBar(content: Text('Переслано')),
-                                );
-                              }
-                            } catch (_) {
-                              if (mounted) {
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Ошибка пересылки'),
-                                    backgroundColor: Colors.redAccent,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                        );
-                      },
-                    );
-                  },
+                TabBar(
+                  labelColor: SeeUColors.accent,
+                  unselectedLabelColor: c.ink3,
+                  indicatorColor: SeeUColors.accent,
+                  tabs: const [
+                    Tab(text: 'Чаты'),
+                    Tab(text: 'Комнаты'),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-            ],
+                Flexible(
+                  child: TabBarView(
+                    children: [
+                      _buildChatForwardTargets(sheetCtx, api, m),
+                      _buildRoomForwardTargets(sheetCtx, api, m),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChatForwardTargets(BuildContext sheetCtx, ApiClient api, ChatMessage m) {
+    final c = context.seeuColors;
+    return FutureBuilder<List<Chat>>(
+      future: api.get(ApiEndpoints.chats).then((r) {
+        final list = r.data is Map
+            ? (r.data['data'] as List? ?? [])
+            : (r.data as List? ?? []);
+        return list
+            .map((e) => Chat.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError || !snap.hasData) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Не удалось загрузить чаты',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+          );
+        }
+        final chats = snap.data!;
+        if (chats.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Нет доступных чатов',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+          );
+        }
+        return ListView.builder(
+          shrinkWrap: true,
+          itemCount: chats.length,
+          itemBuilder: (_, i) {
+            final chat = chats[i];
+            final name = chat.isGroup
+                ? chat.title
+                : (chat.otherUser?.fullName ?? '');
+            return ListTile(
+              leading: ChatSmallAvatar(
+                avatarUrl: chat.isGroup
+                    ? chat.coverUrl
+                    : chat.otherUser?.avatarUrl,
+                isGroup: chat.isGroup,
+              ),
+              title: Text(name,
+                  style: SeeUTypography.body.copyWith(color: c.ink)),
+              subtitle: chat.isGroup
+                  ? Text('${chat.participantsCount} участников',
+                      style: SeeUTypography.caption
+                          .copyWith(color: c.ink3))
+                  : null,
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                final messenger = ScaffoldMessenger.of(context);
+                final forwardText = m.text.isNotEmpty ? m.text : '';
+                // Имя оригинального отправителя для баннера
+                final originSender = m.isMe
+                    ? (ref.read(authProvider).user?.username ?? '')
+                    : (m.senderUsername.isNotEmpty
+                        ? m.senderUsername
+                        : m.senderName);
+                try {
+                  await ref
+                      .read(chatMessagesProvider(chat.id).notifier)
+                      .sendMessage(
+                        forwardText,
+                        attachedPostId: m.attachedPost?.id,
+                        attachedMediaUrl: m.attachedMediaUrl.isNotEmpty
+                            ? m.attachedMediaUrl
+                            : null,
+                        attachedMediaType: m.attachedMediaUrl.isNotEmpty
+                            ? m.attachedMediaType
+                            : null,
+                        mediaDurationSeconds: m.mediaDurationSeconds,
+                        waveform: m.waveform,
+                        forwardedFromMessageId: m.id,
+                        forwardedFromSender: originSender,
+                        // Surface upload/send failures so the catch
+                        // below shows "Ошибка пересылки" instead of
+                        // a misleading green "Переслано".
+                        rethrowOnError: true,
+                      );
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Переслано')),
+                    );
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Ошибка пересылки'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                }
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRoomForwardTargets(BuildContext sheetCtx, ApiClient api, ChatMessage m) {
+    final c = context.seeuColors;
+    return FutureBuilder<List<Room>>(
+      future: api.get(ApiEndpoints.rooms).then((r) {
+        final list = r.data is Map
+            ? (r.data['data'] as List? ?? [])
+            : (r.data as List? ?? []);
+        return list.map((e) => Room.fromJson(e as Map<String, dynamic>)).toList();
+      }),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError || !snap.hasData || snap.data!.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Нет доступных комнат',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+          );
+        }
+        final rooms = snap.data!;
+        return ListView.builder(
+          shrinkWrap: true,
+          itemCount: rooms.length,
+          itemBuilder: (_, i) {
+            final room = rooms[i];
+            final hasCover = room.coverUrl != null && room.coverUrl!.isNotEmpty;
+            return ListTile(
+              leading: hasCover
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(11),
+                      child: Image.network(room.coverUrl!,
+                          width: 40, height: 40, fit: BoxFit.cover),
+                    )
+                  : CircleAvatar(
+                      radius: 20,
+                      backgroundColor: SeeUColors.accentSoft,
+                      child: Text(
+                        room.name.isNotEmpty ? room.name[0].toUpperCase() : 'R',
+                        style: const TextStyle(
+                            color: SeeUColors.accent, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+              title: Text(room.name,
+                  style: SeeUTypography.body.copyWith(color: c.ink)),
+              subtitle: Text('${room.participantCount} участников',
+                  style: SeeUTypography.caption.copyWith(color: c.ink3)),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref.read(roomMessagesProvider(room.id).notifier).send(
+                        m.text,
+                        attachedMediaUrl:
+                            m.attachedMediaUrl.isNotEmpty ? m.attachedMediaUrl : null,
+                        attachedMediaType:
+                            m.attachedMediaUrl.isNotEmpty ? m.attachedMediaType : null,
+                        forwardedFromMessageId: m.id,
+                        forwardedFromSourceKind: 'chat',
+                      );
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Переслано')),
+                    );
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Ошибка пересылки'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                }
+              },
+            );
+          },
         );
       },
     );

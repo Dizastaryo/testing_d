@@ -105,6 +105,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   // Recorded clip files, parallel to [_segments]. TikTok-style: each
   // record→pause is one clip; they're concatenated (ffmpeg) on finalize.
   List<String> _segmentFiles = [];
+  // Whether each segment (parallel to [_segmentFiles]) was recorded with the
+  // front camera — the native camera plugin never mirrors saved video bytes
+  // (only the live preview is mirrored at the platform level), so front-camera
+  // segments need an explicit ffmpeg hflip at finalize time.
+  List<bool> _segmentIsFront = [];
   bool _isFinalizing = false;
   MaskDescriptor? _selectedMask;
   final ARFaceMaskController _maskController = ARFaceMaskController();
@@ -586,6 +591,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (dur > 0.1 && clip != null) {
         _segments = [..._segments, dur];
         _segmentFiles = [..._segmentFiles, clip.path];
+        _segmentIsFront = [..._segmentIsFront, _isFrontCamera];
       }
       _currentSegDur = 0.0;
     });
@@ -605,12 +611,40 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     setState(() => _isFinalizing = true);
     await _resetMusic();
 
+    // Mirror any segment recorded with the front camera — the saved bytes are
+    // never mirrored by the native camera plugin (only the live preview is),
+    // so without this every front-camera segment comes out backwards.
+    final processedFiles = <String>[];
+    for (var i = 0; i < _segmentFiles.length; i++) {
+      var path = _segmentFiles[i];
+      final isFront = i < _segmentIsFront.length ? _segmentIsFront[i] : false;
+      if (isFront) {
+        final flipped = await VideoTrimService.hflip(path);
+        if (flipped != null) path = flipped;
+      }
+      processedFiles.add(path);
+    }
+
     String finalPath;
-    if (_segmentFiles.length == 1) {
-      finalPath = _segmentFiles.first;
+    if (processedFiles.length == 1) {
+      finalPath = processedFiles.first;
     } else {
-      final merged = await VideoTrimService.concat(_segmentFiles);
-      finalPath = merged ?? _segmentFiles.last;
+      final merged = await VideoTrimService.concat(processedFiles);
+      finalPath = merged ?? processedFiles.last;
+    }
+
+    // Bake the active color preset into the recorded video — presets only
+    // affect the live preview (FilterOverlay) otherwise and have zero effect
+    // on the saved bytes.
+    if (!_activePreset.isNone) {
+      final graded = await VideoTrimService.applyColorGrade(
+        inputPath: finalPath,
+        brightness: _activePreset.filter.brightness,
+        contrast: _activePreset.filter.contrast,
+        saturation: _activePreset.filter.saturation,
+        warmth: _activePreset.filter.warmth,
+      );
+      if (graded != null) finalPath = graded;
     }
 
     // Danced to a track → drop the ambient audio so only the chosen song plays.
@@ -677,6 +711,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       setState(() {
         _segments = [];
         _segmentFiles = [];
+        _segmentIsFront = [];
         _currentSegDur = 0.0;
         _galleryThumbnailBytes = null; // clear stale thumbnail
       });
@@ -694,6 +729,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       _segments = _segments.sublist(0, _segments.length - 1);
       if (_segmentFiles.isNotEmpty) {
         _segmentFiles = _segmentFiles.sublist(0, _segmentFiles.length - 1);
+      }
+      if (_segmentIsFront.isNotEmpty) {
+        _segmentIsFront = _segmentIsFront.sublist(0, _segmentIsFront.length - 1);
       }
     });
     // Rewind the song so the next take stays in sync with the removed part.
@@ -757,7 +795,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Future<XFile> _composeCapture(XFile raw) async {
-    if (_activePreset.isNone && _selectedMask == null) { return raw; }
+    // Front camera always needs the mirror step baked in (the native plugin
+    // mirrors only the live preview, never the saved bytes) — so a selfie
+    // must go through compose even when no preset/mask is active.
+    if (_activePreset.isNone && _selectedMask == null && !_isFrontCamera) {
+      return raw;
+    }
     if (kIsWeb) { return raw; }
 
     final filter = _activePreset.filter;
@@ -772,6 +815,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
+    // Mirror the source image for the front camera so the saved selfie
+    // matches what the user saw in the (platform-mirrored) live preview.
+    if (_isFrontCamera) {
+      canvas.save();
+      canvas.translate(w, 0);
+      canvas.scale(-1, 1);
+    }
+
     if (filter.isIdentity) {
       canvas.drawImage(image, Offset.zero, Paint());
     } else {
@@ -780,6 +831,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       canvas.drawImage(image, Offset.zero, Paint());
       canvas.restore();
     }
+
+    if (_isFrontCamera) canvas.restore();
 
     if (filter.vignette > 0) {
       final rect = Rect.fromLTWH(0, 0, w, h);
@@ -878,6 +931,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       setState(() {
         _segments = [];
         _segmentFiles = [];
+        _segmentIsFront = [];
         _currentSegDur = 0.0;
         _galleryThumbnailBytes = null;
       });
@@ -1168,7 +1222,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                       else if (_selectedMask != null)
                         Positioned.fill(
                           child: ARFaceMaskView(
-                            key: ValueKey('ar_${_selectedMask!.id}'),
+                            key: const ValueKey('ar_mask_view'),
                             mask: _selectedMask!,
                             controller: _maskController,
                             useFrontCamera: _isFrontCamera,

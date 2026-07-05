@@ -17,12 +17,14 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/room.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/chat_provider.dart';
 import '../../core/providers/realtime_provider.dart';
 import '../../core/providers/room_provider.dart';
 import '../../core/services/call_bg_service.dart';
 import '../../core/services/voice_room_service.dart';
 import '../../core/utils/format.dart';
 import 'room_members_screen.dart';
+import 'widgets/chat_message_bubble.dart' show ChatSmallAvatar;
 import 'widgets/emoji_sticker_panel.dart';
 import 'widgets/emoji_aware_controller.dart';
 
@@ -59,9 +61,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
 
-  // ── Reactions ───────────────────────────────────────────────────────────
-  String? _reactionPickerMsgId;
-
   // ── Mic level monitoring (только пока пользователь в голосовом канале) ──
   final AudioRecorder _micMonitor = AudioRecorder();
   StreamSubscription<dynamic>? _micStreamSub;
@@ -82,6 +81,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
     // Слушаем Android PiP-режим для перерисовки минимального UI.
     CallBgService.instance.pipMode.addListener(_onPipModeChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(roomMessagesProvider(widget.roomId).notifier).markRead();
+      }
+    });
   }
 
   void _onPipModeChanged() {
@@ -234,10 +238,481 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     }
   }
 
+  Future<void> _sendGif(String url) async {
+    setState(() => _sending = true);
+    try {
+      await ref.read(roomMessagesProvider(widget.roomId).notifier).send(
+            '',
+            attachedMediaUrl: url,
+            attachedMediaType: 'gif',
+          );
+      _scrollToBottom();
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   void _toggleReaction(String msgId, String emoji) {
     HapticFeedback.selectionClick();
-    setState(() => _reactionPickerMsgId = null);
     ref.read(roomMessagesProvider(widget.roomId).notifier).react(msgId, emoji);
+  }
+
+  // ─── Message actions (edit/delete/pin/forward) — BUGS_AUDIT #11 parity ──
+
+  void _showMessageOptions(Room room, RoomMessage m) {
+    HapticFeedback.mediumImpact();
+    final myId = ref.read(authProvider).user?.id ?? '';
+    final isMe = m.senderId == myId;
+    final isDeleted = m.isDeletedForAll || m.kind == 'deleted';
+    final c = context.seeuColors;
+
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isMe && m.senderUsername.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Row(
+                      children: [
+                        Icon(PhosphorIconsRegular.user, size: 13, color: c.ink3),
+                        const SizedBox(width: 6),
+                        Text(
+                          m.senderName.isNotEmpty
+                              ? '${m.senderName} · @${m.senderUsername}'
+                              : '@${m.senderUsername}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: c.ink3,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (!isDeleted)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ...['❤️', '🔥', '😂', '😮', '😢', '👍'].map(
+                          (e) => GestureDetector(
+                            onTap: () {
+                              Navigator.of(sheetCtx).pop();
+                              _toggleReaction(m.id, e);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(e, style: const TextStyle(fontSize: 28)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Divider(height: 1, color: c.line),
+                if (m.text.isNotEmpty && !isDeleted)
+                  ListTile(
+                    leading: Icon(PhosphorIcons.copy(), color: c.ink),
+                    title: const Text('Скопировать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      Clipboard.setData(ClipboardData(text: m.text));
+                      showSeeUSnackBar(context, 'Скопировано',
+                          duration: const Duration(seconds: 1));
+                    },
+                  ),
+                if (!isDeleted)
+                  ListTile(
+                    leading: Icon(PhosphorIcons.arrowBendUpRight(), color: c.ink),
+                    title: const Text('Переслать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _showForwardPicker(m);
+                    },
+                  ),
+                if (isMe && m.kind == 'text' && !isDeleted)
+                  ListTile(
+                    leading: Icon(PhosphorIcons.pencil(), color: c.ink),
+                    title: const Text('Редактировать'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _showEditMessageSheet(m);
+                    },
+                  ),
+                if (!isDeleted)
+                  Builder(builder: (_) {
+                    final isAlreadyPinned = room.pinnedMessage?.id == m.id;
+                    return ListTile(
+                      leading: Icon(PhosphorIconsBold.pushPin, color: SeeUColors.accent),
+                      title: Text(isAlreadyPinned ? 'Открепить' : 'Закрепить'),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        _setPin(isAlreadyPinned ? null : m.id);
+                      },
+                    );
+                  }),
+                if (!isDeleted) ...[
+                  Divider(height: 1, color: c.line),
+                  Builder(builder: (_) {
+                    final canDeleteForAll = isMe &&
+                        DateTime.now().difference(m.createdAt) < const Duration(hours: 1);
+                    return ListTile(
+                      leading: Icon(PhosphorIcons.trash(), color: SeeUColors.danger),
+                      title: Text(
+                        canDeleteForAll ? 'Удалить для всех' : 'Удалить у себя',
+                        style: const TextStyle(color: SeeUColors.danger),
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        _confirmDeleteMessage(m, forAll: canDeleteForAll);
+                      },
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditMessageSheet(RoomMessage m) {
+    final controller = TextEditingController(text: m.text);
+    showSeeUBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetCtx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 16,
+          bottom: 20 + MediaQuery.of(sheetCtx).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Редактировать сообщение',
+                style: SeeUTypography.subtitle.copyWith(color: context.seeuColors.ink)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 4,
+              minLines: 1,
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () async {
+                final newText = controller.text.trim();
+                Navigator.of(sheetCtx).pop();
+                if (newText.isEmpty || newText == m.text) return;
+                try {
+                  await ref
+                      .read(roomMessagesProvider(widget.roomId).notifier)
+                      .editMessage(m.id, newText);
+                } catch (e) {
+                  if (mounted) {
+                    showSeeUSnackBar(context, friendlyError(e), tone: SeeUTone.danger);
+                  }
+                }
+              },
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: SeeUGradients.heroOrange,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'Сохранить',
+                  style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteMessage(RoomMessage m, {required bool forAll}) async {
+    final ok = await showSeeUConfirm(
+      context,
+      title: forAll ? 'Удалить для всех?' : 'Удалить у себя?',
+      message: forAll
+          ? 'Сообщение станет видно как «Сообщение удалено» для всех участников.'
+          : 'Сообщение исчезнет только у вас.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+      icon: PhosphorIconsRegular.trash,
+    );
+    if (!ok || !mounted) return;
+    final notifier = ref.read(roomMessagesProvider(widget.roomId).notifier);
+    final snapshot = ref.read(roomMessagesProvider(widget.roomId)).messages;
+    if (forAll) {
+      notifier.markDeletedForAll(m.id);
+    } else {
+      notifier.removeLocally(m.id);
+    }
+    try {
+      final api = ref.read(apiClientProvider);
+      final url = forAll
+          ? ApiEndpoints.roomMessageDelete(widget.roomId, m.id)
+          : '${ApiEndpoints.roomMessageDelete(widget.roomId, m.id)}?scope=self';
+      await api.delete(url);
+    } catch (e) {
+      notifier.restoreMessages(snapshot);
+      if (mounted) {
+        showSeeUSnackBar(context, 'Не удалось удалить: ${friendlyError(e)}',
+            tone: SeeUTone.danger);
+      }
+    }
+  }
+
+  Future<void> _setPin(String? messageId) async {
+    HapticFeedback.mediumImpact();
+    try {
+      await ref
+          .read(roomDetailProvider(widget.roomId).notifier)
+          .setPinnedMessage(messageId);
+      if (!mounted) return;
+      showSeeUSnackBar(
+          context, messageId == null ? 'Сообщение откреплено' : 'Сообщение закреплено',
+          duration: const Duration(seconds: 1));
+    } catch (e) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, friendlyError(e), tone: SeeUTone.danger);
+    }
+  }
+
+  void _showForwardPicker(RoomMessage m) {
+    final c = context.seeuColors;
+    final api = ref.read(apiClientProvider);
+    showSeeUBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.7,
+          ),
+          child: DefaultTabController(
+            length: 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    'Переслать',
+                    style: SeeUTypography.subtitle.copyWith(color: c.ink),
+                  ),
+                ),
+                TabBar(
+                  labelColor: SeeUColors.accent,
+                  unselectedLabelColor: c.ink3,
+                  indicatorColor: SeeUColors.accent,
+                  tabs: const [
+                    Tab(text: 'Комнаты'),
+                    Tab(text: 'Чаты'),
+                  ],
+                ),
+                Flexible(
+                  child: TabBarView(
+                    children: [
+                      _buildRoomForwardList(sheetCtx, api, m),
+                      _buildChatForwardList(sheetCtx, api, m),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRoomForwardList(BuildContext sheetCtx, ApiClient api, RoomMessage m) {
+    final c = context.seeuColors;
+    return FutureBuilder<List<Room>>(
+      future: api.get(ApiEndpoints.rooms).then((r) {
+        final list = r.data is Map
+            ? (r.data['data'] as List? ?? [])
+            : (r.data as List? ?? []);
+        return list.map((e) => Room.fromJson(e as Map<String, dynamic>)).toList();
+      }),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError || !snap.hasData || snap.data!.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Нет доступных комнат',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+          );
+        }
+        final rooms = snap.data!;
+        return ListView.builder(
+          shrinkWrap: true,
+          itemCount: rooms.length,
+          itemBuilder: (_, i) {
+            final room = rooms[i];
+            return ListTile(
+              leading: _forwardTargetAvatar(room.coverUrl, room.name),
+              title: Text(room.name, style: SeeUTypography.body.copyWith(color: c.ink)),
+              subtitle: Text('${room.participantCount} участников',
+                  style: SeeUTypography.caption.copyWith(color: c.ink3)),
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                await _forwardToRoom(room.id, m);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildChatForwardList(BuildContext sheetCtx, ApiClient api, RoomMessage m) {
+    final c = context.seeuColors;
+    return FutureBuilder<List<Chat>>(
+      future: api.get(ApiEndpoints.chats).then((r) {
+        final list = r.data is Map
+            ? (r.data['data'] as List? ?? [])
+            : (r.data as List? ?? []);
+        return list.map((e) => Chat.fromJson(e as Map<String, dynamic>)).toList();
+      }),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError || !snap.hasData || snap.data!.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Нет доступных чатов',
+                style: SeeUTypography.body.copyWith(color: c.ink3)),
+          );
+        }
+        final chats = snap.data!;
+        return ListView.builder(
+          shrinkWrap: true,
+          itemCount: chats.length,
+          itemBuilder: (_, i) {
+            final chat = chats[i];
+            final name = chat.isGroup ? chat.title : (chat.otherUser?.fullName ?? '');
+            return ListTile(
+              leading: ChatSmallAvatar(
+                avatarUrl: chat.isGroup ? chat.coverUrl : chat.otherUser?.avatarUrl,
+                isGroup: chat.isGroup,
+              ),
+              title: Text(name, style: SeeUTypography.body.copyWith(color: c.ink)),
+              subtitle: chat.isGroup
+                  ? Text('${chat.participantsCount} участников',
+                      style: SeeUTypography.caption.copyWith(color: c.ink3))
+                  : null,
+              onTap: () async {
+                Navigator.of(sheetCtx).pop();
+                await _forwardToChat(chat.id, m);
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _forwardTargetAvatar(String? coverUrl, String name) {
+    final hasCover = coverUrl != null && coverUrl.isNotEmpty;
+    final palIdx = name.isEmpty
+        ? 0
+        : (name.codeUnitAt(0) + name.length) % SeeUColors.avatarPalettes.length;
+    final palette = SeeUColors.avatarPalettes[palIdx];
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'R';
+    return Container(
+      width: 40, height: 40,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(11),
+        gradient: hasCover ? null : LinearGradient(colors: palette),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasCover
+          ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover)
+          : Center(
+              child: Text(initial,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+    );
+  }
+
+  Future<void> _forwardToRoom(String targetRoomId, RoomMessage m) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(roomMessagesProvider(targetRoomId).notifier).send(
+            m.text,
+            attachedMediaUrl: m.attachedMediaUrl?.isNotEmpty == true ? m.attachedMediaUrl : null,
+            attachedMediaType:
+                m.attachedMediaUrl?.isNotEmpty == true ? m.attachedMediaType : null,
+            forwardedFromMessageId: m.id,
+            forwardedFromSourceKind: 'room',
+          );
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('Переслано')));
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Ошибка пересылки'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    }
+  }
+
+  Future<void> _forwardToChat(String chatId, RoomMessage m) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(chatMessagesProvider(chatId).notifier).sendMessage(
+            m.text,
+            attachedMediaUrl: m.attachedMediaUrl?.isNotEmpty == true ? m.attachedMediaUrl : null,
+            attachedMediaType:
+                m.attachedMediaUrl?.isNotEmpty == true ? m.attachedMediaType : null,
+            forwardedFromMessageId: m.id,
+            forwardedFromSourceKind: 'room',
+            rethrowOnError: true,
+          );
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('Переслано')));
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Ошибка пересылки'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    }
   }
 
   Future<void> _toggleMute(Room room) async {
@@ -450,6 +925,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       if (nextCount > prevCount) {
         if (prevCount == 0 || _atBottom) {
           _scrollToBottom();
+          if (prevCount > 0) {
+            ref.read(roomMessagesProvider(widget.roomId).notifier).markRead();
+          }
         } else {
           setState(() => _unreadCount += nextCount - prevCount);
         }
@@ -1232,14 +1710,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     // Use server-side search results when active, otherwise show all messages.
     final messages = msgsState.searchResults ?? msgsState.messages;
 
-    return GestureDetector(
-      onTap: () {
-        if (_reactionPickerMsgId != null) {
-          setState(() => _reactionPickerMsgId = null);
-        }
-      },
-      behavior: HitTestBehavior.translucent,
-      child: ListView.builder(
+    return ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
         itemCount: messages.length,
@@ -1256,16 +1727,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             showSender: showSender,
             showAvatar: showAvatar,
             c: c,
-            showReactionPicker: _reactionPickerMsgId == msg.id,
             reactions: msg.reactions,
             myReaction: msg.myReaction.isEmpty ? null : msg.myReaction,
             searchQuery: _searchQuery.trim(),
-            onLongPress: () => setState(() => _reactionPickerMsgId = msg.id),
+            onLongPress: () => _showMessageOptions(room, msg),
             onReactionSelected: (emoji) => _toggleReaction(msg.id, emoji),
           );
         },
-      ),
-    );
+      );
   }
 
   Future<void> _refreshMessages() =>
@@ -1379,6 +1848,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           setState(() => _emojiPanelOpen = false);
           _sendSticker(url);
         },
+        onGifSelected: (url) {
+          setState(() => _emojiPanelOpen = false);
+          _sendGif(url);
+        },
         onCreateSticker: () => setState(() => _emojiPanelOpen = false),
       ),
       ],
@@ -1470,7 +1943,6 @@ class _MessageBubble extends StatelessWidget {
   final bool showSender;
   final bool showAvatar;
   final SeeUThemeColors c;
-  final bool showReactionPicker;
   final Map<String, int> reactions;
   final String? myReaction;
   final String searchQuery;
@@ -1483,7 +1955,6 @@ class _MessageBubble extends StatelessWidget {
     required this.showSender,
     required this.showAvatar,
     required this.c,
-    this.showReactionPicker = false,
     this.reactions = const {},
     this.myReaction,
     this.searchQuery = '',
@@ -1587,15 +2058,65 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _buildBubble(String timeStr) {
+    if (msg.isDeletedForAll || msg.kind == 'deleted') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isMe ? c.accentSoft : c.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 16),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIconsRegular.prohibit, size: 14, color: c.ink3),
+            const SizedBox(width: 6),
+            Text(
+              'Сообщение удалено',
+              style: TextStyle(fontSize: 13, color: c.ink3, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+      );
+    }
+
     final isSticker = msg.attachedMediaType == 'sticker' &&
         msg.attachedMediaUrl != null &&
         msg.attachedMediaUrl!.isNotEmpty;
+    final isGif = msg.attachedMediaType == 'gif' &&
+        msg.attachedMediaUrl != null &&
+        msg.attachedMediaUrl!.isNotEmpty;
 
-    if (isSticker) {
+    final forwardBanner = msg.forwardedFromSender.isNotEmpty
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(PhosphorIconsRegular.arrowBendUpRight,
+                    size: 11, color: SeeUColors.accent),
+                const SizedBox(width: 4),
+                Text(
+                  'Переслано от @${msg.forwardedFromSender}',
+                  style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: SeeUColors.accent,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : null;
+
+    if (isSticker || isGif) {
       return Column(
         crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (forwardBanner != null) forwardBanner,
           CachedNetworkImage(
             imageUrl: msg.attachedMediaUrl!,
             width: 120,
@@ -1604,12 +2125,21 @@ class _MessageBubble extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              timeStr,
-              style: TextStyle(
-                fontSize: 10,
-                color: c.ink4,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: c.ink4,
+                  ),
+                ),
+                if (isMe) ...[
+                  const SizedBox(width: 4),
+                  _ReadReceiptIcon(isRead: msg.isRead, isDelivered: msg.isDelivered, c: c),
+                ],
+              ],
             ),
           ),
         ],
@@ -1639,14 +2169,24 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (forwardBanner != null) forwardBanner,
           _buildText(msg.text),
           const SizedBox(height: 2),
-          Text(
-            timeStr,
-            style: TextStyle(
-              fontSize: 10,
-              color: c.ink4,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                timeStr,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: c.ink4,
+                ),
+              ),
+              if (isMe) ...[
+                const SizedBox(width: 4),
+                _ReadReceiptIcon(isRead: msg.isRead, isDelivered: msg.isDelivered, c: c),
+              ],
+            ],
           ),
         ],
       ),
@@ -1708,40 +2248,6 @@ class _MessageBubble extends StatelessWidget {
                     clipBehavior: Clip.none,
                     children: [
                       _buildBubble(timeStr),
-                      // Reaction picker (appears above bubble)
-                      if (showReactionPicker)
-                        Positioned(
-                          top: -48,
-                          left: isMe ? null : 0,
-                          right: isMe ? 0 : null,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: c.surface2,
-                              borderRadius: BorderRadius.circular(SeeURadii.card),
-                              boxShadow: SeeUShadows.md,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: kQuickReactionEmojis.map((emoji) {
-                                final isSelected = myReaction == emoji;
-                                return GestureDetector(
-                                  onTap: () => onReactionSelected?.call(emoji),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: isSelected
-                                        ? BoxDecoration(
-                                            color: SeeUColors.accentSoft,
-                                            shape: BoxShape.circle,
-                                          )
-                                        : null,
-                                    child: Text(emoji, style: const TextStyle(fontSize: 22)),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ),
                       // Reaction pills (below bubble)
                       if (reactions.isNotEmpty)
                         Positioned(
@@ -1793,6 +2299,33 @@ class _MessageBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Read-receipt галочки: прочитано → accent (двойная); доставлено →
+/// приглушённая двойная; отправлено → одиночная. Портировано 1-в-1 из
+/// chat_message_bubble.dart's _ReadReceiptIcon (BUGS_AUDIT #11 parity).
+class _ReadReceiptIcon extends StatelessWidget {
+  final bool isRead;
+  final bool isDelivered;
+  final SeeUThemeColors c;
+  const _ReadReceiptIcon({
+    required this.isRead,
+    required this.isDelivered,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      (isRead || isDelivered) ? PhosphorIconsBold.checks : PhosphorIconsRegular.check,
+      size: 14,
+      color: isRead
+          ? SeeUColors.accent
+          : isDelivered
+              ? c.ink4
+              : c.ink3,
     );
   }
 }

@@ -181,6 +181,18 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
             if (payload != null) _handleVoiceJoined(payload);
           case 'room.voice.left':
             if (payload != null) _handleVoiceLeft(payload);
+          case 'room.pinned':
+            if (payload != null) _handlePinned(payload);
+          case 'room.member_added':
+          case 'room.member_removed':
+            // BUGS_AUDIT #6: the open room screen previously never reacted
+            // to membership changes — participant count/list went silently
+            // stale while the screen was open. Reload gets the fresh
+            // participants + count, same pattern as _handleJoined.
+            // ("You were removed" itself is already handled directly in
+            // room_screen.dart's own realtime listener via room.removed /
+            // room.member_removed(self) — nothing to add here for that part.)
+            load();
         }
       });
     });
@@ -261,6 +273,19 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
     // N параллельных HTTP-запросов. Батчим в один load через 300 мс.
     _voiceJoinDebounce?.cancel();
     _voiceJoinDebounce = Timer(const Duration(milliseconds: 300), load);
+  }
+
+  void _handlePinned(Map<String, dynamic> p) {
+    // Payload only carries message_id — refetch to get the full preview
+    // (sender_username/text/kind), mirroring chat's reload-on-pin approach.
+    load();
+  }
+
+  /// Sets (messageId != null) or clears (messageId == null) the pinned
+  /// message. Requires admin/creator — server enforces, this just calls it.
+  Future<void> setPinnedMessage(String? messageId) async {
+    await _api.put(ApiEndpoints.roomPin(roomId), data: {'message_id': messageId});
+    await load();
   }
 
   void _handleVoiceLeft(Map<String, dynamic> p) {
@@ -383,13 +408,25 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     }
   }
 
-  Future<void> send(String text, {String? attachedMediaUrl, String? attachedMediaType}) async {
+  Future<void> send(
+    String text, {
+    String? attachedMediaUrl,
+    String? attachedMediaType,
+    String? forwardedFromMessageId,
+    String forwardedFromSourceKind = '',
+  }) async {
     if (text.trim().isEmpty && attachedMediaUrl == null) return;
     state = state.copyWith(isSending: true);
     try {
       final body = <String, dynamic>{'text': text.trim()};
       if (attachedMediaUrl != null) body['attached_media_url'] = attachedMediaUrl;
       if (attachedMediaType != null) body['attached_media_type'] = attachedMediaType;
+      if (forwardedFromMessageId != null) {
+        body['forwarded_from_message_id'] = forwardedFromMessageId;
+      }
+      if (forwardedFromSourceKind.isNotEmpty) {
+        body['forwarded_from_source_kind'] = forwardedFromSourceKind;
+      }
       final r = await _api.post(ApiEndpoints.roomMessages(roomId), data: body);
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
       final msg = RoomMessage.fromJson(data as Map<String, dynamic>);
@@ -397,6 +434,70 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
       _appendIfAbsent(msg);
     } finally {
       if (mounted) state = state.copyWith(isSending: false);
+    }
+  }
+
+  /// Optimistic local-only removal — экран вызывает API DELETE сам; на
+  /// success WS event подтвердит, на error экран вызовет [restoreMessages].
+  void removeLocally(String messageId) {
+    state = state.copyWith(
+      messages: state.messages.where((m) => m.id != messageId).toList(),
+    );
+  }
+
+  /// Восстанавливает полный список (rollback для delete).
+  void restoreMessages(List<RoomMessage> snapshot) {
+    state = state.copyWith(messages: snapshot);
+  }
+
+  /// Оптимистично помечает сообщение как «удалённое для всех».
+  void markDeletedForAll(String messageId) {
+    state = state.copyWith(
+      messages: state.messages.map((m) {
+        if (m.id != messageId) return m;
+        return m.copyWith(text: '', kind: 'deleted', isDeletedForAll: true);
+      }).toList(),
+    );
+  }
+
+  /// Редактирует текст сообщения. Оптимистично обновляет локально,
+  /// откатывает при ошибке.
+  Future<void> editMessage(String messageId, String newText) async {
+    final idx = state.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final original = state.messages[idx];
+    state = state.copyWith(
+      messages: [
+        ...state.messages.sublist(0, idx),
+        original.copyWith(text: newText),
+        ...state.messages.sublist(idx + 1),
+      ],
+    );
+    try {
+      await _api.patch(
+        ApiEndpoints.roomMessageEdit(roomId, messageId),
+        data: {'text': newText},
+      );
+    } catch (e) {
+      final i = state.messages.indexWhere((m) => m.id == messageId);
+      if (i >= 0) {
+        state = state.copyWith(
+          messages: [
+            ...state.messages.sublist(0, i),
+            original,
+            ...state.messages.sublist(i + 1),
+          ],
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> markRead() async {
+    try {
+      await _api.put(ApiEndpoints.roomRead(roomId));
+    } catch (_) {
+      // Non-fatal — next open will retry.
     }
   }
 
@@ -421,6 +522,79 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
           final added = payload['added'] as bool? ?? false;
           if (msgId.isEmpty || emoji.isEmpty) return;
           _applyReaction(msgId, userId, emoji, added);
+          return;
+        }
+
+        if (evt.type == 'room.message.edited') {
+          final msgJson = payload['message'] as Map<String, dynamic>?;
+          if (msgJson == null) return;
+          try {
+            final msg = RoomMessage.fromJson(msgJson);
+            state = state.copyWith(
+              messages: state.messages.map((m) {
+                if (m.id != msg.id) return m;
+                return m.copyWith(text: msg.text);
+              }).toList(),
+            );
+          } catch (_) {}
+          return;
+        }
+
+        if (evt.type == 'room.message.deleted') {
+          final messageId = payload['message_id']?.toString() ?? '';
+          if (messageId.isEmpty) return;
+          markDeletedForAll(messageId);
+          return;
+        }
+
+        if (evt.type == 'room.delivered') {
+          final messageId = payload['message_id']?.toString() ?? '';
+          if (messageId.isEmpty) return;
+          final dc = (payload['delivered_count'] as num?)?.toInt() ?? 0;
+          final rc = (payload['read_count'] as num?)?.toInt() ?? 0;
+          final rec = (payload['recipients_count'] as num?)?.toInt() ?? 0;
+          state = state.copyWith(
+            messages: state.messages.map((m) {
+              if (m.id != messageId) return m;
+              return m.copyWith(
+                isDelivered: true,
+                deliveredCount: dc > m.deliveredCount ? dc : m.deliveredCount,
+                readCount: rc > m.readCount ? rc : m.readCount,
+                recipientsCount: rec > 0 ? rec : m.recipientsCount,
+              );
+            }).toList(),
+          );
+          return;
+        }
+
+        if (evt.type == 'room.read') {
+          final readerId = payload['reader_id']?.toString() ?? '';
+          final ids = (payload['message_ids'] as List?)
+                  ?.map((e) => e.toString())
+                  .toSet() ??
+              <String>{};
+          final countsByMsg = payload['counts_by_msg'] is Map
+              ? (payload['counts_by_msg'] as Map).cast<String, dynamic>()
+              : const <String, dynamic>{};
+          state = state.copyWith(
+            messages: state.messages.map((m) {
+              if (m.senderId == readerId || !ids.contains(m.id)) return m;
+              final cnt = countsByMsg[m.id];
+              if (cnt is Map) {
+                final c = cnt.cast<String, dynamic>();
+                return m.copyWith(
+                  isRead: true,
+                  deliveredCount:
+                      (c['delivered_count'] as num?)?.toInt() ?? m.deliveredCount,
+                  readCount: (c['read_count'] as num?)?.toInt() ?? m.readCount,
+                  recipientsCount:
+                      (c['recipients_count'] as num?)?.toInt() ?? m.recipientsCount,
+                );
+              }
+              return m.copyWith(isRead: true);
+            }).toList(),
+          );
+          return;
         }
       });
     });

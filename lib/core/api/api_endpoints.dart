@@ -150,6 +150,10 @@ class ApiEndpoints {
   static const String stickerRemoveBg = '/stickers/remove-bg';
   static String stickerById(String id) => '/stickers/$id';
 
+  // Gifs
+  static const String gifs = '/gifs';
+  static const String gifCategories = '/gifs/categories';
+
   // Chats
   static const String chats = '/chats';
   static String chatMessages(String id) => '/chats/$id/messages';
@@ -210,6 +214,10 @@ class ApiEndpoints {
   static String roomVoice(String id) => '/rooms/$id/voice';
   static String roomMessages(String id) => '/rooms/$id/messages';
   static String roomMessageReact(String roomId, String msgId) => '/rooms/$roomId/messages/$msgId/react';
+  static String roomMessageEdit(String roomId, String msgId) => '/rooms/$roomId/messages/$msgId';
+  static String roomMessageDelete(String roomId, String msgId) => '/rooms/$roomId/messages/$msgId';
+  static String roomPin(String id) => '/rooms/$id/pin';
+  static String roomRead(String id) => '/rooms/$id/read';
   static String roomMembers(String id) => '/rooms/$id/members';
   static String roomInvite(String id) => '/rooms/$id/invite';
   static String roomCandidates(String id) => '/rooms/$id/candidates';

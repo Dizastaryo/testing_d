@@ -8,6 +8,7 @@ import '../../core/models/comment.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../widgets/gif_picker_sheet.dart';
 
 final _commentsProvider =
     StateNotifierProvider.family<CommentsNotifier, CommentsState, String>(
@@ -60,16 +61,23 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
     }
   }
 
-  Future<void> addComment(String text) async {
-    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {'text': text});
+  Future<void> addComment(String text, {String gifUrl = ''}) async {
+    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {
+      'text': text,
+      if (gifUrl.isNotEmpty) 'gif_url': gifUrl,
+    });
     final data = resp.data;
     final commentData = data is Map && data.containsKey('data') ? data['data'] : data;
     final comment = Comment.fromJson(commentData as Map<String, dynamic>);
     state = state.copyWith(comments: [comment, ...state.comments]);
   }
 
-  Future<void> addReply(String parentId, String text) async {
-    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {'text': text, 'parent_id': parentId});
+  Future<void> addReply(String parentId, String text, {String gifUrl = ''}) async {
+    final resp = await _api.post(ApiEndpoints.postComments(postId), data: {
+      'text': text,
+      'parent_id': parentId,
+      if (gifUrl.isNotEmpty) 'gif_url': gifUrl,
+    });
     final data = resp.data;
     final replyData = data is Map && data.containsKey('data') ? data['data'] : data;
     final reply = Comment.fromJson(replyData as Map<String, dynamic>);
@@ -239,6 +247,27 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
     }
   }
 
+  Future<void> _submitGif(String url) async {
+    final replyId = _replyToId;
+    setState(() {
+      _replyToId = null;
+      _replyToUsername = null;
+    });
+    try {
+      if (replyId != null) {
+        await ref.read(_commentsProvider(widget.postId).notifier)
+            .addReply(replyId, '', gifUrl: url);
+      } else {
+        await ref.read(_commentsProvider(widget.postId).notifier)
+            .addComment('', gifUrl: url);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
@@ -382,7 +411,14 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                   : 'Добавить комментарий...',
               canSend: value.text.trim().isNotEmpty,
               onSend: _submitComment,
-              leading: _MeAvatar(me: me),
+              leading: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _MeAvatar(me: me),
+                  const SizedBox(width: 6),
+                  _CommentGifButton(onSelected: _submitGif),
+                ],
+              ),
             ),
           ),
         ],
@@ -401,18 +437,43 @@ class _MeAvatar extends StatelessWidget {
     final c = context.seeuColors;
     return CircleAvatar(
       radius: 18,
-      backgroundImage: me?.avatarUrl != null
+      backgroundImage: me?.avatarUrl != null && me!.avatarUrl!.isNotEmpty
           ? CachedNetworkImageProvider(me!.avatarUrl!,
               maxWidth: 108, maxHeight: 108)
           : null,
       backgroundColor: c.ink3.withValues(alpha: 0.3),
-      child: me?.avatarUrl == null
+      child: (me?.avatarUrl == null || me!.avatarUrl!.isEmpty)
           ? Text(
               (me?.username.isNotEmpty ?? false)
                   ? me!.username[0].toUpperCase()
                   : 'U',
               style: SeeUTypography.caption.copyWith(color: Colors.white))
           : null,
+    );
+  }
+}
+
+/// Opens the shared GIF picker sheet — placed next to [_MeAvatar] in the
+/// comment composer's `leading` slot on all three composer surfaces.
+class _CommentGifButton extends StatelessWidget {
+  final ValueChanged<String> onSelected;
+  const _CommentGifButton({required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () => showGifPickerSheet(context, onSelected: onSelected),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: c.surface2,
+          shape: BoxShape.circle,
+          border: Border.all(color: c.line, width: 0.5),
+        ),
+        child: Icon(PhosphorIconsRegular.image, size: 17, color: c.ink3),
+      ),
     );
   }
 }
@@ -440,23 +501,54 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
     super.dispose();
   }
 
-  void _submitComment() {
+  Future<void> _submitComment() async {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
-    if (_replyToId != null) {
-      ref
-          .read(_commentsProvider(widget.postId).notifier)
-          .addReply(_replyToId!, text);
-    } else {
-      ref
-          .read(_commentsProvider(widget.postId).notifier)
-          .addComment(text);
-    }
+    final replyId = _replyToId;
     _commentCtrl.clear();
     setState(() {
       _replyToId = null;
       _replyToUsername = null;
     });
+    try {
+      if (replyId != null) {
+        await ref
+            .read(_commentsProvider(widget.postId).notifier)
+            .addReply(replyId, text);
+      } else {
+        await ref
+            .read(_commentsProvider(widget.postId).notifier)
+            .addComment(text);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _commentCtrl.text = text;
+      showSeeUSnackBar(context, 'Не удалось отправить комментарий',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _submitGif(String url) async {
+    final replyId = _replyToId;
+    setState(() {
+      _replyToId = null;
+      _replyToUsername = null;
+    });
+    try {
+      if (replyId != null) {
+        await ref
+            .read(_commentsProvider(widget.postId).notifier)
+            .addReply(replyId, '', gifUrl: url);
+      } else {
+        await ref
+            .read(_commentsProvider(widget.postId).notifier)
+            .addComment('', gifUrl: url);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
   }
 
   @override
@@ -538,7 +630,14 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
                 : 'Добавить комментарий...',
             canSend: value.text.trim().isNotEmpty,
             onSend: _submitComment,
-            leading: _MeAvatar(me: me),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _MeAvatar(me: me),
+                const SizedBox(width: 6),
+                _CommentGifButton(onSelected: _submitGif),
+              ],
+            ),
           ),
         ),
       ],
@@ -598,13 +697,15 @@ class _CommentTile extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 17,
-                backgroundImage: comment.author.avatarUrl != null
+                backgroundImage: comment.author.avatarUrl != null &&
+                        comment.author.avatarUrl!.isNotEmpty
                     ? CachedNetworkImageProvider(comment.author.avatarUrl!,
                         maxWidth: 108, maxHeight: 108)
                     : null,
                 backgroundColor:
                     c.ink3.withValues(alpha: 0.3),
-                child: comment.author.avatarUrl == null
+                child: (comment.author.avatarUrl == null ||
+                        comment.author.avatarUrl!.isEmpty)
                     ? Text(
                         comment.author.username.isNotEmpty
                             ? comment.author.username[0].toUpperCase()
@@ -628,13 +729,31 @@ class _CommentTile extends StatelessWidget {
                               color: c.ink,
                             ),
                           ),
-                          TextSpan(
-                            text: comment.text,
-                            style: SeeUTypography.body,
-                          ),
+                          if (comment.text.isNotEmpty)
+                            TextSpan(
+                              text: comment.text,
+                              style: SeeUTypography.body,
+                            ),
                         ],
                       ),
                     ),
+                    if (comment.gifUrl.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(SeeURadii.medium),
+                        child: CachedNetworkImage(
+                          imageUrl: comment.gifUrl,
+                          width: 160,
+                          height: 160,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            width: 160,
+                            height: 160,
+                            color: c.surface2,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     Row(
                       children: [
@@ -715,14 +834,16 @@ class _CommentTile extends StatelessWidget {
                                 CircleAvatar(
                                   radius: 14,
                                   backgroundImage:
-                                      reply.author.avatarUrl != null
+                                      reply.author.avatarUrl != null &&
+                                              reply.author.avatarUrl!.isNotEmpty
                                           ? CachedNetworkImageProvider(
                                               reply.author.avatarUrl!,
                                               maxWidth: 108, maxHeight: 108)
                                           : null,
                                   backgroundColor: c.ink3
                                       .withValues(alpha: 0.3),
-                                  child: reply.author.avatarUrl == null
+                                  child: (reply.author.avatarUrl == null ||
+                                          reply.author.avatarUrl!.isEmpty)
                                       ? Text(
                                           reply.author.username.isNotEmpty
                                               ? reply.author.username[0]
@@ -736,24 +857,51 @@ class _CommentTile extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: RichText(
-                                    text: TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text:
-                                              '${reply.author.username} ',
-                                          style:
-                                              SeeUTypography.caption.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: c.ink,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      RichText(
+                                        text: TextSpan(
+                                          children: [
+                                            TextSpan(
+                                              text:
+                                                  '${reply.author.username} ',
+                                              style: SeeUTypography.caption
+                                                  .copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                color: c.ink,
+                                              ),
+                                            ),
+                                            if (reply.text.isNotEmpty)
+                                              TextSpan(
+                                                text: reply.text,
+                                                style: SeeUTypography.body,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (reply.gifUrl.isNotEmpty)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 6),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                                SeeURadii.medium),
+                                            child: CachedNetworkImage(
+                                              imageUrl: reply.gifUrl,
+                                              width: 120,
+                                              height: 120,
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, __) => Container(
+                                                width: 120,
+                                                height: 120,
+                                                color: c.surface2,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                        TextSpan(
-                                          text: reply.text,
-                                          style: SeeUTypography.body,
-                                        ),
-                                      ],
-                                    ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -847,20 +995,48 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
+    final replyId = _replyToId;
     final notifier = ref.read(_commentsProvider(widget.postId).notifier);
-    if (_replyToId != null) {
-      notifier.addReply(_replyToId!, text);
-    } else {
-      notifier.addComment(text);
-    }
     _commentCtrl.clear();
     setState(() {
       _replyToId = null;
       _replyToUsername = null;
     });
+    try {
+      if (replyId != null) {
+        await notifier.addReply(replyId, text);
+      } else {
+        await notifier.addComment(text);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _commentCtrl.text = text;
+      showSeeUSnackBar(context, 'Не удалось отправить комментарий',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _submitGif(String url) async {
+    final replyId = _replyToId;
+    final notifier = ref.read(_commentsProvider(widget.postId).notifier);
+    setState(() {
+      _replyToId = null;
+      _replyToUsername = null;
+    });
+    try {
+      if (replyId != null) {
+        await notifier.addReply(replyId, '', gifUrl: url);
+      } else {
+        await notifier.addComment('', gifUrl: url);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
   }
 
   @override
@@ -982,7 +1158,14 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
                     : 'Добавить комментарий...',
                 canSend: value.text.trim().isNotEmpty,
                 onSend: _submit,
-                leading: _MeAvatar(me: me),
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MeAvatar(me: me),
+                    const SizedBox(width: 6),
+                    _CommentGifButton(onSelected: _submitGif),
+                  ],
+                ),
               ),
             ),
           ),

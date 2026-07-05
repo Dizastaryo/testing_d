@@ -13,21 +13,7 @@ import '../../core/api/api_endpoints.dart';
 /// Differences are parameterised: title, endpoint, empty-state text/icon.
 enum UserListKind { followers, following }
 
-final _usersProvider = FutureProvider.autoDispose
-    .family<List<User>, ({String username, UserListKind kind})>((ref, args) async {
-  final api = ref.read(apiClientProvider);
-  final endpoint = args.kind == UserListKind.followers
-      ? ApiEndpoints.userFollowers(args.username)
-      : ApiEndpoints.userFollowing(args.username);
-  final resp = await api.get(endpoint);
-  final data = resp.data;
-  final listData = data is Map && data.containsKey('data') ? data['data'] : data;
-  return (listData as List)
-      .map((e) => User.fromJson(e as Map<String, dynamic>))
-      .toList();
-});
-
-class UserListScreen extends ConsumerWidget {
+class UserListScreen extends ConsumerStatefulWidget {
   final String username;
   final UserListKind kind;
 
@@ -38,14 +24,125 @@ class UserListScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = (username: username, kind: kind);
-    final asyncUsers = ref.watch(_usersProvider(key));
-    final title = kind == UserListKind.followers ? 'Подписчики' : 'Подписки';
-    final emptyIcon = kind == UserListKind.followers
+  ConsumerState<UserListScreen> createState() => _UserListScreenState();
+}
+
+/// BUGFIX-E: backend `GET /users/:username/followers|following` supports
+/// `page`/`limit` pagination (see `user_handler.go` GetFollowers/GetFollowing,
+/// `pagination.NewMeta`) but the client used to fetch everything in one
+/// request. For accounts with many followers this was a single long spinner
+/// with a timeout risk. Mirrors the page-based infinite-scroll pattern
+/// already used in `story_viewers_sheet.dart`.
+class _UserListScreenState extends ConsumerState<UserListScreen> {
+  static const int _pageSize = 30;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  Object? _error;
+  int _page = 1;
+  final List<User> _users = [];
+  final ScrollController _scrollCtrl = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+    _loadFirst();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_loadingMore || !_hasMore || !_scrollCtrl.hasClients) return;
+    final pos = _scrollCtrl.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) _loadMore();
+  }
+
+  String _endpoint() => widget.kind == UserListKind.followers
+      ? ApiEndpoints.userFollowers(widget.username)
+      : ApiEndpoints.userFollowing(widget.username);
+
+  Future<void> _loadFirst() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final ok = await _fetch(page: 1, replace: true);
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _page = 1;
+      });
+    }
+    if (!ok && mounted) setState(() => _error ??= 'load_error');
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    final next = _page + 1;
+    final ok = await _fetch(page: next, replace: false);
+    if (mounted) {
+      setState(() {
+        _loadingMore = false;
+        if (ok) _page = next;
+      });
+    }
+  }
+
+  Future<bool> _fetch({required int page, required bool replace}) async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final r = await api.get(_endpoint(), queryParameters: {
+        'page': '$page',
+        'limit': '$_pageSize',
+      });
+      final body = r.data;
+      final data =
+          body is Map && body.containsKey('data') ? body['data'] : body;
+      final list = (data as List)
+          .map((e) => User.fromJson(e as Map<String, dynamic>))
+          .toList();
+      bool hasNext = list.length >= _pageSize;
+      if (body is Map && body['meta'] is Map) {
+        final meta = (body['meta'] as Map).cast<String, dynamic>();
+        if (meta.containsKey('has_next_page')) {
+          hasNext = meta['has_next_page'] == true;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          if (replace) _users.clear();
+          _users.addAll(list);
+          _hasMore = hasNext;
+        });
+      }
+      return true;
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+      return false;
+    }
+  }
+
+  Future<void> _refresh() async {
+    _page = 1;
+    _hasMore = true;
+    await _loadFirst();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title =
+        widget.kind == UserListKind.followers ? 'Подписчики' : 'Подписки';
+    final emptyIcon = widget.kind == UserListKind.followers
         ? PhosphorIconsRegular.users
         : PhosphorIconsRegular.userList;
-    final emptyText = kind == UserListKind.followers
+    final emptyText = widget.kind == UserListKind.followers
         ? 'Пока нет подписчиков'
         : 'Пока нет подписок';
 
@@ -55,35 +152,50 @@ class UserListScreen extends ConsumerWidget {
         children: [
           SeeUGlassBar(
             titleText: title,
-            kicker: '@$username',
+            kicker: '@${widget.username}',
             leading: _GlassBackButton(onTap: () => Navigator.of(context).pop()),
           ),
           Expanded(
-            child: asyncUsers.when(
-              loading: () => const SeeUListSkeleton(),
-              error: (e, _) => SeeUErrorState(
-                onRetry: () => ref.refresh(_usersProvider(key)),
-              ),
-              data: (users) => users.isEmpty
-                  ? SeeUEmptyState(icon: emptyIcon, title: emptyText)
-                  : AnimationLimiter(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.only(top: 4, bottom: 24),
-                        itemCount: users.length,
-                        itemBuilder: (context, index) =>
-                            AnimationConfiguration.staggeredList(
-                              position: index,
-                              duration: const Duration(milliseconds: 375),
-                              child: SlideAnimation(
-                                verticalOffset: 30,
-                                child: FadeInAnimation(
-                                  child: _UserRow(user: users[index]),
-                                ),
-                              ),
+            child: _loading
+                ? const SeeUListSkeleton()
+                : (_error != null && _users.isEmpty)
+                    ? SeeUErrorState(onRetry: _refresh)
+                    : _users.isEmpty
+                        ? SeeUEmptyState(icon: emptyIcon, title: emptyText)
+                        : AnimationLimiter(
+                            child: ListView.builder(
+                              controller: _scrollCtrl,
+                              padding: const EdgeInsets.only(top: 4, bottom: 24),
+                              itemCount: _users.length + (_hasMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index >= _users.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: SeeUColors.accent,
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return AnimationConfiguration.staggeredList(
+                                  position: index,
+                                  duration: const Duration(milliseconds: 375),
+                                  child: SlideAnimation(
+                                    verticalOffset: 30,
+                                    child: FadeInAnimation(
+                                      child: _UserRow(user: _users[index]),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                      ),
-                    ),
-            ),
+                          ),
           ),
         ],
       ),
@@ -132,9 +244,18 @@ class _UserRowState extends ConsumerState<_UserRow> {
   Future<void> _toggleFollow() async {
     SeeUHaptics.press();
     final previous = _isFollowing;
+    // BUGFIX: раньше здесь всегда слался POST, независимо от направления —
+    // "Отписаться" на самом деле заново подписывал. DELETE отписывает,
+    // POST подписывает (см. корректную реализацию в user_provider.dart).
+    final wasFollowing = previous;
     setState(() => _isFollowing = !_isFollowing);
     try {
-      await ref.read(apiClientProvider).post(ApiEndpoints.followUser(widget.user.username));
+      final api = ref.read(apiClientProvider);
+      if (wasFollowing) {
+        await api.delete(ApiEndpoints.followUser(widget.user.username));
+      } else {
+        await api.post(ApiEndpoints.followUser(widget.user.username));
+      }
     } catch (_) {
       if (mounted) setState(() => _isFollowing = previous);
     }
