@@ -125,7 +125,7 @@ class AudioColors {
 /// Осциллограмма из настоящих пиков трека. Сыгранная часть — цветом режима,
 /// остаток — бумажный. Если пиков нет (старые треки), рисуется тонкая полоса
 /// прогресса: врать гребёнкой нельзя.
-class TrackWaveform extends StatelessWidget {
+class TrackWaveform extends StatefulWidget {
   final List<double>? peaks;
 
   /// 0..1 — сколько сыграно.
@@ -140,6 +140,10 @@ class TrackWaveform extends StatelessWidget {
   /// Показывать бегунок на границе сыгранного (полный плеер).
   final bool showHandle;
 
+  /// Длительность трека — для плашки времени над ползунком во время драга.
+  /// Без неё плашка не рисуется: врать «0:00» нельзя.
+  final Duration? total;
+
   const TrackWaveform({
     super.key,
     required this.peaks,
@@ -148,74 +152,155 @@ class TrackWaveform extends StatelessWidget {
     this.height = 60,
     this.onSeek,
     this.showHandle = false,
+    this.total,
   });
 
-  bool get hasPeaks => peaks != null && peaks!.length > 4;
+  @override
+  State<TrackWaveform> createState() => _TrackWaveformState();
+}
+
+class _TrackWaveformState extends State<TrackWaveform> {
+  /// Пока палец на волне, позиция берётся из драга, а не из плеера: сик
+  /// доезжает с задержкой, и без этого ползунок дёргался бы назад.
+  bool _dragging = false;
+  double _dragFraction = 0;
+
+  bool get _hasPeaks => widget.peaks != null && widget.peaks!.length > 4;
+
+  double get _progress =>
+      (_dragging ? _dragFraction : widget.progress).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
     final rest = AudioColors.waveRest(context);
 
-    Widget body = hasPeaks
+    Widget body = _hasPeaks
         ? CustomPaint(
             size: Size.infinite,
             painter: _WavePainter(
-              peaks: peaks!,
-              progress: progress.clamp(0.0, 1.0),
-              played: color,
+              peaks: widget.peaks!,
+              progress: _progress,
+              played: widget.color,
               rest: rest,
             ),
           )
-        : _FlatBar(progress: progress.clamp(0.0, 1.0), color: color, rest: rest);
+        : _FlatBar(progress: _progress, color: widget.color, rest: rest);
 
-    if (showHandle && hasPeaks) {
-      body = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(child: body),
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: LayoutBuilder(
-              builder: (_, box) => Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: box.maxWidth * progress.clamp(0.0, 1.0) - 1,
-                    top: -6,
-                    bottom: -6,
-                    child: Container(width: 2, color: color),
-                  ),
-                ],
+    if (widget.showHandle && _hasPeaks) {
+      final bg = context.seeuColors.bg;
+      final wave = body;
+      body = LayoutBuilder(
+        builder: (_, box) {
+          final x = box.maxWidth * _progress;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(child: wave),
+              // Тонкая линия позиции — сквозь всю высоту волны.
+              Positioned(
+                left: x - 1,
+                top: -6,
+                bottom: -6,
+                child: Container(width: 2, color: widget.color),
               ),
-            ),
-          ),
-        ],
+              // Ползунок: кружок с бордером цвета фона — читается поверх
+              // пиков и не сливается с сыгранной частью.
+              Positioned(
+                left: (x - 8).clamp(0.0, math.max(0.0, box.maxWidth - 16)),
+                top: (widget.height - 16) / 2,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.color,
+                      border: Border.all(color: bg, width: 3),
+                    ),
+                  ),
+                ),
+              ),
+              // Плашка времени — только пока палец тянет волну.
+              if (_dragging && widget.total != null)
+                Positioned(
+                  left: (x - 32).clamp(-12.0, math.max(0.0, box.maxWidth - 52)),
+                  top: (widget.height - 16) / 2 - 28,
+                  child: IgnorePointer(
+                    child: SizedBox(
+                      width: 64,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF161310),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _clock(Duration(
+                              milliseconds:
+                                  ((widget.total!.inMilliseconds) * _progress)
+                                      .round(),
+                            )),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       );
     }
 
-    if (onSeek == null) return SizedBox(height: height, child: body);
+    if (widget.onSeek == null) {
+      return SizedBox(height: widget.height, child: body);
+    }
 
     return SizedBox(
-      height: height,
+      height: widget.height,
       child: LayoutBuilder(
         builder: (_, box) {
-          void seekTo(Offset local) {
-            if (box.maxWidth <= 0) return;
-            onSeek!((local.dx / box.maxWidth).clamp(0.0, 1.0));
-          }
+          double fractionAt(Offset local) => box.maxWidth <= 0
+              ? 0.0
+              : (local.dx / box.maxWidth).clamp(0.0, 1.0);
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: (d) => seekTo(d.localPosition),
-            onHorizontalDragUpdate: (d) => seekTo(d.localPosition),
+            onTapDown: (d) => widget.onSeek!(fractionAt(d.localPosition)),
+            onHorizontalDragStart: (d) => setState(() {
+              _dragging = true;
+              _dragFraction = fractionAt(d.localPosition);
+            }),
+            onHorizontalDragUpdate: (d) {
+              final f = fractionAt(d.localPosition);
+              setState(() => _dragFraction = f);
+              widget.onSeek!(f);
+            },
+            onHorizontalDragEnd: (_) {
+              widget.onSeek!(_dragFraction);
+              setState(() => _dragging = false);
+            },
+            onHorizontalDragCancel: () => setState(() => _dragging = false),
             child: body,
           );
         },
       ),
     );
+  }
+
+  static String _clock(Duration d) {
+    final s = d.inSeconds.clamp(0, 359999);
+    final h = s ~/ 3600;
+    final m = (s % 3600) ~/ 60;
+    final sec = (s % 60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$sec' : '$m:$sec';
   }
 }
 
@@ -419,6 +504,9 @@ class _NowPlayingBarsState extends State<NowPlayingBars>
 class TrackCover extends StatelessWidget {
   final AudioTrack track;
   final double size;
+
+  /// Высота, если обложка не квадратная (карточка трека — широкая, H230).
+  final double? height;
   final double radius;
 
   /// Показать поверх обложки метку «играет сейчас».
@@ -428,9 +516,14 @@ class TrackCover extends StatelessWidget {
     super.key,
     required this.track,
     this.size = 48,
+    this.height,
     this.radius = 11,
     this.playing = false,
   });
+
+  /// Меньшая сторона — от неё считаются иконка-заглушка и эквалайзер,
+  /// чтобы на широкой обложке они не разрастались.
+  double get _side => math.min(size, height ?? size);
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +533,7 @@ class TrackCover extends StatelessWidget {
 
     return SizedBox(
       width: size,
-      height: size,
+      height: height ?? size,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: Stack(
@@ -460,7 +553,7 @@ class TrackCover extends StatelessWidget {
                 alignment: Alignment.center,
                 child: NowPlayingBars(
                   color: Colors.white,
-                  height: size * 0.22,
+                  height: _side * 0.22,
                 ),
               ),
           ],
@@ -479,7 +572,7 @@ class TrackCover extends StatelessWidget {
         ),
         child: Icon(
           mode.icon,
-          size: size * 0.42,
+          size: _side * 0.42,
           color: Colors.white.withValues(alpha: 0.9),
         ),
       );
@@ -610,6 +703,121 @@ class AudioSquareButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Скелетоны ──────────────────────────────────────────────────────────────
+
+/// Скелетон списка треков: квадрат обложки 48 r11 + две полоски текста.
+/// Повторяет вёрстку строк Аудиотеки и мерцает штатным шиммером — вместо
+/// спиннера, который ничего не обещает.
+class AudioListSkeleton extends StatelessWidget {
+  final int rows;
+  final EdgeInsetsGeometry padding;
+
+  /// Необязательная шапка над строками (рисуется тем же шиммером) — для
+  /// экранов, где над списком есть герой (плейлист, карточка).
+  final Widget? header;
+
+  const AudioListSkeleton({
+    super.key,
+    this.rows = 8,
+    this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    this.header,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        children: [
+          if (header != null) ...[header!, const SizedBox(height: 20)],
+          for (var i = 0; i < rows; i++)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 15),
+              child: Row(
+                children: [
+                  ShimmerBox(width: 48, height: 48, radius: 11),
+                  SizedBox(width: 12),
+                  Expanded(child: AudioSkeletonBars()),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Две полоски «название + подпись» — кирпич для скелетонов Аудиотеки.
+class AudioSkeletonBars extends StatelessWidget {
+  const AudioSkeletonBars({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShimmerBox(width: 160, height: 13, radius: 4),
+        SizedBox(height: 7),
+        ShimmerBox(width: 96, height: 11, radius: 4),
+      ],
+    );
+  }
+}
+
+// ─── Пунктирный бордер ──────────────────────────────────────────────────────
+
+/// Настоящий dashed-бордер со скруглением («Новый плейлист», «Создать») —
+/// из коробки Flutter умеет только сплошной.
+class DashedRRectPainter extends CustomPainter {
+  final Color color;
+  final double radius;
+  final double strokeWidth;
+  final double dash;
+  final double gap;
+
+  const DashedRRectPainter({
+    required this.color,
+    required this.radius,
+    this.strokeWidth = 1.5,
+    this.dash = 6,
+    this.gap = 5,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    ).deflate(strokeWidth / 2);
+    final path = Path()..addRRect(rrect);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    for (final metric in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < metric.length) {
+        canvas.drawPath(
+          metric.extractPath(d, math.min(d + dash, metric.length)),
+          paint,
+        );
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(DashedRRectPainter old) =>
+      old.color != color ||
+      old.radius != radius ||
+      old.strokeWidth != strokeWidth ||
+      old.dash != dash ||
+      old.gap != gap;
 }
 
 // ─── Мелочи ─────────────────────────────────────────────────────────────────

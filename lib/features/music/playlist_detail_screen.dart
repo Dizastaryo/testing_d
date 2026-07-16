@@ -31,7 +31,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
         bottom: false,
         child: async.when(
           loading: () => const Center(
-            child: CircularProgressIndicator(color: SeeUColors.accent),
+            child: AudioListSkeleton(rows: 6),
           ),
           error: (_, __) => Column(
             children: [

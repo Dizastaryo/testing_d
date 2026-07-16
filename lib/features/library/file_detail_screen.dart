@@ -390,7 +390,8 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
       children: [
         _InfoChip(
             label: file.formatLabel,
-            color: colorForFileType(file.fileExtension)),
+            color: colorForFileType(file.fileExtension),
+            bordered: true),
         if (ref.watch(isOfflineProvider(file.id)))
           const _InfoChip(label: 'Офлайн', color: SeeUColors.success),
         if (file.pagesCount > 0) _InfoChip(label: '${file.pagesCount} стр.'),
@@ -1304,13 +1305,22 @@ class _ReviewTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            text,
-            style: TextStyle(fontSize: 12, color: c.ink2, height: 1.4),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-          ),
+          if (text.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            // Цитата отзыва — серифный италик в «кавычках-ёлочках».
+            Text(
+              '«$text»',
+              style: TextStyle(
+                fontFamily: AppFonts.I.serif,
+                fontStyle: FontStyle.italic,
+                fontSize: 14,
+                color: c.ink2,
+                height: 1.45,
+              ),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
       ),
     );
@@ -1548,7 +1558,11 @@ class _ActionButton extends StatelessWidget {
 class _InfoChip extends StatelessWidget {
   final String label;
   final Color? color;
-  const _InfoChip({required this.label, this.color});
+
+  /// Обводка 1px цветом чипа — формат-чип («PDF» с бордером цвета формата).
+  final bool bordered;
+
+  const _InfoChip({required this.label, this.color, this.bordered = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1558,6 +1572,7 @@ class _InfoChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: c.withValues(alpha: 0.08),
+        border: bordered ? Border.all(color: c) : null,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(

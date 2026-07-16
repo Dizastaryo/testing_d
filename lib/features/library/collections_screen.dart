@@ -28,12 +28,6 @@ class CollectionsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       extendBodyBehindAppBar: true,
-      floatingActionButton: SeeUButton(
-        label: 'Создать',
-        icon: PhosphorIconsBold.plus,
-        width: 148,
-        onTap: () => _showCreateSheet(context, ref),
-      ),
       body: PaperBackground(
         child: Stack(
           children: [
@@ -79,11 +73,15 @@ class CollectionsScreen extends ConsumerWidget {
                       crossAxisCount: 2,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 0.82,
+                      mainAxisExtent: 158,
                     ),
-                    itemCount: sorted.length,
-                    itemBuilder: (ctx, i) =>
-                        _CollectionCard(collection: sorted[i]),
+                    // Последняя плитка — «Новая коллекция» пунктиром.
+                    itemCount: sorted.length + 1,
+                    itemBuilder: (ctx, i) => i < sorted.length
+                        ? _CollectionCard(collection: sorted[i])
+                        : _NewCollectionTile(
+                            onTap: () => _showCreateSheet(context, ref),
+                          ),
                   ),
                 );
               },
@@ -97,7 +95,7 @@ class CollectionsScreen extends ConsumerWidget {
                 titleText: 'Коллекции',
                 leading: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 2),
-                  child: LibBackButton(size: 40),
+                  child: LibBackButton(),
                 ),
                 actions: [
                   Tappable(
@@ -109,6 +107,31 @@ class CollectionsScreen extends ConsumerWidget {
                           size: 20, color: c.ink3),
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  // Плюс-кнопка «создать» — 36/r11 коралл (вместо FAB).
+                  Tappable.scaled(
+                    onTap: () => _showCreateSheet(context, ref),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(11),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                SeeUColors.accent.withValues(alpha: 0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 5),
+                            spreadRadius: -4,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(PhosphorIconsBold.plus,
+                          size: 16, color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                 ],
               ),
             ),
@@ -195,6 +218,7 @@ class _CollectionCard extends ConsumerWidget {
         _showOptions(context, ref);
       },
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: theme.cardColor,
           border: Border.all(color: c.line.withValues(alpha: 0.5)),
@@ -204,17 +228,15 @@ class _CollectionCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Cover area
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(SeeURadii.medium - 1)),
-                child: _CollectionCover(collection: collection),
-              ),
+            // Превью — три вертикальных сегмента (обложки первых файлов,
+            // заглушки-градиенты если файлов меньше).
+            SizedBox(
+              height: 92,
+              child: _CollectionCover(collection: collection),
             ),
             // Info
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -222,19 +244,18 @@ class _CollectionCard extends ConsumerWidget {
                     collection.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: SeeUTypography.subtitle.copyWith(
-                        fontWeight: FontWeight.w600, color: c.ink),
+                    style: SeeUTypography.displayXS.copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.ink,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Row(
                     children: [
-                      Icon(PhosphorIconsRegular.files,
-                          size: 12, color: c.ink4),
-                      const SizedBox(width: 4),
                       Text(
                         _filesCountLabel(collection.filesCount),
-                        style:
-                            SeeUTypography.caption.copyWith(color: c.ink3),
+                        style: TextStyle(fontSize: 12, color: c.ink3),
                       ),
                       const Spacer(),
                       // Сразу видно, какая подборка отдана по ссылке.
@@ -449,7 +470,15 @@ class _CollectionFormSheetState extends State<_CollectionFormSheet> {
   }
 }
 
-/// Показывает до 4 обложек файлов коллекции в виде 2×2 сетки.
+/// Тёплые градиенты-заглушки сегментов превью, когда обложек меньше трёх.
+const _segmentGradients = <List<Color>>[
+  [Color(0xFF43331F), Color(0xFF2C211A)],
+  [Color(0xFFB8462E), Color(0xFF6E2A18)],
+  [Color(0xFF5D4530), Color(0xFF3A2C20)],
+];
+
+/// Превью коллекции — три вертикальных сегмента: обложки первых трёх файлов,
+/// недостающие закрываются тёплыми градиентами-«корешками».
 class _CollectionCover extends StatelessWidget {
   final Collection collection;
   const _CollectionCover({required this.collection});
@@ -457,70 +486,99 @@ class _CollectionCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final urls = collection.coverUrls.take(4).toList();
+    final urls = collection.coverUrls.take(3).toList();
 
-    if (urls.isEmpty) {
-      return Container(
-        color: c.surface2,
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              collection.filesCount == 0
-                  ? PhosphorIconsRegular.bookBookmark
-                  : PhosphorIconsRegular.books,
-              size: 32,
-              color: collection.filesCount == 0
-                  ? c.ink4
-                  : SeeUColors.accent.withValues(alpha: 0.5),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < 3; i++) ...[
+          if (i > 0) const SizedBox(width: 1),
+          Expanded(
+            child: i < urls.length
+                ? CachedNetworkImage(
+                    imageUrl: urls[i],
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => _gradientSegment(i, c),
+                  )
+                : _gradientSegment(i, c),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Сегмент-заглушка: градиент + лёгкий блик слева, как у корешка.
+  Widget _gradientSegment(int i, SeeUThemeColors c) {
+    final colors = _segmentGradients[i % _segmentGradients.length];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: 0.22,
+          heightFactor: 1,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.16),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+              ),
             ),
-            if (collection.filesCount > 0) ...[
-              const SizedBox(height: 6),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Плитка «Новая коллекция» — пунктирная, в конце сетки.
+class _NewCollectionTile extends StatelessWidget {
+  final VoidCallback onTap;
+  const _NewCollectionTile({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Tappable.scaled(
+      onTap: onTap,
+      child: LibDashedBorder(
+        color: c.ink4,
+        radius: SeeURadii.medium,
+        child: SizedBox.expand(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(PhosphorIconsBold.plus,
+                    size: 16, color: SeeUColors.accent),
+              ),
+              const SizedBox(height: 8),
               Text(
-                '${collection.filesCount}',
-                style: SeeUTypography.mono.copyWith(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: SeeUColors.accent.withValues(alpha: 0.5),
+                'Новая коллекция',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink2,
                 ),
               ),
             ],
-          ],
+          ),
         ),
-      );
-    }
-
-    if (urls.length == 1) {
-      return CachedNetworkImage(
-        imageUrl: urls[0],
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        errorWidget: (_, __, ___) => Container(color: c.surface2),
-      );
-    }
-
-    // 2×2 grid (fill empty cells with surface2)
-    final cells =
-        List<String?>.generate(4, (i) => i < urls.length ? urls[i] : null);
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      mainAxisSpacing: 1,
-      crossAxisSpacing: 1,
-      children: cells.map((url) {
-        if (url == null) {
-          return Container(color: c.surface2);
-        }
-        return CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => Container(color: c.surface2),
-        );
-      }).toList(),
+      ),
     );
   }
 }

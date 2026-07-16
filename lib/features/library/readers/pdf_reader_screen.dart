@@ -6,6 +6,7 @@ import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
@@ -68,6 +69,13 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   @override
   void initState() {
     super.initState();
+    // «Не гаснуть экрану»: применяем сохранённую настройку при открытии
+    // ридера (изменения тумблера ловит ref.listen в build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WakelockPlus.toggle(
+          enable: ref.read(pdfReaderSettingsProvider).keepAwake);
+    });
     if (widget.isBook) {
       _tracker = ReadingTracker(
         actions: ref.read(libraryActionsProvider),
@@ -170,6 +178,9 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
 
   @override
   void dispose() {
+    // Всегда отпускаем wakelock при закрытии ридера — экран не должен
+    // оставаться вечно горящим за пределами чтения.
+    WakelockPlus.disable();
     _tracker?.dispose();
     _positionNotifier.dispose();
     super.dispose();
@@ -185,6 +196,11 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(pdfReaderSettingsProvider);
+    // Тумблер «Не гаснуть экрану» в шторке настроек — применяем сразу.
+    ref.listen(
+      pdfReaderSettingsProvider.select((s) => s.keepAwake),
+      (_, keepAwake) => WakelockPlus.toggle(enable: keepAwake),
+    );
 
     return ReaderShell(
       fileId: widget.fileId,
@@ -311,7 +327,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       );
     }
 
-    return PDFView(
+    final pdf = PDFView(
       key: _pdfKey(settings),
       filePath: _localPath!,
       enableSwipe: true,
@@ -344,6 +360,21 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         }
       },
     );
+
+    // «Ночной режим · инверсия» — программная инверсия цветов страницы
+    // (матрица «255 − канал» по каждому из RGB, альфа без изменений).
+    if (settings.nightInvert) {
+      return ColorFiltered(
+        colorFilter: const ColorFilter.matrix([
+          -1, 0, 0, 0, 255, //
+          0, -1, 0, 0, 255, //
+          0, 0, -1, 0, 255, //
+          0, 0, 0, 1, 0, //
+        ]),
+        child: pdf,
+      );
+    }
+    return pdf;
   }
 }
 

@@ -153,19 +153,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     }
   }
 
-  /// Открыть камеру из шапки (кнопка «+»). Камера — страница 0 ленивого
-  /// PageView: сначала материализуем её (setState), затем плавно листаем к ней.
-  void _openCamera() {
-    HapticFeedback.lightImpact();
-    if (!_cameraEverOpened) {
-      setState(() => _cameraEverOpened = true);
-    }
-    _pageController.animateToPage(
-      0,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-    );
-  }
+  // (Кнопка «+» из шапки убрана по дизайну §03 — камера открывается свайпом
+  // к странице 0 PageView, создание контента живёт в профиле.)
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
@@ -366,58 +355,48 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       ),
     );
 
-    // Абсолютно центрированный wordmark + ряд кнопок поверх него: центр не
-    // «съезжает» из-за разной ширины левого/правого кластеров.
-    final row = Stack(
-      alignment: Alignment.center,
+    // §03: wordmark слева, справа bell (с точкой непрочитанного) и chat.
+    // «+» из хедера убран — создание живёт в профиле и свайпе к камере.
+    final row = Row(
       children: [
-        Center(child: wordmark),
-        Row(
-          children: [
-            // «+» — открыть камеру (страница 0 PageView).
-            _HeaderIconButton(
-              icon: PhosphorIcon(PhosphorIcons.plus()),
-              onTap: _openCamera,
-            ),
-            const Spacer(),
-            // DM button with entrance animation
-            AnimatedBuilder(
-              animation: _headerIconsController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: _icon1Slide.value,
-                  child: Opacity(opacity: _icon1Fade.value, child: child),
-                );
-              },
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final unread = ref.watch(chatListProvider).chats.fold<int>(
-                      0, (acc, c) => acc + c.unreadCount);
-                  return _HeaderIconButton(
-                    icon: PhosphorIcon(PhosphorIcons.chatCircleDots()),
-                    badge: unread,
-                    onTap: () => context.push('/chat'),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 10),
-            // Bell button with staggered entrance
-            AnimatedBuilder(
-              animation: _headerIconsController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: _icon2Slide.value,
-                  child: Opacity(opacity: _icon2Fade.value, child: child),
-                );
-              },
-              child: _HeaderIconButton(
-                icon: PhosphorIcon(PhosphorIcons.bell()),
-                badge: notifState.unreadCount,
-                onTap: () => context.push('/notifications'),
-              ),
-            ),
-          ],
+        wordmark,
+        const Spacer(),
+        // Bell button with staggered entrance
+        AnimatedBuilder(
+          animation: _headerIconsController,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: _icon1Slide.value,
+              child: Opacity(opacity: _icon1Fade.value, child: child),
+            );
+          },
+          child: _HeaderIconButton(
+            icon: PhosphorIcon(PhosphorIcons.bell()),
+            badge: notifState.unreadCount,
+            onTap: () => context.push('/notifications'),
+          ),
+        ),
+        const SizedBox(width: 10),
+        // DM button with entrance animation
+        AnimatedBuilder(
+          animation: _headerIconsController,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: _icon2Slide.value,
+              child: Opacity(opacity: _icon2Fade.value, child: child),
+            );
+          },
+          child: Consumer(
+            builder: (context, ref, _) {
+              final unread = ref.watch(chatListProvider).chats.fold<int>(
+                  0, (acc, c) => acc + c.unreadCount);
+              return _HeaderIconButton(
+                icon: PhosphorIcon(PhosphorIcons.chatCircle()),
+                badge: unread,
+                onTap: () => context.push('/chat'),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -565,14 +544,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
         onRetry: _onRefresh,
       );
 
+  // §03: пустая лента зовёт в Сканер — «SeeU про близость офлайн».
   Widget _buildEmpty() => SeeUEmptyState(
         icon: PhosphorIconsRegular.usersThree,
-        title: 'Пока нет постов',
-        subtitle: 'Подпишитесь на людей, чтобы видеть их посты',
+        title: 'Пока тихо',
+        subtitle: 'Ты ещё ни на кого не подписан. Найди своих рядом — через Сканер.',
         action: SeeUStateAction(
-          label: 'Найти людей',
-          icon: PhosphorIconsRegular.magnifyingGlass,
-          onTap: () => context.go('/explore'),
+          label: 'Открыть Сканер',
+          icon: PhosphorIconsRegular.broadcast,
+          onTap: () => context.go('/scanner'),
         ),
       );
 
@@ -648,34 +628,26 @@ class _HeaderIconButton extends StatelessWidget {
                 ),
                 child: Center(
                   child: IconTheme(
-                    data: IconThemeData(size: 20, color: c.ink),
+                    data: IconThemeData(size: 23, color: c.ink),
                     child: icon,
                   ),
                 ),
               ),
             ),
           ),
+          // §03: индикатор непрочитанного — точка 8px #FF3B6B с обводкой
+          // фоном, не числовой бейдж.
           if (badge > 0)
             Positioned(
-              right: -2,
-              top: -2,
+              right: 2,
+              top: 2,
               child: Container(
-                width: 18,
-                height: 18,
-                decoration: const BoxDecoration(
-                  color: SeeUColors.accent,
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: SeeUColors.like,
                   shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    badge > 9 ? '9+' : badge.toString(),
-                    style: TextStyle(
-                      fontFamily: AppFonts.I.sans,
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  border: Border.all(color: c.bg, width: 1.5),
                 ),
               ),
             ),

@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/providers/library_provider.dart';
 import 'library_design.dart';
 
@@ -123,14 +124,23 @@ class ReadingLeaderboardScreen extends ConsumerWidget {
             );
           }
 
+          // Своя строка подсвечивается — сравниваем с текущим пользователем.
+          final me = ref.watch(authProvider).user;
           return RefreshIndicator(
             onRefresh: () async =>
                 ref.invalidate(_readingLeaderboardProvider(metric)),
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
               itemCount: entries.length,
-              itemBuilder: (ctx, i) =>
-                  _LeaderboardEntry(entry: entries[i], metric: metric),
+              itemBuilder: (ctx, i) {
+                final entry = entries[i];
+                final isMe = me != null &&
+                    ((entry['user_id'] as String? ?? '') == me.id ||
+                        (entry['username'] as String? ?? '') ==
+                            me.username);
+                return _LeaderboardEntry(
+                    entry: entry, metric: metric, isMe: isMe);
+              },
             ),
           );
         },
@@ -194,7 +204,14 @@ class _LeaderboardEntry extends StatelessWidget {
   final Map<String, dynamic> entry;
   final String metric;
 
-  const _LeaderboardEntry({required this.entry, required this.metric});
+  /// Строка текущего пользователя — подсвечивается кораллом, имя — «Вы».
+  final bool isMe;
+
+  const _LeaderboardEntry({
+    required this.entry,
+    required this.metric,
+    this.isMe = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -215,31 +232,41 @@ class _LeaderboardEntry extends StatelessWidget {
       SeeUColors.medalBronze, // bronze
     ];
 
+    // Своя строка важнее медальной подсветки.
+    final Color bg = isMe
+        ? SeeUColors.accent.withValues(alpha: 0.08)
+        : isTop3
+            ? medalColors[rank - 1].withValues(alpha: 0.06)
+            : Theme.of(context).cardColor;
+    final Color borderColor = isMe
+        ? SeeUColors.accent.withValues(alpha: 0.25)
+        : isTop3
+            ? medalColors[rank - 1].withValues(alpha: 0.3)
+            : c.line.withValues(alpha: 0.4);
+
     return GestureDetector(
       onTap: () => context.push('/profile/$userId'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isTop3
-              ? medalColors[rank - 1].withValues(alpha: 0.06)
-              : Theme.of(context).cardColor,
-          border: Border.all(
-            color: isTop3
-                ? medalColors[rank - 1].withValues(alpha: 0.3)
-                : c.line.withValues(alpha: 0.4),
-          ),
+          color: bg,
+          border: Border.all(color: borderColor),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
-            // Rank
+            // Ранг: топ-3 — серифная цифра цветом медали, дальше — #N.
             SizedBox(
               width: 32,
               child: isTop3
                   ? Text(
-                      ['🥇', '🥈', '🥉'][rank - 1],
-                      style: const TextStyle(fontSize: 20),
+                      '$rank',
+                      style: SeeUTypography.displayXS.copyWith(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        color: medalColors[rank - 1],
+                      ),
                       textAlign: TextAlign.center,
                     )
                   : Text(
@@ -255,9 +282,9 @@ class _LeaderboardEntry extends StatelessWidget {
             ),
             const SizedBox(width: 12),
 
-            // Avatar
+            // Avatar — 34px
             CircleAvatar(
-              radius: 22,
+              radius: 17,
               backgroundColor: c.surface2,
               backgroundImage:
                   avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
@@ -267,7 +294,7 @@ class _LeaderboardEntry extends StatelessWidget {
                           ? username[0].toUpperCase()
                           : '?',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: c.ink,
                       ),
@@ -282,10 +309,11 @@ class _LeaderboardEntry extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    fullName.isNotEmpty ? fullName : username,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                    isMe ? 'Вы' : (fullName.isNotEmpty ? fullName : username),
+                    style: TextStyle(
+                      fontWeight: isMe ? FontWeight.w700 : FontWeight.w600,
                       fontSize: 14,
+                      color: isMe ? SeeUColors.accent : c.ink,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

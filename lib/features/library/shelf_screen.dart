@@ -257,7 +257,7 @@ class _ShelfScreenState extends ConsumerState<ShelfScreen> {
       default:
         return _EmptyShelf(
           icon: PhosphorIcons.books(),
-          title: 'Полка пуста',
+          title: 'Библиотека пуста',
           subtitle: 'Загрузи первый файл и он появится здесь',
           action: 'Загрузить файл',
           onAction: () => showUploadSheet(context),

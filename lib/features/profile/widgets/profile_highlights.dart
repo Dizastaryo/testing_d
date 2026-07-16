@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
@@ -33,8 +35,9 @@ class ProfileHighlightsRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
     final addTileCount = isOwnProfile ? 1 : 0;
+    // §05: кружок 56 + зазор 6 + подпись 10px — итого ~78.
     return SizedBox(
-      height: 112,
+      height: 78,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -67,25 +70,24 @@ class ProfileHighlightsRow extends ConsumerWidget {
                   );
                 }
               },
-              // Обложки-«корешки»: вертикальные карточки как в журнале.
+              // §05: кружок 56 — кольцо border 1.5 c.line + padding 3,
+              // обложка круглая внутри кольца.
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 64, height: 84,
+                    width: 56, height: 56,
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
-                      borderRadius:
-                          BorderRadius.circular(SeeURadii.medium),
-                      border: Border.all(color: c.line, width: 0.5),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: c.line, width: 1.5),
                     ),
-                    child: ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(SeeURadii.medium),
+                    child: ClipOval(
                       child: h.coverUrl.isNotEmpty
                           ? CachedNetworkImage(imageUrl: h.coverUrl, fit: BoxFit.cover)
                           : Container(
                               color: c.surface2,
-                              child: Center(child: Icon(PhosphorIcons.image(), size: 24, color: c.ink3)),
+                              child: Center(child: Icon(PhosphorIcons.image(), size: 20, color: c.ink3)),
                             ),
                     ),
                   ),
@@ -93,8 +95,13 @@ class ProfileHighlightsRow extends ConsumerWidget {
                   SizedBox(
                     width: 64,
                     child: Text(
-                      h.title.toUpperCase(),
-                      style: SeeUTypography.kicker.copyWith(color: c.ink2),
+                      h.title,
+                      // §05: подпись 500 10, у обычных хайлайтов — c.ink.
+                      style: SeeUTypography.caption.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: c.ink,
+                      ),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -237,24 +244,65 @@ class ProfileAddHighlightTile extends ConsumerWidget {
         final created = await showCreateHighlightSheet(context: context, username: username);
         if (created) ref.invalidate(userProfileProvider(username));
       },
-      // Add-плитка в формате «корешка»: hairline-бордюр + plus-акцент.
+      // §05: плитка «Новый» — dashed-круг 56 (пунктир ink4) с plus 20 ink3.
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 64, height: 84,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(SeeURadii.medium),
-              border: Border.all(color: c.line, width: 1),
+          CustomPaint(
+            painter: _DashedCirclePainter(color: c.ink4),
+            child: SizedBox(
+              width: 56, height: 56,
+              child: Center(child: Icon(PhosphorIcons.plus(), color: c.ink3, size: 20)),
             ),
-            child: Center(child: Icon(PhosphorIcons.plus(), color: SeeUColors.accent, size: 24)),
           ),
           const SizedBox(height: 6),
-          Text('СОЗДАТЬ',
-              style: SeeUTypography.kicker.copyWith(color: SeeUColors.accent),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+          SizedBox(
+            width: 64,
+            child: Text('Новый',
+                style: SeeUTypography.caption.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: c.ink3,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
         ],
       ),
     );
   }
+}
+
+/// Пунктирная окружность для плитки «Новый» (§05: dashed-круг 56).
+/// По образцу dashed-круга «Твоя» в story_circle.dart.
+class _DashedCirclePainter extends CustomPainter {
+  final Color color;
+  _DashedCirclePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 1;
+    const dashCount = 14;
+    final step = 2 * math.pi / dashCount;
+    final dashAngle = step * 0.55;
+    for (var i = 0; i < dashCount; i++) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: r),
+        i * step,
+        dashAngle,
+        false,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedCirclePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

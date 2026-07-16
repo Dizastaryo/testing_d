@@ -20,6 +20,10 @@ class PdfReaderSettings {
   final PdfBackground background;
   final bool keepAwake;
 
+  /// «Ночной режим · инверсия» — программная инверсия цветов страницы
+  /// (ColorFiltered поверх PDF-полотна). Независим от [themeMode].
+  final bool nightInvert;
+
   const PdfReaderSettings({
     this.themeMode = PdfThemeMode.light,
     this.scrollDirection = PdfScrollDirection.vertical,
@@ -27,6 +31,7 @@ class PdfReaderSettings {
     this.autoSpacing = true,
     this.background = PdfBackground.auto,
     this.keepAwake = true,
+    this.nightInvert = false,
   });
 
   PdfReaderSettings copyWith({
@@ -36,6 +41,7 @@ class PdfReaderSettings {
     bool? autoSpacing,
     PdfBackground? background,
     bool? keepAwake,
+    bool? nightInvert,
   }) =>
       PdfReaderSettings(
         themeMode: themeMode ?? this.themeMode,
@@ -44,6 +50,7 @@ class PdfReaderSettings {
         autoSpacing: autoSpacing ?? this.autoSpacing,
         background: background ?? this.background,
         keepAwake: keepAwake ?? this.keepAwake,
+        nightInvert: nightInvert ?? this.nightInvert,
       );
 
   bool get isNightMode =>
@@ -108,6 +115,7 @@ class PdfReaderSettingsNotifier extends StateNotifier<PdfReaderSettings> {
   static const _keySpacing = 'pdf_autoSpacing';
   static const _keyBg = 'pdf_background';
   static const _keyAwake = 'pdf_keepAwake';
+  static const _keyInvert = 'pdf_nightInvert';
 
   PdfReaderSettingsNotifier() : super(const PdfReaderSettings()) {
     _load();
@@ -123,6 +131,7 @@ class PdfReaderSettingsNotifier extends StateNotifier<PdfReaderSettings> {
       autoSpacing: p.getBool(_keySpacing) ?? true,
       background: _enumAt(PdfBackground.values, p.getInt(_keyBg)),
       keepAwake: p.getBool(_keyAwake) ?? true,
+      nightInvert: p.getBool(_keyInvert) ?? false,
     );
   }
 
@@ -142,6 +151,7 @@ class PdfReaderSettingsNotifier extends StateNotifier<PdfReaderSettings> {
       p.setBool(_keySpacing, state.autoSpacing),
       p.setInt(_keyBg, state.background.index),
       p.setBool(_keyAwake, state.keepAwake),
+      p.setBool(_keyInvert, state.nightInvert),
     ]);
   }
 
@@ -175,8 +185,18 @@ class PdfReaderSettingsNotifier extends StateNotifier<PdfReaderSettings> {
     _save();
   }
 
+  void setNightInvert(bool v) {
+    state = state.copyWith(nightInvert: v);
+    _save();
+  }
+
   void applyPreset(PdfReaderSettings preset) {
-    state = preset;
+    // Пресеты меняют тему/листание, но не трогают устройство-настройки
+    // (не гаснуть экрану) и инверсию — их пользователь включает осознанно.
+    state = preset.copyWith(
+      keepAwake: state.keepAwake,
+      nightInvert: state.nightInvert,
+    );
     _save();
   }
 

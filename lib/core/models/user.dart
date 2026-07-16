@@ -15,6 +15,9 @@ class User {
   final String fullName;
   final String? bio;
   final String? website;
+  /// §05: человекочитаемый текст ссылки — показывается в профиле вместо
+  /// сырого URL (тап по-прежнему открывает website).
+  final String? websiteLabel;
   final String? avatarUrl;
   final String? gender;
   final String? dateOfBirth;
@@ -84,6 +87,7 @@ class User {
     required this.fullName,
     this.bio,
     this.website,
+    this.websiteLabel,
     this.avatarUrl,
     this.gender,
     this.dateOfBirth,
@@ -150,6 +154,7 @@ class User {
       fullName: json['full_name']?.toString() ?? json['fullName']?.toString() ?? '',
       bio: json['bio']?.toString(),
       website: json['website']?.toString(),
+      websiteLabel: json['website_label']?.toString(),
       avatarUrl: _absUrl(json['avatar_url']?.toString() ?? json['avatarUrl']?.toString()),
       gender: json['gender']?.toString(),
       dateOfBirth: json['date_of_birth']?.toString(),
@@ -202,6 +207,7 @@ class User {
       'full_name': fullName,
       'bio': bio,
       'website': website,
+      'website_label': websiteLabel,
       'avatar_url': avatarUrl,
       'gender': gender,
       'date_of_birth': dateOfBirth,
@@ -239,6 +245,7 @@ class User {
     String? fullName,
     String? bio,
     String? website,
+    String? websiteLabel,
     String? avatarUrl,
     String? gender,
     String? dateOfBirth,
@@ -282,6 +289,7 @@ class User {
       fullName: fullName ?? this.fullName,
       bio: bio ?? this.bio,
       website: website ?? this.website,
+      websiteLabel: websiteLabel ?? this.websiteLabel,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       gender: gender ?? this.gender,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,

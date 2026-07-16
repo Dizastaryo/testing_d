@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -689,24 +690,18 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // §J3: conic-кольцо прогресса (не Material-спиннер).
               SizedBox(
                 width: 150,
                 height: 150,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 150,
-                      height: 150,
-                      child: CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 15,
-                        backgroundColor: c.surface2,
-                        valueColor:
-                            const AlwaysStoppedAnimation(SeeUColors.accent),
-                      ),
-                    ),
-                    Column(
+                child: CustomPaint(
+                  painter: _ConicRingPainter(
+                    progress: progress,
+                    track: c.surface2,
+                    fill: SeeUColors.accent,
+                  ),
+                  child: Center(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
@@ -720,7 +715,7 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 28),
@@ -731,12 +726,68 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                [
+                '${[
                   _titleCtrl.text.trim(),
                   _fileSize(_file?.size ?? 0),
-                ].where((e) => e.isNotEmpty).join(' · '),
+                ].where((e) => e.isNotEmpty).join(' · ')}. Можно свернуть — загрузка продолжится в фоне.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, height: 1.5, color: c.ink3),
+              ),
+              const SizedBox(height: 22),
+              // Два действия рядом: «Свернуть» оставляет заливку в провайдере
+              // (продолжается в фоне), «Отменить» реально её рвёт (CancelToken).
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // «Свернуть»: аплоад живёт в провайдере — продолжается в
+                  // фоне, экран можно закрыть.
+                  Tappable.scaled(
+                    onTap: () => context.go('/music/mine?tab=uploads'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: c.surface2,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: c.line),
+                      ),
+                      child: Text('Свернуть',
+                          style: SeeUTypography.caption.copyWith(
+                              fontWeight: FontWeight.w600, color: c.ink2)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // «Отменить»: прерывает незавершённую загрузку и уводит с
+                  // экрана — в отличие от «Свернуть», трек НЕ догрузится.
+                  Tappable.scaled(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      ref.read(audioUploadProvider.notifier).cancel();
+                      context.pop();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFF4C7C4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(PhosphorIconsRegular.x,
+                              size: 14, color: Color(0xFFE53935)),
+                          const SizedBox(width: 6),
+                          Text('Отменить',
+                              style: SeeUTypography.caption.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFFE53935))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 30),
               // Что будет дальше — чтобы не гадать, куда делся трек.
@@ -1061,4 +1112,43 @@ class _CategorySheetState extends State<_CategorySheet> {
           color: c.ink3,
         ),
       );
+}
+
+/// §J3: conic-градиентное кольцо прогресса загрузки (коралл 0..progress,
+/// остаток — surface2). Толщина 15, скруглённая заглушка.
+class _ConicRingPainter extends CustomPainter {
+  final double progress;
+  final Color track;
+  final Color fill;
+  _ConicRingPainter({
+    required this.progress,
+    required this.track,
+    required this.fill,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 15.0;
+    final rect = Offset.zero & size;
+    final inner = rect.deflate(stroke / 2);
+    final trackPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = track;
+    canvas.drawArc(inner, 0, 2 * math.pi, false, trackPaint);
+
+    final sweep = (2 * math.pi) * progress.clamp(0.0, 1.0);
+    if (sweep <= 0) return;
+    final fillPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..color = fill;
+    // Старт сверху (−90°).
+    canvas.drawArc(inner, -math.pi / 2, sweep, false, fillPaint);
+  }
+
+  @override
+  bool shouldRepaint(_ConicRingPainter old) =>
+      old.progress != progress || old.fill != fill || old.track != track;
 }

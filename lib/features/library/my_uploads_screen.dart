@@ -85,7 +85,7 @@ class MyUploadsScreen extends ConsumerWidget {
                 titleText: 'Мои загрузки',
                 leading: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 2),
-                  child: LibBackButton(size: 40),
+                  child: LibBackButton(),
                 ),
                 actions: [
                   SeeUGlassCircleButton(

@@ -69,6 +69,12 @@ class _ReaderShellState extends ConsumerState<ReaderShell>
   late final OfflineCatalogRepository _offlineCatalog;
   bool _appBarVisible = true;
 
+  /// Пилюля «тап — показать панель»: показывается один раз за сессию ридера
+  /// при первом скрытии панели и сама гаснет через 2.5 с.
+  bool _hintShown = false;
+  bool _hintVisible = false;
+  Timer? _hintTimer;
+
   /// Periodic background flush so progress survives a crash/kill, not just a
   /// clean dispose. Mirrors ReadingTracker's debounced/background sync.
   Timer? _saveTimer;
@@ -110,13 +116,26 @@ class _ReaderShellState extends ConsumerState<ReaderShell>
 
   @override
   void dispose() {
+    _hintTimer?.cancel();
     _saveTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _saveProgress();
     super.dispose();
   }
 
-  void _toggleAppBar() => setState(() => _appBarVisible = !_appBarVisible);
+  void _toggleAppBar() {
+    setState(() {
+      _appBarVisible = !_appBarVisible;
+      // Первое скрытие панели — подсказываем, как вернуть её обратно.
+      if (!_appBarVisible && !_hintShown) {
+        _hintShown = true;
+        _hintVisible = true;
+        _hintTimer = Timer(const Duration(milliseconds: 2500), () {
+          if (mounted) setState(() => _hintVisible = false);
+        });
+      }
+    });
+  }
 
   Future<void> _saveProgress() async {
     if (_saving) return;
@@ -271,9 +290,43 @@ class _ReaderShellState extends ConsumerState<ReaderShell>
                   ),
                 ),
               ),
+              // Пилюля «тап — показать панель» — по центру снизу, при первом
+              // скрытии панели, сама гаснет через 2.5 с.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: MediaQuery.of(context).padding.bottom + 28,
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _hintVisible ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Center(child: _buildPanelHint(context)),
+                  ),
+                ),
+              ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// Пилюля-подсказка в тоне текущей «страницы» (см. [_chrome]).
+  Widget _buildPanelHint(BuildContext context) {
+    final ch = _chrome(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: ch.ink.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'тап — показать панель',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: ch.ink2,
+        ),
       ),
     );
   }

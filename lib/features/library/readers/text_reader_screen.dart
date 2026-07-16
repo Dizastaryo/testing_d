@@ -8,12 +8,15 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../core/providers/offline_catalog_provider.dart';
 import '../../../core/services/offline_storage_service.dart';
 import '../../../core/services/reading_tracker.dart';
+import '../library_design.dart';
+import 'pdf_reader_settings.dart';
 import 'reader_settings.dart';
 import 'reader_shell.dart';
 
@@ -75,6 +78,13 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
   @override
   void initState() {
     super.initState();
+    // «Не гаснуть экрану» — общая настройка чтения (живёт в шторке настроек
+    // PDF, ключ pdf_keepAwake). Применяем при открытии текст-ридера тоже.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      WakelockPlus.toggle(
+          enable: ref.read(pdfReaderSettingsProvider).keepAwake);
+    });
     if (widget.isBook) {
       _tracker = ReadingTracker(
         actions: ref.read(libraryActionsProvider),
@@ -295,6 +305,8 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
 
   @override
   void dispose() {
+    // Всегда отпускаем wakelock при закрытии ридера.
+    WakelockPlus.disable();
     _tracker?.dispose();
     _scrollCtrl.dispose();
     _positionNotifier.dispose();
@@ -318,6 +330,19 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
             color: bgColor,
             child: _buildContent(settings, textColor),
           ),
+          // Зерно бумаги поверх страницы — как в дизайне; альфа своя
+          // под каждую тему чтения, виньетки на странице нет.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: PaperGrainPainter(
+                  dark: settings.isNightMode,
+                  vignette: false,
+                  grainColor: _grainColor(settings.theme),
+                ),
+              ),
+            ),
+          ),
           // Reading progress bar at bottom (books only)
           if (_tracker != null)
             Positioned(
@@ -332,6 +357,20 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
         ],
       ),
     );
+  }
+
+  /// Цвет линий зерна бумаги под тему чтения (едва заметная фактура).
+  Color _grainColor(ReaderTheme theme) {
+    switch (theme) {
+      case ReaderTheme.light:
+        return const Color(0xFF785A3C).withValues(alpha: 0.016);
+      case ReaderTheme.sepia:
+        return const Color(0xFF8B6A47).withValues(alpha: 0.03);
+      case ReaderTheme.dark:
+        return const Color(0xFFFFDCB4).withValues(alpha: 0.012);
+      case ReaderTheme.amoled:
+        return const Color(0xFFFFDCB4).withValues(alpha: 0.008);
+    }
   }
 
   Widget _buildContent(ReaderSettings settings, Color textColor) {

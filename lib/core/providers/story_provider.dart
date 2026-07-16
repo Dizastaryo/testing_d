@@ -218,6 +218,35 @@ class StoryNotifier extends StateNotifier<StoryState> {
       state = state.copyWith(storyGroups: rolled);
     }
   }
+
+  /// Удаляет свою историю (меню «три точки» → «Удалить историю»).
+  /// Оптимистично убираем сегмент из ленты, чтобы кружок/полоска исчезли
+  /// сразу; группа автора, оставшаяся без историй, выпадает из ленты целиком.
+  /// При ошибке сети восстанавливаем прежнее состояние и сообщаем наверх
+  /// (`false`), чтобы вьюер показал тост и не закрывался.
+  Future<bool> deleteStory(String storyId) async {
+    final previous = state.storyGroups;
+    final newGroups = <StoryGroup>[];
+    for (final g in previous) {
+      final stories = g.stories.where((s) => s.id != storyId).toList();
+      if (stories.isEmpty) continue; // историй не осталось — убираем группу
+      newGroups.add(StoryGroup(
+        author: g.author,
+        stories: stories,
+        allSeen: stories.every((s) => s.isSeen),
+      ));
+    }
+    state = state.copyWith(storyGroups: newGroups);
+
+    try {
+      await _api.delete(ApiEndpoints.storyById(storyId));
+      return true;
+    } catch (e, st) {
+      appLog.error('[StoryNotifier] deleteStory error', e, st);
+      state = state.copyWith(storyGroups: previous);
+      return false;
+    }
+  }
 }
 
 final storyProvider = StateNotifierProvider<StoryNotifier, StoryState>((ref) {

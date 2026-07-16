@@ -247,51 +247,96 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
             Align(
               alignment: Alignment.topCenter,
               child: SeeUGlassBar(
-                kicker: _bulkMode ? 'ВЫБОР' : 'ОФЛАЙН',
-                title: _bulkMode
-                    ? Text('${_selected.length} выбрано',
-                        style: SeeUTypography.displayS.copyWith(color: c.ink))
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('Скачанные',
-                              style: SeeUTypography.displayS
-                                  .copyWith(color: c.ink)),
-                          const SizedBox(width: 8),
-                          if (!state.isLoading)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color:
-                                    SeeUColors.accent.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '${state.totalCount}',
-                                style: SeeUTypography.mono.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: SeeUColors.accent,
-                                ),
-                              ),
-                            ),
-                        ],
+                // Кикер рисуем сами: «ОФЛАЙН» — зелёный (SeeUGlassBar красит
+                // кикер только в ink3).
+                title: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        _bulkMode ? 'ВЫБОР' : 'ОФЛАЙН',
+                        style: SeeUTypography.kicker.copyWith(
+                          color:
+                              _bulkMode ? c.ink3 : SeeUColors.success,
+                        ),
                       ),
+                    ),
+                    _bulkMode
+                        ? Text('Выбрано ${_selected.length}',
+                            style: SeeUTypography.displayS
+                                .copyWith(color: c.ink))
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Скачанные',
+                                  style: SeeUTypography.displayS
+                                      .copyWith(color: c.ink)),
+                              const SizedBox(width: 8),
+                              if (!state.isLoading)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.accent
+                                        .withValues(alpha: 0.15),
+                                    borderRadius:
+                                        BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${state.totalCount}',
+                                    style: SeeUTypography.mono.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: SeeUColors.accent,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ],
+                ),
                 leading: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 2),
-                  child: LibBackButton(size: 40),
+                  child: LibBackButton(),
                 ),
                 actions: [
                   if (_bulkMode) ...[
-                    SeeUGlassCircleButton(
-                      icon: PhosphorIcon(PhosphorIconsRegular.trash,
-                          color: _selected.isEmpty
-                              ? c.ink4
-                              : SeeUColors.danger,
-                          size: 20),
+                    // «Удалить» — коралловая пилюля rgba(255,90,60,.14).
+                    Tappable.scaled(
                       onTap: () {
                         if (_selected.isNotEmpty) _bulkDelete(context);
                       },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 13, vertical: 9),
+                        decoration: BoxDecoration(
+                          color:
+                              SeeUColors.accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(PhosphorIconsRegular.trash,
+                                size: 15,
+                                color: _selected.isEmpty
+                                    ? c.ink4
+                                    : SeeUColors.accent),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Удалить',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _selected.isEmpty
+                                    ? c.ink4
+                                    : SeeUColors.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     SeeUGlassCircleButton(
@@ -510,6 +555,11 @@ class _BookCard extends StatelessWidget {
         ),
         child: Row(
           children: [
+            // Кастомный чекбокс множественного выбора — слева, 24/r8.
+            if (bulkMode) ...[
+              _SelectBox(selected: isSelected),
+              const SizedBox(width: 10),
+            ],
             // Cover
             _CoverThumbnail(entry: entry),
             const SizedBox(width: 12),
@@ -600,12 +650,6 @@ class _BookCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (bulkMode)
-              Checkbox(
-                value: isSelected,
-                onChanged: (_) => onTap(),
-                activeColor: SeeUColors.accent,
-              ),
           ],
         ),
       ),
@@ -633,11 +677,42 @@ class _BookCard extends StatelessWidget {
   }
 }
 
+// ─── Чекбокс выбора ─────────────────────────────────────────────────────────
+
+/// Кастомный чекбокс 24/r8: выбран — коралл с белой галкой,
+/// не выбран — только рамка ink4.
+class _SelectBox extends StatelessWidget {
+  final bool selected;
+  const _SelectBox({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? SeeUColors.accent : Colors.transparent,
+        border: selected ? null : Border.all(color: c.ink4, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: selected
+          ? const Icon(PhosphorIconsBold.check, size: 14, color: Colors.white)
+          : null,
+    );
+  }
+}
+
 // ─── Cover Thumbnail ────────────────────────────────────────────────────────
 
 class _CoverThumbnail extends StatelessWidget {
   final CatalogEntry entry;
   const _CoverThumbnail({required this.entry});
+
+  // Корешок в строке скачанного — 40×56 (по дизайну).
+  static const _w = 40.0;
+  static const _h = 56.0;
 
   @override
   Widget build(BuildContext context) {
@@ -649,16 +724,16 @@ class _CoverThumbnail extends StatelessWidget {
       final file = File(entry.coverLocalPath!);
       cover = Image.file(
         file,
-        width: 48,
-        height: 64,
+        width: _w,
+        height: _h,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => _placeholder(c),
       );
     } else if (entry.coverUrl != null && entry.coverUrl!.isNotEmpty) {
       cover = Image.network(
         entry.coverUrl!,
-        width: 48,
-        height: 64,
+        width: _w,
+        height: _h,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => _placeholder(c),
       );
@@ -668,20 +743,20 @@ class _CoverThumbnail extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
-      child: SizedBox(width: 48, height: 64, child: cover),
+      child: SizedBox(width: _w, height: _h, child: cover),
     );
   }
 
   Widget _placeholder(SeeUThemeColors c) {
     return Container(
-      width: 48,
-      height: 64,
+      width: _w,
+      height: _h,
       color: c.surface2,
       child: Center(
         child: Text(
           entry.kind.name.toUpperCase(),
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: FontWeight.w700,
             color: c.ink4,
             fontFamily: AppFonts.I.sans,

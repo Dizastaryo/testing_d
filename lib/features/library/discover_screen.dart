@@ -158,7 +158,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             pill: _Pill(
               label: 'Рекомендации',
               icon: PhosphorIconsFill.sparkle,
+              // Плашка — сливовая rgba(192,76,253,.12), текст/иконка — #9B37C9.
               color: SeeUColors.plum,
+              foreground: LibColors.recommendation,
             ),
             provider: recommendationsProvider,
           ),
@@ -332,17 +334,23 @@ class _Pill extends StatelessWidget {
   final Gradient? gradient;
   final Color? color;
 
+  /// Цвет текста/иконки, если он должен отличаться от тона плашки
+  /// (например «Рекомендации»: плашка сливовая, текст глубже — #9B37C9).
+  final Color? foreground;
+
   const _Pill({
     required this.label,
     required this.icon,
     this.gradient,
     this.color,
+    this.foreground,
   });
 
   @override
   Widget build(BuildContext context) {
     final solid = gradient != null;
     final tint = color ?? SeeUColors.accent;
+    final fg = solid ? Colors.white : (foreground ?? tint);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -353,14 +361,14 @@ class _Pill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: solid ? Colors.white : tint),
+          Icon(icon, size: 13, color: fg),
           const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: solid ? Colors.white : tint,
+              color: fg,
             ),
           ),
         ],

@@ -8,6 +8,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/library_provider.dart';
 import 'file_preparation_screen.dart';
+import 'library_design.dart';
 
 const _allowedExtensions = [
   'pdf', 'epub', 'fb2', 'docx', 'pptx', 'txt', 'rtf', 'md', 'odt', 'odp'
@@ -156,7 +157,8 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
       // Guard ref use after the await — sheet might have closed mid-upload.
       if (!mounted) return;
       ref.invalidate(trendingFilesProvider);
-      final ext = _picked!.name.split('.').last.toLowerCase();
+      // Не _picked!: пользователь мог очистить выбор, пока файл улетал.
+      final ext = picked.name.split('.').last.toLowerCase();
       final needsPrep = _convertibleExts.contains(ext);
       Navigator.of(context).pop(<String, dynamic>{
         'uploaded': true,
@@ -175,266 +177,218 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final c = context.seeuColors;
     final cats = ref.watch(fileCategoriesProvider).valueOrNull ?? [];
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         decoration: BoxDecoration(
           color: theme.scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: theme.dividerColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Загрузить файл',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 16),
-
-            // File picker button
-            GestureDetector(
-              onTap: _uploading ? null : _pickFile,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _picked != null
-                      ? SeeUColors.accent.withValues(alpha: 0.08)
-                      : theme.cardColor,
-                  border: Border.all(
-                    color: _picked != null
-                        ? SeeUColors.accent.withValues(alpha: 0.5)
-                        : theme.dividerColor,
-                    style: _picked != null ? BorderStyle.solid : BorderStyle.solid,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _picked != null
-                          ? PhosphorIconsBold.fileText
-                          : PhosphorIconsBold.upload,
-                      color: _picked != null
-                          ? SeeUColors.accent
-                          : theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _picked != null
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _picked!.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600, fontSize: 13),
-                                ),
-                                Text(
-                                  _formatSize(_picked!.size),
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.5)),
-                                ),
-                              ],
-                            )
-                          : Text(
-                              'Выбрать файл (PDF, EPUB, FB2, DOCX…)',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.5)),
-                            ),
-                    ),
-                    if (_picked != null)
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: Icon(PhosphorIconsRegular.x,
-                            size: 18,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-                        onPressed: () => setState(() => _picked = null),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // Title
-            TextField(
-              controller: _titleCtrl,
-              decoration: InputDecoration(
-                labelText: 'Название *',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Author
-            TextField(
-              controller: _authorCtrl,
-              decoration: InputDecoration(
-                labelText: 'Автор (необязательно)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Category dropdown
-            if (cats.isNotEmpty)
-              DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: _categoryId.isEmpty ? null : _categoryId,
-                decoration: InputDecoration(
-                  labelText: 'Категория',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
-                  isDense: true,
-                ),
-                hint: const Text('Без категории'),
-                items: cats.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-                onChanged: (v) => setState(() => _categoryId = v ?? ''),
-              ),
-            if (cats.isNotEmpty) const SizedBox(height: 10),
-
-            // Description
-            TextField(
-              controller: _descCtrl,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: 'Описание (необязательно)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(SeeURadii.small)),
-                isDense: true,
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Language chips — Wrap, чтобы на узких экранах чипы переносились
-            // на новую строку, а не выходили за край (overflow).
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text('Язык:',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.6))),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final lang in [('ru', 'Русский'), ('en', 'English'), ('kk', 'Қазақша'), ('other', 'Другой')])
-                        GestureDetector(
-                          onTap: () => setState(() => _language = lang.$1),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: _language == lang.$1
-                                  ? SeeUColors.accent
-                                  : theme.cardColor,
-                              border: Border.all(
-                                color: _language == lang.$1
-                                    ? SeeUColors.accent
-                                    : theme.dividerColor,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              lang.$2,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: _language == lang.$1
-                                      ? Colors.white
-                                      : theme.colorScheme.onSurface),
-                            ),
-                          ),
-                        ),
-                    ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Grabber
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.dividerColor,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Cover picker — optional
-            _CoverPickerRow(
-              cover: _cover,
-              onPick: _uploading ? null : _pickCover,
-              onRemove: () => setState(() => _cover = null),
-            ),
-            const SizedBox(height: 20),
-
-            // Upload progress bar + button
-            if (_uploading && _uploadProgress > 0) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(
-                  value: _uploadProgress,
-                  minHeight: 6,
-                  backgroundColor:
-                      SeeUColors.accent.withValues(alpha: 0.12),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                      SeeUColors.accent),
+              ),
+              const SizedBox(height: 16),
+              // Серифный editorial-заголовок шторки.
+              Text(
+                'Загрузить файл',
+                style: SeeUTypography.displayXS.copyWith(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
+
+              // Обложка (dashed 76×104) + область «Выбрать файл» (dashed коралл).
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Загрузка файла…',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.5))),
-                  Text(
-                    '${(_uploadProgress * 100).toInt()}%',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: SeeUColors.accent,
+                  _CoverSlot(
+                    cover: _cover,
+                    onPick: _uploading ? null : _pickCover,
+                    onRemove: () => setState(() => _cover = null),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _FileSlot(
+                      picked: _picked,
+                      sizeLabel:
+                          _picked != null ? _formatSize(_picked!.size) : '',
+                      onPick: _uploading ? null : _pickFile,
+                      onClear: () => setState(() => _picked = null),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 18),
+
+              // Название / Автор — поля в стиле Читальни (кикер + плашка 42/r12).
+              _LibField(
+                label: 'НАЗВАНИЕ *',
+                hint: 'Как называется книга или документ',
+                controller: _titleCtrl,
+              ),
+              const SizedBox(height: 12),
+              _LibField(
+                label: 'АВТОР',
+                hint: 'Необязательно',
+                controller: _authorCtrl,
+              ),
+              const SizedBox(height: 12),
+
+              // Категория
+              if (cats.isNotEmpty) ...[
+                _fieldLabel(context, 'КАТЕГОРИЯ'),
+                const SizedBox(height: 6),
+                Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: _fieldDecoration(context),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _categoryId.isEmpty ? null : _categoryId,
+                      isExpanded: true,
+                      hint: Text('Без категории',
+                          style: TextStyle(fontSize: 13, color: c.ink3)),
+                      style: TextStyle(fontSize: 13, color: c.ink),
+                      dropdownColor: theme.cardColor,
+                      icon: Icon(PhosphorIconsRegular.caretDown,
+                          size: 14, color: c.ink3),
+                      items: cats
+                          .map((cat) => DropdownMenuItem(
+                              value: cat.id, child: Text(cat.name)))
+                          .toList(),
+                      onChanged: (v) => setState(() => _categoryId = v ?? ''),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Описание
+              _LibField(
+                label: 'ОПИСАНИЕ',
+                hint: 'Пара слов о файле — необязательно',
+                controller: _descCtrl,
+                maxLines: 3,
+              ),
+              const SizedBox(height: 14),
+
+              // Язык
+              _fieldLabel(context, 'ЯЗЫК'),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final lang in [
+                    ('ru', 'Русский'),
+                    ('en', 'English'),
+                    ('kk', 'Қазақша'),
+                    ('other', 'Другой'),
+                  ])
+                    GestureDetector(
+                      onTap: () => setState(() => _language = lang.$1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _language == lang.$1
+                              ? SeeUColors.accent
+                              : theme.cardColor,
+                          border: Border.all(
+                            color: _language == lang.$1
+                                ? SeeUColors.accent
+                                : LibColors.line(context),
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          lang.$2,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color:
+                                _language == lang.$1 ? Colors.white : c.ink,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Прогресс загрузки
+              if (_uploading && _uploadProgress > 0) ...[
+                LibProgressBar(value: _uploadProgress, height: 6),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Загрузка файла…',
+                        style: TextStyle(fontSize: 12, color: c.ink3)),
+                    Text(
+                      '${(_uploadProgress * 100).toInt()}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: SeeUColors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // Кнопка «Загрузить» — коралл 48/r15 с мягкой тенью.
+              _UploadButton(
+                enabled: !_uploading && _picked != null,
+                loading: _uploading && _uploadProgress == 0,
+                label: _uploading ? 'Загрузка…' : 'Загрузить',
+                onTap: _upload,
+              ),
             ],
-            SeeUButton(
-              label: _uploading ? 'Загрузка…' : 'Загрузить',
-              onTap: (_uploading || _picked == null) ? null : _upload,
-              isLoading: _uploading && _uploadProgress == 0,
-              width: double.infinity,
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// Кикер-лейбл поля в стиле Читальни.
+  static Widget _fieldLabel(BuildContext context, String label) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 9,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.6,
+        color: context.seeuColors.ink3,
+      ),
+    );
+  }
+
+  /// Плашка поля: карточный фон, тонкая линия, r12.
+  static BoxDecoration _fieldDecoration(BuildContext context) {
+    return BoxDecoration(
+      color: Theme.of(context).cardColor,
+      border: Border.all(color: LibColors.line(context)),
+      borderRadius: BorderRadius.circular(12),
     );
   }
 
@@ -445,12 +399,14 @@ class _UploadSheetState extends ConsumerState<UploadSheet> {
   }
 }
 
-class _CoverPickerRow extends StatelessWidget {
+// ─── Слот обложки (dashed 76×104) ───────────────────────────────────────────
+
+class _CoverSlot extends StatelessWidget {
   final PlatformFile? cover;
   final VoidCallback? onPick;
   final VoidCallback onRemove;
 
-  const _CoverPickerRow({
+  const _CoverSlot({
     required this.cover,
     required this.onPick,
     required this.onRemove,
@@ -458,109 +414,279 @@ class _CoverPickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Preview / placeholder
-        GestureDetector(
-          onTap: onPick,
-          child: Container(
-            width: 52,
-            height: 72,
-            decoration: BoxDecoration(
-              color: cover != null
-                  ? Colors.transparent
-                  : theme.cardColor,
-              border: Border.all(
-                color: cover != null
-                    ? SeeUColors.accent.withValues(alpha: 0.5)
-                    : theme.dividerColor,
-                style: BorderStyle.solid,
+    final c = context.seeuColors;
+
+    if (cover?.bytes != null) {
+      // Обложка выбрана — превью с крестиком в углу.
+      return SizedBox(
+        width: 76,
+        height: 104,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                cover!.bytes!,
+                width: 76,
+                height: 104,
+                fit: BoxFit.cover,
               ),
-              borderRadius: BorderRadius.circular(8),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: cover?.bytes != null
-                ? Image.memory(cover!.bytes!, fit: BoxFit.cover)
-                : Icon(
-                    PhosphorIconsRegular.imageSquare,
-                    size: 24,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
                   ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Обложка',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'необязательно',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Text(
-                cover != null
-                    ? cover!.name
-                    : 'По умолчанию',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  child: const Icon(PhosphorIconsBold.x,
+                      size: 11, color: Colors.white),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: onPick,
+      child: LibDashedBorder(
+        color: c.ink4,
+        radius: 12,
+        child: SizedBox(
+          width: 76,
+          height: 104,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(PhosphorIconsRegular.image, size: 22, color: c.ink3),
               const SizedBox(height: 6),
-              GestureDetector(
-                onTap: onPick,
-                child: Text(
-                  cover != null ? 'Изменить' : 'Выбрать изображение',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: SeeUColors.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Text(
+                'Обложка',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink3,
                 ),
               ),
             ],
           ),
         ),
-        if (cover != null)
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: Icon(
-              PhosphorIconsRegular.x,
-              size: 18,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-            ),
-            onPressed: onRemove,
+      ),
+    );
+  }
+}
+
+// ─── Область «Выбрать файл» (dashed коралл) ─────────────────────────────────
+
+class _FileSlot extends StatelessWidget {
+  final PlatformFile? picked;
+  final String sizeLabel;
+  final VoidCallback? onPick;
+  final VoidCallback onClear;
+
+  const _FileSlot({
+    required this.picked,
+    required this.sizeLabel,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+
+    return GestureDetector(
+      onTap: onPick,
+      child: LibDashedBorder(
+        color: SeeUColors.accent.withValues(alpha: 0.6),
+        radius: 12,
+        child: Container(
+          height: 104,
+          decoration: BoxDecoration(
+            color: SeeUColors.accent.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(12),
           ),
+          child: picked == null
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(PhosphorIconsRegular.fileArrowUp,
+                        size: 26, color: SeeUColors.accent),
+                    const SizedBox(height: 7),
+                    const Text(
+                      'Выбрать файл',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: SeeUColors.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'PDF · FB2 · DOCX · EPUB · TXT…',
+                      style: TextStyle(fontSize: 9, color: c.ink3),
+                    ),
+                  ],
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIconsBold.fileText,
+                          size: 22, color: SeeUColors.accent),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              picked!.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                height: 1.3,
+                                color: c.ink,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              sizeLabel,
+                              style:
+                                  TextStyle(fontSize: 10, color: c.ink3),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: onClear,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(PhosphorIconsRegular.x,
+                              size: 16, color: c.ink4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Поле «в стиле Читальни» ────────────────────────────────────────────────
+
+/// Кикер-лейбл сверху + плашка 42/r12 с тонкой линией (не Material-лейблы).
+class _LibField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final int maxLines;
+
+  const _LibField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final single = maxLines == 1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _UploadSheetState._fieldLabel(context, label),
+        const SizedBox(height: 6),
+        Container(
+          height: single ? 42 : null,
+          padding: EdgeInsets.symmetric(
+              horizontal: 12, vertical: single ? 0 : 10),
+          alignment: single ? Alignment.centerLeft : null,
+          decoration: _UploadSheetState._fieldDecoration(context),
+          child: TextField(
+            controller: controller,
+            maxLines: maxLines,
+            style: TextStyle(fontSize: 13, color: c.ink),
+            decoration: InputDecoration(
+              isCollapsed: true,
+              border: InputBorder.none,
+              hintText: hint,
+              hintStyle: TextStyle(fontSize: 13, color: c.ink4),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+// ─── Кнопка «Загрузить» ─────────────────────────────────────────────────────
+
+class _UploadButton extends StatelessWidget {
+  final bool enabled;
+  final bool loading;
+  final String label;
+  final VoidCallback onTap;
+
+  const _UploadButton({
+    required this.enabled,
+    required this.loading,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+
+    return Tappable.scaled(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        height: 48,
+        decoration: BoxDecoration(
+          color: enabled || loading ? SeeUColors.accent : c.surface2,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color: SeeUColors.accent.withValues(alpha: 0.45),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                    spreadRadius: -6,
+                  ),
+                ]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              )
+            : Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: enabled ? Colors.white : c.ink4,
+                ),
+              ),
+      ),
     );
   }
 }

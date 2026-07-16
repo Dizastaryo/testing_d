@@ -92,12 +92,17 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
   /// отдельным разделом.
   static const _audioTabs = ['/music', '/music/search', '/music/mine'];
 
-  /// Плеер и очередь показываем во весь экран — там своё нижнее управление,
-  /// вкладки только мешали бы.
+  /// Аудио-меню (3 вкладки) видно на главных вкладках сервиса И на его
+  /// подстраницах (карточка трека, категория) — «подстраницы: единая Назад»,
+  /// но меню остаётся сервисным, а не коренным SeeU (раньше карточка трека
+  /// показывала 5-вкладочное меню приложения). Плеер и загрузка — fullscreen
+  /// без меню (гейтится в main.dart showTabs).
   static bool _isAudio(String loc) =>
       loc == '/music' ||
-      loc.startsWith('/music/search') ||
-      loc.startsWith('/music/mine');
+      loc.startsWith('/music/') ||
+      // Плейлист — служебная подстраница Аудиотеки: держит то же 3-вкладочное
+      // аудио-меню, что карточка трека и категория.
+      loc.startsWith('/playlist');
 
   static int _audioIndex(String loc) {
     if (loc.startsWith('/music/search')) return 1;
@@ -394,28 +399,34 @@ class _ScannerPill extends StatelessWidget {
     return Tappable.scaled(
       onTap: onTap,
       scaleFactor: 0.88,
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [SeeUColors.accentSecondary, SeeUColors.accent],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: SeeUColors.accent.withValues(alpha: isSelected ? 0.55 : 0.35),
-              blurRadius: isSelected ? 20 : 14,
-              offset: const Offset(0, 4),
+      // §02: сканер — герой. Круг 50 приподнят над панелью на 6px
+      // (margin-top −6 из спеки), glow blur 14→20 при активности.
+      child: Transform.translate(
+        offset: const Offset(0, -6),
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [SeeUColors.accentSecondary, SeeUColors.accent],
             ),
-          ],
-        ),
-        child: Center(
-          child: CustomPaint(
-            size: const Size(24, 24),
-            painter: _ScannerCenterIcon(active: isSelected),
+            boxShadow: [
+              BoxShadow(
+                color: SeeUColors.accent
+                    .withValues(alpha: isSelected ? 0.55 : 0.35),
+                blurRadius: isSelected ? 20 : 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Center(
+            child: CustomPaint(
+              size: const Size(24, 24),
+              painter: _ScannerCenterIcon(active: isSelected),
+            ),
           ),
         ),
       ),

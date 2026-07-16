@@ -51,6 +51,7 @@ class _PostCardState extends ConsumerState<PostCard>
   late Animation<double> _heartScaleAnim;
   late Animation<double> _heartOpacityAnim;
   bool _showHeart = false;
+  bool _pollVoting = false;
   // Burst — particle-эффект поверх большой anim'ы. Два GlobalKey'а потому что
   // wave-layout и normal-layout рендерятся в разных Stack'ах, на экране в
   // момент времени только один — пуляем burst в оба (другой просто null'ится).
@@ -133,6 +134,51 @@ class _PostCardState extends ConsumerState<PostCard>
     if (mounted) setState(() => _post = updated);
     ref.read(feedProvider.notifier).applyPostUpdate(updated);
     ref.read(exploreProvider.notifier).applyPostUpdate(updated);
+  }
+
+  /// §A4: голос за вариант опроса волны. Оптимистично инкрементим локально,
+  /// затем подменяем свежим состоянием с сервера. Один голос — повторный тап
+  /// уже заблокирован (pollVoted). Ошибка — откат к widget.post-состоянию.
+  Future<void> _votePoll(PostPollOption opt) async {
+    if (_pollVoting || _post.pollVoted) return;
+    setState(() => _pollVoting = true);
+    HapticFeedback.selectionClick();
+
+    // Оптимистичный слепок.
+    final optimistic = _post.copyWith(
+      pollVotedOption: opt.id,
+      pollTotalVotes: _post.pollTotalVotes + 1,
+      pollOptions: [
+        for (final o in _post.pollOptions)
+          if (o.id == opt.id)
+            PostPollOption(id: o.id, label: o.label, voteCount: o.voteCount + 1)
+          else
+            o,
+      ],
+    );
+    _applyPost(optimistic);
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final resp = await api.post(
+        ApiEndpoints.postPollVote(_post.id),
+        data: {'option_id': opt.id},
+      );
+      final raw = resp.data;
+      final data = (raw is Map && raw['data'] is Map) ? raw['data'] : raw;
+      if (data is Map) {
+        _applyPost(Post.fromJson(data.cast<String, dynamic>()));
+      }
+    } catch (_) {
+      // Откат: возвращаем версию из widget.post (до голоса).
+      _applyPost(widget.post);
+      if (mounted) {
+        showSeeUSnackBar(context, 'Не удалось проголосовать',
+            tone: SeeUTone.danger);
+      }
+    } finally {
+      if (mounted) setState(() => _pollVoting = false);
+    }
   }
 
   void _onDoubleTap() {
@@ -389,6 +435,10 @@ class _PostCardState extends ConsumerState<PostCard>
                 ],
               ),
             ),
+            if (post.hasPoll) ...[
+              const SizedBox(height: 14),
+              _buildWavePoll(context, post, accent),
+            ],
             const SizedBox(height: 14),
             _buildWaveActions(context, post),
             _buildWaveReplies(context, post),
@@ -396,6 +446,132 @@ class _PostCardState extends ConsumerState<PostCard>
           ],
       ),
     );
+  }
+
+  /// §A4: блок опроса под текстом волны. До голоса — тапабельные варианты; после
+  /// — те же строки с progress-заливкой, процентами и отметкой выбранного.
+  Widget _buildWavePoll(BuildContext context, Post post, Color accent) {
+    final c = context.seeuColors;
+    final voted = post.pollVotedOption;
+    final total = post.pollTotalVotes;
+    final revealed = post.pollVoted;
+    return Padding(
+      // Совмещаем с текстом волны (планка 2.5 + отступ 14).
+      padding: const EdgeInsets.only(left: 16.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final opt in post.pollOptions) ...[
+            _pollOptionTile(
+              c: c,
+              accent: accent,
+              label: opt.label,
+              votes: opt.voteCount,
+              total: total,
+              selected: voted == opt.id,
+              revealed: revealed,
+              onTap: (revealed || _pollVoting) ? null : () => _votePoll(opt),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            revealed
+                ? '$total ${_votesWord(total)}'
+                : 'Нажми, чтобы проголосовать',
+            style: SeeUTypography.micro.copyWith(color: c.ink3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pollOptionTile({
+    required SeeUThemeColors c,
+    required Color accent,
+    required String label,
+    required int votes,
+    required int total,
+    required bool selected,
+    required bool revealed,
+    required VoidCallback? onTap,
+  }) {
+    final pct = total > 0 ? (votes / total).clamp(0.0, 1.0) : 0.0;
+    return Tappable(
+      onTap: onTap,
+      enableHaptic: false, // свой selectionClick в _votePoll
+      child: Container(
+        height: 42,
+        decoration: BoxDecoration(
+          color: c.surface2,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? accent : c.line,
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            // Заливка результата после голоса.
+            if (revealed)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: pct,
+                    child: ColoredBox(
+                      color: accent.withValues(alpha: selected ? 0.20 : 0.10),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                children: [
+                  if (selected) ...[
+                    Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                        size: 15, color: accent),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SeeUTypography.caption.copyWith(
+                        color: c.ink,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (revealed) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${(pct * 100).round()}%',
+                      style: SeeUTypography.caption.copyWith(
+                        color: selected ? accent : c.ink3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Русское склонение «голос / голоса / голосов».
+  String _votesWord(int n) {
+    final m10 = n % 10;
+    final m100 = n % 100;
+    if (m10 == 1 && m100 != 11) return 'голос';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'голоса';
+    return 'голосов';
   }
 
   // U14: Shared action row builder used by both wave and normal posts (DRY)
@@ -629,7 +805,7 @@ class _PostCardState extends ConsumerState<PostCard>
                           post.location != null &&
                           post.location!.isNotEmpty)
                         post.location!,
-                    ].join(' · '),
+                    ].join(' · ').toUpperCase(),
                     style: SeeUTypography.kicker.copyWith(color: c.ink3),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,

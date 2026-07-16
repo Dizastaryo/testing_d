@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/sbor.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/providers/nearest_sbor_provider.dart';
+import '../music/audio_design.dart';
 
 /// Витрина сервисов (§06 дизайн-ядра): не список из трёх строк, а три двери в
 /// разные миры. Каждая карточка носит характер своего сервиса. Порядок
@@ -135,11 +137,12 @@ class _SboryHeroCard extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        // Клип по радиусу самой карточки: фоновая иконка отсчитывается от
+        // края карточки (right:-14 / bottom:-20), а не от паддинга контента.
+        clipBehavior: Clip.antiAlias,
         child: Stack(
-          clipBehavior: Clip.hardEdge,
           children: [
-            Positioned(
+            const Positioned(
               right: -14,
               bottom: -20,
               child: Opacity(
@@ -151,7 +154,9 @@ class _SboryHeroCard extends StatelessWidget {
                 ),
               ),
             ),
-            Column(
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -176,14 +181,21 @@ class _SboryHeroCard extends StatelessWidget {
                       children: [
                         Text(
                           'Сборы',
-                          style: SeeUTypography.title
-                              .copyWith(color: Colors.white),
+                          // Спека §06: 700 18 белый.
+                          style: SeeUTypography.title.copyWith(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Встречи людей рядом',
-                          style: SeeUTypography.caption
-                              .copyWith(color: Colors.white70),
+                          // Спека §06: 500 12 rgba(255,255,255,.8).
+                          style: SeeUTypography.caption.copyWith(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.8),
+                          ),
                         ),
                       ],
                     ),
@@ -203,6 +215,7 @@ class _SboryHeroCard extends StatelessWidget {
                   ),
                   child: live != null
                       ? Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
                               width: 7,
@@ -243,8 +256,9 @@ class _SboryHeroCard extends StatelessWidget {
                                 size: 12, color: Colors.white),
                           ],
                         ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -255,12 +269,21 @@ class _SboryHeroCard extends StatelessWidget {
 
 // ─── Аудиотека — тёмная сливовая дверь ─────────────────────────────
 
-class _AudioServiceCard extends StatelessWidget {
+class _AudioServiceCard extends ConsumerWidget {
   final VoidCallback onTap;
   const _AudioServiceCard({required this.onTap});
 
+  /// Светлый фиолетовый под тёмную сливовую карточку — для эквалайзера и
+  /// иконки паузы live-строки (чистый plum на #241033 читается слабо).
+  static const Color _liveAccent = Color(0xFFD9B8FF);
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // «Живая» карточка: если в плеере есть трек — вместо статичной подписи
+    // показываем «что играет» с эквалайзером (на паузе — иконка паузы).
+    final track = ref.watch(miniPlayerProvider.select((s) => s.track));
+    final playing = ref.watch(miniPlayerProvider.select((s) => s.playing));
+    final c = context.seeuColors;
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
@@ -272,6 +295,10 @@ class _AudioServiceCard extends StatelessWidget {
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(SeeURadii.card),
+          // В тёмной теме карточка почти сливается с фоном — тонкий контур.
+          border: c.isDark
+              ? Border.all(color: Colors.white.withValues(alpha: 0.08))
+              : null,
         ),
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -298,18 +325,46 @@ class _AudioServiceCard extends StatelessWidget {
                 children: [
                   Text(
                     'Аудиотека',
+                    // Спека §06: 700 17 белый.
                     style: SeeUTypography.title.copyWith(
                       fontSize: 17,
+                      fontWeight: FontWeight.w700,
                       color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Звуки, музыка и голоса',
-                    style: SeeUTypography.caption.copyWith(
-                      color: Colors.white.withValues(alpha: 0.6),
+                  if (track == null)
+                    Text(
+                      'Звуки, музыка и голоса',
+                      style: SeeUTypography.caption.copyWith(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        if (playing)
+                          const NowPlayingBars(color: _liveAccent, height: 12)
+                        else
+                          const Icon(PhosphorIconsFill.pause,
+                              size: 11, color: _liveAccent),
+                        const SizedBox(width: 7),
+                        Flexible(
+                          child: Text(
+                            track.artist.isEmpty
+                                ? track.title
+                                : '${track.title} · ${track.artist}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: SeeUTypography.caption.copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
                 ],
               ),
             ),
@@ -348,101 +403,123 @@ class _LibraryServiceCard extends StatelessWidget {
     final streak = stats?['reading_streak'] as int? ?? 0;
     final hasStats = done + reading > 0;
 
+    // Тёмная тема: «бумага» уступает тёмной поверхности, но характер
+    // (корешок-градиент, сериф, тёплые оттенки) сохраняется.
+    final c = context.seeuColors;
+    final paper = c.isDark ? SeeUColors.darkSurface : _paper;
+    final line = c.isDark ? SeeUColors.darkLine : _paperLine;
+    final ink = c.isDark ? SeeUColors.darkInk : _ink;
+    final inkMuted = c.isDark ? SeeUColors.darkInk3 : _inkMuted;
+    final caret = c.isDark ? SeeUColors.darkInk4 : const Color(0xFFB0A08C);
+    // #B0442A на тёмной поверхности не читается — берём светлый коралл.
+    final streakInk =
+        c.isDark ? SeeUColors.accentSecondary : const Color(0xFFB0442A);
+
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
+        height: 104, // Спека §06: Библиотека — 104, как Аудиотека.
         decoration: BoxDecoration(
-          color: _paper,
-          border: Border.all(color: _paperLine),
+          color: paper,
+          border: Border.all(color: line),
           borderRadius: BorderRadius.circular(SeeURadii.card),
         ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_spineTop, _spineBottom],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _spineBottom.withValues(alpha: 0.25),
-                        offset: const Offset(2, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(PhosphorIconsFill.books,
-                      color: Colors.white, size: 24),
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [_spineTop, _spineBottom],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Библиотека',
-                        style: SeeUTypography.title.copyWith(
-                          fontFamily: AppFonts.I.serif,
-                          fontSize: 18,
-                          color: _ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        hasStats
-                            ? '$reading читаю · $done прочитано'
-                            : 'Книги, документы, чтение',
-                        style: SeeUTypography.caption.copyWith(color: _inkMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  PhosphorIconsRegular.caretRight,
-                  color: Color(0xFFB0A08C),
-                  size: 18,
-                ),
-              ],
-            ),
-            if (streak > 0) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: SeeUColors.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(SeeURadii.pill),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(PhosphorIconsFill.flame,
-                            size: 11, color: SeeUColors.accent),
-                        const SizedBox(width: 5),
-                        Text(
-                          '$streak ${_pluralDays(streak)} подряд',
-                          style: SeeUTypography.caption.copyWith(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFFB0442A),
-                          ),
-                        ),
-                      ],
-                    ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: _spineBottom.withValues(alpha: 0.25),
+                    offset: const Offset(2, 2),
                   ),
                 ],
               ),
-            ],
+              child: const Icon(PhosphorIconsFill.books,
+                  color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Библиотека',
+                    style: SeeUTypography.title.copyWith(
+                      fontFamily: AppFonts.I.serif,
+                      fontSize: 18,
+                      color: ink,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  // Статы и streak-пилюля в одну строку — карточка
+                  // фиксированной высоты 104 не растёт от серии чтения.
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          hasStats
+                              ? '$reading читаю · $done прочитано'
+                              : 'Книги, документы, чтение',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          // Спека §06: 500 12 #6A5A48.
+                          style: SeeUTypography.caption.copyWith(
+                            fontSize: 12,
+                            color: inkMuted,
+                          ),
+                        ),
+                      ),
+                      if (streak > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: SeeUColors.accent
+                                .withValues(alpha: c.isDark ? 0.18 : 0.12),
+                            borderRadius:
+                                BorderRadius.circular(SeeURadii.pill),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(PhosphorIconsFill.flame,
+                                  size: 11, color: SeeUColors.accent),
+                              const SizedBox(width: 5),
+                              Text(
+                                '$streak ${_pluralDays(streak)} подряд',
+                                // Спека §06: 600 10 #B0442A.
+                                style: SeeUTypography.caption.copyWith(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: streakInk,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              PhosphorIconsRegular.caretRight,
+              color: caret,
+              size: 18,
+            ),
           ],
         ),
       ),

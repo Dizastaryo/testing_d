@@ -22,6 +22,7 @@ class ApiEndpoints {
   static String postById(String id) => '/posts/$id';
   static String likePost(String id) => '/posts/$id/like';
   static String savePost(String id) => '/posts/$id/save';
+  static String postPollVote(String id) => '/posts/$id/poll/vote';
   static String postComments(String id) => '/posts/$id/comments';
   static String commentReplies(String commentId) => '/comments/$commentId/replies';
   static String deleteComment(String id) => '/comments/$id';

@@ -336,7 +336,7 @@ class _MusicSearchScreenState extends ConsumerState<MusicSearchScreen> {
 
     return async.when(
       loading: () => const Center(
-        child: CircularProgressIndicator(color: SeeUColors.accent),
+        child: AudioListSkeleton(rows: 6),
       ),
       error: (_, __) =>
           AudioErrorState(onRetry: () => ref.invalidate(audioSearchProvider(params))),

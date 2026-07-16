@@ -325,15 +325,15 @@ class _UserRowState extends ConsumerState<_UserRow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // §07: username-строка (600) + seal-check, имя — второй
+                  // приглушённой строкой.
                   Row(
                     children: [
                       Flexible(
                         child: Text(
-                          user.fullName.isNotEmpty
-                              ? user.fullName
-                              : user.username,
-                          style: SeeUTypography.subtitle
-                              .copyWith(color: c.ink),
+                          user.username,
+                          style: SeeUTypography.subtitle.copyWith(
+                              color: c.ink, fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -341,17 +341,20 @@ class _UserRowState extends ConsumerState<_UserRow> {
                       if (user.isVerified) ...[
                         const SizedBox(width: 4),
                         const Icon(PhosphorIconsFill.sealCheck,
-                            color: SeeUColors.accent, size: 14),
+                            color: SeeUColors.accent, size: 13),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '@${user.username}',
-                    style: SeeUTypography.kicker.copyWith(color: c.ink3),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  if (user.fullName.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      user.fullName,
+                      style: SeeUTypography.caption
+                          .copyWith(fontSize: 12, color: c.ink3),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),

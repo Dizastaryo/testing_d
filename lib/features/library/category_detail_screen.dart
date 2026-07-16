@@ -31,7 +31,8 @@ class CategoryDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
-  String _sort = 'date';
+  // По дизайну полка категории открывается с сортировкой «Популярные».
+  String _sort = 'likes';
   final _scrollCtrl = ScrollController();
 
   /// Категория: из extra или по slug из справочника. Getter вместо поля,

@@ -8,12 +8,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/utils/time_format.dart';
 import '../../../core/design/design.dart';
 import '../../../core/models/audio_track.dart';
+import '../../../core/providers/access_provider.dart';
 import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/realtime_provider.dart';
 import '../../../core/providers/story_provider.dart';
@@ -159,6 +161,13 @@ class _StoryGlassPill extends StatelessWidget {
     );
   }
 }
+
+// §03 «Лента» (SeeU CORE): фон вьюера историй и сплошные тёмные зоны
+// letterbox'а — верхняя под прогресс-бары/автора, нижняя под reply-бар и
+// кнопки. Медиа рендерится МЕЖДУ зонами, а не под весь экран.
+const Color _kStoryViewerBg = Color(0xFF0E0C0A);
+const double _kStoryTopZoneH = 104;
+const double _kStoryBottomZoneH = 96;
 
 class StoryViewerRoute extends StatelessWidget {
   final List<StoryGroup> groups;
@@ -606,6 +615,15 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     } catch (_) {/* network/decoding error — silent */}
   }
 
+  /// §03: «Поделиться» на чужой истории — системный share со ссылкой на
+  /// профиль автора (у историй нет публичного URL — они эфемерны).
+  void _shareStory(Story story) {
+    _pauseStory();
+    final username = _currentGroup.author.username;
+    Share.share(
+        'История @$username в SeeU — https://seeu.app/profile/$username');
+  }
+
   void _openReply() {
     _pauseStory();
     setState(() => _isReplyOpen = true);
@@ -704,53 +722,73 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     }
   }
 
+  /// §03 «Story свой»: слева внизу — стопка из 2 аватаров зрителей 24px
+  /// (пересечение на 8px, бордюр 1.5 цветом фона вьюера) + число просмотров
+  /// (600 15 белым). Тап открывает существующий StoryViewersSheet.
+  /// Данных об аватарах зрителей в модели Story нет — стопка рисуется
+  /// детерминированными градиент-заглушками из [SeeUColors.avatarPalettes],
+  /// число при этом реальное (с учётом realtime-оверрайда).
   Widget _buildOwnStoryBottom(Story story) {
     final live = _liveViewsOverride[story.id] ?? story.viewsCount;
-    return GestureDetector(
-      onTap: () => _openViewersSheet(story),
-      child: _StoryGlassPill(
-        padding: EdgeInsets.zero,
+
+    // Одна градиент-заглушка аватара зрителя.
+    Widget viewerStub(int seed) {
+      final palette =
+          SeeUColors.avatarPalettes[seed % SeeUColors.avatarPalettes.length];
+      return Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: palette,
+          ),
+          border: Border.all(color: _kStoryViewerBg, width: 1.5),
+        ),
+      );
+    }
+
+    // 0 зрителей — стопки нет; 1 зритель — один кружок.
+    final stubCount = live >= 2 ? 2 : live;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openViewersSheet(story),
+        // Высота 44 — держим тач-таргет по гайду при аватарах 24px.
         child: SizedBox(
-          height: 48,
+          height: 44,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(
-                PhosphorIcons.eye(),
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
+              if (stubCount > 0) ...[
+                SizedBox(
+                  width: 24.0 + (stubCount - 1) * 16.0,
+                  height: 24,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < stubCount; i++)
+                        Positioned(left: i * 16.0, child: viewerStub(i)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(
-                live == 0
-                    ? 'Пока никто не посмотрел'
-                    : '$live ${_pluralViewers(live)}',
+                live == 0 ? 'Пока никто не посмотрел' : '$live',
                 style: SeeUTypography.body.copyWith(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
-              ),
-              const SizedBox(width: 4),
-              PhosphorIcon(
-                PhosphorIcons.caretUp(),
-                color: Colors.white70,
-                size: 16,
               ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  String _pluralViewers(int n) {
-    final m100 = n % 100;
-    final m10 = n % 10;
-    if (m100 >= 11 && m100 <= 14) return 'просмотров';
-    if (m10 == 1) return 'просмотр';
-    if (m10 >= 2 && m10 <= 4) return 'просмотра';
-    return 'просмотров';
   }
 
   Future<void> _openViewersSheet(Story story) async {
@@ -767,6 +805,83 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     if (mounted && !_isReplyOpen) {
       _resumeStory();
     }
+  }
+
+  /// §03 «Story свой»: меню управления своей историей («три точки» справа
+  /// вверху). Пока меню/подтверждение открыты — история на паузе; при
+  /// закрытии без удаления возобновляем показ.
+  Future<void> _openOwnStoryOptions(Story story) async {
+    HapticFeedback.lightImpact();
+    _pauseStory();
+    final action = await showSeeUBottomSheet<String>(
+      context: context,
+      builder: (sheetCtx) {
+        final c = sheetCtx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const PhosphorIcon(PhosphorIconsRegular.trash,
+                    color: SeeUColors.like),
+                title: Text('Удалить историю',
+                    style:
+                        SeeUTypography.body.copyWith(color: SeeUColors.like)),
+                onTap: () => Navigator.of(sheetCtx).pop('delete'),
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.x(), color: c.ink),
+                title: Text('Закрыть', style: SeeUTypography.body),
+                onTap: () => Navigator.of(sheetCtx).pop('close'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    if (action == 'delete') {
+      // _deleteCurrentStory сам держит паузу (подтверждение), возобновляет при
+      // отмене и закрывает вьюер после успешного удаления.
+      await _deleteCurrentStory(story);
+    } else if (!_isReplyOpen) {
+      _resumeStory();
+    }
+  }
+
+  /// Удаляет текущую (видимую) историю после подтверждения. Успех → закрываем
+  /// вьюер; список историй провайдер уже обновил, так что кружок исчезнет.
+  Future<void> _deleteCurrentStory(Story story) async {
+    final confirmed = await showSeeUConfirm(
+      context,
+      title: 'Удалить историю?',
+      message: 'Её больше не увидят — просмотры и реакции пропадут.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+      icon: PhosphorIconsRegular.trash,
+    );
+    if (!mounted) return;
+    if (!confirmed) {
+      if (!_isReplyOpen) _resumeStory();
+      return;
+    }
+
+    final ok = await ref.read(storyProvider.notifier).deleteStory(story.id);
+    if (!mounted) return;
+    if (!ok) {
+      showSeeUSnackBar(
+        context,
+        'Не удалось удалить историю. Попробуйте ещё раз',
+        tone: SeeUTone.danger,
+      );
+      if (!_isReplyOpen) _resumeStory();
+      return;
+    }
+    // История удалена — закрываем вьюер (StoryProvider уже убрал её из ленты).
+    Navigator.of(context).pop();
   }
 
   @override
@@ -889,7 +1004,8 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      // §03: фон вьюера — тёплый чёрный из дизайна, не чистый black.
+      backgroundColor: _kStoryViewerBg,
       resizeToAvoidBottomInset: true,
       body: Stack(
         fit: StackFit.expand,
@@ -951,47 +1067,117 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Story image / gradient background
-            SizedBox.expand(child: storyImageWidget),
-
-            // Top gradient
+            // §03: медиа letterbox'ится между сплошными тёмными зонами
+            // (не под весь экран). Оверлеи по медиа — полл, подпись,
+            // центр-сердце — живут ВНУТРИ этой зоны, чтобы не заезжать на
+            // тёмные поля. Тап-зоны навигации при этом работают по всей
+            // высоте: зоны ниже — hit-testable ColoredBox'ы, тапы по ним
+            // доходят до общего GestureDetector'а.
             Positioned(
-              top: 0,
+              top: _kStoryTopZoneH,
+              bottom: _kStoryBottomZoneH,
               left: 0,
               right: 0,
-              height: 140,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  storyImageWidget,
+
+                  // STORY-3: интерактивный poll-overlay. Позиционируется в
+                  // (x,y) фракциях зоны медиа, viewer тапает option → POST →
+                  // state update. Автор не видит интерактивные кнопки — для
+                  // него просто превью.
+                  if (story.poll != null)
+                    Positioned.fill(
+                      child: LayoutBuilder(builder: (ctx, cs) {
+                        final p = _pollOverride[story.id] ?? story.poll!;
+                        final isAuthor =
+                            widget.currentUserId == story.author.id;
+                        return Stack(
+                          children: [
+                            Positioned(
+                              left: (p.x.clamp(0.0, 0.9)) * cs.maxWidth,
+                              top: (p.y.clamp(0.0, 0.85)) * cs.maxHeight,
+                              child: StoryPollOverlay(
+                                storyId: story.id,
+                                poll: p,
+                                readOnly: isAuthor,
+                                onVoted: (updated) {
+                                  // Обновляем story-state in-place чтобы вся
+                                  // группа увидела новые counts без re-fetch.
+                                  _updateStoryPoll(story.id, updated);
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+
+                  // Text overlay (для photo/video сторис с подписью).
+                  // Для text-сторис текст уже отрендерен внутри
+                  // storyImageWidget — здесь не дублируем.
+                  if (!story.isText &&
+                      story.textOverlay != null &&
+                      story.textOverlay!.isNotEmpty)
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 32),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius:
+                              BorderRadius.circular(SeeURadii.small),
+                        ),
+                        child: Text(
+                          story.textOverlay!,
+                          style: SeeUTypography.title.copyWith(
+                            color: Colors.white,
+                            fontSize: 18,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+
+                  // Center heart animation — по центру зоны медиа.
+                  if (_showCenterHeart && _likeScaleAnim != null)
+                    Center(
+                      child: AnimatedBuilder(
+                        animation: _likeScaleAnim!,
+                        builder: (_, __) => Transform.scale(
+                          scale: _likeScaleAnim!.value,
+                          child: const Icon(
+                            PhosphorIconsFill.heart,
+                            color: SeeUColors.like,
+                            size: 100,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
-            // Bottom gradient
-            Positioned(
+            // §03: сплошная верхняя зона (вместо градиент-скрима) — фон под
+            // прогресс-барами и плашкой автора.
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: _kStoryTopZoneH,
+              child: ColoredBox(color: _kStoryViewerBg),
+            ),
+
+            // §03: сплошная нижняя зона (вместо градиент-скрима) — фон под
+            // reply-баром и кнопками действий.
+            const Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              height: 180,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
+              height: _kStoryBottomZoneH,
+              child: ColoredBox(color: _kStoryViewerBg),
             ),
 
             // Progress bars (4px height)
@@ -1019,13 +1205,15 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                               right:
                                   i == group.stories.length - 1 ? 0 : 1.5,
                             ),
-                            height: 4,
+                            height: 3,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(2),
+                              // §03: заполнение прогресса — БЕЛОЕ (не коралл),
+                              // фон — rgba(255,255,255,.35).
                               child: i < _storyIndex
                                   ? Container(
                                       decoration: BoxDecoration(
-                                        color: SeeUColors.accent,
+                                        color: Colors.white,
                                         borderRadius:
                                             BorderRadius.circular(2),
                                       ),
@@ -1047,8 +1235,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                                                 child: Container(
                                                   decoration:
                                                       BoxDecoration(
-                                                    color: SeeUColors
-                                                        .accent,
+                                                    color: Colors.white,
                                                     borderRadius:
                                                         BorderRadius
                                                             .circular(2),
@@ -1186,72 +1373,6 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                 ),
               ),
 
-            // STORY-3: интерактивный poll-overlay. Позиционируется в (x,y)
-            // фракциях экрана, viewer тапает option → POST → state apdate.
-            // Автор не видит интерактивные кнопки — для него просто превью.
-            if (story.poll != null)
-              LayoutBuilder(builder: (ctx, cs) {
-                final p = _pollOverride[story.id] ?? story.poll!;
-                final isAuthor = widget.currentUserId == story.author.id;
-                return Positioned(
-                  left: (p.x.clamp(0.0, 0.9)) * cs.maxWidth,
-                  top: (p.y.clamp(0.0, 0.85)) * cs.maxHeight,
-                  child: StoryPollOverlay(
-                    storyId: story.id,
-                    poll: p,
-                    readOnly: isAuthor,
-                    onVoted: (updated) {
-                      // Обновляем story-state in-place чтобы вся группа
-                      // увидела новые counts без re-fetch.
-                      _updateStoryPoll(story.id, updated);
-                    },
-                  ),
-                );
-              }),
-
-            // Text overlay (для photo/video сторис с подписью).
-            // Для text-сторис текст уже отрендерен внутри storyImageWidget —
-            // здесь не дублируем.
-            if (!story.isText &&
-                story.textOverlay != null &&
-                story.textOverlay!.isNotEmpty)
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius:
-                        BorderRadius.circular(SeeURadii.small),
-                  ),
-                  child: Text(
-                    story.textOverlay!,
-                    style: SeeUTypography.title.copyWith(
-                      color: Colors.white,
-                      fontSize: 18,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-
-            // Center heart animation
-            if (_showCenterHeart && _likeScaleAnim != null)
-              Center(
-                child: AnimatedBuilder(
-                  animation: _likeScaleAnim!,
-                  builder: (_, __) => Transform.scale(
-                    scale: _likeScaleAnim!.value,
-                    child: const Icon(
-                      PhosphorIconsFill.heart,
-                      color: SeeUColors.like,
-                      size: 100,
-                    ),
-                  ),
-                ),
-              ),
-
             // View count (bottom-left)
             Positioned(
               bottom: 130,
@@ -1291,77 +1412,107 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: isOwnStory
                         ? _buildOwnStoryBottom(story)
-                        : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Reply bar + like button
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: _openReply,
-                                child: _StoryGlassPill(
-                                  padding: EdgeInsets.zero,
-                                  child: SizedBox(
-                                    height: 44,
-                                    child: Row(
-                                    children: [
-                                      const SizedBox(width: 16),
-                                      Expanded(
+                        : Builder(builder: (context) {
+                            // §03: поле «Ответить…» показывается ТОЛЬКО при
+                            // наличии доступа к переписке (access ≠ follow).
+                            // Без доступа — лишь Лайк и Поделиться.
+                            final hasAccess = ref
+                                .watch(accessCheckProvider(
+                                    _currentGroup.author.id))
+                                .maybeWhen(
+                                    data: (v) => v, orElse: () => false);
+                            return Row(
+                              children: [
+                                if (hasAccess) ...[
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _openReply,
+                                      child: Container(
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(
+                                                  SeeURadii.pill),
+                                          border: Border.all(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.5),
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets
+                                            .symmetric(horizontal: 16),
+                                        alignment:
+                                            Alignment.centerLeft,
                                         child: Text(
-                                          'Отправить сообщение...',
+                                          'Ответить ${_currentGroup.author.username}…',
+                                          maxLines: 1,
+                                          overflow:
+                                              TextOverflow.ellipsis,
                                           style: SeeUTypography.body
                                               .copyWith(
-                                            color: Colors.white70,
-                                            fontSize: 14,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.7),
+                                            fontSize: 13,
                                           ),
                                         ),
                                       ),
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(
-                                                right: 12),
-                                        child: PhosphorIcon(
-                                          PhosphorIcons
-                                              .paperPlaneTilt(),
-                                          color: Colors.white
-                                              .withValues(
-                                                  alpha: 0.5),
-                                          size: 20,
-                                        ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                ] else
+                                  const Spacer(),
+                                GestureDetector(
+                                  onTap: _toggleLike,
+                                  child: AnimatedBuilder(
+                                    animation: _heartBtnScaleAnim!,
+                                    builder: (_, child) =>
+                                        Transform.scale(
+                                      scale:
+                                          _heartBtnScaleAnim!.value,
+                                      child: child,
+                                    ),
+                                    child: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.14),
+                                        shape: BoxShape.circle,
                                       ),
-                                    ],
+                                      child: Icon(
+                                        isLiked
+                                            ? PhosphorIconsFill.heart
+                                            : PhosphorIconsRegular
+                                                .heart,
+                                        color: isLiked
+                                            ? SeeUColors.like
+                                            : Colors.white,
+                                        size: 22,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            GestureDetector(
-                              onTap: _toggleLike,
-                              child: AnimatedBuilder(
-                                animation: _heartBtnScaleAnim!,
-                                builder: (_, child) =>
-                                    Transform.scale(
-                                  scale: _heartBtnScaleAnim!.value,
-                                  child: child,
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: () => _shareStory(story),
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.14),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      PhosphorIconsRegular.shareFat,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
                                 ),
-                                child: Icon(
-                                  isLiked
-                                      ? PhosphorIconsFill.heart
-                                      : PhosphorIconsRegular.heart,
-                                  color: isLiked
-                                      ? SeeUColors.like
-                                      : Colors.white
-                                          .withValues(alpha: 0.8),
-                                  size: 28,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                              ],
+                            );
+                          }),
                   ),
                 ),
               ),
@@ -1512,7 +1663,9 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
           ],
           ),
           ),
-          // Close button — always works, above everything.
+          // Top-right controls — always work, above everything. Своя история:
+          // «три точки» (управление: удалить/закрыть) + крестик; чужая —
+          // только крестик.
           Positioned(
             top: 0,
             right: 0,
@@ -1520,11 +1673,27 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
               bottom: false,
               child: Padding(
                 padding: const EdgeInsets.only(top: 36, right: 16),
-                child: SeeUGlassCircleButton(
-                  size: 38,
-                  icon: PhosphorIcon(PhosphorIcons.x(),
-                      color: Colors.white, size: 20),
-                  onTap: () => Navigator.of(context).pop(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isOwnStory) ...[
+                      SeeUGlassCircleButton(
+                        size: 38,
+                        icon: const PhosphorIcon(
+                            PhosphorIconsRegular.dotsThreeOutline,
+                            color: Colors.white,
+                            size: 20),
+                        onTap: () => _openOwnStoryOptions(story),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    SeeUGlassCircleButton(
+                      size: 38,
+                      icon: PhosphorIcon(PhosphorIcons.x(),
+                          color: Colors.white, size: 20),
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -24,7 +24,7 @@ import 'features/auth/register_screen.dart';
 import 'features/auth/splash_screen.dart';
 import 'features/feed/feed_screen.dart';
 import 'features/explore/explore_screen.dart';
-import 'features/explore/leaderboard_screen.dart';
+import 'features/explore/search_screen.dart';
 import 'features/post/post_detail_screen.dart';
 import 'features/post/comments_screen.dart';
 import 'features/post/wave_compose_screen.dart';
@@ -385,7 +385,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
         ShellRoute(
           builder: (context, state, child) {
             final loc = state.matchedLocation;
-            final showTabs = !loc.startsWith('/playlist');
+            // Полноэкранные поверхности живут БЕЗ нижнего меню: плеер и
+            // загрузка — свои контролы; поиск (§04 B) — фуллскрин с «Отмена»
+            // как единственным выходом. Плейлист же — служебная подстраница
+            // Аудиотеки и держит аудио-меню (см. _isAudio).
+            final showTabs = !loc.startsWith('/explore/search') &&
+                !loc.startsWith('/music/player') &&
+                !loc.startsWith('/music/upload');
             return MainScaffold(showTabs: showTabs, child: child);
           },
           routes: [
@@ -403,13 +409,16 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 transitionsBuilder: _fadeTransition,
               ),
             ),
+            // §04 B: поиск — отдельный экран, вход тапом по строке.
             GoRoute(
-              path: '/leaderboard',
+              path: '/explore/search',
               pageBuilder: (_, __) => CustomTransitionPage(
-                child: const LeaderboardScreen(),
+                child: const ExploreSearchScreen(),
                 transitionsBuilder: _fadeTransition,
               ),
             ),
+            // «Топ недели по лайкам» убит дизайном (§10) — маршрут
+            // /leaderboard и его экран удалены совсем.
             GoRoute(
               path: '/scanner',
               pageBuilder: (_, __) => CustomTransitionPage(

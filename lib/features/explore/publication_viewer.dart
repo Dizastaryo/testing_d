@@ -22,6 +22,11 @@ import '../post/comments_screen.dart';
 import '../reels/widgets/reel_overlay.dart';
 import '../reels/widgets/reel_video_player.dart';
 
+/// §04: высота тёмной нижней панели меню вьюера (без зоны home-indicator —
+/// её добавляет SafeArea внутри самой панели). Контент и экшен-колонка
+/// поднимаются на эту величину, чтобы панель их не перекрывала.
+const double _kViewerNavHeight = 52;
+
 /// Vertical-swipe viewer for any publication. Replaces the old ReelsScreen
 /// since the product model treats every post (photo, photo collection, or
 /// video) as the same kind of «рилс».
@@ -238,20 +243,28 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
                               url: videoUrl,
                               isActive: isCurrent,
                             ),
-                          ReelOverlay(
-                            post: post,
-                            isLiked: post.isLiked,
-                            isSaved: post.isSaved,
-                            onLike: () => notifier.toggleLike(post.id),
-                            onComment: () => _openCommentsSheet(post),
-                            onShare: () => showShareSheet(
-                              context: context,
-                              url: 'https://seeu.app/post/${post.id}',
-                              title: post.caption ?? '',
-                              forwardablePostId: post.id,
+                          // Оверлей поднят на высоту нижней панели меню
+                          // (§04), чтобы экшены и инфо-карта не прятались
+                          // за ней.
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                bottom: _kViewerNavHeight),
+                            child: ReelOverlay(
+                              post: post,
+                              isLiked: post.isLiked,
+                              isSaved: post.isSaved,
+                              onLike: () => notifier.toggleLike(post.id),
+                              onComment: () => _openCommentsSheet(post),
+                              onShare: () => showShareSheet(
+                                context: context,
+                                url: 'https://seeu.app/post/${post.id}',
+                                title: post.caption ?? '',
+                                forwardablePostId: post.id,
+                              ),
+                              onSave: () => notifier.toggleSave(post.id),
+                              onAvatarTap: () => context
+                                  .push('/profile/${post.author.username}'),
                             ),
-                            onSave: () => notifier.toggleSave(post.id),
-                            onAvatarTap: () => context.push('/profile/${post.author.username}'),
                           ),
                         ],
                       );
@@ -280,6 +293,18 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
                         strokeWidth: 2, color: Colors.white70),
                   ),
                 ),
+              // §04 C: тёмная полупрозрачная панель нижнего меню — поверх
+              // контента, прижата к низу экрана.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _ViewerBottomNav(
+                  // Вьюер открыт из «Интересного» — тап по активной вкладке
+                  // просто закрывает его (возврат к гриду).
+                  onExploreTap: () => context.pop(),
+                ),
+              ),
             ],
           ),
         ),
@@ -629,21 +654,22 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
             ),
           ),
 
-        // Right-side action column.
+        // Right-side action column — поднята над нижней панелью меню (§04):
+        // отступ + высота панели, иначе иконки прятались бы за ней.
         Positioned(
           right: 8,
-          bottom: 24,
+          bottom: 24 + _kViewerNavHeight,
           child: SafeArea(
             top: false,
             child: _ActionColumn(post: post, notifier: widget.notifier),
           ),
         ),
 
-        // Bottom info: author, caption.
+        // Bottom info: author, caption — тоже над панелью меню.
         Positioned(
           left: 12,
           right: 76, // leave space for action column
-          bottom: 24,
+          bottom: 24 + _kViewerNavHeight,
           child: SafeArea(
             top: false,
             child: _PublicationInfo(post: post),
@@ -760,6 +786,8 @@ class _ActionColumn extends ConsumerWidget {
           // Лайкнутое сердце всюду красное (лента/рилс/истории) — тут был
           // единственный экран с коралловым.
           color: post.isLiked ? SeeUColors.like : Colors.white,
+          // §04: сердце крупнее остальных экшенов (32 против 31).
+          iconSize: 32,
           onTap: () {
             HapticFeedback.lightImpact();
             if (notifier != null) {
@@ -835,12 +863,15 @@ class _ActionButton extends StatelessWidget {
   final Color color;
   final bool showLabel;
   final VoidCallback onTap;
+  /// §04: сердце 32, остальные экшены 31.
+  final double iconSize;
   const _ActionButton({
     required this.icon,
     required this.label,
     required this.color,
     required this.onTap,
     this.showLabel = true,
+    this.iconSize = 31,
   });
 
   @override
@@ -856,7 +887,7 @@ class _ActionButton extends StatelessWidget {
             SizedBox(
               width: 44,
               height: 44,
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(icon, color: color, size: iconSize),
             ),
             if (showLabel && label.isNotEmpty) ...[
               Text(label,
@@ -1018,6 +1049,201 @@ class _AudioPill extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// §04 C: нижняя панель меню вьюера
+// ---------------------------------------------------------------------------
+
+/// Тёмная полупрозрачная панель нижнего меню поверх вьюера:
+/// rgba(14,12,10,.92) + blur 8, высота 52 + зона home-indicator.
+/// Пять слотов как в главном меню (Лента/Интересное/Сканер/Сервисы/Профиль).
+/// Фирменные SVG-пейнтеры main_scaffold приватные, поэтому здесь компактные
+/// Phosphor-аналоги; сканер — свой радар на CustomPaint.
+class _ViewerBottomNav extends StatelessWidget {
+  /// Тап по активной вкладке «Интересное» — закрыть вьюер (возврат к гриду).
+  final VoidCallback onExploreTap;
+  const _ViewerBottomNav({required this.onExploreTap});
+
+  void _go(BuildContext context, String route) {
+    HapticFeedback.lightImpact();
+    context.go(route);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Неактивные слоты — rgba(255,255,255,.55), активный — белый.
+    final inactive = Colors.white.withValues(alpha: 0.55);
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          color: const Color(0xEB0E0C0A), // rgba(14,12,10,.92)
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: _kViewerNavHeight,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _ViewerNavItem(
+                    icon: PhosphorIconsRegular.cards,
+                    label: 'Лента',
+                    color: inactive,
+                    onTap: () => _go(context, '/feed'),
+                  ),
+                  _ViewerNavItem(
+                    icon: PhosphorIconsFill.squaresFour,
+                    label: 'Интересное',
+                    color: Colors.white,
+                    isActive: true,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      onExploreTap();
+                    },
+                  ),
+                  _ViewerScannerCircle(
+                    onTap: () => _go(context, '/scanner'),
+                  ),
+                  _ViewerNavItem(
+                    icon: PhosphorIconsRegular.gridFour,
+                    label: 'Сервисы',
+                    color: inactive,
+                    onTap: () => _go(context, '/services'),
+                  ),
+                  _ViewerNavItem(
+                    icon: PhosphorIconsRegular.user,
+                    label: 'Профиль',
+                    color: inactive,
+                    onTap: () => _go(context, '/profile'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Один слот панели вьюера: иконка 22 + подпись 9px (как в главном меню).
+class _ViewerNavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isActive;
+  final VoidCallback onTap;
+  const _ViewerNavItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.isActive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 56,
+        height: _kViewerNavHeight,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: SeeUTypography.micro.copyWith(
+                fontSize: 9,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Сканер-герой панели вьюера: круг 48 с градиентом #FF8060→#FF5A3C
+/// и радар-иконкой (простые дуги CustomPaint).
+class _ViewerScannerCircle extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ViewerScannerCircle({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [SeeUColors.accentSecondary, SeeUColors.accent],
+          ),
+        ),
+        child: const Center(
+          child: CustomPaint(
+            size: Size(22, 22),
+            painter: _ViewerRadarPainter(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Упрощённый радар: две дуги + центральная точка + луч. Аналог героя
+/// главного меню (его пейнтер в main_scaffold приватный).
+class _ViewerRadarPainter extends CustomPainter {
+  const _ViewerRadarPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width;
+    final center = Offset(s / 2, s / 2);
+    final stroke = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    // Две дуги-«волны» радара.
+    canvas.drawArc(
+        Rect.fromCircle(center: center, radius: s * 0.38),
+        -2.4, 4.8, false, stroke);
+    canvas.drawArc(
+        Rect.fromCircle(center: center, radius: s * 0.22),
+        -2.4, 4.8, false, stroke);
+
+    // Центральная точка и луч.
+    canvas.drawCircle(
+        center,
+        s * 0.08,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill);
+    canvas.drawLine(
+      center,
+      Offset(center.dx + s * 0.38 * 0.62, center.dy - s * 0.38 * 0.78),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ViewerRadarPainter oldDelegate) => false;
 }
 
 /// REELS-4: global state — выбранный audio_track_id для следующего захода в

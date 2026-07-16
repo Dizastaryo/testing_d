@@ -10,7 +10,7 @@ import '../../core/providers/pair_provider.dart';
 import '../spark/spark_senders_sheet.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/user_provider.dart';
-import 'widgets/profile_access_card.dart';
+import '../../core/providers/access_provider.dart';
 import 'widgets/profile_buttons.dart';
 import 'widgets/profile_content_tabs.dart';
 import 'widgets/profile_highlights.dart';
@@ -205,6 +205,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 title: const Text('Текстовая история'),
                 onTap: () { Navigator.pop(context); context.push('/story/create-text'); },
               ),
+              const Divider(height: 8),
+              // «Сохранённое» переехало сюда из топбара — топбар по дизайну
+              // §05 держит ровно три иконки: доступ · создать · настройки.
+              ListTile(
+                leading: Icon(PhosphorIcons.bookmarkSimple(),
+                    color: SeeUColors.accent),
+                title: const Text('Сохранённое'),
+                onTap: () {
+                  Navigator.pop(context);
+                  final username =
+                      ref.read(authProvider).user?.username ?? '';
+                  if (username.isEmpty) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _SavedPostsScreen(username: username),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -292,19 +311,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     onTap: () => _showOtherProfileMenu(context, user),
                   ),
                 if (isOwnProfile) ...[
-                  // Закладка — сохранённые публикации (вкладка «Сохранённое»
-                  // из старого профиля переехала сюда, чтобы освободить место
-                  // под «Публикации/Автор»).
-                  ProfileHeaderIconButton(
-                    icon: PhosphorIcons.bookmarkSimple(),
-                    tooltip: 'Сохранённое',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            _SavedPostsScreen(username: user.username),
+                  // §05: замок-доступ в топбаре — фирменная пунктирная иконка
+                  // с человеком; оранжевая точка при новых входящих заявках.
+                  // Тап → управление доступом. («Сохранённое» переехало в
+                  // меню «Создать» — см. _showCreateSheet.)
+                  Consumer(builder: (context, ref, _) {
+                    final pending = ref
+                            .watch(incomingRequestsProvider)
+                            .valueOrNull ??
+                        const [];
+                    return Tooltip(
+                      message: 'Доступ',
+                      child: SeeUGlassCircleButton(
+                        onTap: () => context.push('/access/list'),
+                        size: 44,
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            SeeUAccessIcon(size: 21, color: c.ink),
+                            if (pending.isNotEmpty)
+                              Positioned(
+                                top: -2,
+                                right: -3,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: SeeUColors.accent,
+                                    shape: BoxShape.circle,
+                                    border:
+                                        Border.all(color: c.bg, width: 1.5),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                   const SizedBox(width: 8),
                   ProfileHeaderIconButton(
                     icon: PhosphorIcons.plusCircle(),
@@ -366,15 +410,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         controller: _tabController,
                         children: [
                           // Приватный профиль + viewer не подписан → бэк
-                          // вернул 403 на /posts. Показываем locked-stub
+                          // вернул 403 на /posts. Показываем блок замка (§05 C)
                           // вместо пустой сетки.
                           profileState.isLocked
-                              ? const ProfilePrivateContent()
+                              ? ProfilePrivateContent(ownerName: user.fullName)
                               : ProfilePostsGrid(posts: profileState.posts),
                           // «Автор» — что юзер сам выложил: треки в Аудиотеку
                           // и файлы в Библиотеку (§05 A2).
                           profileState.isLocked
-                              ? const ProfilePrivateContent()
+                              ? ProfilePrivateContent(ownerName: user.fullName)
                               : ProfileAuthorTab(
                                   userId: profileState.user?.id ?? ''),
                         ],
@@ -594,7 +638,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
-                      user.website!,
+                      // §05: если задан текст ссылки — показываем его вместо
+                      // сырого URL (тап по-прежнему открывает website).
+                      (user.websiteLabel ?? '').trim().isNotEmpty
+                          ? user.websiteLabel!.trim()
+                          : user.website!,
                       overflow: TextOverflow.ellipsis,
                       style: SeeUTypography.body.copyWith(
                         color: SeeUColors.accent,
@@ -628,12 +676,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               : ProfileOtherButtons(user: user),
         ),
 
-        // ── Круг общения (управление доступом) ──────────────────────
-        if (isOwnProfile)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-            child: ProfileAccessCard(),
-          ),
+        // (Карточка «Доступ» из тела убрана — по дизайну §05 вход в
+        // управление доступом живёт замком в топбаре, с точкой новых заявок.)
 
         // ── Highlights ─────────────────────────────────────────────
         if (profileState.highlights.isNotEmpty || isOwnProfile) ...[

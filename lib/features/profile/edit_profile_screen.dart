@@ -24,6 +24,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final TextEditingController _usernameCtrl;
   late final TextEditingController _bioCtrl;
   late final TextEditingController _websiteCtrl;
+  // §05: человекочитаемый текст ссылки — показывается в профиле вместо URL.
+  late final TextEditingController _websiteLabelCtrl;
   XFile? _pickedFile;
   Uint8List? _pickedBytes;
   bool _avatarRemoved = false;
@@ -50,6 +52,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _usernameCtrl = TextEditingController(text: user?.username ?? '');
     _bioCtrl = TextEditingController(text: user?.bio ?? '');
     _websiteCtrl = TextEditingController(text: user?.website ?? '');
+    _websiteLabelCtrl = TextEditingController(text: user?.websiteLabel ?? '');
   }
 
   @override
@@ -58,6 +61,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _usernameCtrl.dispose();
     _bioCtrl.dispose();
     _websiteCtrl.dispose();
+    _websiteLabelCtrl.dispose();
     super.dispose();
   }
 
@@ -208,6 +212,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         'username': _usernameCtrl.text.trim(),
         'bio': _bioCtrl.text.trim(),
         'website': _websiteCtrl.text.trim(),
+        // §05: текст ссылки — рендерится в профиле вместо сырого URL.
+        'website_label': _websiteLabelCtrl.text.trim(),
       };
       if (avatarUrl != null) {
         body['avatar_url'] = avatarUrl;
@@ -420,8 +426,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             const SizedBox(height: 32),
 
-            // Form fields
-            Text('Полное имя',
+            // Form fields — kicker-лейблы в ВЕРХНЕМ РЕГИСТРЕ (§05).
+            Text('ПОЛНОЕ ИМЯ',
                 style: SeeUTypography.kicker
                     .copyWith(color: SeeUColors.textTertiary)),
             const SizedBox(height: 6),
@@ -435,7 +441,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            Text('Имя пользователя',
+            Text('ИМЯ ПОЛЬЗОВАТЕЛЯ',
                 style: SeeUTypography.kicker
                     .copyWith(color: SeeUColors.textTertiary)),
             const SizedBox(height: 6),
@@ -456,7 +462,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            Text('О себе',
+            Text('О СЕБЕ',
                 style: SeeUTypography.kicker
                     .copyWith(color: SeeUColors.textTertiary)),
             const SizedBox(height: 6),
@@ -468,7 +474,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            Text('Сайт',
+            Text('ССЫЛКА (URL)',
                 style: SeeUTypography.kicker
                     .copyWith(color: SeeUColors.textTertiary)),
             const SizedBox(height: 6),
@@ -478,6 +484,28 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               autocorrect: false,
               hintText: 'Ссылка на сайт',
               maxLength: 200,
+            ),
+            const SizedBox(height: 16),
+
+            // §05: человекочитаемый текст ссылки — в профиле показывается
+            // вместо сырого URL, тап по нему открывает саму ссылку.
+            Text('ТЕКСТ ССЫЛКИ',
+                style: SeeUTypography.kicker
+                    .copyWith(color: SeeUColors.textTertiary)),
+            const SizedBox(height: 6),
+            SeeUInput(
+              controller: _websiteLabelCtrl,
+              hintText: 'Как подписать ссылку',
+              maxLength: 80,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'тап по тексту откроет ссылку',
+              style: SeeUTypography.micro.copyWith(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w500,
+                color: SeeUColors.textQuaternary,
+              ),
             ),
             const SizedBox(height: 40),
 

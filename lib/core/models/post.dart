@@ -51,6 +51,31 @@ class PostMedia {
   };
 }
 
+/// Вариант опроса на волне (§A4). [id] серверный, [voteCount] — число голосов.
+class PostPollOption {
+  final int id;
+  final String label;
+  final int voteCount;
+
+  const PostPollOption({
+    required this.id,
+    required this.label,
+    this.voteCount = 0,
+  });
+
+  factory PostPollOption.fromJson(Map<String, dynamic> json) => PostPollOption(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        label: json['label']?.toString() ?? '',
+        voteCount: (json['vote_count'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'vote_count': voteCount,
+      };
+}
+
 class Post {
   final String id;
   final User author;
@@ -78,6 +103,12 @@ class Post {
   /// «🎵 название · автор» под именем автора.
   final String audioTrackTitle;
   final String audioTrackArtist;
+  /// Опрос волны (§A4): 2–4 варианта. Пустой — опроса нет. [pollVotedOption] —
+  /// id варианта, за который проголосовал текущий пользователь (null = ещё не
+  /// голосовал); [pollTotalVotes] — сумма голосов по всем вариантам.
+  final List<PostPollOption> pollOptions;
+  final int pollTotalVotes;
+  final int? pollVotedOption;
 
   const Post({
     required this.id,
@@ -98,7 +129,13 @@ class Post {
     this.audioStartSeconds = 0,
     this.audioTrackTitle = '',
     this.audioTrackArtist = '',
+    this.pollOptions = const [],
+    this.pollTotalVotes = 0,
+    this.pollVotedOption,
   });
+
+  bool get hasPoll => pollOptions.length >= 2;
+  bool get pollVoted => pollVotedOption != null;
 
   /// URL подходящий для grid-cell'а (Explore / Profile / chat-share preview).
   /// Для видео-постов — `thumbnailUrl` если задан (видео не отрендерится в
@@ -173,6 +210,13 @@ class Post {
       audioStartSeconds: (json['audio_start_seconds'] as num?)?.toInt() ?? 0,
       audioTrackTitle: json['audio_track_title']?.toString() ?? '',
       audioTrackArtist: json['audio_track_artist']?.toString() ?? '',
+      pollOptions: json['poll_options'] is List
+          ? (json['poll_options'] as List)
+              .map((e) => PostPollOption.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : const [],
+      pollTotalVotes: (json['poll_total_votes'] as num?)?.toInt() ?? 0,
+      pollVotedOption: (json['poll_voted_option'] as num?)?.toInt(),
     );
   }
 
@@ -191,6 +235,9 @@ class Post {
     'created_at': createdAt.toIso8601String(),
     'is_wave': isWave,
     'wave_color_value': waveColorValue,
+    'poll_options': pollOptions.map((o) => o.toJson()).toList(),
+    'poll_total_votes': pollTotalVotes,
+    'poll_voted_option': pollVotedOption,
   };
 
   Post copyWith({
@@ -212,6 +259,9 @@ class Post {
     int? audioStartSeconds,
     String? audioTrackTitle,
     String? audioTrackArtist,
+    List<PostPollOption>? pollOptions,
+    int? pollTotalVotes,
+    int? pollVotedOption,
   }) {
     return Post(
       id: id ?? this.id,
@@ -232,6 +282,9 @@ class Post {
       audioStartSeconds: audioStartSeconds ?? this.audioStartSeconds,
       audioTrackTitle: audioTrackTitle ?? this.audioTrackTitle,
       audioTrackArtist: audioTrackArtist ?? this.audioTrackArtist,
+      pollOptions: pollOptions ?? this.pollOptions,
+      pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
+      pollVotedOption: pollVotedOption ?? this.pollVotedOption,
     );
   }
 

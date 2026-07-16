@@ -113,6 +113,8 @@ class _DailyMixHero extends ConsumerStatefulWidget {
 class _DailyMixHeroState extends ConsumerState<_DailyMixHero> {
   List<AudioTrack>? _tracks;
   bool _loading = true;
+  // Когда микс собрался — для подписи «собрано в HH:MM» (§Главная).
+  DateTime? _loadedAt;
 
   @override
   void initState() {
@@ -132,6 +134,7 @@ class _DailyMixHeroState extends ConsumerState<_DailyMixHero> {
         _tracks = list
             .map((e) => AudioTrack.fromJson(e as Map<String, dynamic>))
             .toList();
+        _loadedAt = DateTime.now();
         _loading = false;
       });
     } catch (_) {
@@ -252,7 +255,9 @@ class _DailyMixHeroState extends ConsumerState<_DailyMixHero> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${tracks.length} ${_tracksWord(tracks.length)}',
+                      _loadedAt != null
+                          ? '${tracks.length} ${_tracksWord(tracks.length)} · собрано в ${_loadedAt!.hour}:${_loadedAt!.minute.toString().padLeft(2, '0')}'
+                          : '${tracks.length} ${_tracksWord(tracks.length)}',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: Colors.white.withValues(alpha: 0.92),
@@ -260,8 +265,10 @@ class _DailyMixHeroState extends ConsumerState<_DailyMixHero> {
                     ),
                     const SizedBox(height: 14),
                     // Волна первого трека микса — настоящая, если пики есть.
-                    SizedBox(
-                      width: 190,
+                    // §C: ширина 74% карточки (не фиксированные 190).
+                    FractionallySizedBox(
+                      widthFactor: 0.74,
+                      alignment: Alignment.centerLeft,
                       child: TrackWaveform(
                         peaks: tracks.first.waveformData,
                         progress: 0.34,
@@ -359,7 +366,7 @@ class _ContinueCard extends ConsumerWidget {
             source: 'continue',
           ),
       child: Container(
-        width: 200,
+        width: 180,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: c.surface,

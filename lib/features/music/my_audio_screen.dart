@@ -116,7 +116,7 @@ class _PlaylistsTab extends ConsumerWidget {
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
+          const Padding(padding: EdgeInsets.only(top: 20), child: AudioListSkeleton(rows: 6)),
       error: (_, __) =>
           AudioErrorState(onRetry: () => ref.read(myPlaylistsProvider.notifier).load()),
       data: (lists) => ListView(
@@ -294,7 +294,7 @@ class _SavedTab extends ConsumerWidget {
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
+          const Padding(padding: EdgeInsets.only(top: 20), child: AudioListSkeleton(rows: 6)),
       error: (_, __) =>
           AudioErrorState(onRetry: () => ref.invalidate(savedTracksProvider)),
       data: (tracks) {
@@ -385,7 +385,7 @@ class _RecentTab extends ConsumerWidget {
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
+          const Padding(padding: EdgeInsets.only(top: 20), child: AudioListSkeleton(rows: 6)),
       error: (_, __) =>
           AudioErrorState(onRetry: () => ref.invalidate(recentTracksProvider)),
       data: (tracks) {
@@ -470,7 +470,7 @@ class _UploadsTabState extends ConsumerState<_UploadsTab> {
 
     return async.when(
       loading: () =>
-          const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
+          const Padding(padding: EdgeInsets.only(top: 20), child: AudioListSkeleton(rows: 6)),
       error: (_, __) =>
           AudioErrorState(onRetry: () => ref.invalidate(myTracksProvider)),
       data: (all) {

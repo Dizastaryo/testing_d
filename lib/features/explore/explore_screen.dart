@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:flutter/services.dart';
 import '../../core/analytics/interest_tracker.dart';
@@ -14,12 +14,9 @@ import '../../widgets/report_sheet.dart';
 import '../../widgets/share_sheet.dart';
 import '../../core/design/design.dart';
 import '../../core/models/explore_item.dart';
-import '../../core/models/post.dart';
-import '../../core/models/user.dart';
 import '../../core/models/live_stream.dart';
 import '../../core/providers/explore_feed_provider.dart';
 import '../../core/providers/live_streams_provider.dart';
-import '../../core/providers/user_provider.dart';
 import '../../core/providers/waves_feed_provider.dart';
 import '../feed/widgets/post_card.dart';
 import '../live/live_viewer_screen.dart';
@@ -36,9 +33,6 @@ class ExploreScreen extends ConsumerStatefulWidget {
 }
 
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
-  final _searchCtrl = TextEditingController();
-  Timer? _debounce;
-  final _focusNode = FocusNode();
   final _scrollController = ScrollController();
 
   @override
@@ -54,9 +48,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
-    _debounce?.cancel();
-    _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -66,33 +57,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         _scrollController.position.maxScrollExtent - 400) {
       ref.read(exploreFeedProvider.notifier).loadMore();
     }
-  }
-
-  void _onSearchChanged(String value) {
-    _debounce?.cancel();
-    if (value.trim().isEmpty) {
-      ref.read(searchProvider.notifier).clear();
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      final q = value.trim();
-      ref.read(searchProvider.notifier).search(q);
-      // One event per settled query (not per keystroke). Cap length so we don't
-      // store long free text.
-      ref.read(interestTrackerProvider).track(
-        eventType: 'explore_search',
-        entityType: 'query',
-        source: 'explore',
-        metadata: {'q': q.length > 64 ? q.substring(0, 64) : q},
-      );
-    });
-  }
-
-  void _clearSearch() {
-    _searchCtrl.clear();
-    ref.read(searchProvider.notifier).clear();
-    _focusNode.unfocus();
-    setState(() => _selectedTab = 0);
   }
 
   /// Opens an Explore item by type, recording the interest signal first
@@ -238,9 +202,6 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final searchState = ref.watch(searchProvider);
-    final hasQuery = _searchCtrl.text.trim().isNotEmpty;
-
     final c = context.seeuColors;
     return Scaffold(
       backgroundColor: c.bg,
@@ -248,15 +209,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // -- Header + search bar + hint --
-            _buildHeader(hasQuery),
+            // -- Header: kicker + строка-вход в поиск + вкладки --
+            _buildHeader(),
 
             // -- Content --
             Expanded(
-              child: hasQuery
-                  ? _buildSearchResults(searchState)
-                  : _contentForFilter(
-                      ref.watch(exploreFeedProvider.select((s) => s.filter))),
+              child: _contentForFilter(
+                  ref.watch(exploreFeedProvider.select((s) => s.filter))),
             ),
           ],
         ),
@@ -265,132 +224,99 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 
   // =========================================================================
-  // Header: title + search bar + privacy hint
+  // Header: kicker + search entry + category tabs
   // =========================================================================
 
-  // Search mode tab (search query active)
-  int _selectedTab = 0;
-
-  // Browse-mode category chips (no query). Each maps to a BACKEND filter on the
-  // unified /explore feed — no client-side composition. People are reached via
-  // search, so there is no "Люди" chip here.
+  // Вкладки-пилюли (§04): каждая — фильтр единой ленты /explore на бэке;
+  // «Волны» и «Эфиры» — свои клиентские секции.
   static const List<String> _browseFilters = ['Все', 'Reels', 'Посты', 'Волны', 'Эфиры'];
   static const List<String> _browseFilterKeys = ['all', 'reels', 'posts', 'waves', 'live'];
-  // TODO(tags): re-add a 'Теги' tab once the backend supports tag search.
-  // The /search endpoint currently returns only {users, posts} (type ∈
-  // users|posts|all; anything else is coerced to 'all') and SearchResult has
-  // no tags payload — a Теги tab would always drop results, so it is hidden.
-  static const List<String> _searchTabs = ['Публикации', 'Аккаунты'];
 
-  Widget _buildHeader(bool hasQuery) {
+  Widget _buildHeader() {
     final c = context.seeuColors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Дизайн-ядро (§04): «Интересное» — про открытие. Крупный серифный
-          // заголовок убран, остаётся только kicker и строка поиска, чтобы
-          // мозаика дышала и сразу открывалась под рукой.
           Text(
             'ИНТЕРЕСНОЕ',
             style: SeeUTypography.kicker.copyWith(color: c.ink3),
           ),
           const SizedBox(height: 12),
 
-          // Floating frosted-glass search bar (shared design-system component).
-          SeeUGlassSearchBar(
-            controller: _searchCtrl,
-            focusNode: _focusNode,
-            hintText: 'Искать людей, звуки, теги',
-            onChanged: _onSearchChanged,
-            onClear: hasQuery ? _clearSearch : null,
-            blur: 28,
+          // §04: поисковая СТРОКА — не поле. Тап открывает отдельный экран
+          // поиска (мозаика дышит, экран открытий не перегружен).
+          Tappable(
+            onTap: () => context.push('/explore/search'),
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: c.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF161310).withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Icon(PhosphorIconsRegular.magnifyingGlass,
+                      size: 18, color: c.ink3),
+                  const SizedBox(width: 10),
+                  Text('Искать людей, звуки, теги',
+                      style: SeeUTypography.body
+                          .copyWith(fontSize: 14, color: c.ink3)),
+                ],
+              ),
+            ),
           ),
 
-          // Tab row only when searching. Browse mode = single grid of all
-          // publications (см. user model: каждая публикация = «рилс»).
-          if (hasQuery) ...[
-            const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: List.generate(
-                  _searchTabs.length,
-                  (i) => _filterChip(
-                    label: _searchTabs[i],
-                    active: _selectedTab == i,
+          // Вкладки-фильтры мозаики: Все · Reels · Посты · Волны · Эфиры.
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: List.generate(
+                _browseFilters.length,
+                (i) {
+                  final activeFilter = ref.watch(
+                      exploreFeedProvider.select((s) => s.filter));
+                  final key = _browseFilterKeys[i];
+                  return _filterChip(
+                    label: _browseFilters[i],
+                    active: key == activeFilter,
+                    showLiveDot: key == 'live',
                     onTap: () {
-                      setState(() => _selectedTab = i);
-                      String searchType;
-                      switch (i) {
-                        case 0: searchType = 'posts'; break;
-                        case 1: searchType = 'users'; break;
-                        default: searchType = 'all';
-                      }
-                      ref.read(searchProvider.notifier).setSearchType(searchType);
+                      ref.read(interestTrackerProvider).track(
+                        eventType: 'explore_filter_select',
+                        entityType: 'filter',
+                        source: 'explore',
+                        metadata: {'filter': key},
+                      );
+                      ref.read(interestTrackerProvider).resetImpressions();
+                      ref.read(exploreFeedProvider.notifier).setFilter(key);
                     },
-                  ),
-                ),
+                  );
+                },
               ),
             ),
-          ],
-
-          // Browse-mode category chips (no active search query). Each chip
-          // switches the BACKEND filter on the unified Explore feed.
-          if (!hasQuery) ...[
-            const SizedBox(height: 12),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: List.generate(
-                  _browseFilters.length,
-                  (i) {
-                    final activeFilter = ref.watch(
-                        exploreFeedProvider.select((s) => s.filter));
-                    final key = _browseFilterKeys[i];
-                    // «Рилс»/«Посты» — не гридовые фильтры, а быстрый переход:
-                    // тап сразу открывает полноэкранную видео- / фото-ленту.
-                    // Поэтому они не подсвечиваются как активный фильтр грида.
-                    final isFeedShortcut = key == 'reels' || key == 'posts';
-                    return _filterChip(
-                      label: _browseFilters[i],
-                      active: !isFeedShortcut && key == activeFilter,
-                      showLiveDot: key == 'live',
-                      onTap: () {
-                        ref.read(interestTrackerProvider).track(
-                          eventType: 'explore_filter_select',
-                          entityType: 'filter',
-                          source: 'explore',
-                          metadata: {'filter': key},
-                        );
-                        if (isFeedShortcut) {
-                          final type = key == 'reels' ? 'video' : 'photo';
-                          context.push('/view/first?type=$type');
-                          return;
-                        }
-                        ref.read(interestTrackerProvider).resetImpressions();
-                        ref.read(exploreFeedProvider.notifier).setFilter(key);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
+          ),
 
           const SizedBox(height: 10),
-          Divider(height: 0.5, thickness: 0.5, color: c.line),
         ],
       ),
     );
   }
 
-  /// Editorial glass-style filter pill: active = accent-hairline + soft accent
-  /// tint + accent kicker label; inactive = flat surface tint. No per-chip
-  /// BackdropFilter (these live in a horizontal scroll strip — keep it cheap).
+  /// Пилюля-вкладка (§04): активная — чёрная (#161310) с белым текстом,
+  /// неактивная — белая с тонкой линией. Текст 600 12, обычный регистр.
   Widget _filterChip({
     required String label,
     required bool active,
@@ -404,18 +330,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         onTap: onTap,
         child: AnimatedContainer(
           duration: SeeUMotion.quick,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: active
-                ? SeeUColors.accent.withValues(alpha: 0.12)
-                : c.surface2,
+            color: active ? c.ink : c.surface,
             borderRadius: BorderRadius.circular(SeeURadii.pill),
-            border: Border.all(
-              color: active
-                  ? SeeUColors.accent.withValues(alpha: 0.55)
-                  : c.line,
-              width: active ? 1 : 0.5,
-            ),
+            border: active ? null : Border.all(color: c.line),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -430,12 +349,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
               ],
               Text(
-                label.toUpperCase(),
-                style: SeeUTypography.kicker.copyWith(
-                  color: active ? SeeUColors.accent : c.ink3,
+                label,
+                style: SeeUTypography.caption.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: active ? c.bg : c.ink2,
                 ),
               ),
             ],
@@ -621,15 +541,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
-    // Lazy masonry: pre-compute the row-block layout (cheap O(n) index math,
-    // no widgets) and let a SliverList build each block on demand. Cells only
-    // paint when scrolled into the viewport (± cacheExtent) — Instagram-style.
-    const gap = 2.0;
-    const padding = 4.0;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cellSize = (screenWidth - padding * 2 - gap * 2) / 3;
-    final blocks = _computeBlocks(state.items.length);
-
+    // §04: мозаика в ДВЕ колонки, плитки r14, высоты чередуются 150/122 —
+    // шахматный ритм из дизайна. SliverMasonryGrid ленивый: ячейки строятся
+    // по мере скролла, импрешны остаются в VisibilityDetector ячейки.
     return SeeURadarRefresh(
       onRefresh: () => ref.read(exploreFeedProvider.notifier).refresh(),
       child: CustomScrollView(
@@ -639,13 +553,17 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         ),
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: padding),
-            sliver: SliverList.builder(
-              itemCount: blocks.length,
-              itemBuilder: (context, blockIndex) => _MasonryRow(
-                block: blocks[blockIndex],
-                items: state.items,
-                cellSize: cellSize,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverMasonryGrid.count(
+              crossAxisCount: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childCount: state.items.length,
+              itemBuilder: (context, index) => _MasonryCell(
+                key: ValueKey('explore_cell_$index'),
+                item: state.items[index],
+                index: index,
+                height: index.isEven ? 150 : 122,
                 onTapItem: _openItem,
                 onImpression: _trackItemImpression,
                 onLongPressItem: _onLongPressItem,
@@ -666,24 +584,22 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   Widget _buildGridShimmer() {
     final c = context.seeuColors;
-    final itemSize = (MediaQuery.of(context).size.width - 14) / 3;
+    // Скелетон повторяет мозаику §04: 2 колонки, r14, высоты 150/122.
     return SeeUShimmer(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: GridView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: MasonryGridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 3,
-            mainAxisSpacing: 3,
-            mainAxisExtent: itemSize,
-          ),
-          itemCount: 9,
-          itemBuilder: (_, __) => Container(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          itemCount: 8,
+          itemBuilder: (_, i) => Container(
+            height: i.isEven ? 150 : 122,
             decoration: BoxDecoration(
               color: c.surface2,
-              borderRadius: BorderRadius.circular(SeeURadii.small),
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
         ),
@@ -691,292 +607,18 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     );
   }
 
-  // =========================================================================
-  // Search results
-  // =========================================================================
-
-  Widget _buildSearchResults(SearchState searchState) {
-    final c = context.seeuColors;
-    if (searchState.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: SeeUColors.accent),
-      );
-    }
-
-    // Apply client-side tab filtering
-    final filteredUsers = _selectedTab == 1 // Аккаунты: show users
-        ? searchState.users
-        : <User>[];
-    final filteredPosts = _selectedTab == 1 // Аккаунты: hide posts
-        ? <Post>[]
-        : searchState.posts;
-
-    if (filteredUsers.isEmpty && filteredPosts.isEmpty) {
-      return SeeUEmptyState(
-        icon: PhosphorIcons.magnifyingGlass(),
-        title: 'Ничего не найдено',
-        subtitle: 'Попробуйте другой запрос',
-      );
-    }
-
-    return AnimationLimiter(
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          if (filteredUsers.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: SeeUSectionHeader(kicker: 'Люди', padding: EdgeInsets.zero),
-            ),
-            ...List.generate(filteredUsers.length, (index) {
-              final user = filteredUsers[index];
-              return AnimationConfiguration.staggeredList(
-                position: index,
-                duration: const Duration(milliseconds: 300),
-                child: SlideAnimation(
-                  verticalOffset: 20,
-                  child: FadeInAnimation(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      child: _UserSearchCard(user: user),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ],
-          if (filteredPosts.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-              child: SeeUSectionHeader(kicker: 'Публикации', padding: EdgeInsets.zero),
-            ),
-            Builder(builder: (context) {
-              // Size disk/mem cache to the actual cell, not full-res.
-              // 3 columns, 16px side padding, 4px cross-axis spacing (×2).
-              final cellWidth =
-                  (MediaQuery.of(context).size.width - 32 - 8) / 3;
-              final cacheWidth =
-                  (cellWidth * MediaQuery.devicePixelRatioOf(context)).round();
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 4,
-                  mainAxisSpacing: 4,
-                ),
-                itemCount: filteredPosts.length,
-                itemBuilder: (context, index) {
-                  final post = filteredPosts[index];
-                  final imgUrl = post.gridThumbnailUrl;
-                  return GestureDetector(
-                    onTap: () => context.push('/post/${post.id}'),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(SeeURadii.small),
-                      child: imgUrl.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: imgUrl,
-                              fit: BoxFit.cover,
-                              memCacheWidth: cacheWidth,
-                              maxWidthDiskCache: cacheWidth,
-                              placeholder: (_, __) =>
-                                  Container(color: c.surface2),
-                              errorWidget: (_, __, ___) =>
-                                  Container(color: c.surface2),
-                            )
-                          : Container(color: c.surface2),
-                    ),
-                  );
-                },
-              );
-            }),
-          ],
-        ],
-      ),
-    );
-  }
 }
 
 // ===========================================================================
-// Masonry grid: 3-column, every 7th item spans 2 rows (1:2 ratio).
-//
-// Layout is now LAZY: the packing is pre-computed into row "blocks" (cheap
-// index math, no widgets) and a SliverList builds each block on demand. Each
-// cell only paints when scrolled into the viewport (± cacheExtent), and fires
-// its impression from a VisibilityDetector instead of inside build().
+// Masonry cell — плитка двухколоночной мозаики (§04): r14, высота 150/122,
+// play-значок + длительность для видео. Ленивая: строится по мере скролла,
+// импрешн — из VisibilityDetector ровно один раз.
 // ===========================================================================
 
-/// `index`-th item is a 2-row tall tile. SAME rule everywhere — never branch
-/// on content type. Kept identical to the original `(index + 3) % 7 == 0`.
-bool _isTall(int index) => (index + 3) % 7 == 0;
-
-/// The four row-block shapes the packer can emit. The packer walks items
-/// left→right, top→bottom; a tall tile claims its column for two rows and
-/// pulls extra normals into the other columns.
-enum _BlockType { normal, tall0, tall1, tall2 }
-
-class _RowBlock {
-  final _BlockType type;
-  final int start;
-  const _RowBlock(this.type, this.start);
-}
-
-/// Cheap O(n) pass (index math only, no widgets) that mirrors the original
-/// eager packing EXACTLY: tall0/normal consume 3 items, tall1/tall2 consume 5.
-List<_RowBlock> _computeBlocks(int count) {
-  final blocks = <_RowBlock>[];
-  int i = 0;
-  while (i < count) {
-    final tall0 = _isTall(i);
-    final tall1 = (i + 1 < count) && _isTall(i + 1);
-    final tall2 = (i + 2 < count) && _isTall(i + 2);
-    if (tall0) {
-      blocks.add(_RowBlock(_BlockType.tall0, i));
-      i += 3;
-    } else if (tall1) {
-      blocks.add(_RowBlock(_BlockType.tall1, i));
-      i += 5;
-    } else if (tall2) {
-      blocks.add(_RowBlock(_BlockType.tall2, i));
-      i += 5;
-    } else {
-      blocks.add(_RowBlock(_BlockType.normal, i));
-      i += 3;
-    }
-  }
-  return blocks;
-}
-
-/// Builds a single row block on demand. Lives inside a SliverList so only the
-/// blocks near the viewport are ever constructed.
-class _MasonryRow extends StatelessWidget {
-  final _RowBlock block;
-  final List<ExploreItem> items;
-  final double cellSize;
-  final void Function(ExploreItem item) onTapItem;
-  final void Function(ExploreItem item)? onImpression;
-  final void Function(ExploreItem item)? onLongPressItem;
-
-  const _MasonryRow({
-    required this.block,
-    required this.items,
-    required this.cellSize,
-    required this.onTapItem,
-    this.onImpression,
-    this.onLongPressItem,
-  });
-
-  static const double _gap = 2.0;
-
-  Widget _cell(int index) {
-    if (index < 0 || index >= items.length) {
-      return SizedBox(width: cellSize, height: cellSize);
-    }
-    return _MasonryCell(
-      key: ValueKey('explore_cell_$index'),
-      item: items[index],
-      index: index,
-      cellSize: cellSize,
-      onTapItem: onTapItem,
-      onImpression: onImpression,
-      onLongPressItem: onLongPressItem,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final start = block.start;
-    late final Widget row;
-    switch (block.type) {
-      case _BlockType.tall0:
-        // Column 0 tall, paired with 2 normals stacked in columns 1+2.
-        row = Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _cell(start),
-            const SizedBox(width: _gap),
-            Column(children: [
-              _cell(start + 1),
-              const SizedBox(height: _gap),
-              _cell(start + 2),
-            ]),
-          ],
-        );
-        break;
-      case _BlockType.tall1:
-        // Column 1 tall, normals stacked in columns 0+2.
-        row = Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Column(children: [
-              _cell(start),
-              const SizedBox(height: _gap),
-              _cell(start + 2),
-            ]),
-            const SizedBox(width: _gap),
-            _cell(start + 1),
-            const SizedBox(width: _gap),
-            Column(children: [
-              _cell(start + 3),
-              const SizedBox(height: _gap),
-              _cell(start + 4),
-            ]),
-          ],
-        );
-        break;
-      case _BlockType.tall2:
-        // Column 2 tall, normals stacked in columns 0+1.
-        row = Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Column(children: [
-              _cell(start),
-              const SizedBox(height: _gap),
-              _cell(start + 3),
-            ]),
-            const SizedBox(width: _gap),
-            Column(children: [
-              _cell(start + 1),
-              const SizedBox(height: _gap),
-              _cell(start + 4),
-            ]),
-            const SizedBox(width: _gap),
-            _cell(start + 2),
-          ],
-        );
-        break;
-      case _BlockType.normal:
-        // All three items 1:1.
-        row = Row(
-          children: [
-            _cell(start),
-            if (start + 1 < items.length) ...[
-              const SizedBox(width: _gap),
-              _cell(start + 1),
-            ],
-            if (start + 2 < items.length) ...[
-              const SizedBox(width: _gap),
-              _cell(start + 2),
-            ],
-          ],
-        );
-        break;
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: _gap),
-      child: row,
-    );
-  }
-}
-
-/// A single masonry cell. Stateful so the impression fires exactly once (when
-/// >50% visible) via VisibilityDetector — not as a build-time side effect.
 class _MasonryCell extends StatefulWidget {
   final ExploreItem item;
   final int index;
-  final double cellSize;
+  final double height;
   final void Function(ExploreItem item) onTapItem;
   final void Function(ExploreItem item)? onImpression;
   final void Function(ExploreItem item)? onLongPressItem;
@@ -985,7 +627,7 @@ class _MasonryCell extends StatefulWidget {
     super.key,
     required this.item,
     required this.index,
-    required this.cellSize,
+    required this.height,
     required this.onTapItem,
     this.onImpression,
     this.onLongPressItem,
@@ -1006,22 +648,25 @@ class _MasonryCellState extends State<_MasonryCell> {
     }
   }
 
+  String _fmtDuration(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
     final item = widget.item;
-    final cellSize = widget.cellSize;
     final isShort = item.type == ExploreItemType.short;
     final isVideo = item.type == ExploreItemType.video;
     final showPlay = isShort || isVideo || item.isVideoPost;
     final imageUrl = item.displayImage;
-    final count = item.likesCount > 0 ? item.likesCount : item.viewsCount;
-    // The 2-row span decision uses the SAME rule as the packer, never per-type.
-    final isTall = _isTall(widget.index);
-    final height = isTall ? cellSize * 2 + 2 : cellSize;
-    // Decode/cache at cell resolution (~screenWidth/3), NOT full-res.
-    final cacheWidth =
-        (cellSize * MediaQuery.devicePixelRatioOf(context)).round();
+    // Декодируем в разрешении ячейки (~пол-экрана), не full-res.
+    final cacheWidth = (MediaQuery.of(context).size.width /
+            2 *
+            MediaQuery.devicePixelRatioOf(context))
+        .round();
 
     return GestureDetector(
       onTap: () => widget.onTapItem(item),
@@ -1032,11 +677,10 @@ class _MasonryCellState extends State<_MasonryCell> {
         key: ValueKey('explore_vis_${widget.index}'),
         onVisibilityChanged: _onVisibility,
         child: SizedBox(
-          width: cellSize,
-          height: height,
+          height: widget.height,
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(SeeURadii.small),
+              borderRadius: BorderRadius.circular(14),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -1055,165 +699,54 @@ class _MasonryCellState extends State<_MasonryCell> {
                     ),
                   )
                 else
-                Container(
-                  color: c.surface2,
-                  child: Icon(
-                    showPlay ? PhosphorIcons.playCircle() : PhosphorIcons.image(),
-                    color: c.ink3,
-                  ),
-                ),
-              // Play badge top-right for shorts/videos/video-posts.
-              if (showPlay)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Icon(
-                    PhosphorIcons.play(PhosphorIconsStyle.fill),
-                    color: Colors.white,
-                    size: 16,
-                    shadows: const [
-                      Shadow(color: SeeUColors.mediumScrim, blurRadius: 4),
-                    ],
-                  ),
-                ),
-              // HD badge for normal videos with a ≥720p frame.
-              if (isVideo && item.height >= 720)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: SeeUColors.mediumScrim,
-                      borderRadius: BorderRadius.circular(4),
+                  Container(
+                    color: c.surface2,
+                    child: Icon(
+                      showPlay
+                          ? PhosphorIcons.playCircle()
+                          : PhosphorIcons.image(),
+                      color: c.ink3,
                     ),
-                    child: Text('HD',
+                  ),
+                // Видео: play-circle fill сверху-справа (§04).
+                if (showPlay)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Icon(
+                      PhosphorIcons.playCircle(PhosphorIconsStyle.fill),
+                      color: Colors.white,
+                      size: 20,
+                      shadows: const [
+                        Shadow(color: SeeUColors.mediumScrim, blurRadius: 4),
+                      ],
+                    ),
+                  ),
+                // Видео: длительность пилюлей внизу-слева (§04).
+                if (showPlay && item.durationSeconds > 0)
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: SeeUColors.mediumScrim,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        _fmtDuration(item.durationSeconds),
                         style: SeeUTypography.micro.copyWith(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              // Engagement count overlay for play items.
-              if (showPlay && count > 0)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(6, 16, 6, 5),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          SeeUColors.transparentBlack,
-                          SeeUColors.mediumScrim,
-                        ],
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          item.likesCount > 0
-                              ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
-                              : PhosphorIcons.play(PhosphorIconsStyle.fill),
-                          size: 10,
                           color: Colors.white,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          count >= 1000
-                              ? '${(count / 1000).toStringAsFixed(1)}k'
-                              : '$count',
-                          style: SeeUTypography.micro.copyWith(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            shadows: const [
-                              Shadow(color: SeeUColors.mediumScrim, blurRadius: 3),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    ),
-    );
-  }
-}
-
-// ===========================================================================
-// User search result card
-// ===========================================================================
-
-class _UserSearchCard extends StatelessWidget {
-  final User user;
-  const _UserSearchCard({required this.user});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return GestureDetector(
-      onTap: () => context.push('/profile/${user.username}'),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(SeeURadii.medium),
-          border: Border.all(color: c.line, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: c.surface2,
-              backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-                  ? CachedNetworkImageProvider(user.avatarUrl!)
-                  : null,
-              child: (user.avatarUrl == null || user.avatarUrl!.isEmpty)
-                  ? Text(
-                      user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
-                      style: SeeUTypography.subtitle,
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          user.username,
-                          style: SeeUTypography.subtitle.copyWith(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (user.isVerified) ...[
-                        const SizedBox(width: 4),
-                        Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
-                            color: SeeUColors.accent, size: 14),
-                      ],
-                    ],
+                    ),
                   ),
-                  Text(
-                    user.fullName,
-                    style: SeeUTypography.caption.copyWith(color: c.ink3),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
 import '../../../core/models/user.dart';
@@ -33,50 +34,84 @@ class ProfileHeaderIconButton extends StatelessWidget {
   }
 }
 
+/// Стили кнопок профиля (§05):
+/// [primary] — коралловая CTA 44 r13 («Подписаться»);
+/// [outline] — белая с коралловым бордюром 1.5 («Написать»);
+/// [soft] — тихая surface2 36 r12 (свой профиль: «Редактировать»);
+/// [muted] — приглушённая недоступность («Запросить доступ» / «Заявка отправлена»).
+enum ProfileButtonStyle { primary, outline, soft, muted }
+
 class ProfileActionButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
-  final bool isPrimary;
-  const ProfileActionButton({super.key, required this.label, this.onTap, this.isPrimary = false});
+  final ProfileButtonStyle style;
+  final Widget? icon;
+  /// Высота: свой профиль 36, чужой 44 (по дизайну).
+  final double height;
+  const ProfileActionButton({
+    super.key,
+    required this.label,
+    this.onTap,
+    this.style = ProfileButtonStyle.soft,
+    this.icon,
+    this.height = 44,
+  });
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final label0 = Text(label,
-        style: SeeUTypography.caption.copyWith(
-            fontWeight: FontWeight.w600,
-            color: isPrimary ? Colors.white : c.ink));
-
-    // Единственная solid-accent primary CTA (напр. «Подписаться»).
-    if (isPrimary) {
-      return Tappable.scaled(
-        onTap: onTap,
-        child: Container(
-          height: 40,
-          decoration: BoxDecoration(
-            color: SeeUColors.accent,
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
-            boxShadow: SeeUShadows.sm,
-          ),
-          child: Center(child: label0),
-        ),
-      );
+    final Color bg;
+    final Color fg;
+    Border? border;
+    List<BoxShadow>? shadow;
+    switch (style) {
+      case ProfileButtonStyle.primary:
+        bg = SeeUColors.accent;
+        fg = Colors.white;
+        shadow = SeeUShadows.sm;
+        break;
+      case ProfileButtonStyle.outline:
+        bg = c.surface;
+        fg = SeeUColors.accent;
+        border = Border.all(color: SeeUColors.accent, width: 1.5);
+        break;
+      case ProfileButtonStyle.soft:
+        bg = c.surface2;
+        fg = c.ink;
+        break;
+      case ProfileButtonStyle.muted:
+        bg = c.surface2;
+        fg = c.ink4;
+        border = Border.all(color: c.line);
+        break;
     }
-
-    // Secondary — тёплая сплошная заливка (surface2) с акцентным бордюром.
-    // Кнопка стоит на плоском фоне экрана (не над медиа) — стекло здесь не
-    // нужно и на светлом фоне читалось как серая пилюля вместо брендовой.
+    // Радиусы из дизайна: 13 для ряда чужого профиля (44), 12 для своего (36).
+    final radius = height >= 44 ? 13.0 : 12.0;
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
-        height: 40,
+        height: height,
         decoration: BoxDecoration(
-          color: c.surface2,
-          borderRadius: BorderRadius.circular(SeeURadii.pill),
-          border: Border.all(
-              color: SeeUColors.accent.withValues(alpha: 0.22), width: 1),
+          color: bg,
+          borderRadius: BorderRadius.circular(radius),
+          border: border,
+          boxShadow: shadow,
         ),
-        child: Center(child: label0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[icon!, const SizedBox(width: 7)],
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SeeUTypography.caption.copyWith(
+                      fontSize: height >= 44 ? 14 : 13,
+                      fontWeight: FontWeight.w600,
+                      color: fg)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -92,11 +127,13 @@ class ProfileOwnButtons extends StatelessWidget {
       children: [
         Expanded(child: ProfileActionButton(
           label: 'Редактировать',
+          height: 36,
           onTap: () => context.push('/profile/edit'),
         )),
         const SizedBox(width: 8),
         Expanded(child: ProfileActionButton(
-          label: 'Поделиться',
+          label: 'Поделиться профилем',
+          height: 36,
           onTap: () {
             Clipboard.setData(ClipboardData(text: 'https://seeu.app/profile/${user.username}'));
             showSeeUSnackBar(context, 'Ссылка на профиль скопирована',
@@ -215,9 +252,16 @@ class _ProfileOtherButtonsState extends ConsumerState<ProfileOtherButtons> {
     if (widget.user.isFollowing) {
       followBtn = ProfileActionButton(label: 'Отписаться', onTap: _toggleFollow);
     } else if (widget.user.hasPendingFollowRequest) {
-      followBtn = ProfileActionButton(label: 'Запрос отправлен', onTap: _toggleFollow);
+      followBtn = ProfileActionButton(
+          label: 'Запрос отправлен',
+          style: ProfileButtonStyle.muted,
+          onTap: _toggleFollow);
     } else {
-      followBtn = ProfileActionButton(label: 'Подписаться', isPrimary: true, onTap: _toggleFollow);
+      followBtn = ProfileActionButton(
+          label: 'Подписаться',
+          style: ProfileButtonStyle.primary,
+          icon: Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
+          onTap: _toggleFollow);
     }
 
     // Access-gated messaging button
@@ -242,15 +286,32 @@ class _ProfileOtherButtonsState extends ConsumerState<ProfileOtherButtons> {
 
     final Widget messageBtn;
     if (hasAccess) {
+      // Доступ есть → активная «Написать» (белая с коралловым бордюром,
+      // chat-circle fill — §05 B).
       messageBtn = _chatLoading
-          ? ProfileActionButton(label: 'Открытие...', onTap: null)
-          : ProfileActionButton(label: 'Написать', onTap: _openChat);
+          ? const ProfileActionButton(
+              label: 'Открытие...', style: ProfileButtonStyle.outline)
+          : ProfileActionButton(
+              label: 'Написать',
+              style: ProfileButtonStyle.outline,
+              icon: const Icon(PhosphorIconsFill.chatCircle,
+                  size: 16, color: SeeUColors.accent),
+              onTap: _openChat);
     } else if (accessRequested) {
-      messageBtn = ProfileActionButton(label: 'Заявка отправлена', onTap: null);
+      messageBtn = const ProfileActionButton(
+          label: 'Заявка отправлена', style: ProfileButtonStyle.muted);
     } else {
+      // Доступа нет → приглушённая «Запросить доступ» с фирменной
+      // пунктирной иконкой доступа (§05 B, состояние 2).
       messageBtn = _accessLoading
-          ? ProfileActionButton(label: 'Отправка...', onTap: null)
-          : ProfileActionButton(label: 'Запросить доступ', onTap: _requestAccess);
+          ? const ProfileActionButton(
+              label: 'Отправка...', style: ProfileButtonStyle.muted)
+          : ProfileActionButton(
+              label: 'Запросить доступ',
+              style: ProfileButtonStyle.muted,
+              icon: SeeUAccessIcon(
+                  size: 16, color: context.seeuColors.ink4),
+              onTap: _requestAccess);
     }
 
     return Row(

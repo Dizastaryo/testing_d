@@ -29,6 +29,12 @@ class LibColors {
   /// Плашки/сегменты на бумаге.
   static const Color chipLight = Color(0xFFF1EBE1);
 
+  /// Плашка кнопки «Назад» — чуть светлее чипов (по дизайну #F4EFE8).
+  static const Color backChipLight = Color(0xFFF4EFE8);
+
+  /// Бейдж «Рекомендации» на Обзоре — фиолетовый из дизайна.
+  static const Color recommendation = Color(0xFF9B37C9);
+
   /// Линейки: обводка карточек и тонкие разделители секций.
   static const Color lineLight = Color(0xFFEDE6DB);
   static const Color hairlineLight = Color(0xFFE6DECF);
@@ -92,7 +98,7 @@ class PaperBackground extends StatelessWidget {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
-                painter: _PaperPainter(
+                painter: PaperGrainPainter(
                   dark: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
@@ -105,24 +111,40 @@ class PaperBackground extends StatelessWidget {
   }
 }
 
-class _PaperPainter extends CustomPainter {
+/// Зерно бумаги + (опц.) виньетка. Публичный — переиспользуется ридерами
+/// поверх страницы (сепия/тёмная задают свой [grainColor] с низкой альфой).
+class PaperGrainPainter extends CustomPainter {
   final bool dark;
-  const _PaperPainter({required this.dark});
+
+  /// Цвет линий зерна. null = дефолт по [dark].
+  final Color? grainColor;
+
+  /// Рисовать ли виньетку по краям (на странице ридера — нет).
+  final bool vignette;
+
+  const PaperGrainPainter({
+    required this.dark,
+    this.grainColor,
+    this.vignette = true,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     // Зерно: repeating-linear-gradient(0deg, rgba(...) 0 1px, transparent 1px 3px)
     final grain = Paint()
-      ..color = dark
-          ? const Color(0xFFFFDCB4).withValues(alpha: 0.012)
-          : const Color(0xFF785A3C).withValues(alpha: 0.016)
+      ..color = grainColor ??
+          (dark
+              ? const Color(0xFFFFDCB4).withValues(alpha: 0.012)
+              : const Color(0xFF785A3C).withValues(alpha: 0.016))
       ..strokeWidth = 1;
     for (var y = 0.0; y < size.height; y += 3) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grain);
     }
 
+    if (!vignette) return;
+
     // Виньетка: inset 0 0 120px — мягкое затемнение по краям.
-    final vignette = Paint()
+    final vignettePaint = Paint()
       ..shader = RadialGradient(
         radius: 0.9,
         colors: [
@@ -133,11 +155,14 @@ class _PaperPainter extends CustomPainter {
         ],
         stops: const [0.55, 1.0],
       ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, vignette);
+    canvas.drawRect(Offset.zero & size, vignettePaint);
   }
 
   @override
-  bool shouldRepaint(_PaperPainter old) => old.dark != dark;
+  bool shouldRepaint(PaperGrainPainter old) =>
+      old.dark != dark ||
+      old.grainColor != grainColor ||
+      old.vignette != vignette;
 }
 
 // ─── Верх главных вкладок (паттерн B) ───────────────────────────────────────
@@ -295,13 +320,15 @@ class LibBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Tappable.scaled(
       onTap: onTap ?? () => context.pop(),
       child: Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: LibColors.chip(context),
+          // По дизайну плашка «Назад» — #F4EFE8 (светлее чипов #F1EBE1).
+          color: dark ? SeeUColors.darkSurface2 : LibColors.backChipLight,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: LibColors.line(context)),
         ),
@@ -667,4 +694,87 @@ String totalReadingTime(int pages) {
   if (pages <= 0) return '';
   final h = (pages * 1.6 / 60).round();
   return h <= 0 ? '<1 ч.' : '~$h ч.';
+}
+
+// ─── Пунктирная рамка ───────────────────────────────────────────────────────
+
+/// Скруглённый прямоугольник пунктиром — области «Обложка» / «Выбрать файл»
+/// в шторке загрузки и плитка «Новая коллекция».
+class LibDashedBorder extends StatelessWidget {
+  final Widget child;
+  final Color color;
+  final double radius;
+  final double strokeWidth;
+  final double dash;
+  final double gap;
+
+  const LibDashedBorder({
+    super.key,
+    required this.child,
+    required this.color,
+    this.radius = 12,
+    this.strokeWidth = 1.5,
+    this.dash = 5,
+    this.gap = 4,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      foregroundPainter: _DashedRectPainter(
+        color: color,
+        radius: radius,
+        strokeWidth: strokeWidth,
+        dash: dash,
+        gap: gap,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DashedRectPainter extends CustomPainter {
+  final Color color;
+  final double radius;
+  final double strokeWidth;
+  final double dash;
+  final double gap;
+
+  const _DashedRectPainter({
+    required this.color,
+    required this.radius,
+    required this.strokeWidth,
+    required this.dash,
+    required this.gap,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    final path = Path()..addRRect(rrect);
+    // Режем контур на штрихи dash/gap вдоль всей длины.
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance = end + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedRectPainter old) =>
+      old.color != color ||
+      old.radius != radius ||
+      old.strokeWidth != strokeWidth ||
+      old.dash != dash ||
+      old.gap != gap;
 }

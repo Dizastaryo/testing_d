@@ -1,3 +1,6 @@
+import 'dart:ui' as ui;
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +15,7 @@ import '../../core/design/design.dart';
 import '../../core/models/audio_category.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/providers/playlist_provider.dart';
+import '../../widgets/report_sheet.dart';
 import 'audio_design.dart';
 import 'moment_sheet.dart';
 import 'music_search_screen.dart' show AudioErrorState;
@@ -51,22 +55,32 @@ class _TrackDetailScreenState extends ConsumerState<TrackDetailScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: async.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: SeeUColors.accent),
-        ),
-        error: (_, __) => SafeArea(
-          child: Column(
-            children: [
-              _bar(context, null),
-              Expanded(
-                child: AudioErrorState(
-                  onRetry: () =>
-                      ref.invalidate(_trackDetailProvider(widget.trackId)),
-                ),
-              ),
-            ],
+        loading: () => const SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(top: 60),
+            child: AudioListSkeleton(rows: 6),
           ),
         ),
+        error: (e, __) {
+          // §M3: 404/403 = трек удалён или стал приватным — не «нет связи».
+          final code = e is DioException ? e.response?.statusCode : null;
+          final gone = code == 404 || code == 403;
+          return SafeArea(
+            child: Column(
+              children: [
+                _bar(context, null),
+                Expanded(
+                  child: gone
+                      ? _trackGone(context)
+                      : AudioErrorState(
+                          onRetry: () => ref
+                              .invalidate(_trackDetailProvider(widget.trackId)),
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
         data: (track) {
           // Мем открывается шторкой: экран-простыня ему не нужен.
           if (modeOf(track) == ListenMode.moment) {
@@ -105,7 +119,7 @@ class _TrackDetailScreenState extends ConsumerState<TrackDetailScreen> {
         children: [
           _bar(context, t),
 
-          // Обложка
+          // Обложка (§D: фикс. высота 230, r22, glass-бейдж категории)
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
             child: Stack(
@@ -114,36 +128,44 @@ class _TrackDetailScreenState extends ConsumerState<TrackDetailScreen> {
                   builder: (_, box) => TrackCover(
                     track: t,
                     size: box.maxWidth,
+                    height: 230,
                     radius: 22,
                   ),
                 ),
                 Positioned(
                   left: 14,
                   top: 14,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 11, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161310).withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(mode.icon, size: 12, color: Colors.white),
-                        const SizedBox(width: 6),
-                        Text(
-                          [
-                            cat?.title ?? '',
-                            if (t.subcategory.isNotEmpty) t.subcategory,
-                          ].where((e) => e.isNotEmpty).join(' · '),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 11, vertical: 5),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF161310).withValues(alpha: 0.42),
+                          borderRadius: BorderRadius.circular(999),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(mode.icon, size: 12, color: Colors.white),
+                            const SizedBox(width: 6),
+                            Text(
+                              [
+                                cat?.title ?? '',
+                                if (t.subcategory.isNotEmpty) t.subcategory,
+                              ].where((e) => e.isNotEmpty).join(' · '),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -391,7 +413,7 @@ class _TrackDetailScreenState extends ConsumerState<TrackDetailScreen> {
             onTap: () => context.pop(),
           ),
           const Spacer(),
-          if (t != null)
+          if (t != null) ...[
             AudioSquareButton(
               icon: PhosphorIcons.shareNetwork(),
               onTap: () => Share.share(
@@ -400,7 +422,112 @@ class _TrackDetailScreenState extends ConsumerState<TrackDetailScreen> {
                 subject: t.title,
               ),
             ),
+            const SizedBox(width: 10),
+            AudioSquareButton(
+              icon: PhosphorIcons.dotsThree(),
+              onTap: () => _showTrackMenu(context, t),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  void _showTrackMenu(BuildContext context, AudioTrack t) {
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(PhosphorIcons.link(), color: sheetCtx.seeuColors.ink),
+              title: const Text('Копировать ссылку'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                Clipboard.setData(ClipboardData(
+                    text: 'https://seeu.app/music/track/${t.id}'));
+                showSeeUSnackBar(context, 'Ссылка скопирована');
+              },
+            ),
+            ListTile(
+              leading: Icon(PhosphorIcons.flag(), color: SeeUColors.like),
+              title: const Text('Пожаловаться',
+                  style: TextStyle(color: SeeUColors.like)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                showReportSheet(
+                  context: context,
+                  ref: ref,
+                  targetType: 'track',
+                  targetId: t.id,
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// §M3: трек удалён/приватен.
+  Widget _trackGone(BuildContext context) {
+    final c = context.seeuColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 44),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                  color: c.surface2, shape: BoxShape.circle),
+              child: Icon(PhosphorIcons.lockSimple(), size: 42, color: c.ink3),
+            ),
+            const SizedBox(height: 22),
+            Text('Трека больше нет',
+                style: SeeUTypography.displayS.copyWith(fontSize: 24)),
+            const SizedBox(height: 10),
+            Text(
+              'Автор удалил его или сделал приватным. Из твоего сохранённого и плейлистов он тоже пропал.',
+              textAlign: TextAlign.center,
+              style: SeeUTypography.body.copyWith(fontSize: 14, color: c.ink3),
+            ),
+            const SizedBox(height: 22),
+            Tappable.scaled(
+              onTap: () => context.pop(),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+                decoration: BoxDecoration(
+                    color: c.ink,
+                    borderRadius: BorderRadius.circular(14)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIcons.arrowLeft(), size: 15, color: c.bg),
+                    const SizedBox(width: 8),
+                    Text('Назад',
+                        style: SeeUTypography.caption.copyWith(
+                            fontWeight: FontWeight.w600, color: c.bg)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Tappable(
+              onTap: () => context.push('/music/search'),
+              child: Text('Найти похожее',
+                  style: SeeUTypography.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AudioColors.kicker(context))),
+            ),
+          ],
+        ),
       ),
     );
   }

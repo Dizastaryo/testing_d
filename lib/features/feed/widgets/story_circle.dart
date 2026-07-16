@@ -1,15 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/design/design.dart';
 
+/// Кружок истории (§03): 62px; непросмотренная — градиент-кольцо 135°
+/// #FFB547→#FF5A3C с зазором 2px фоном; просмотренная — блеклое кольцо
+/// #E3D2C2→#D2BBA6 (аватар НЕ глушится); «Твоя» — dashed-круг с плюсом.
 class StoryCircle extends StatefulWidget {
   final String? imageUrl;
   final String username;
   final bool isSeen;
   final bool isOwn;
   /// PROFILE-3: true если хотя бы одна из stories в группе — close-friends-only.
-  /// Рисуем зелёный ring вместо оранжевого.
+  /// Рисуем зелёное кольцо вместо градиента.
   final bool hasCloseFriendsStory;
   final VoidCallback? onTap;
   final double size;
@@ -22,7 +27,7 @@ class StoryCircle extends StatefulWidget {
     this.isOwn = false,
     this.hasCloseFriendsStory = false,
     this.onTap,
-    this.size = 64,
+    this.size = 62,
   });
 
   @override
@@ -32,6 +37,10 @@ class StoryCircle extends StatefulWidget {
 class _StoryCircleState extends State<StoryCircle>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
+
+  // Кольца из дизайна §03.
+  static const List<Color> _unseenRing = [SeeUColors.amber, SeeUColors.accent];
+  static const List<Color> _seenRing = [Color(0xFFE3D2C2), Color(0xFFD2BBA6)];
 
   @override
   void initState() {
@@ -68,8 +77,7 @@ class _StoryCircleState extends State<StoryCircle>
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final showGradientRing = !widget.isSeen && !widget.isOwn;
-    final showSeenStyle = widget.isSeen && !widget.isOwn;
+    final showUnseenRing = !widget.isSeen && !widget.isOwn;
 
     return Tappable.scaled(
       onTap: widget.onTap,
@@ -80,9 +88,9 @@ class _StoryCircleState extends State<StoryCircle>
           Stack(
             alignment: Alignment.center,
             children: [
-              // Радар-halo: расходящийся оранжевый glow вокруг кольца.
-              // Используется только для непрочитанной story.
-              if (showGradientRing)
+              // Радар-halo: расходящийся оранжевый glow вокруг кольца
+              // непросмотренной истории.
+              if (showUnseenRing)
                 AnimatedBuilder(
                   animation: _pulse,
                   builder: (_, __) {
@@ -107,97 +115,70 @@ class _StoryCircleState extends State<StoryCircle>
                     );
                   },
                 ),
-              // Outer ring container
-              // L07: For own story, no ring so use size, not size + 4
-              // PROFILE-3 / BUG-26: зелёный ring для CF-stories override'ит
-              // оранжевый — теперь рисуется ДАЖЕ для own-story чтобы автор
-              // видел метку «эта сторис для close-friends». Толщина у own
-              // тоньше (2px вместо 4px) — не мешает «+»-бэйджу.
-              Container(
-                width: widget.isOwn
-                    ? (widget.hasCloseFriendsStory
-                        ? widget.size + 4
-                        : widget.size)
-                    : widget.size + 4,
-                height: widget.isOwn
-                    ? (widget.hasCloseFriendsStory
-                        ? widget.size + 4
-                        : widget.size)
-                    : widget.size + 4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.hasCloseFriendsStory
-                      ? SeeUColors.success
-                      : showGradientRing
-                          ? SeeUColors.accent
-                          : showSeenStyle
-                              ? SeeUColors.borderSubtle
-                              : null,
-                ),
-                child: Padding(
-                  padding: EdgeInsets.all(showGradientRing ? 2.0 : 0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: c.bg,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(showGradientRing ? 2 : 0),
-                      child: ClipOval(
-                        child: SizedBox(
-                          width: widget.size,
-                          height: widget.size,
-                          child: showSeenStyle
-                              ? ColorFiltered(
-                                  colorFilter: const ColorFilter.mode(
-                                      Colors.grey, BlendMode.saturation),
-                                  child: Opacity(
-                                    opacity: 0.6,
-                                    child: _buildAvatar(c),
-                                  ),
-                                )
-                              : _buildAvatar(c),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              // "Your story" plus badge
               if (widget.isOwn)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
+                // «Твоя» — dashed-круг с плюсом по центру (§03).
+                CustomPaint(
+                  painter: _DashedCirclePainter(color: c.ink4),
                   child: Container(
-                    width: 22,
-                    height: 22,
+                    width: widget.size,
+                    height: widget.size,
                     decoration: BoxDecoration(
-                      color: SeeUColors.accent,
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: c.bg,
-                        width: 2,
-                      ),
+                      color: c.surface2,
                     ),
                     child: Center(
                       child: Icon(PhosphorIcons.plus(),
-                          color: Colors.white, size: 12),
+                          color: c.ink3, size: 20),
+                    ),
+                  ),
+                )
+              else
+                // Кольцо: градиент (unseen/seen/CF) + зазор 2px фоном.
+                Container(
+                  width: widget.size + 5,
+                  height: widget.size + 5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: widget.hasCloseFriendsStory
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [SeeUColors.success, Color(0xFF5DB1FF)],
+                          )
+                        : LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors:
+                                widget.isSeen ? _seenRing : _unseenRing,
+                          ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2.5),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.bg, width: 2),
+                      ),
+                      child: ClipOval(child: _buildAvatar(c)),
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 5),
-          // L08: Use TextOverflow.ellipsis instead of manual _truncateUsername
+          const SizedBox(height: 6),
           SizedBox(
-            width: widget.size + 4,
+            width: widget.size + 6,
             child: Text(
-              widget.isOwn ? 'Ваша история' : widget.username,
+              widget.isOwn ? 'Твоя' : widget.username,
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: SeeUTypography.kicker.copyWith(
-                color: c.ink3,
+              style: SeeUTypography.micro.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                // §03: непросмотренная — чернильная подпись, просмотренная и
+                // «Твоя» — приглушённая.
+                color: (!widget.isOwn && !widget.isSeen) ? c.ink : c.ink3,
               ),
             ),
           ),
@@ -210,8 +191,6 @@ class _StoryCircleState extends State<StoryCircle>
     if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: widget.imageUrl!,
-        width: widget.size,
-        height: widget.size,
         fit: BoxFit.cover,
         placeholder: (_, __) => _placeholder(c),
         errorWidget: (_, __, ___) => _placeholder(c),
@@ -222,12 +201,43 @@ class _StoryCircleState extends State<StoryCircle>
 
   Widget _placeholder(SeeUThemeColors c) {
     return Container(
-      width: widget.size,
-      height: widget.size,
       color: c.surface2,
       child: Center(
         child: Icon(PhosphorIcons.user(), color: c.ink3, size: 24),
       ),
     );
   }
+}
+
+/// Пунктирная окружность для «Твоя» (§03: border 2px dashed).
+class _DashedCirclePainter extends CustomPainter {
+  final Color color;
+  _DashedCirclePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 1;
+    const dashCount = 14;
+    final step = 2 * math.pi / dashCount;
+    final dashAngle = step * 0.55;
+    for (var i = 0; i < dashCount; i++) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: r),
+        i * step,
+        dashAngle,
+        false,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedCirclePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

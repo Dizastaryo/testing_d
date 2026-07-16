@@ -25,3 +25,4 @@ export 'seeu_glass_input_bar.dart';
 export 'seeu_role_badge.dart';
 export 'seeu_segmented_control.dart';
 export 'seeu_list_row.dart';
+export 'seeu_access_icon.dart';

@@ -91,62 +91,64 @@ class SeeUMiniPlayer extends ConsumerWidget {
     if (track == null) return const SizedBox.shrink();
 
     final c = context.seeuColors;
-    // Плотная карточка: мини-плеер сидит на непрозрачной нижней панели, под ним
-    // нет контента — размывать нечего. Коралловый характер держим не альфой,
-    // а подмешанным в поверхность оттенком.
-    final surface = Color.alphaBlend(
-      SeeUColors.accent.withValues(alpha: 0.10),
-      c.surface,
-    );
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(SeeURadii.medium),
-        child: Container(
-            height: 64,
-            decoration: BoxDecoration(
-              color: surface,
-              border: Border.all(
-                color: SeeUColors.accent.withValues(alpha: 0.22),
-                width: 1,
-              ),
-              borderRadius: BorderRadius.circular(SeeURadii.medium),
-              boxShadow: SeeUShadows.md,
+    // Эталон «Аудиотека F»: белый бар во всю ширину, линия сверху,
+    // прогресс 2px СВЕРХУ, кавер 44 r10 с эквалайзером, play 40 чёрный.
+    // Жесты: тап/свайп вверх — полный плеер; свайп вниз — свернуть.
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -200) {
+          onTap?.call(); // свайп вверх → полный плеер
+        } else if (v > 200) {
+          ref.read(miniPlayerProvider.notifier).close(); // вниз → свернуть
+        }
+      },
+      child: Container(
+        height: 64,
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border(top: BorderSide(color: c.line, width: 1)),
+          boxShadow: [
+            BoxShadow(
+              color: SeeUColors.accent.withValues(alpha: 0.30),
+              blurRadius: 24,
+              spreadRadius: -12,
+              offset: const Offset(0, -8),
             ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(SeeURadii.medium),
-                onTap: onTap,
-                onLongPress: () => _showSpeedSheet(context, ref),
-                child: Stack(
-                  children: [
-                    // Контент: cover, title, controls
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                      child: Row(
-                        children: [
-                          _Cover(track: track),
-                          const SizedBox(width: 12),
-                          Expanded(child: _TitleArtist(track: track)),
-                          const _PlayPauseBtn(),
-                          _ContextAction(track: track),
-                        ],
-                      ),
-                    ),
-                    // Тонкая progress-полоска снизу
-                    const Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _MiniProgressBar(),
-                    ),
-                  ],
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: () => _showSpeedSheet(context, ref),
+            child: Stack(
+              children: [
+                // Контент: cover, title, controls
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      _Cover(track: track),
+                      const SizedBox(width: 11),
+                      Expanded(child: _TitleArtist(track: track)),
+                      const _PlayPauseBtn(),
+                      _ContextAction(track: track),
+                    ],
+                  ),
                 ),
-              ),
+                // Тонкая progress-полоска СВЕРХУ (эталон F).
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: _MiniProgressBar(),
+                ),
+              ],
             ),
           ),
+        ),
       ),
     );
   }
@@ -177,8 +179,8 @@ class _ContextAction extends ConsumerWidget {
                 .seek(pos + Duration(seconds: mode.skipSeconds));
           },
           child: SizedBox(
-            width: 36,
-            height: 36,
+            width: 34,
+            height: 34,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -211,8 +213,8 @@ class _ContextAction extends ConsumerWidget {
             }
           },
           child: SizedBox(
-            width: 36,
-            height: 36,
+            width: 34,
+            height: 34,
             child: Icon(PhosphorIconsFill.repeat, size: 19, color: mode.color),
           ),
         );
@@ -222,8 +224,8 @@ class _ContextAction extends ConsumerWidget {
         return Tappable.scaled(
           onTap: () => ref.read(miniPlayerProvider.notifier).close(),
           child: SizedBox(
-            width: 36,
-            height: 36,
+            width: 34,
+            height: 34,
             child: Center(
               child: Icon(
                 PhosphorIcons.x(),
@@ -237,29 +239,46 @@ class _ContextAction extends ConsumerWidget {
   }
 }
 
-class _Cover extends StatelessWidget {
+/// Кавер 44 r10 с эквалайзер-оверлеем (3 полоски), когда трек играет —
+/// эталон «Аудиотека F».
+class _Cover extends ConsumerWidget {
   const _Cover({required this.track});
   final AudioTrack track;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
+    final playing = ref.watch(miniPlayerProvider.select((s) => s.playing));
     return ClipRRect(
-      borderRadius: BorderRadius.circular(SeeURadii.small),
+      borderRadius: BorderRadius.circular(10),
       child: SizedBox(
-        width: 48,
-        height: 48,
-        child: track.coverUrl.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: track.coverUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: c.surface2),
-                errorWidget: (_, __, ___) => Container(color: c.surface2),
-              )
-            : Container(
-                color: c.surface2,
-                child: Icon(PhosphorIcons.musicNotes(), color: c.ink3),
+        width: 44,
+        height: 44,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            track.coverUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: track.coverUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(color: c.surface2),
+                    errorWidget: (_, __, ___) =>
+                        Container(color: c.surface2),
+                  )
+                : Container(
+                    color: c.surface2,
+                    child:
+                        Icon(PhosphorIcons.musicNotes(), color: c.ink3),
+                  ),
+            if (playing)
+              Container(
+                color: const Color(0xFF140C08).withValues(alpha: 0.35),
+                alignment: Alignment.bottomCenter,
+                padding: const EdgeInsets.only(bottom: 7),
+                child: NowPlayingBars(color: Colors.white, height: 9),
               ),
+          ],
+        ),
       ),
     );
   }
@@ -288,7 +307,7 @@ class _TitleArtist extends ConsumerWidget {
           track.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: SeeUTypography.subtitle.copyWith(fontSize: 14),
+          style: SeeUTypography.subtitle.copyWith(fontSize: 13.5),
         ),
         const SizedBox(height: 2),
         Text(
@@ -336,22 +355,24 @@ class _PlayPauseBtn extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playing = ref.watch(miniPlayerProvider.select((s) => s.playing));
+    final c = context.seeuColors;
+    // §F: play/pause — чёрный круг 40 (в тёмной теме — светлый).
     return GestureDetector(
       onTap: () => ref.read(miniPlayerProvider.notifier).toggle(),
       child: Container(
         width: 40,
         height: 40,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: SeeUGradients.heroOrange,
+          color: c.ink,
         ),
         child: Center(
           child: Icon(
             playing
                 ? PhosphorIcons.pause(PhosphorIconsStyle.fill)
                 : PhosphorIcons.play(PhosphorIconsStyle.fill),
-            color: Colors.white,
-            size: 18,
+            color: c.bg,
+            size: 19,
           ),
         ),
       ),

@@ -91,7 +91,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
             Expanded(
               child: async.when(
                 loading: () => const Center(
-                  child: CircularProgressIndicator(color: SeeUColors.accent),
+                  child: AudioListSkeleton(rows: 7),
                 ),
                 error: (_, __) => AudioErrorState(
                   onRetry: () =>
@@ -192,7 +192,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
             style: SeeUTypography.displayS.copyWith(
               fontSize: 36,
               letterSpacing: -1,
-              color: c.ink,
+              color: cat.color,
             ),
           ),
           const SizedBox(height: 2),

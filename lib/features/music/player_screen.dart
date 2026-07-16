@@ -344,8 +344,10 @@ class _Scrubber extends ConsumerWidget {
           peaks: track.waveformData,
           progress: progress,
           color: mode.color,
-          height: mode == ListenMode.talk ? 64 : 100,
+          height: mode == ListenMode.talk ? 64 : 110,
           showHandle: true,
+          // Длительность — для плашки времени над ползунком во время драга.
+          total: total,
           onSeek: (f) {
             HapticFeedback.selectionClick();
             ref.read(miniPlayerProvider.notifier).seek(
@@ -561,6 +563,11 @@ class _SecondaryRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
     final player = ref.watch(miniPlayerProvider);
+    // Закладка берётся из копии трека в плеере: setCurrentSaved обновляет её,
+    // и иконка не «отскакивает» при следующей перерисовке.
+    final saved = player.track?.id == track.id
+        ? (player.track?.isSavedByMe ?? track.isSavedByMe)
+        : track.isSavedByMe;
 
     return Container(
       padding: const EdgeInsets.only(top: 16),
@@ -631,6 +638,28 @@ class _SecondaryRow extends ConsumerWidget {
             label: 'очередь',
             icon: PhosphorIcons.listBullets(),
             onTap: () => showQueueSheet(context),
+          ),
+
+          // §E: «сохранить» — на нижней линии обоих режимов (песня/разговор).
+          _action(
+            context,
+            label: 'сохранить',
+            icon: saved
+                ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                : PhosphorIcons.bookmarkSimple(),
+            active: saved,
+            onTap: () async {
+              HapticFeedback.lightImpact();
+              try {
+                final api = ref.read(apiClientProvider);
+                if (!saved) {
+                  await api.post(ApiEndpoints.audioTrackSave(track.id));
+                } else {
+                  await api.delete(ApiEndpoints.audioTrackSave(track.id));
+                }
+                ref.read(miniPlayerProvider.notifier).setCurrentSaved(!saved);
+              } catch (_) {/* best-effort */}
+            },
           ),
 
           _action(

@@ -182,6 +182,11 @@ class AudioUploadState {
 class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
   final ApiClient _api;
 
+  /// Токен текущей заливки — по нему кнопка «Отменить» реально рвёт
+  /// in-flight запрос (а не просто прячет прогресс). Пересоздаётся на каждую
+  /// загрузку; null, когда ничего не грузится.
+  CancelToken? _cancelToken;
+
   AudioUploadNotifier(this._api) : super(const AudioUploadState());
 
   Future<AudioTrack?> upload({
@@ -203,6 +208,8 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
     int durationSeconds = 0,
   }) async {
     state = const AudioUploadState(isUploading: true, progress: 0);
+    final cancelToken = CancelToken();
+    _cancelToken = cancelToken;
     try {
       final formData = FormData.fromMap({
         if (waveform != null && waveform.isNotEmpty)
@@ -240,6 +247,7 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
       final resp = await dio.post(
         ApiEndpoints.audioTracksUpload,
         data: formData,
+        cancelToken: cancelToken,
         onSendProgress: (sent, total) {
           if (total > 0 && mounted) {
             state = state.copyWith(isUploading: true, progress: sent / total);
@@ -251,17 +259,26 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
         ),
       );
 
+      _cancelToken = null;
       final track = AudioTrack.fromJson(resp.data['data']);
       if (mounted) {
         state = AudioUploadState(isUploading: false, progress: 1.0, uploaded: track);
       }
       return track;
     } on DioException catch (e) {
+      _cancelToken = null;
+      // Пользователь нажал «Отменить» — это не ошибка: молча возвращаемся в
+      // исходное состояние (тост об ошибке не показываем).
+      if (e.type == DioExceptionType.cancel) {
+        if (mounted) state = const AudioUploadState();
+        return null;
+      }
       final raw = e.response?.data?['error']?.toString() ?? e.message ?? '';
       debugPrint('[AudioUpload] DioException: $raw');
       if (mounted) state = AudioUploadState(error: _friendlyError(raw, e));
       return null;
     } catch (e) {
+      _cancelToken = null;
       debugPrint('[AudioUpload] error: $e');
       if (mounted) {
         state = AudioUploadState(error: 'Не удалось загрузить трек. Проверьте файл и попробуйте ещё раз.');
@@ -271,6 +288,16 @@ class AudioUploadNotifier extends StateNotifier<AudioUploadState> {
   }
 
   void reset() => state = const AudioUploadState();
+
+  /// «Отменить» на экране прогресса: рвёт незавершённую заливку через
+  /// CancelToken и возвращает нотифаер в idle, чтобы экран мог закрыться /
+  /// вернуться к форме. DioException(cancel) ловится в [upload] и НЕ всплывает
+  /// тостом ошибки. Если грузить уже нечего — просто чистит состояние.
+  void cancel() {
+    _cancelToken?.cancel('user_cancel');
+    _cancelToken = null;
+    if (mounted) state = const AudioUploadState();
+  }
 
   static String _friendlyError(String raw, DioException e) {
     if (raw.contains('file too large') || raw.contains('too large')) {

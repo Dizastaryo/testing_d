@@ -246,9 +246,28 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
                 notifier.setAutoSpacing(v);
               },
             ),
-            // Тумблер «Не гасить экран» убран: он ничего не делал (wakelock
-            // нигде не подключён) — показывать неработающий контрол хуже, чем
-            // не показывать. Вернём, когда появится зависимость wakelock.
+            const SizedBox(height: 4),
+            _ToggleRow(
+              icon: PhosphorIconsRegular.circleHalf,
+              label: 'Ночной режим · инверсия',
+              subtitle: 'Инвертирует цвета страницы',
+              value: settings.nightInvert,
+              onChanged: (v) {
+                HapticFeedback.selectionClick();
+                notifier.setNightInvert(v);
+              },
+            ),
+            const SizedBox(height: 4),
+            _ToggleRow(
+              icon: PhosphorIconsRegular.sunHorizon,
+              label: 'Не гаснуть экрану',
+              subtitle: 'Пока открыт ридер',
+              value: settings.keepAwake,
+              onChanged: (v) {
+                HapticFeedback.selectionClick();
+                notifier.setKeepAwake(v);
+              },
+            ),
             const SizedBox(height: 20),
 
             // ── Background color ────────────────────────────────────────
@@ -261,6 +280,8 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
                   color: settings.isNightMode
                       ? const Color(0xFF121212)
                       : const Color(0xFFF0F0F0),
+                  // Диагональная бело/тёмная заливка — «подстроится сам».
+                  diagonal: true,
                   selected: settings.background == PdfBackground.auto,
                   onTap: () {
                     HapticFeedback.selectionClick();
@@ -269,7 +290,7 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 _BgChip(
-                  label: 'Светлый',
+                  label: 'Белый',
                   color: const Color(0xFFF5F5F5),
                   selected: settings.background == PdfBackground.white,
                   onTap: () {
@@ -647,11 +668,16 @@ class _BgChip extends StatelessWidget {
   final Color color;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Диагональная бело/тёмная заливка — чип «Авто» (фон подстраивается сам).
+  final bool diagonal;
+
   const _BgChip(
       {required this.label,
       required this.color,
       required this.selected,
-      required this.onTap});
+      required this.onTap,
+      this.diagonal = false});
 
   @override
   Widget build(BuildContext context) {
@@ -662,7 +688,7 @@ class _BgChip extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           height: 48,
           decoration: BoxDecoration(
-            color: color,
+            color: diagonal ? null : color,
             border: Border.all(
               color: selected
                   ? SeeUColors.accent
@@ -680,19 +706,64 @@ class _BgChip extends StatelessWidget {
                   ]
                 : null,
           ),
+          clipBehavior: Clip.antiAlias,
           alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: color.computeLuminance() > 0.4
-                  ? Colors.black87
-                  : Colors.white70,
-            ),
-          ),
+          child: diagonal
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const CustomPaint(painter: _DiagonalSplitPainter()),
+                    Center(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                          // Белое гало — читается и на тёмной половине.
+                          shadows: [
+                            Shadow(color: Colors.white, blurRadius: 4),
+                            Shadow(color: Colors.white, blurRadius: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: color.computeLuminance() > 0.4
+                        ? Colors.black87
+                        : Colors.white70,
+                  ),
+                ),
         ),
       ),
     );
   }
+}
+
+/// Диагональ бел/тёмн для чипа «Авто»: светлый треугольник сверху-слева,
+/// тёмный снизу-справа.
+class _DiagonalSplitPainter extends CustomPainter {
+  const _DiagonalSplitPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final light = Paint()..color = const Color(0xFFF5F5F5);
+    final dark = Paint()..color = const Color(0xFF1A1A1A);
+    canvas.drawRect(Offset.zero & size, light);
+    final path = Path()
+      ..moveTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, dark);
+  }
+
+  @override
+  bool shouldRepaint(_DiagonalSplitPainter oldDelegate) => false;
 }

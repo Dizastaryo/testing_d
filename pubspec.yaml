@@ -96,6 +96,9 @@ dependencies:
   path_provider: ^2.1.4
   # LIB Sprint 6: Tier-1 ридеры
   flutter_markdown: ^0.7.7   # TXT/MD reader
+  # «Не гаснуть экрану» в ридерах библиотеки. Уже был транзитивно (1.5.2 в
+  # lock через livekit) — объявляем явно, т.к. импортируем напрямую.
+  wakelock_plus: ^1.5.2
   # vocsy_epub_viewer: ^3.0.0  # TEMP: отключено (битая транзитивная зависимость NanoHttpd под Android). Вернуть после фикса.
   video_thumbnail: ^0.5.3
   emoji_picker_flutter: ^4.4.0
