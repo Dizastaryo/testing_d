@@ -202,20 +202,14 @@ class _QueueSheet extends ConsumerWidget {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                   itemCount: upcoming.length,
-                  // onReorderItem появился ПОСЛЕ Flutter 3.41.0 — на CI-таргете
-                  // (3.41.6) его нет вовсе, есть только onReorder (там он ещё не
-                  // deprecated). onReorder компилируется на обеих версиях, поэтому
-                  // это верный выбор под сборку. ignore гасит info-предупреждение
-                  // о deprecation, которое видит лишь локальный 3.44.
-                  // ignore: deprecated_member_use
-                  onReorder: (oldIndex, newIndex) {
+                  onReorderItem: (oldIndex, newIndex) {
                     HapticFeedback.selectionClick();
-                    // Стандартный onReorder отдаёт СЫРОЙ newIndex (без -1 при
-                    // движении вниз) — именно это ждёт reorderQueue, который сам
-                    // корректирует (target -= 1 при target > oldIndex). Никакой
-                    // ручной компенсации не нужно.
+                    // onReorderItem уже отдаёт скорректированный newIndex, а
+                    // reorderQueue корректирует ещё раз — компенсируем, иначе
+                    // при движении вниз трек уедет на позицию выше нужной.
                     final base = player.queueIndex + 1;
-                    notifier.reorderQueue(base + oldIndex, base + newIndex);
+                    final to = newIndex > oldIndex ? newIndex + 1 : newIndex;
+                    notifier.reorderQueue(base + oldIndex, base + to);
                   },
                   itemBuilder: (_, i) {
                     final entry = upcoming[i];
