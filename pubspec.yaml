@@ -107,7 +107,11 @@ dependencies:
   nfc_manager: ^3.5.0  # Чтение NFC-тега браслета: знакомство + пара (Фазы 4/5)
   ffmpeg_kit_flutter_new: ^4.2.1  # Обрезка/склейка видео при создании постов. Только реальное устройство.
   livekit_client: ^2.5.0+hotfix.3
-  app_links: ^7.2.1
+  # NB: закреплено на 7.0.x. app_links 7.1.0+ требует Dart ^3.12.0 (Flutter 3.44+),
+  # а CI (.github/workflows/dart.yml) собирает на Flutter 3.41.6 = Dart 3.11.4.
+  # 7.0.0 требует Dart ^3.10.0 / Flutter >=3.38.1 — совместимо. Не бампать выше
+  # 7.0.x, пока CI не перейдёт на Flutter 3.44+.
+  app_links: '>=7.0.0 <7.1.0'
 
 dev_dependencies:
   flutter_test:

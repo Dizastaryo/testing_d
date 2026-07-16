@@ -14,10 +14,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          # Совпадает с локальной dev-версией (3.44) — иначе API, доступные
-          # локально, но отсутствующие в CI-тулчейне, ломают сборку (напр.
-          # ReorderableListView.onReorderItem, app_links 7.2.1 → Dart 3.12).
-          flutter-version: "3.44.0"
+          flutter-version: "3.41.6"
           channel: stable
 
       - name: Flutter doctor
