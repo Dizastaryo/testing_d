@@ -134,6 +134,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
         // Обновляем authProvider — router redirect в main.dart сам уведёт
         // на /feed, как только fullName перестанет быть пустым.
         ref.read(authProvider.notifier).updateUser(updated);
+        setState(() => _isSaving = false);
       }
     } catch (e) {
       if (mounted) {

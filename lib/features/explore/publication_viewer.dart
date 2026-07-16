@@ -15,7 +15,7 @@ import '../../core/utils/format.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
-import '../../core/providers/reels_provider.dart';
+import '../../core/providers/content_feed_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../widgets/share_sheet.dart';
 import '../post/comments_screen.dart';
@@ -26,13 +26,11 @@ import '../reels/widgets/reel_video_player.dart';
 /// since the product model treats every post (photo, photo collection, or
 /// video) as the same kind of «рилс».
 ///
-/// Source of posts: [exploreProvider]. The viewer doesn't fetch its own
-/// list — it shares state with the Explore grid so pagination and likes
-/// stay consistent in both places.
-///
-/// `initialPostId` is the post the user tapped on. If it's not in
-/// `exploreProvider.state.posts` (e.g. deeplink, stale state) — we land on
-/// page 0 and the user can scroll to load more.
+/// Source of posts: [contentFeedProvider] (video/photo mode) или
+/// [exploreProvider] (all). Грид «Интересного» живёт на ДРУГОЙ выборке
+/// (/explore, ExploreItem), поэтому тапнутый пост может отсутствовать в
+/// ленте вьюера — тогда `ensurePost` дотягивает его по id и вставляет
+/// первым, чтобы открылся именно тот пост, на который нажали.
 class PublicationViewer extends ConsumerStatefulWidget {
   final String initialPostId;
   /// Content filter: video = TikTok UI, photo = photo feed, all = mixed.
@@ -52,6 +50,7 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
   late final PageController _pageCtrl;
   int _currentIndex = 0;
   bool _initialised = false;
+  bool _ensureRequested = false;
   double _overscrollAccum = 0;
 
   @override
@@ -77,7 +76,25 @@ class _PublicationViewerState extends ConsumerState<PublicationViewer> {
     }
     final idx = posts.indexWhere((p) => p.id == widget.initialPostId);
     if (idx < 0) {
-      _initialised = true;
+      // Тапнутого поста нет в этой выборке (грид «Интересного» живёт на
+      // /explore, а вьюер — на /posts/explore) — раньше молча открывался
+      // первый пост чужой ленты. Дотягиваем пост по id: после вставки
+      // state обновится, build перезапустит _seekToInitial и найдёт его.
+      if (!_ensureRequested) {
+        _ensureRequested = true;
+        if (_hasOwnProvider) {
+          ref
+              .read(contentFeedProvider(widget.contentType).notifier)
+              .ensurePost(widget.initialPostId);
+        } else {
+          ref
+              .read(exploreProvider.notifier)
+              .ensurePost(widget.initialPostId);
+        }
+      } else {
+        // Повторный проход после попытки — поста нет/недоступен.
+        _initialised = true;
+      }
       return;
     }
     // jumpToPage requires the controller to be attached, which happens after
@@ -321,8 +338,8 @@ void _showPublicationComments(BuildContext context, String postId) {
 class _PublicationPage extends ConsumerStatefulWidget {
   final Post post;
   final bool isCurrent;
-  /// When the viewer runs on its own [contentFeedProvider] feed, like/save/
-  /// reaction actions must hit THAT notifier (not [exploreProvider]) so the
+  /// When the viewer runs on its own [contentFeedProvider] feed, like/save
+  /// actions must hit THAT notifier (not [exploreProvider]) so the
   /// buttons and counts stay in sync. Null = shared exploreProvider path.
   final ContentFeedNotifier? notifier;
   const _PublicationPage({
@@ -575,7 +592,6 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
             itemBuilder: (_, i) => _MediaSlide(
               media: media[i],
               videoCtrl: _videoCtrls[i],
-              isActive: widget.isCurrent && _mediaIndex == i,
             ),
           ),
 
@@ -630,7 +646,7 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
           bottom: 24,
           child: SafeArea(
             top: false,
-            child: _PublicationInfo(post: post, notifier: widget.notifier),
+            child: _PublicationInfo(post: post),
           ),
         ),
       ],
@@ -646,11 +662,9 @@ class _PublicationPageState extends ConsumerState<_PublicationPage> {
 class _MediaSlide extends StatelessWidget {
   final PostMedia media;
   final VideoPlayerController? videoCtrl;
-  final bool isActive;
   const _MediaSlide({
     required this.media,
     required this.videoCtrl,
-    required this.isActive,
   });
 
   @override
@@ -743,7 +757,9 @@ class _ActionColumn extends ConsumerWidget {
               ? PhosphorIconsFill.heart
               : PhosphorIconsRegular.heart,
           label: formatCount(post.likesCount),
-          color: post.isLiked ? SeeUColors.accent : Colors.white,
+          // Лайкнутое сердце всюду красное (лента/рилс/истории) — тут был
+          // единственный экран с коралловым.
+          color: post.isLiked ? SeeUColors.like : Colors.white,
           onTap: () {
             HapticFeedback.lightImpact();
             if (notifier != null) {
@@ -863,8 +879,7 @@ class _ActionButton extends StatelessWidget {
 
 class _PublicationInfo extends ConsumerWidget {
   final Post post;
-  final ContentFeedNotifier? notifier;
-  const _PublicationInfo({required this.post, this.notifier});
+  const _PublicationInfo({required this.post});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -872,11 +887,6 @@ class _PublicationInfo extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (post.reactions.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _ReactionStrip(post: post, notifier: notifier),
-          ),
         GestureDetector(
           onTap: () => context.push('/profile/${post.author.username}'),
           child: Row(
@@ -1014,83 +1024,3 @@ class _AudioPill extends ConsumerWidget {
 /// camera. media_prepare_screen на init читает + сбрасывает в null.
 /// Future: extend to {trackId, startSec} когда audio-trimmer прикрутят.
 final selectedAudioForCameraProvider = StateProvider<String?>((_) => null);
-
-/// Aggregate emoji-reaction pills shown above the username on the fullscreen
-/// viewer. Dark-bg variant of the chat/feed pill: white-on-glass when others
-/// reacted, accent fill+border when it's *my* reaction.
-class _ReactionStrip extends ConsumerWidget {
-  final Post post;
-  final ContentFeedNotifier? notifier;
-  const _ReactionStrip({required this.post, this.notifier});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final entries = post.reactions.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: entries.map((e) {
-        final mine = e.key == post.myReaction;
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            if (notifier != null) {
-              notifier!.toggleReaction(post.id, e.key);
-            } else {
-              ref.read(exploreProvider.notifier).toggleReaction(post.id, e.key);
-            }
-          },
-          // Стеклянный pill; активная реакция — accent-тинт стекла.
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(SeeURadii.pill),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: mine
-                        ? [
-                            SeeUColors.accent.withValues(alpha: 0.14),
-                            SeeUColors.accent.withValues(alpha: 0.34),
-                          ]
-                        : [
-                            Colors.white.withValues(alpha: 0.14),
-                            Colors.black.withValues(alpha: 0.28),
-                          ],
-                  ),
-                  borderRadius: BorderRadius.circular(SeeURadii.pill),
-                  border: Border.all(
-                    color: mine
-                        ? SeeUColors.accent.withValues(alpha: 0.45)
-                        : Colors.white.withValues(alpha: 0.18),
-                    width: 0.8,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(e.key, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 4),
-                    Text(
-                      formatCount(e.value),
-                      style: SeeUTypography.mono.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-}

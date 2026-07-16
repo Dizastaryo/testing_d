@@ -91,9 +91,9 @@ class _ScanProfileScreenState extends ConsumerState<ScanProfileScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Когда видимость включена, другие пользователи SeeU '
-                      'видят ваш реальный профиль (фото, имя) в своём сканере, '
-                      'если находятся рядом.',
+                      'Когда видимость включена, люди рядом видят вашу '
+                      'анонимную карточку (фото и никнейм карточки), не '
+                      'связанную с профилем — имя и аккаунт не раскрываются.',
                       style: SeeUTypography.caption
                           .copyWith(color: c.ink2, height: 1.45),
                     ),

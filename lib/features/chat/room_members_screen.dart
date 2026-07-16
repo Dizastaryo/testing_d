@@ -4,15 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/models/room.dart';
-import '../../core/models/user.dart';
 import '../../core/providers/auth_provider.dart';
-import '../../core/providers/room_candidates_provider.dart';
 import '../../core/providers/room_provider.dart';
 import '../../core/utils/format.dart';
 
@@ -94,15 +91,14 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
               ),
             ),
             actions: [
-              if (isAdmin)
-                GestureDetector(
-                  onTap: () => _showInvitePicker(c),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child:
-                        Icon(PhosphorIcons.userPlus(), size: 22, color: c.ink),
-                  ),
+              // Поделиться кодом входа — доступно любому участнику (приглашений нет).
+              GestureDetector(
+                onTap: _showRoomCode,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(PhosphorIcons.key(), size: 22, color: c.ink),
                 ),
+              ),
             ],
           ),
           Expanded(
@@ -413,18 +409,68 @@ class _RoomMembersScreenState extends ConsumerState<RoomMembersScreen> {
     );
   }
 
-  void _showInvitePicker(SeeUThemeColors c) {
+  void _showRoomCode() {
+    final code = ref.read(roomDetailProvider(widget.roomId)).room?.code ?? '';
+    HapticFeedback.selectionClick();
     showSeeUBottomSheet(
-      context: context, // this.context
-      isScrollControlled: true,
-      builder: (_) => _InvitePickerSheet(
-        roomId: widget.roomId,
-        existingIds: ref
-            .read(roomMembersProvider(widget.roomId))
-            .members
-            .map((m) => m.userId)
-            .toSet(),
-      ),
+      context: context,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(PhosphorIcons.key(PhosphorIconsStyle.fill),
+                    size: 30, color: SeeUColors.accent),
+                const SizedBox(height: 12),
+                Text('Код комнаты',
+                    style: SeeUTypography.subtitle
+                        .copyWith(fontWeight: FontWeight.w700, color: c.ink)),
+                const SizedBox(height: 6),
+                Text(
+                  'Дай этот код тем, кого хочешь позвать — они введут его в «Войти по коду».',
+                  textAlign: TextAlign.center,
+                  style: SeeUTypography.caption.copyWith(color: c.ink3),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: c.surface2,
+                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                    border: Border.all(color: c.line),
+                  ),
+                  child: Text(
+                    code.isEmpty ? '——' : code,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 4,
+                      color: c.ink,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SeeUButton(
+                  label: 'Скопировать код',
+                  onTap: code.isEmpty
+                      ? null
+                      : () {
+                          Clipboard.setData(ClipboardData(text: code));
+                          Navigator.of(ctx).pop();
+                          showSeeUSnackBar(context, 'Код скопирован',
+                              tone: SeeUTone.success);
+                        },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -649,265 +695,6 @@ class _LeaveButton extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── Invite picker sheet ──────────────────────────────────────────
-
-class _InvitePickerSheet extends ConsumerStatefulWidget {
-  final String roomId;
-  final Set<String> existingIds;
-
-  const _InvitePickerSheet({
-    required this.roomId,
-    required this.existingIds,
-  });
-
-  @override
-  ConsumerState<_InvitePickerSheet> createState() => _InvitePickerSheetState();
-}
-
-class _InvitePickerSheetState extends ConsumerState<_InvitePickerSheet> {
-  final _searchCtrl = TextEditingController();
-  Timer? _debounce;
-
-  List<User> _candidates = [];
-  bool _loading = true;
-  final Set<String> _pendingIds = {};
-  bool _inviting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _load([String? q]) async {
-    setState(() {
-      _loading = true;
-    });
-    try {
-      List<User> users;
-      if (q == null || q.isEmpty) {
-        users = await ref.read(roomCandidatesProvider(widget.roomId).future);
-      } else {
-        final api = ref.read(apiClientProvider);
-        final r = await api.get(
-          ApiEndpoints.search,
-          queryParameters: {'q': q, 'type': 'users'},
-        );
-        final data = r.data is Map && (r.data as Map).containsKey('data')
-            ? r.data['data']
-            : r.data;
-        if (data is Map && data['users'] is List) {
-          users = (data['users'] as List)
-              .map((e) => User.fromJson(e as Map<String, dynamic>))
-              .toList();
-        } else if (data is List) {
-          users = data.map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
-        } else {
-          users = [];
-        }
-      }
-      final me = ref.read(authProvider).user;
-      if (me != null) users = users.where((u) => u.id != me.id).toList();
-      // Exclude current members
-      users = users.where((u) => !widget.existingIds.contains(u.id)).toList();
-      if (mounted) setState(() => _candidates = users);
-    } catch (_) {
-      // ignore
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  void _onSearch(String q) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 280), () => _load(q.trim()));
-  }
-
-  Future<void> _invite() async {
-    if (_pendingIds.isEmpty || _inviting) return;
-    setState(() => _inviting = true);
-    HapticFeedback.mediumImpact();
-    try {
-      await Future.wait(
-        _pendingIds.map(
-          (userId) => ref
-              .read(roomMembersProvider(widget.roomId).notifier)
-              .invite(userId)
-              .catchError((_) {}),
-        ),
-      );
-      if (mounted) Navigator.of(context).pop();
-    } finally {
-      if (mounted) setState(() => _inviting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final screenH = MediaQuery.of(context).size.height;
-
-    return SizedBox(
-      height: screenH * 0.75,
-      child: Column(
-        children: [
-          // Title row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 16, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Добавить участников', style: SeeUTypography.title.copyWith(color: c.ink)),
-                      if (_pendingIds.isNotEmpty)
-                        Text(
-                          'Выбрано: ${_pendingIds.length}',
-                          style: TextStyle(fontSize: 12, color: SeeUColors.accent),
-                        ),
-                    ],
-                  ),
-                ),
-                if (_pendingIds.isNotEmpty)
-                  GestureDetector(
-                    onTap: _invite,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: SeeUColors.accent,
-                        borderRadius: BorderRadius.circular(SeeURadii.small),
-                      ),
-                      child: _inviting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Text(
-                              'Пригласить',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Search
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: c.surface2,
-                borderRadius: BorderRadius.circular(SeeURadii.small),
-              ),
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: _onSearch,
-                style: TextStyle(fontSize: 14, color: c.ink),
-                decoration: InputDecoration(
-                  hintText: 'Поиск',
-                  hintStyle: TextStyle(fontSize: 14, color: c.ink3),
-                  prefixIcon: Padding(
-                    padding: const EdgeInsets.only(left: 12, right: 8),
-                    child: Icon(PhosphorIcons.magnifyingGlass(), size: 16, color: c.ink3),
-                  ),
-                  prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // List
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _candidates.isEmpty
-                    ? Center(
-                        child: Text(
-                          'Никого не найдено',
-                          style: TextStyle(color: c.ink3, fontSize: 13),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _candidates.length,
-                        itemBuilder: (_, i) {
-                          final u = _candidates[i];
-                          final selected = _pendingIds.contains(u.id);
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(
-                              radius: 22,
-                              backgroundColor: c.surface2,
-                              backgroundImage: (u.avatarUrl?.isNotEmpty ?? false)
-                                  ? CachedNetworkImageProvider(u.avatarUrl!,
-                                      maxWidth: 132, maxHeight: 132)
-                                  : null,
-                              child: (u.avatarUrl?.isEmpty ?? true)
-                                  ? Icon(PhosphorIcons.user(), color: c.ink3, size: 18)
-                                  : null,
-                            ),
-                            title: Text(u.fullName, style: SeeUTypography.subtitle),
-                            subtitle: Text(
-                              '@${u.username}',
-                              style: SeeUTypography.caption.copyWith(color: c.ink3),
-                            ),
-                            trailing: AnimatedContainer(
-                              duration: SeeUMotion.quick,
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: selected ? SeeUGradients.heroOrange : null,
-                                border: selected
-                                    ? null
-                                    : Border.all(
-                                        color: c.ink3.withValues(alpha: 0.5),
-                                        width: 1.5,
-                                      ),
-                              ),
-                              child: selected
-                                  ? const Icon(PhosphorIconsBold.check,
-                                      color: Colors.white, size: 14)
-                                  : null,
-                            ),
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              setState(() {
-                                if (selected) {
-                                  _pendingIds.remove(u.id);
-                                } else {
-                                  _pendingIds.add(u.id);
-                                }
-                              });
-                            },
-                          );
-                        },
-                      ),
-          ),
-        ],
       ),
     );
   }

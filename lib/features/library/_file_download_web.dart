@@ -4,7 +4,7 @@
 
 import 'dart:html' as html;
 
-Future<void> saveDownload({
+Future<bool> saveDownload({
   required String url,
   required String filename,
   void Function(int received, int total)? onProgress,
@@ -16,4 +16,6 @@ Future<void> saveDownload({
   html.document.body?.append(anchor);
   anchor.click();
   anchor.remove();
+  // На web клик по anchor[download] инициирует настоящее скачивание браузером.
+  return true;
 }

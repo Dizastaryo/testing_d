@@ -15,6 +15,7 @@ import '../../core/utils/format.dart';
 import 'readers/epub_reader_screen.dart';
 import 'readers/pdf_reader_screen.dart';
 import 'readers/text_reader_screen.dart';
+import 'library_design.dart';
 
 class OfflineLibraryScreen extends ConsumerStatefulWidget {
   const OfflineLibraryScreen({super.key});
@@ -70,236 +71,243 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Column(
-              children: [
-                SizedBox(height: topInset),
-                // Search bar
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: _onSearchChanged,
-              style: TextStyle(color: c.ink, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Поиск по названию или автору...',
-                hintStyle: TextStyle(color: c.ink3, fontSize: 14),
-                prefixIcon:
-                    Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink3),
-                filled: true,
-                fillColor: c.surface2,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-
-          // Filter chips
-          _FilterBar(
-            selected: state.kindFilter,
-            onChanged: (kind) =>
-                ref.read(offlineLibraryProvider.notifier).setKindFilter(kind),
-          ),
-
-          // Sort selector
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Tappable.scaled(
-                onTap: () => _showSortSheet(context, state.sortBy),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PhosphorIcon(PhosphorIconsRegular.sortAscending,
-                          size: 16, color: c.ink3),
-                      const SizedBox(width: 6),
-                      Text(
-                        _sortLabel(state.sortBy),
-                        style: SeeUTypography.caption.copyWith(color: c.ink2),
-                      ),
-                      const SizedBox(width: 4),
-                      PhosphorIcon(PhosphorIconsRegular.caretDown,
-                          size: 12, color: c.ink3),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Download queue section
-          _DownloadQueueSection(),
-
-          // List
-          Expanded(
-            child: state.isLoading
-                ? const Center(
-                    child:
-                        CircularProgressIndicator(color: SeeUColors.accent))
-                : state.items.isEmpty
-                    ? const SeeUEmptyState(
-                        icon: PhosphorIconsRegular.cloudArrowDown,
-                        title: 'Нет скачанных книг',
-                        subtitle: 'Скачанные книги доступны без интернета',
-                      )
-                    : RefreshIndicator(
-                        color: SeeUColors.accent,
-                        onRefresh: () =>
-                            ref.read(offlineLibraryProvider.notifier).refresh(),
-                        child: ListView.builder(
-                          controller: _scrollCtrl,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount:
-                              state.items.length + (state.isLoadingMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index >= state.items.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2)),
-                              );
-                            }
-                            final entry = state.items[index];
-                            return _BookCard(
-                              entry: entry,
-                              isSelected: _selected.contains(entry.fileId),
-                              bulkMode: _bulkMode,
-                              onTap: () {
-                                if (_bulkMode) {
-                                  setState(() {
-                                    if (_selected.contains(entry.fileId)) {
-                                      _selected.remove(entry.fileId);
-                                    } else {
-                                      _selected.add(entry.fileId);
-                                    }
-                                  });
-                                } else {
-                                  _openEntry(entry);
-                                }
-                              },
-                              onLongPress: () {
-                                if (!_bulkMode) {
-                                  setState(() {
-                                    _bulkMode = true;
-                                    _selected.add(entry.fileId);
-                                  });
-                                }
-                              },
-                              onDismissed: () => _deleteEntry(entry.fileId),
-                            );
-                          },
-                        ),
-                      ),
-          ),
-
-          // Footer
-          if (!state.isLoading && state.items.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: c.surface,
-                border: Border(top: BorderSide(color: c.line, width: 0.5)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: PaperBackground(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Column(
                 children: [
-                  Text(
-                    'Всего: ${state.totalCount} книг',
-                    style: TextStyle(
-                        fontSize: 12, color: c.ink3, fontFamily: AppFonts.I.sans),
+                  SizedBox(height: topInset),
+                  // Search bar
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: _onSearchChanged,
+                style: TextStyle(color: c.ink, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Поиск по названию или автору...',
+                  hintStyle: TextStyle(color: c.ink3, fontSize: 14),
+                  prefixIcon:
+                      Icon(PhosphorIconsRegular.magnifyingGlass, color: c.ink3),
+                  filled: true,
+                  fillColor: c.surface2,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(SeeURadii.small),
+                    borderSide: BorderSide.none,
                   ),
-                  const SizedBox(width: 12),
-                  totalSize.when(
-                    data: (bytes) => Text(
-                      formatBytes(bytes),
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: SeeUColors.accent,
-                          fontFamily: AppFonts.I.sans,
-                          fontWeight: FontWeight.w600),
-                    ),
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
-                  ),
-                ],
+                ),
               ),
             ),
-              ],
+  
+            // Filter chips
+            _FilterBar(
+              selected: state.kindFilter,
+              onChanged: (kind) =>
+                  ref.read(offlineLibraryProvider.notifier).setKindFilter(kind),
             ),
-          ),
-          Align(
-            alignment: Alignment.topCenter,
-            child: SeeUGlassBar(
-              kicker: _bulkMode ? 'ВЫБОР' : 'ОФЛАЙН',
-              title: _bulkMode
-                  ? Text('${_selected.length} выбрано',
-                      style: SeeUTypography.displayS.copyWith(color: c.ink))
-                  : Row(
+  
+            // Sort selector
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Tappable.scaled(
+                  onTap: () => _showSortSheet(context, state.sortBy),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Скачанные',
-                            style: SeeUTypography.displayS
-                                .copyWith(color: c.ink)),
-                        const SizedBox(width: 8),
-                        if (!state.isLoading)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color:
-                                  SeeUColors.accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${state.totalCount}',
-                              style: SeeUTypography.mono.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: SeeUColors.accent,
-                              ),
-                            ),
-                          ),
+                        PhosphorIcon(PhosphorIconsRegular.sortAscending,
+                            size: 16, color: c.ink3),
+                        const SizedBox(width: 6),
+                        Text(
+                          _sortLabel(state.sortBy),
+                          style: SeeUTypography.caption.copyWith(color: c.ink2),
+                        ),
+                        const SizedBox(width: 4),
+                        PhosphorIcon(PhosphorIconsRegular.caretDown,
+                            size: 12, color: c.ink3),
                       ],
                     ),
-              leading: SeeUGlassCircleButton(
-                icon: PhosphorIcon(PhosphorIconsRegular.arrowLeft,
-                    color: c.ink, size: 20),
-                onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                ),
               ),
-              actions: [
-                if (_bulkMode) ...[
-                  SeeUGlassCircleButton(
-                    icon: PhosphorIcon(PhosphorIconsRegular.trash,
-                        color: _selected.isEmpty
-                            ? c.ink4
-                            : SeeUColors.danger,
-                        size: 20),
-                    onTap: () {
-                      if (_selected.isNotEmpty) _bulkDelete(context);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  SeeUGlassCircleButton(
-                    icon: PhosphorIcon(PhosphorIconsRegular.x,
-                        color: c.ink2, size: 20),
-                    onTap: () => setState(() {
-                      _bulkMode = false;
-                      _selected.clear();
-                    }),
-                  ),
-                ],
-              ],
             ),
-          ),
-        ],
+  
+            // Download queue section
+            _DownloadQueueSection(),
+  
+            // List
+            Expanded(
+              child: state.error != null && state.items.isEmpty
+                  ? SeeUErrorState(
+                      error: state.error,
+                      onRetry: () =>
+                          ref.read(offlineLibraryProvider.notifier).loadInitial(),
+                    )
+                  : state.isLoading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(color: SeeUColors.accent))
+                  : state.items.isEmpty
+                      ? const SeeUEmptyState(
+                          icon: PhosphorIconsRegular.cloudArrowDown,
+                          title: 'Нет скачанных книг',
+                          subtitle: 'Скачанные книги доступны без интернета',
+                        )
+                      : RefreshIndicator(
+                          color: SeeUColors.accent,
+                          onRefresh: () =>
+                              ref.read(offlineLibraryProvider.notifier).refresh(),
+                          child: ListView.builder(
+                            controller: _scrollCtrl,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount:
+                                state.items.length + (state.isLoadingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index >= state.items.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2)),
+                                );
+                              }
+                              final entry = state.items[index];
+                              return _BookCard(
+                                entry: entry,
+                                isSelected: _selected.contains(entry.fileId),
+                                bulkMode: _bulkMode,
+                                onTap: () {
+                                  if (_bulkMode) {
+                                    setState(() {
+                                      if (_selected.contains(entry.fileId)) {
+                                        _selected.remove(entry.fileId);
+                                      } else {
+                                        _selected.add(entry.fileId);
+                                      }
+                                    });
+                                  } else {
+                                    _openEntry(entry);
+                                  }
+                                },
+                                onLongPress: () {
+                                  if (!_bulkMode) {
+                                    setState(() {
+                                      _bulkMode = true;
+                                      _selected.add(entry.fileId);
+                                    });
+                                  }
+                                },
+                                onDismissed: () => _deleteEntry(entry.fileId),
+                              );
+                            },
+                          ),
+                        ),
+            ),
+  
+            // Footer
+            if (!state.isLoading && state.items.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  border: Border(top: BorderSide(color: c.line, width: 0.5)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Всего: ${state.totalCount} книг',
+                      style: TextStyle(
+                          fontSize: 12, color: c.ink3, fontFamily: AppFonts.I.sans),
+                    ),
+                    const SizedBox(width: 12),
+                    totalSize.when(
+                      data: (bytes) => Text(
+                        formatBytes(bytes),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: SeeUColors.accent,
+                            fontFamily: AppFonts.I.sans,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+              ),
+                ],
+              ),
+            ),
+            Align(
+              alignment: Alignment.topCenter,
+              child: SeeUGlassBar(
+                kicker: _bulkMode ? 'ВЫБОР' : 'ОФЛАЙН',
+                title: _bulkMode
+                    ? Text('${_selected.length} выбрано',
+                        style: SeeUTypography.displayS.copyWith(color: c.ink))
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Скачанные',
+                              style: SeeUTypography.displayS
+                                  .copyWith(color: c.ink)),
+                          const SizedBox(width: 8),
+                          if (!state.isLoading)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color:
+                                    SeeUColors.accent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${state.totalCount}',
+                                style: SeeUTypography.mono.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: SeeUColors.accent,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                leading: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: LibBackButton(size: 40),
+                ),
+                actions: [
+                  if (_bulkMode) ...[
+                    SeeUGlassCircleButton(
+                      icon: PhosphorIcon(PhosphorIconsRegular.trash,
+                          color: _selected.isEmpty
+                              ? c.ink4
+                              : SeeUColors.danger,
+                          size: 20),
+                      onTap: () {
+                        if (_selected.isNotEmpty) _bulkDelete(context);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    SeeUGlassCircleButton(
+                      icon: PhosphorIcon(PhosphorIconsRegular.x,
+                          color: c.ink2, size: 20),
+                      onTap: () => setState(() {
+                        _bulkMode = false;
+                        _selected.clear();
+                      }),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

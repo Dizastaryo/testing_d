@@ -20,10 +20,12 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/utils/format.dart';
 import '../../core/models/room.dart';
+import '../../core/providers/access_provider.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/realtime_provider.dart';
 import '../../core/providers/room_provider.dart';
+import '../../widgets/share_sheet.dart' show postShareUrl;
 import '../calls/call_service.dart';
 import '../calls/group_call_service.dart';
 import 'widgets/chat_message_bubble.dart';
@@ -109,9 +111,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     _textController.addListener(_onTextChanged);
     _focusNode.addListener(() {
+      if (!mounted) return;
       if (_focusNode.hasFocus && _emojiPanelOpen) {
         setState(() => _emojiPanelOpen = false);
-      } else if (mounted) {
+      } else {
         setState(() {});
       }
     });
@@ -164,6 +167,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           _atBottom = atBottom;
           if (atBottom) _unreadCount = 0;
         });
+        // Докрутил вниз → реально прочитал: без этого сервер продолжал
+        // считать сообщения непрочитанными (бейдж в списке чатов висел,
+        // read-receipt пиру не уходил) до перезахода в чат.
+        if (atBottom) {
+          ref.read(chatMessagesProvider(widget.chatId).notifier).markRead();
+        }
       }
     }
     if (maxVisible >= _messageCount - 2) {
@@ -288,6 +297,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             myUsername: me.username,
             kind: kind,
           );
+          // Экран ожидания рисует «звоним участникам» из invitedMembers —
+          // без этого списка он показывал только уже присоединившихся
+          // («N из N в звонке» всегда), а ringing-аватары не появлялись.
+          _loadGroupCallMembers(me.id);
         },
         child: SizedBox(
           width: 44, height: 44,
@@ -298,6 +311,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+
+  /// Подтягивает участников группового чата и отдаёт их (без себя) экрану
+  /// ожидания группового звонка. Best-effort: при ошибке экран просто
+  /// покажет только присоединившихся, как раньше.
+  Future<void> _loadGroupCallMembers(String myId) async {
+    try {
+      final r = await ref
+          .read(apiClientProvider)
+          .get(ApiEndpoints.chatMembers(widget.chatId));
+      final data =
+          r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
+      if (data is! List) return;
+      final members = <GroupCallMember>[];
+      for (final e in data) {
+        if (e is! Map) continue;
+        final m = e.cast<String, dynamic>();
+        final id = m['user_id']?.toString() ?? m['id']?.toString() ?? '';
+        if (id.isEmpty || id == myId) continue;
+        members.add(GroupCallMember(
+          userId: id,
+          username: m['username']?.toString() ?? '',
+          fullName: m['full_name']?.toString() ?? '',
+          avatarUrl: m['avatar_url']?.toString() ?? '',
+        ));
+      }
+      GroupCallService.instance.setInvitedMembers(members);
+    } catch (_) {
+      // ignore — non-fatal
+    }
   }
 
   // #39: DRY-хелпер для кнопок звонка в хедере direct-чата.
@@ -998,7 +1041,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                   const SizedBox(height: 10),
                 ],
-                // Reactions row: 6 popular + «+» для expanded picker
+                // Reactions row: 6 popular + «+» для expanded picker.
+                // На удалённом сообщении реакции скрыты (как в комнатах) —
+                // реагировать на «Сообщение удалено» бессмысленно.
+                if (!m.isDeletedForAll && m.kind != 'deleted')
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1068,7 +1114,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           duration: const Duration(seconds: 1));
                     },
                   ),
-                // Переслать сообщение в другой чат
+                // Переслать сообщение в другой чат. Удалённое пересылать
+                // нельзя — раньше это отправляло пустышку-форвард.
+                if (!m.isDeletedForAll && m.kind != 'deleted')
                 ListTile(
                   leading: Icon(PhosphorIcons.arrowBendUpRight(), color: c.ink),
                   title: const Text('Переслать'),
@@ -1097,7 +1145,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     },
                   ),
                 // Закрепить / Открепить — для всех; backend сам отдаст 403,
-                // если в group-чате не админ.
+                // если в group-чате не админ. Удалённое не закрепляем.
+                if (!m.isDeletedForAll && m.kind != 'deleted')
                 Builder(builder: (_) {
                   final isAlreadyPinned = chat?.pinnedMessage?.id == m.id;
                   return ListTile(
@@ -1153,10 +1202,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final msgState = ref.watch(chatMessagesProvider(widget.chatId));
-    final chats = ref.watch(chatListProvider).chats;
-    final chat = chats.where((c) => c.id == widget.chatId).isNotEmpty
-        ? chats.firstWhere((c) => c.id == widget.chatId)
-        : null;
+    // select: слушаем только НАШ чат, не весь список. Раньше каждое
+    // chat.message в ЛЮБОМ чате (WS → chatList.load) перестраивало весь
+    // ~4000-строчный build этого экрана.
+    final chat = ref.watch(chatListProvider.select((s) {
+      for (final c in s.chats) {
+        if (c.id == widget.chatId) return c;
+      }
+      return null;
+    }));
     final currentUser = ref.watch(authProvider).user;
     final myId = currentUser?.id ?? 'me';
     final otherUser = chat?.otherUser;
@@ -1530,9 +1584,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ],
                           ),
               ),
-              // Multi-select action bar replaces input bar when selecting
+              // Multi-select action bar replaces input bar when selecting.
+              // Для лички без user_access (отозван/не выдан) вместо инпута —
+              // честный баннер: раньше поле было активно, а каждая отправка
+              // просто падала с ошибкой (тупик без объяснения).
               if (_isSelecting)
                 _buildSelectionBar()
+              else if (otherUser != null &&
+                  ref
+                          .watch(accessCheckProvider(otherUser.id))
+                          .valueOrNull ==
+                      false)
+                _buildAccessRevokedBanner(c)
               else
                 _buildInputBar(),
               // Inline emoji/sticker panel (replaces keyboard space)
@@ -3006,6 +3069,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  /// Баннер вместо композера, когда user_access к собеседнику отсутствует.
+  Widget _buildAccessRevokedBanner(SeeUThemeColors c) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+          color: c.surface2,
+          border: Border(top: BorderSide(color: c.line, width: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Icon(PhosphorIcons.lockSimple(), size: 18, color: c.ink3),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Доступ не предоставлен — сообщения и звонки недоступны',
+                style: SeeUTypography.caption.copyWith(color: c.ink2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputBar() {
     final c = context.seeuColors;
     // Recorder mode — заменяем весь input на VoiceRecorderBar.
@@ -3740,9 +3830,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: () async {
                 Navigator.of(sheetCtx).pop();
                 final messenger = ScaffoldMessenger.of(context);
+                // Комнаты не умеют attached_post: шаринг поста (text=''
+                // + без медиа) раньше уходил в guard-return send()'а как
+                // no-op, а пользователю показывалось «Переслано». Шлём
+                // текстовую ссылку на пост — честно и работает.
+                var text = m.text;
+                if (text.trim().isEmpty &&
+                    m.attachedMediaUrl.isEmpty &&
+                    m.attachedPost != null) {
+                  text = postShareUrl(m.attachedPost!.id);
+                }
+                if (text.trim().isEmpty && m.attachedMediaUrl.isEmpty) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Это сообщение нельзя переслать в комнату'),
+                    ),
+                  );
+                  return;
+                }
                 try {
                   await ref.read(roomMessagesProvider(room.id).notifier).send(
-                        m.text,
+                        text,
                         attachedMediaUrl:
                             m.attachedMediaUrl.isNotEmpty ? m.attachedMediaUrl : null,
                         attachedMediaType:

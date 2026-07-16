@@ -134,9 +134,11 @@ class _ReadingStreakBadge extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stats = ref.watch(readingStatsProvider).valueOrNull;
     if (stats == null) return const SizedBox.shrink();
-    final streak = stats['reading_streak'] as int? ?? 0;
-    final done = stats['books_done'] as int? ?? 0;
-    final totalPages = stats['total_pages_read'] as int? ?? 0;
+    // num?.toInt() безопасно и для int, и для double (сервер может прислать
+    // 5.0) — прямой `as int?` кидал бы TypeError на double.
+    final streak = (stats['reading_streak'] as num?)?.toInt() ?? 0;
+    final done = (stats['books_done'] as num?)?.toInt() ?? 0;
+    final totalPages = (stats['total_pages_read'] as num?)?.toInt() ?? 0;
     if (streak == 0 && done == 0) return const SizedBox.shrink();
 
     return Padding(

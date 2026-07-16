@@ -37,6 +37,6 @@ class ServerConfig {
 
   static String _extractIp(String url) {
     final uri = Uri.tryParse(url);
-    return uri?.host ?? '172.20.10.3';
+    return uri?.host ?? '192.168.1.2';
   }
 }

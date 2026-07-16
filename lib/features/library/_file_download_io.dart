@@ -7,7 +7,12 @@ import 'package:url_launcher/url_launcher.dart';
 /// Mobile: скачивает файл через Dio с отслеживанием прогресса.
 /// Сохраняет в applicationDocumentsDirectory.
 /// onProgress(received, total) — вызывается по мере скачивания.
-Future<void> saveDownload({
+///
+/// Возвращает `true`, только если файл реально лёг на устройство; `false` —
+/// если пришлось открыть оригинал в браузере (скачивание не удалось). Раньше
+/// оба исхода выглядели одинаково успешными, и вызывающий показывал «Файл
+/// сохранён» даже когда ничего не сохранилось.
+Future<bool> saveDownload({
   required String url,
   required String filename,
   void Function(int received, int total)? onProgress,
@@ -29,19 +34,21 @@ Future<void> saveDownload({
       onReceiveProgress: onProgress,
     );
 
-    // Попытка открыть файл через системный обработчик
-    final file = File(savePath);
-    if (await file.exists()) {
-      final uri = Uri.file(savePath);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw 'Файл сохранён: $savePath';
-      }
+    if (await File(savePath).exists()) {
+      // Файл на диске — это успех. Открыть системным обработчиком пробуем, но
+      // неудача открытия НЕ отменяет факт сохранения.
+      await launchUrl(Uri.file(savePath),
+          mode: LaunchMode.externalApplication);
+      return true;
     }
-  } catch (e) {
-    // Fallback: открыть оригинальный URL в браузере
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      throw 'Не удалось открыть файл';
-    }
+    // download вернулся, но файла нет — уходим в браузерный fallback.
+  } catch (_) {
+    // Скачать не удалось — ниже пробуем открыть оригинал в браузере.
   }
+
+  // Fallback: открыть оригинальный URL в браузере (локально НЕ сохранено).
+  if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
+    throw 'Не удалось открыть файл';
+  }
+  return false;
 }

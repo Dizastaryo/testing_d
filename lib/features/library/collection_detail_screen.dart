@@ -1,97 +1,178 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/models/collection.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/collection_provider.dart';
 import '../../core/providers/library_provider.dart';
+import 'library_design.dart';
 import 'readers/open_reader.dart';
 
+/// Коллекция — подборка книг, которой можно поделиться. У владельца здесь
+/// правка состава и переключатель «доступна по ссылке»; у гостя, пришедшего
+/// по ссылке, — только чтение и подпись, чья это подборка.
 class CollectionDetailScreen extends ConsumerWidget {
   final String collectionId;
   const CollectionDetailScreen({super.key, required this.collectionId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.seeuColors;
     final async = ref.watch(collectionDetailProvider(collectionId));
-    final topInset = MediaQuery.paddingOf(context).top + 68;
+    final collection = async.valueOrNull;
+    final isOwner = collection?.isOwner ?? false;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          async.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => SeeUErrorState(
-              error: '$e',
-              onRetry: () =>
-                  ref.invalidate(collectionDetailProvider(collectionId)),
-            ),
-            data: (collection) => collection.files.isEmpty
-                ? SeeUEmptyState(
-                    icon: PhosphorIconsRegular.fileText,
-                    title: 'Коллекция пуста',
-                    subtitle: 'Добавьте файлы, чтобы они появились здесь',
-                    action: SeeUStateAction(
-                      label: 'Добавить',
-                      icon: PhosphorIconsBold.plus,
-                      onTap: () => _showAddFile(context, ref),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: EdgeInsets.fromLTRB(16, topInset, 16, 32),
-                    itemCount: collection.files.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (ctx, i) {
-                      final file = collection.files[i];
-                      return _FileRow(
-                        file: file,
-                        onRemove: () async {
-                          await ref
-                              .read(collectionsProvider.notifier)
-                              .removeFile(collection.id, file.id);
-                          ref.invalidate(
-                              collectionDetailProvider(collectionId));
-                        },
-                      );
-                    },
+      body: PaperBackground(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              LibBackBar(
+                kicker: 'КОЛЛЕКЦИЯ',
+                title: collection?.name ?? '',
+                action: isOwner
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          LibSquareButton(
+                            icon: PhosphorIcons.shareFat(),
+                            onTap: () => _share(context, ref, collection!),
+                          ),
+                          const SizedBox(width: 8),
+                          _AddButton(onTap: () => _showAddFile(context, ref)),
+                        ],
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: async.when(
+                  loading: () => const Center(
+                      child: CircularProgressIndicator(
+                          color: SeeUColors.accent)),
+                  error: (e, _) => SeeUErrorState(
+                    error: '$e',
+                    onRetry: () =>
+                        ref.invalidate(collectionDetailProvider(collectionId)),
                   ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SeeUGlassBar(
-              kicker: 'Коллекция',
-              titleText: async.valueOrNull?.name ?? '',
-              leading: Tappable(
-                onTap: () => Navigator.of(context).pop(),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: Icon(PhosphorIconsRegular.arrowLeft,
-                      size: 20, color: c.ink),
+                  data: (col) => ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+                    children: [
+                      if (!col.isOwner) _GuestHeader(collection: col),
+                      if (col.isOwner) _ShareRow(collection: col),
+                      const SizedBox(height: 14),
+                      if (col.files.isEmpty)
+                        _empty(context, ref, col.isOwner)
+                      else
+                        for (final file in col.files) ...[
+                          _FileRow(
+                            file: file,
+                            // Убрать книгу из чужой подборки нельзя.
+                            onRemove: col.isOwner
+                                ? () async {
+                                    await ref
+                                        .read(collectionsProvider.notifier)
+                                        .removeFile(col.id, file.id);
+                                    ref.invalidate(collectionDetailProvider(
+                                        collectionId));
+                                  }
+                                : null,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                    ],
+                  ),
                 ),
               ),
-              actions: [
-                IconButton(
-                  icon: Icon(PhosphorIconsRegular.plus, color: c.ink),
-                  tooltip: 'Добавить файл',
-                  onPressed: () => _showAddFile(context, ref),
-                ),
-              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _empty(BuildContext context, WidgetRef ref, bool isOwner) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 60, 14, 0),
+      child: Column(
+        children: [
+          Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: SeeUColors.plum.withValues(alpha: 0.1),
             ),
+            child: Icon(PhosphorIcons.books(), size: 40, color: SeeUColors.plum),
+          ),
+          const SizedBox(height: 22),
+          Text(
+            isOwner ? 'Подборка пуста' : 'Здесь пока пусто',
+            textAlign: TextAlign.center,
+            style: SeeUTypography.displayS.copyWith(fontSize: 25, color: c.ink),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isOwner
+                ? 'Добавьте книги — и подборкой можно будет поделиться'
+                : 'Автор пока не добавил сюда книги',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, height: 1.5, color: c.ink3),
           ),
         ],
       ),
     );
+  }
+
+  /// Поделиться можно только открытой подборкой — иначе по ссылке гость
+  /// упрётся в «не найдено». Поэтому сначала открываем, потом отдаём ссылку.
+  Future<void> _share(
+      BuildContext context, WidgetRef ref, Collection col) async {
+    if (!col.isPublic) {
+      final ok = await showSeeUConfirm(
+        context,
+        title: 'Открыть подборку по ссылке?',
+        message:
+            'Любой, кому вы дадите ссылку, увидит книги этой подборки. '
+            'Менять её сможете только вы. Закрыть доступ можно в любой момент.',
+        confirmLabel: 'Открыть и поделиться',
+        icon: PhosphorIcons.shareFat(),
+      );
+      if (!ok) return;
+      final done =
+          await ref.read(collectionsProvider.notifier).setPublic(col.id, true);
+      if (!context.mounted) return;
+      if (!done) {
+        showSeeUSnackBar(context, 'Не удалось открыть доступ',
+            tone: SeeUTone.danger);
+        return;
+      }
+      ref.invalidate(collectionDetailProvider(col.id));
+    }
+
+    await Share.share(
+      'Подборка «${col.name}» в SeeU — ${col.filesCount} '
+      '${_booksWord(col.filesCount)}\nseeu://collection/${col.id}',
+      subject: col.name,
+    );
+  }
+
+  static String _booksWord(int n) {
+    final m10 = n % 10, m100 = n % 100;
+    if (m100 >= 11 && m100 <= 14) return 'книг';
+    if (m10 == 1) return 'книга';
+    if (m10 >= 2 && m10 <= 4) return 'книги';
+    return 'книг';
   }
 
   Future<void> _showAddFile(BuildContext context, WidgetRef ref) async {
@@ -106,18 +187,197 @@ class CollectionDetailScreen extends ConsumerWidget {
   }
 }
 
-// ─── File row with swipe-to-remove ──────────────────────────────────────────
+/// Коралловый «+» — добавить книгу в подборку.
+class _AddButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AddButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: SeeUColors.accent,
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: const Icon(PhosphorIconsBold.plus, size: 17, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// Строка доступа: подборка личная или открыта по ссылке.
+class _ShareRow extends ConsumerWidget {
+  final Collection collection;
+  const _ShareRow({required this.collection});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    final open = collection.isPublic;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LibColors.line(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: (open ? SeeUColors.success : c.ink3)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              open ? PhosphorIcons.linkSimple() : PhosphorIcons.lockSimple(),
+              size: 19,
+              color: open ? SeeUColors.success : c.ink3,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  open ? 'Доступна по ссылке' : 'Личная подборка',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  open
+                      ? 'Кто получит ссылку — увидит книги'
+                      : 'Видите только вы',
+                  style: TextStyle(fontSize: 11.5, color: c.ink3),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: open,
+            activeThumbColor: SeeUColors.accent,
+            onChanged: (v) async {
+              HapticFeedback.selectionClick();
+              final done = await ref
+                  .read(collectionsProvider.notifier)
+                  .setPublic(collection.id, v);
+              if (!context.mounted) return;
+              if (done) {
+                ref.invalidate(collectionDetailProvider(collection.id));
+              } else {
+                showSeeUSnackBar(context, 'Не удалось изменить доступ',
+                    tone: SeeUTone.danger);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Шапка гостя: чья это подборка. Гость никогда не путает её со своей.
+class _GuestHeader extends StatelessWidget {
+  final Collection collection;
+  const _GuestHeader({required this.collection});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final name = collection.ownerName.isNotEmpty
+        ? collection.ownerName
+        : '@${collection.ownerUsername}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LibColors.line(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [SeeUColors.accentSecondary, SeeUColors.plum],
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: collection.ownerAvatar.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: collection.ownerAvatar, fit: BoxFit.cover)
+                : Center(
+                    child: Text(
+                      name.isNotEmpty
+                          ? name.characters.first.toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: 'Подборка ',
+                children: [
+                  TextSpan(
+                    text: name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: c.ink,
+                    ),
+                  ),
+                ],
+              ),
+              style: TextStyle(fontSize: 13, color: c.ink3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Строка книги; смахнуть можно только в своей подборке ───────────────────
 
 class _FileRow extends StatelessWidget {
   final FileItem file;
-  final VoidCallback onRemove;
-  const _FileRow({required this.file, required this.onRemove});
+
+  /// null — подборка чужая: книгу отсюда убрать нельзя.
+  final VoidCallback? onRemove;
+
+  const _FileRow({required this.file, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final c = context.seeuColors;
     final color = _colorForExt(file.fileExtension);
+
+    final row = _row(context, theme, c, color);
+    if (onRemove == null) return row;
 
     return Dismissible(
       key: ValueKey(file.id),
@@ -133,10 +393,16 @@ class _FileRow extends StatelessWidget {
             const Icon(PhosphorIconsRegular.trash, color: SeeUColors.danger),
       ),
       confirmDismiss: (_) async {
-        onRemove();
+        onRemove!();
         return false;
       },
-      child: GestureDetector(
+      child: row,
+    );
+  }
+
+  Widget _row(BuildContext context, ThemeData theme, SeeUThemeColors c,
+      Color color) {
+    return GestureDetector(
         onTap: () => canRead(file)
             ? openReader(context, file)
             : GoRouter.of(context).push('/files/${file.id}'),
@@ -198,7 +464,6 @@ class _FileRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 

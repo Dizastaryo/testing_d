@@ -68,6 +68,14 @@ class AudioTrack {
   final bool isLikedByMe;
   final bool isSavedByMe;
 
+  /// Где этот человек остановился, в секундах (миграция 000143). 0 — не начинал.
+  /// Приходит там, где нужно: «Продолжить» на главной и карточка трека.
+  final int positionSeconds;
+  final bool completed;
+
+  /// Когда слушал в последний раз — «Недавнее» группируется по дням.
+  final DateTime? playedAt;
+
   AudioTrack({
     required this.id,
     required this.title,
@@ -103,6 +111,9 @@ class AudioTrack {
     this.playsCount = 0,
     this.isLikedByMe = false,
     this.isSavedByMe = false,
+    this.positionSeconds = 0,
+    this.completed = false,
+    this.playedAt,
   });
 
   factory AudioTrack.fromJson(Map<String, dynamic> j) {
@@ -146,6 +157,11 @@ class AudioTrack {
       playsCount: (j['plays_count'] as num?)?.toInt() ?? 0,
       isLikedByMe: j['is_liked_by_me'] == true,
       isSavedByMe: j['is_saved_by_me'] == true,
+      positionSeconds: (j['position_seconds'] as num?)?.toInt() ?? 0,
+      completed: j['completed'] == true,
+      playedAt: j['played_at'] == null
+          ? null
+          : DateTime.tryParse(j['played_at'].toString()),
     );
   }
 
@@ -164,7 +180,19 @@ class AudioTrack {
         playsCount: playsCount,
         isLikedByMe: isLikedByMe ?? this.isLikedByMe,
         isSavedByMe: isSavedByMe ?? this.isSavedByMe,
+        positionSeconds: positionSeconds,
+        completed: completed,
+        playedAt: playedAt,
       );
+
+  /// Сколько осталось дослушать, в секундах.
+  int get remainingSeconds =>
+      (durationSeconds - positionSeconds).clamp(0, durationSeconds);
+
+  /// Доля прослушанного (0..1) — для полосы в «Продолжить».
+  double get listenedFraction => durationSeconds <= 0
+      ? 0
+      : (positionSeconds / durationSeconds).clamp(0.0, 1.0);
 
   bool get isReady => status == 'approved';
   bool get isPending => status == 'pending';

@@ -92,7 +92,9 @@ class _ChipControlSheetState extends ConsumerState<ChipControlSheet> {
   @override
   void dispose() {
     _modeSub?.cancel();
-    _service.dispose();
+    // Async-cleanup сервиса fire-and-forget (State.dispose синхронный) —
+    // сам сервис теперь корректно рвёт GATT-линк даже если connect ещё висит.
+    unawaited(_service.dispose());
     super.dispose();
   }
 

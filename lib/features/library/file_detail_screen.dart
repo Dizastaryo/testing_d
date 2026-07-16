@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -23,31 +22,45 @@ import '_file_download_web.dart'
 import 'author_screen.dart';
 import 'bookmarks_screen.dart';
 import 'collection_add_sheet.dart';
+import 'library_design.dart';
 import 'readers/open_reader.dart';
 import 'widgets/file_cover_widget.dart';
+
+/// Стеклянная кнопка поверх обложки в шапке карточки книги.
+class _HeroGlassButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _HeroGlassButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Tappable.scaled(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            width: 44,
+            height: 44,
+            color: dark
+                ? const Color(0xFF141210).withValues(alpha: 0.62)
+                : Colors.white.withValues(alpha: 0.78),
+            child: Icon(icon, size: 20, color: c.ink),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 String _formatCount(int n) {
   if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
   if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
   return '$n';
-}
-
-/// Estimates reading time from page count (~2 min/page average).
-String _readingTime(int pages) {
-  final minutes = (pages * 2).clamp(1, 99999);
-  if (minutes < 60) return '~$minutes мин.';
-  final hours = minutes ~/ 60;
-  final rem = minutes % 60;
-  if (rem == 0 || hours >= 10) return '~$hours ч.';
-  return '~$hours ч. $rem мин.';
-}
-
-String _formatDate(DateTime dt) {
-  try {
-    return DateFormat('d MMM yyyy', 'ru').format(dt);
-  } catch (_) {
-    return DateFormat('dd.MM.yyyy').format(dt);
-  }
 }
 
 final _fileDetailProvider =
@@ -129,7 +142,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
     HapticFeedback.heavyImpact();
     // Get done count from stats for the message
     final stats = ref.read(readingStatsProvider).valueOrNull;
-    final doneCount = (stats?['books_done'] as int? ?? 0) + 1;
+    final doneCount = ((stats?['books_done'] as num?)?.toInt() ?? 0) + 1;
     final msg = doneCount == 1
         ? 'Первая прочитанная книга!'
         : 'Книга #$doneCount прочитана!';
@@ -211,79 +224,25 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
   Widget _buildBody(FileItem file, SeeUThemeColors c, [String? readingStatus]) {
     return CustomScrollView(
       slivers: [
-        // Collapsing AppBar with cover — стеклянный collapse
-        SliverAppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          expandedHeight: 300,
-          pinned: true,
-          leading: Padding(
-            padding: const EdgeInsets.all(6),
-            child: SeeUGlassCircleButton(
-              size: 40,
-              icon: Icon(PhosphorIcons.caretLeft(), size: 18, color: c.ink),
-              onTap: () => context.pop(),
-            ),
-          ),
-          actions: [
-            SeeUGlassCircleButton(
-              size: 40,
-              icon: Icon(PhosphorIconsRegular.shareFat,
-                  size: 18, color: c.ink2),
-              onTap: () {
-                final info = file.authorName.isNotEmpty
-                    ? '${file.displayTitle} — ${file.authorName}'
-                    : file.displayTitle;
-                Share.share(
-                  '$info\n\nОткрыть в SeeU: seeu://files/${file.id}',
-                  subject: file.displayTitle,
-                );
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
-          flexibleSpace: ClipRect(
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: SeeUColors.background.withValues(alpha: 0.72),
-                  border: Border(
-                    bottom: BorderSide(color: c.line, width: 0.5),
-                  ),
-                ),
-                child: FlexibleSpaceBar(
-                  background: _CoverHeader(file: file),
-                ),
-              ),
-            ),
-          ),
-          title: Text(
-            file.displayTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: SeeUTypography.displayS
-                .copyWith(fontSize: 18, color: c.ink),
-          ),
-        ),
-
-        // Content
+        SliverToBoxAdapter(child: _buildHero(file, c)),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title
+                // Название — серифом, как на корешке.
                 Text(
                   file.displayTitle,
                   style: SeeUTypography.displayS.copyWith(
-                    height: 1.2,
+                    fontSize: 27,
+                    height: 1.12,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
                   ),
                 ),
                 if (file.authorName.isNotEmpty) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   GestureDetector(
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) =>
@@ -292,59 +251,33 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                     child: Text(
                       file.authorName,
                       style: TextStyle(
-                        fontSize: 15,
-                        color: SeeUColors.accent,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
+                        color: LibColors.kicker(context),
                       ),
                     ),
                   ),
                 ],
 
                 const SizedBox(height: 14),
+                _buildChips(file, c),
 
-                // Info chips row
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _InfoChip(
-                        label: file.formatLabel,
-                        color: colorForFileType(file.fileExtension)),
-                    if (ref.watch(isOfflineProvider(file.id)))
-                      const _InfoChip(
-                          label: 'Офлайн', color: SeeUColors.success),
-                    _InfoChip(label: file.fileSizeFormatted),
-                    if (file.pagesCount > 0)
-                      _InfoChip(label: '${file.pagesCount} стр.'),
-                    if (file.pagesCount >= 5)
-                      _InfoChip(
-                        label: _readingTime(file.pagesCount),
-                        color: SeeUColors.plum,
-                      ),
-                    if (file.category case final cat? when cat.name.isNotEmpty)
-                      _CategoryChip(category: cat),
-                    if (file.language.isNotEmpty)
-                      _InfoChip(label: file.language.toUpperCase()),
-                    _InfoChip(label: _formatDate(file.createdAt)),
-                  ],
-                ),
+                const SizedBox(height: 18),
+                _buildActions(file, c),
 
-                const SizedBox(height: 16),
+                if (canRead(file)) ...[
+                  const SizedBox(height: 12),
+                  _buildStatusSegments(readingStatus, c),
+                ],
 
-                // Stats bar
-                _StatsBar(file: file),
 
-                const SizedBox(height: 12),
-
-                // Star rating widget
+                const SizedBox(height: 18),
                 _RatingWidget(file: file),
 
-                const SizedBox(height: 6),
-
-                // Community reviews
+                // Отзывы сообщества
                 _ReviewsSection(fileId: file.id),
 
-                // Personal notes (private)
+                // Личные заметки (приватные)
                 _FileNotesSection(fileId: file.id),
 
                 if (file.description.isNotEmpty) ...[
@@ -352,63 +285,23 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                   _ExpandableDescription(text: file.description, c: c),
                 ],
 
-                // Text preview (snippet of extracted text)
                 _TextPreviewSection(fileId: file.id),
 
                 const SizedBox(height: 20),
-
-                // Action buttons
-                _buildActions(file, c),
+                _StatsBar(file: file),
 
                 const SizedBox(height: 20),
-
-                // Author section
                 if (file.user != null) ...[
                   _AuthorSection(user: file.user!, c: c),
                   const SizedBox(height: 20),
                 ],
 
-                // Reading progress
                 if (readingStatus == 'reading' && canRead(file))
                   _buildProgressCard(file.id, c),
 
-                // Bookmarks section
                 if (canRead(file)) _buildBookmarksSection(file, c),
 
-                // Reading status chips
-                if (canRead(file)) ...[
-                  const SizedBox(height: 16),
-                  Text('Статус чтения',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: c.ink3,
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      for (final (key, label, icon) in [
-                        ('want', 'Хочу', PhosphorIconsRegular.bookmarkSimple),
-                        ('reading', 'Читаю', PhosphorIconsRegular.bookOpen),
-                        ('done', 'Прочитано', PhosphorIconsRegular.checkCircle),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: _StatusChip(
-                            label: label,
-                            icon: icon,
-                            isActive: readingStatus == key,
-                            isLoading: false,
-                            onTap: () => _setReadingStatus(
-                                readingStatus == key ? null : key),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-
                 const SizedBox(height: 24),
-
-                // Related files (same author or category)
                 _RelatedFilesRow(fileId: file.id, authorName: file.authorName),
 
                 const SizedBox(height: 40),
@@ -420,86 +313,228 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
     );
   }
 
+  /// Hero карточки: фон — цвет обложки, растворяющийся в бумагу, поверх —
+  /// стеклянные «Назад» и «Поделиться», снизу слева — сама обложка-корешок.
+  Widget _buildHero(FileItem file, SeeUThemeColors c) {
+    final top = MediaQuery.of(context).padding.top;
+    final grad = coverGradientOf(file);
+
+    return SizedBox(
+      height: 290,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [grad.last, grad.first],
+                ),
+              ),
+            ),
+          ),
+          // Растворение в фон страницы — обложка «перетекает» в бумагу.
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [c.bg, c.bg.withValues(alpha: 0)],
+                  stops: const [0.02, 0.48],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: top + 6,
+            left: 18,
+            child: _HeroGlassButton(
+              icon: PhosphorIcons.arrowLeft(),
+              onTap: () => context.pop(),
+            ),
+          ),
+          Positioned(
+            top: top + 6,
+            right: 18,
+            child: _HeroGlassButton(
+              icon: PhosphorIconsRegular.shareFat,
+              onTap: () {
+                final info = file.authorName.isNotEmpty
+                    ? '${file.displayTitle} — ${file.authorName}'
+                    : file.displayTitle;
+                Share.share(
+                  '$info\n\nОткрыть в SeeU: seeu://files/${file.id}',
+                  subject: file.displayTitle,
+                );
+              },
+            ),
+          ),
+          Positioned(
+            left: 24,
+            bottom: 6,
+            child: BookSpine(file: file, width: 120, height: 170, radius: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Чипы книги: формат, объём, время чтения, язык, офлайн, категория.
+  Widget _buildChips(FileItem file, SeeUThemeColors c) {
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: [
+        _InfoChip(
+            label: file.formatLabel,
+            color: colorForFileType(file.fileExtension)),
+        if (ref.watch(isOfflineProvider(file.id)))
+          const _InfoChip(label: 'Офлайн', color: SeeUColors.success),
+        if (file.pagesCount > 0) _InfoChip(label: '${file.pagesCount} стр.'),
+        if (file.pagesCount >= 5)
+          _InfoChip(
+            label: totalReadingTime(file.pagesCount),
+            color: SeeUColors.plum,
+          ),
+        _InfoChip(label: file.fileSizeFormatted),
+        if (file.category case final cat? when cat.name.isNotEmpty)
+          _CategoryChip(category: cat),
+        if (file.language.isNotEmpty)
+          _InfoChip(label: file.language.toUpperCase()),
+      ],
+    );
+  }
+
+  /// Статус чтения — сегментированный переключатель «Хочу · Читаю · Прочитано».
+  Widget _buildStatusSegments(String? status, SeeUThemeColors c) {
+    const items = [
+      ('want', 'Хочу'),
+      ('reading', 'Читаю'),
+      ('done', 'Прочитано'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: LibColors.chip(context),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          for (final (key, label) in items)
+            Expanded(
+              child: Tappable(
+                onTap: () => _setReadingStatus(status == key ? null : key),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: status == key ? SeeUColors.accent : null,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight:
+                          status == key ? FontWeight.w700 : FontWeight.w600,
+                      color: status == key ? Colors.white : c.ink3,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActions(FileItem file, SeeUThemeColors c) {
     final readingStatus = ref.watch(readingStatusProvider(widget.id));
     final hasProgress = readingStatus == 'reading';
-    final ctaLabel = hasProgress ? 'Продолжить' : 'Читать';
+    final pct = ref.watch(readingProgressProvider(file.id)).valueOrNull
+            ?.percentage ??
+        0;
+
+    // Главная кнопка несёт процент — сколько уже прочитано.
+    final ctaLabel = !canRead(file)
+        ? (_downloading && _downloadProgress > 0
+            ? 'Скачивание ${(_downloadProgress * 100).toInt()}%'
+            : _downloading
+                ? 'Скачивание…'
+                : 'Скачать')
+        : hasProgress && pct > 0
+            ? 'Продолжить · ${(pct * 100).round()}%'
+            : hasProgress
+                ? 'Продолжить'
+                : 'Читать';
 
     return Row(
       children: [
-        // Primary CTA
-        if (canRead(file)) ...[
-          Expanded(
-            child: GestureDetector(
-              onTap: () => openReader(context, file),
-              child: Container(
-                height: 52,
-                decoration: BoxDecoration(
-                  color: SeeUColors.accent,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: SeeUColors.accent.withValues(alpha: 0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      hasProgress
-                          ? PhosphorIconsBold.play
-                          : PhosphorIconsBold.bookOpen,
-                      size: 18,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
+        Expanded(
+          child: Tappable.scaled(
+            onTap: _downloading && !canRead(file)
+                ? null
+                : () => canRead(file)
+                    ? openReader(context, file)
+                    : _download(file),
+            child: Container(
+              height: 52,
+              decoration: BoxDecoration(
+                color: SeeUColors.accent,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: SeeUColors.accent.withValues(alpha: 0.6),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                    spreadRadius: -8,
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    !canRead(file)
+                        ? PhosphorIconsFill.downloadSimple
+                        : hasProgress
+                            ? PhosphorIconsFill.play
+                            : PhosphorIconsFill.bookOpen,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
                       ctaLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          _ActionButton(
-            icon: _downloading
-                ? null
-                : PhosphorIconsRegular.download,
-            isLoading: _downloading,
-            progressText: _downloadProgress > 0
-                ? '${(_downloadProgress * 100).toInt()}%'
-                : null,
-            onTap: _downloading ? null : () => _download(file),
-            c: c,
-          ),
-        ] else ...[
-          Expanded(
-            child: SeeUButton(
-              label: _downloading && _downloadProgress > 0
-                  ? 'Скачивание ${(_downloadProgress * 100).toInt()}%'
-                  : _downloading
-                      ? 'Скачивание...'
-                      : 'Скачать',
-              isLoading: _downloading && _downloadProgress == 0,
-              onTap: _downloading ? null : () => _download(file),
-            ),
-          ),
-        ],
+        ),
         const SizedBox(width: 10),
-        // Like button
         _LikeButton(file: file, onTap: () => _toggleLike(file)),
         const SizedBox(width: 10),
+        // «В коллекцию» — коллекция это плейлист в мире книг, и добавить книгу
+        // в подборку можно только отсюда. Такое же первоклассное действие,
+        // как «нравится» и «скачать».
         _ActionButton(
-          icon: PhosphorIconsRegular.bookBookmark,
+          icon: PhosphorIconsRegular.plus,
           onTap: () => showModalBottomSheet(
             context: context,
             isScrollControlled: true,
@@ -508,6 +543,18 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ),
           c: c,
         ),
+        if (canRead(file)) ...[
+          const SizedBox(width: 10),
+          _ActionButton(
+            icon: _downloading ? null : PhosphorIconsRegular.downloadSimple,
+            isLoading: _downloading,
+            progressText: _downloadProgress > 0
+                ? '${(_downloadProgress * 100).toInt()}%'
+                : null,
+            onTap: _downloading ? null : () => _download(file),
+            c: c,
+          ),
+        ],
       ],
     );
   }
@@ -635,6 +682,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
                       builder: (_) => BookmarksScreen(
                         fileId: file.id,
                         fileTitle: file.displayTitle,
+                        file: file,
                       ),
                     )),
                     child: Text(
@@ -732,7 +780,7 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
           ? ApiEndpoints.libraryBaseUrl.replaceAll('/api/v1', '') + url
           : url;
 
-      await downloader.saveDownload(
+      final saved = await downloader.saveDownload(
         url: absUrl,
         filename: file.filename,
         onProgress: (received, total) {
@@ -744,7 +792,13 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
 
       if (!mounted) return;
       ref.invalidate(_fileDetailProvider(widget.id));
-      showSeeUSnackBar(context, 'Файл сохранён', tone: SeeUTone.success);
+      // «Сохранён» только если файл реально лёг на устройство; иначе открылся
+      // в браузере (скачивание не удалось) — честно об этом и говорим.
+      showSeeUSnackBar(
+        context,
+        saved ? 'Файл сохранён' : 'Открыто в браузере',
+        tone: saved ? SeeUTone.success : SeeUTone.neutral,
+      );
     } on DioException catch (e) {
       if (!mounted) return;
       showSeeUSnackBar(context, 'Не удалось скачать: ${e.message ?? e.type}',
@@ -764,42 +818,6 @@ class _FileDetailScreenState extends ConsumerState<FileDetailScreen> {
 }
 
 // ─── Cover Header ───────────────────────────────────────────────────────────
-
-class _CoverHeader extends StatelessWidget {
-  final FileItem file;
-  const _CoverHeader({required this.file});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + kToolbarHeight),
-      child: Center(
-        child: Hero(
-          tag: 'file_cover_${file.id}',
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: FileCoverWidget(
-              file: file,
-              width: 140,
-              height: 200,
-              borderRadius: 14,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Stats Bar ──────────────────────────────────────────────────────────────
 
@@ -980,60 +998,100 @@ class _RatingWidgetState extends ConsumerState<_RatingWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            // Stars
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(5, (i) {
-                final starValue = i + 1;
-                final filled = starValue <= display;
-                return GestureDetector(
-                  onTap: () => _setRating(starValue),
-                  child: MouseRegion(
-                    onEnter: (_) => setState(() => _hovered = starValue),
-                    onExit: (_) => setState(() => _hovered = 0),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Icon(
-                        filled
-                            ? PhosphorIconsFill.star
-                            : PhosphorIconsRegular.star,
-                        size: 26,
-                        color: filled ? SeeUColors.amber : c.ink4,
+        // Editorial-блок оценки: слева крупная средняя со звёздами-мини,
+        // справа — моя оценка пятью крупными звёздами.
+        Container(
+          padding: const EdgeInsets.only(top: 16),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: LibColors.line(context))),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (file.ratingsCount > 0) ...[
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      avg.toStringAsFixed(1),
+                      style: SeeUTypography.displayS.copyWith(
+                        fontSize: 34,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: c.ink,
                       ),
                     ),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(width: 10),
-            // Average + count
-            if (file.ratingsCount > 0)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    avg.toStringAsFixed(1),
-                    style: TextStyle(
-                      fontFamily: AppFonts.I.sans,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: c.ink,
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (i) {
+                        final full = avg >= i + 1;
+                        final half = !full && avg > i + 0.25;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1),
+                          child: Icon(
+                            full
+                                ? PhosphorIconsFill.star
+                                : half
+                                    ? PhosphorIconsRegular.starHalf
+                                    : PhosphorIconsRegular.star,
+                            size: 11,
+                            color: full || half ? SeeUColors.amber : c.ink4,
+                          ),
+                        );
+                      }),
                     ),
-                  ),
-                  Text(
-                    '${file.ratingsCount} ${_pluralRatings(file.ratingsCount)}',
-                    style: TextStyle(fontSize: 11, color: c.ink3),
-                  ),
-                ],
-              )
-            else
-              Text(
-                userRating == 0 ? 'Оцените книгу' : 'Ваша оценка: $userRating',
-                style: TextStyle(fontSize: 12, color: c.ink3),
+                  ],
+                ),
+                const SizedBox(width: 16),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      file.ratingsCount > 0
+                          ? 'Ваша оценка · ${file.ratingsCount} ${_pluralRatings(file.ratingsCount)}'
+                          : 'Оцените книгу первым',
+                      style: TextStyle(fontSize: 12, color: c.ink3),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (i) {
+                        final starValue = i + 1;
+                        final filled = starValue <= display;
+                        return GestureDetector(
+                          onTap: () => _setRating(starValue),
+                          child: MouseRegion(
+                            onEnter: (_) =>
+                                setState(() => _hovered = starValue),
+                            onExit: (_) => setState(() => _hovered = 0),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.only(right: 5),
+                              child: Icon(
+                                filled
+                                    ? PhosphorIconsFill.star
+                                    : PhosphorIconsRegular.star,
+                                size: 24,
+                                color: filled ? SeeUColors.amber : c.ink4,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                ),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
             const Spacer(),
             // Toggle review field
             if (userRating > 0)
@@ -1484,58 +1542,6 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ─── Status Chip ────────────────────────────────────────────────────────────
-
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool isActive;
-  final bool isLoading;
-  final VoidCallback onTap;
-
-  const _StatusChip({
-    required this.label,
-    required this.icon,
-    required this.isActive,
-    required this.isLoading,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: isActive ? SeeUColors.accent : Colors.transparent,
-          border: Border.all(
-            color: isActive ? SeeUColors.accent : c.line,
-          ),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 14,
-                color: isActive ? Colors.white : c.ink3),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isActive ? Colors.white : c.ink2,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Info Chip ──────────────────────────────────────────────────────────────
 

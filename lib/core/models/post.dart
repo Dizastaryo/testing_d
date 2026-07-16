@@ -66,10 +66,6 @@ class Post {
   final DateTime createdAt;
   final bool isWave;
   final int? waveColorValue;
-  /// Emoji-reactions count per emoji aggregated by server.
-  final Map<String, int> reactions;
-  /// The emoji *current user* placed on this post (empty when none).
-  final String myReaction;
   /// REELS-4: id audio-track'а если пост создан с music overlay. null/empty
   /// = без фоновой музыки. Reels-viewer показывает pill «🎵 Track» → tap =
   /// camera с pre-selected audio.
@@ -77,6 +73,11 @@ class Post {
   /// Where in the track playback starts. Photo posts loop the track from here;
   /// video posts overlay it from here.
   final int audioStartSeconds;
+  /// Sound-bridge: название и автор прикреплённого трека (гидрируются бэком из
+  /// audio_tracks). Пустые, когда у поста нет трека. Лента рисует
+  /// «🎵 название · автор» под именем автора.
+  final String audioTrackTitle;
+  final String audioTrackArtist;
 
   const Post({
     required this.id,
@@ -93,10 +94,10 @@ class Post {
     required this.createdAt,
     this.isWave = false,
     this.waveColorValue,
-    this.reactions = const {},
-    this.myReaction = '',
     this.audioTrackId,
     this.audioStartSeconds = 0,
+    this.audioTrackTitle = '',
+    this.audioTrackArtist = '',
   });
 
   /// URL подходящий для grid-cell'а (Explore / Profile / chat-share preview).
@@ -165,19 +166,13 @@ class Post {
           : DateTime.now(),
       isWave: ((json['is_wave'] ?? json['isWave']) as bool?) ?? false,
       waveColorValue: ((json['wave_color_value'] ?? json['waveColorValue']) as num?)?.toInt(),
-      reactions: json['reactions'] is Map
-          ? Map<String, int>.from(
-              (json['reactions'] as Map).map(
-                (k, v) => MapEntry(k.toString(), (v is num) ? v.toInt() : 0),
-              ),
-            )
-          : const {},
-      myReaction: json['my_reaction']?.toString() ?? '',
       audioTrackId: () {
         final v = json['audio_track_id']?.toString() ?? '';
         return v.isEmpty ? null : v;
       }(),
       audioStartSeconds: (json['audio_start_seconds'] as num?)?.toInt() ?? 0,
+      audioTrackTitle: json['audio_track_title']?.toString() ?? '',
+      audioTrackArtist: json['audio_track_artist']?.toString() ?? '',
     );
   }
 
@@ -213,10 +208,10 @@ class Post {
     DateTime? createdAt,
     bool? isWave,
     int? waveColorValue,
-    Map<String, int>? reactions,
-    String? myReaction,
     String? audioTrackId,
     int? audioStartSeconds,
+    String? audioTrackTitle,
+    String? audioTrackArtist,
   }) {
     return Post(
       id: id ?? this.id,
@@ -233,10 +228,10 @@ class Post {
       createdAt: createdAt ?? this.createdAt,
       isWave: isWave ?? this.isWave,
       waveColorValue: waveColorValue ?? this.waveColorValue,
-      reactions: reactions ?? this.reactions,
-      myReaction: myReaction ?? this.myReaction,
       audioTrackId: audioTrackId ?? this.audioTrackId,
       audioStartSeconds: audioStartSeconds ?? this.audioStartSeconds,
+      audioTrackTitle: audioTrackTitle ?? this.audioTrackTitle,
+      audioTrackArtist: audioTrackArtist ?? this.audioTrackArtist,
     );
   }
 

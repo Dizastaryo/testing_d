@@ -11,6 +11,7 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/utils/format.dart';
 import 'readers/open_reader.dart';
+import 'library_design.dart';
 
 /// Страница слежения за подготовкой файлов к чтению.
 ///
@@ -55,117 +56,114 @@ class _FilePreparationScreenState extends ConsumerState<FilePreparationScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       extendBodyBehindAppBar: true,
-      body: Stack(children: [
-      async.when(
-        data: (files) {
-          final convertible =
-              files.where((f) => f.needsPreparation).toList();
-
-          if (convertible.isEmpty) return _buildEmptyState(c);
-
-          final preparing = convertible
-              .where((f) =>
-                  f.pdfConversionStatus == 'pending' ||
-                  f.pdfConversionStatus == 'converting')
-              .toList();
-          final failed = convertible
-              .where((f) => f.pdfConversionStatus == 'failed')
-              .toList();
-          final done = convertible
-              .where((f) => f.pdfConversionStatus == 'done')
-              .toList();
-          final queued = convertible
-              .where((f) => f.pdfConversionStatus == 'none')
-              .toList();
-
-          return RefreshIndicator(
-            onRefresh: () async =>
-                ref.invalidate(userFilesProvider(userId)),
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 120),
-              children: [
-                // Активная подготовка
-                if (preparing.isNotEmpty) ...[
-                  _sectionHeader('Подготавливается', preparing.length,
-                      SeeUColors.accent, spinning: true),
-                  const SizedBox(height: 8),
-                  ...preparing.map((f) => _FileCard(
-                        file: f,
-                        status: _PrepStatus.preparing,
-                        onRetry: null,
-                        onRead: null,
-                      )),
-                  const SizedBox(height: 20),
+      body: PaperBackground(
+        child: Stack(children: [
+        async.when(
+          data: (files) {
+            final convertible =
+                files.where((f) => f.needsPreparation).toList();
+  
+            if (convertible.isEmpty) return _buildEmptyState(c);
+  
+            final preparing = convertible
+                .where((f) =>
+                    f.pdfConversionStatus == 'pending' ||
+                    f.pdfConversionStatus == 'converting')
+                .toList();
+            final failed = convertible
+                .where((f) => f.pdfConversionStatus == 'failed')
+                .toList();
+            final done = convertible
+                .where((f) => f.pdfConversionStatus == 'done')
+                .toList();
+            final queued = convertible
+                .where((f) => f.pdfConversionStatus == 'none')
+                .toList();
+  
+            return RefreshIndicator(
+              onRefresh: () async =>
+                  ref.invalidate(userFilesProvider(userId)),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 120),
+                children: [
+                  // Активная подготовка
+                  if (preparing.isNotEmpty) ...[
+                    _sectionHeader('Подготавливается', preparing.length,
+                        SeeUColors.accent, spinning: true),
+                    const SizedBox(height: 8),
+                    ...preparing.map((f) => _FileCard(
+                          file: f,
+                          status: _PrepStatus.preparing,
+                          onRetry: null,
+                          onRead: null,
+                        )),
+                    const SizedBox(height: 20),
+                  ],
+                  // В очереди
+                  if (queued.isNotEmpty) ...[
+                    _sectionHeader('В очереди', queued.length,
+                        SeeUColors.warning),
+                    const SizedBox(height: 8),
+                    ...queued.map((f) => _FileCard(
+                          file: f,
+                          status: _PrepStatus.preparing,
+                          onRetry: null,
+                          onRead: null,
+                        )),
+                    const SizedBox(height: 20),
+                  ],
+                  // Ошибки
+                  if (failed.isNotEmpty) ...[
+                    _sectionHeader('Ошибка', failed.length,
+                        SeeUColors.error),
+                    const SizedBox(height: 8),
+                    ...failed.map((f) => _FileCard(
+                          file: f,
+                          status: _PrepStatus.failed,
+                          onRetry: () => _retry(f),
+                          onRead: null,
+                        )),
+                    const SizedBox(height: 20),
+                  ],
+                  // Готовые
+                  if (done.isNotEmpty) ...[
+                    _sectionHeader('Готово к чтению', done.length,
+                        SeeUColors.success),
+                    const SizedBox(height: 8),
+                    ...done.map((f) => _FileCard(
+                          file: f,
+                          status: _PrepStatus.done,
+                          onRetry: null,
+                          onRead: () => openReader(context, f),
+                        )),
+                  ],
                 ],
-                // В очереди
-                if (queued.isNotEmpty) ...[
-                  _sectionHeader('В очереди', queued.length,
-                      SeeUColors.warning),
-                  const SizedBox(height: 8),
-                  ...queued.map((f) => _FileCard(
-                        file: f,
-                        status: _PrepStatus.preparing,
-                        onRetry: null,
-                        onRead: null,
-                      )),
-                  const SizedBox(height: 20),
-                ],
-                // Ошибки
-                if (failed.isNotEmpty) ...[
-                  _sectionHeader('Ошибка', failed.length,
-                      SeeUColors.error),
-                  const SizedBox(height: 8),
-                  ...failed.map((f) => _FileCard(
-                        file: f,
-                        status: _PrepStatus.failed,
-                        onRetry: () => _retry(f),
-                        onRead: null,
-                      )),
-                  const SizedBox(height: 20),
-                ],
-                // Готовые
-                if (done.isNotEmpty) ...[
-                  _sectionHeader('Готово к чтению', done.length,
-                      SeeUColors.success),
-                  const SizedBox(height: 8),
-                  ...done.map((f) => _FileCard(
-                        file: f,
-                        status: _PrepStatus.done,
-                        onRetry: null,
-                        onRead: () => openReader(context, f),
-                      )),
-                ],
-              ],
-            ),
-          );
-        },
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Text(e.toString(),
-              style: SeeUTypography.caption.copyWith(
-                  color: context.seeuColors.ink3)),
+              ),
+            );
+          },
+          loading: () =>
+              const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(
+            child: Text(e.toString(),
+                style: SeeUTypography.caption.copyWith(
+                    color: context.seeuColors.ink3)),
+          ),
         ),
-      ),
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: SeeUGlassBar(
-          kicker: 'Библиотека',
-          titleText: 'Подготовка файлов',
-          leading: Tappable(
-            onTap: () => Navigator.of(context).pop(),
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Icon(PhosphorIconsRegular.arrowLeft,
-                  size: 20, color: c.ink),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SeeUGlassBar(
+            kicker: 'Библиотека',
+            titleText: 'Подготовка файлов',
+            leading: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 2),
+              child: LibBackButton(size: 40),
             ),
           ),
         ),
+        ]),
       ),
-      ]),
     );
   }
 

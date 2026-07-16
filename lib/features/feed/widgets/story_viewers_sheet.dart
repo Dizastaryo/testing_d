@@ -10,7 +10,11 @@ import '../../../core/utils/time_format.dart';
 
 class StoryViewersSheet extends ConsumerStatefulWidget {
   final String storyId;
-  const StoryViewersSheet({super.key, required this.storyId});
+  /// Суммарный views_count истории. Заголовок показывает его, а не длину
+  /// загруженной страницы — при >50 зрителей числа расходились с плашкой
+  /// «N просмотров» до конца пагинации.
+  final int? totalCount;
+  const StoryViewersSheet({super.key, required this.storyId, this.totalCount});
 
   @override
   ConsumerState<StoryViewersSheet> createState() => _StoryViewersSheetState();
@@ -102,7 +106,7 @@ class _StoryViewersSheetState extends ConsumerState<StoryViewersSheet> {
                     style: SeeUTypography.kicker.copyWith(color: c.ink3)),
                 const SizedBox(width: 8),
                 if (!_loading)
-                  Text('${_viewers.length}',
+                  Text('${widget.totalCount ?? _viewers.length}',
                       style: SeeUTypography.mono.copyWith(color: c.ink)),
               ]),
             ),

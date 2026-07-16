@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Иконка уже полноразмерная (красный фон + ромашка, белые углы залиты
+     красным). Inset убран намеренно, чтобы адаптивная иконка выглядела как на
+     iOS (edge-to-edge, система сама маскирует углы), без эффекта «иконка в
+     иконке». Если заново запускать flutter_launcher_icons — вернётся inset 16%,
+     тогда убрать снова. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/ic_launcher_background"/>
-  <foreground>
-      <inset
-          android:drawable="@drawable/ic_launcher_foreground"
-          android:inset="16%" />
-  </foreground>
+  <foreground android:drawable="@drawable/ic_launcher_foreground"/>
 </adaptive-icon>

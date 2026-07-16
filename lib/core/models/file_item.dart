@@ -162,7 +162,11 @@ class FileItem {
         description: json['description'] ?? '',
         pagesCount: json['pages_count'] ?? 0,
         docFormat: json['doc_format'] ?? '',
-        createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+        // Битую/пустую дату НЕ подменяем на now() — иначе файл с плохой датой
+        // прыгает наверх сортировки по created_at как «только что». Эпоха
+        // сортирует нейтрально (в конец).
+        createdAt: DateTime.tryParse(json['created_at'] ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
         user: json['user'] != null ? UserShort.fromJson(json['user']) : null,
         category: json['category'] != null ? FileCategory.fromJson(json['category']) : null,
         pdfConversionStatus: json['pdf_conversion_status'] as String? ?? 'none',
@@ -246,8 +250,6 @@ class FileItem {
       const {'pdf', 'epub', 'txt', 'md', 'fb2', 'docx', 'rtf', 'odt', 'pptx', 'odp'}
           .contains(fileExtension);
 
-  String get readerLabel => 'Читать';
-
   String get formatLabel {
     switch (fileExtension) {
       case 'pdf': return 'PDF';
@@ -263,9 +265,6 @@ class FileItem {
       default: return fileExtension.toUpperCase();
     }
   }
-
-  /// LIB-1: PDF? Используется для inline-preview через flutter_pdfview.
-  bool get isPdf => fileExtension == 'pdf' || mimeType == 'application/pdf';
 
   String get downloadsFormatted {
     if (downloadsCount >= 1000) return '${(downloadsCount / 1000).toStringAsFixed(1)}K';

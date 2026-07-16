@@ -25,7 +25,10 @@ class _LiveBroadcastOverlayState extends ConsumerState<LiveBroadcastOverlay> {
   bool _ending = false;
   DateTime? _startedAt;
   Timer? _elapsedTimer;
-  String _elapsedLabel = '0:00';
+  // ValueNotifier вместо поля+setState: тикая раз в секунду, метка времени
+  // раньше пересобирала ВЕСЬ оверлей (превью видео, все кнопки). Теперь через
+  // ValueListenableBuilder перерисовывается только сам текст таймера.
+  final ValueNotifier<String> _elapsedLabel = ValueNotifier('0:00');
 
   @override
   void initState() {
@@ -36,7 +39,7 @@ class _LiveBroadcastOverlayState extends ConsumerState<LiveBroadcastOverlay> {
       final d = DateTime.now().difference(_startedAt!);
       final m = d.inMinutes;
       final s = d.inSeconds % 60;
-      setState(() => _elapsedLabel = '$m:${s.toString().padLeft(2, '0')}');
+      _elapsedLabel.value = '$m:${s.toString().padLeft(2, '0')}';
     });
     LiveBroadcastService.instance.viewerCount.addListener(_rebuild);
     LiveBroadcastService.instance.isLive.addListener(_onLiveChanged);
@@ -53,6 +56,7 @@ class _LiveBroadcastOverlayState extends ConsumerState<LiveBroadcastOverlay> {
   @override
   void dispose() {
     _elapsedTimer?.cancel();
+    _elapsedLabel.dispose();
     LiveBroadcastService.instance.viewerCount.removeListener(_rebuild);
     LiveBroadcastService.instance.isLive.removeListener(_onLiveChanged);
     super.dispose();
@@ -137,13 +141,16 @@ class _LiveBroadcastOverlayState extends ConsumerState<LiveBroadcastOverlay> {
                             .copyWith(color: Colors.white),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        _elapsedLabel,
-                        style: SeeUTypography.mono.copyWith(
-                          color: Colors.white,
-                          fontFeatures: const [
-                            ui.FontFeature.tabularFigures()
-                          ],
+                      ValueListenableBuilder<String>(
+                        valueListenable: _elapsedLabel,
+                        builder: (_, label, __) => Text(
+                          label,
+                          style: SeeUTypography.mono.copyWith(
+                            color: Colors.white,
+                            fontFeatures: const [
+                              ui.FontFeature.tabularFigures()
+                            ],
+                          ),
                         ),
                       ),
                     ],

@@ -6,13 +6,16 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../core/design/design.dart';
+import '../../../core/models/audio_track.dart';
 import '../../../core/models/file_item.dart';
 import '../../../core/models/post.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/providers/author_tracks_provider.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../core/utils/format.dart';
 import '../../library/collection_add_sheet.dart';
 import '../../library/widgets/file_cover_widget.dart';
+import '../../music/widgets/track_row.dart';
 import '../../post/profile_posts_feed.dart';
 
 class ProfileStatItem extends StatelessWidget {
@@ -26,13 +29,9 @@ class ProfileStatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: count.toDouble(), end: count.toDouble()),
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeOut,
-          builder: (context, value, child) =>
-              Text(formatCount(value.toInt()), style: SeeUTypography.displayS),
-        ),
+        // Раньше здесь был TweenAnimationBuilder с begin == end — счётчик не
+        // анимировался вообще, только лишняя ребилд-обёртка.
+        Text(formatCount(count), style: SeeUTypography.displayS),
         const SizedBox(height: 2),
         Text(label, style: SeeUTypography.kicker.copyWith(color: c.ink3)),
       ],
@@ -126,91 +125,142 @@ class ProfilePostsGrid extends StatelessWidget {
   }
 }
 
-class ProfileFilesTab extends ConsumerWidget {
+// (ProfileFilesTab удалён — мёртвый: заменён ProfileAuthorTab, никем не
+// импортировался. Хелперы _ProfileFileCard/_FileStat/userFilesProvider
+// остались — их использует ProfileAuthorTab.)
+
+/// Вкладка «Автор» (§05 A2): что пользователь сам выложил — треки в Аудиотеку
+/// и файлы в Библиотеку, двумя секциями в одном скролле.
+class ProfileAuthorTab extends ConsumerWidget {
   final String userId;
-  const ProfileFilesTab({super.key, required this.userId});
+  const ProfileAuthorTab({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (userId.isEmpty) return const SizedBox.shrink();
     final myId = ref.watch(authProvider).user?.id ?? '';
     final isMe = myId == userId;
+    final tracks =
+        ref.watch(authorTracksProvider(userId)).valueOrNull ??
+            const <AudioTrack>[];
     final asyncFiles = ref.watch(userFilesProvider(userId));
+    final files = asyncFiles.valueOrNull ?? const <FileItem>[];
 
-    return asyncFiles.when(
-      loading: () => const Center(child: CircularProgressIndicator(color: SeeUColors.accent)),
-      error: (_, __) => const SeeUEmptyState(
-          icon: PhosphorIconsRegular.folderSimple, title: 'Не удалось загрузить'),
-      data: (files) {
-        if (files.isEmpty) {
-          return const SeeUEmptyState(
-              icon: PhosphorIconsRegular.folderSimple, title: 'Пока нет файлов');
-        }
+    if (tracks.isEmpty && files.isEmpty) {
+      if (asyncFiles.isLoading) {
+        return const Center(
+            child: CircularProgressIndicator(color: SeeUColors.accent));
+      }
+      return const SeeUEmptyState(
+        icon: PhosphorIconsRegular.feather,
+        title: 'Пока ничего не выложено',
+        subtitle: 'Треки в Аудиотеку и файлы в Библиотеку появятся здесь',
+      );
+    }
 
-        final totalDownloads = files.fold(0, (s, f) => s + f.downloadsCount);
-        final totalLikes = files.fold(0, (s, f) => s + f.likesCount);
-
-        return Column(
-          children: [
-            if (isMe)
-              Container(
-                margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: SeeUColors.accent.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
-                  border: Border.all(
-                      color: SeeUColors.accent.withValues(alpha: 0.18)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _FileStat(label: 'Файлов', value: '${files.length}'),
-                    _FileStat(
-                        label: 'Скачиваний',
-                        value: formatCount(totalDownloads)),
-                    _FileStat(
-                        label: 'Лайков', value: formatCount(totalLikes)),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 100),
-                itemCount: files.length,
-                itemBuilder: (ctx, index) {
-                  final f = files[index];
-                  return _ProfileFileCard(
-                    file: f,
-                    isMe: isMe,
-                    onDelete: isMe
-                        ? () async {
-                            final confirmed = await showSeeUConfirm(
-                              ctx,
-                              title: 'Удалить файл?',
-                              message: '«${f.displayTitle}» будет удалён.',
-                              confirmLabel: 'Удалить',
-                              destructive: true,
-                              icon: PhosphorIcons.trash(),
-                            );
-                            if (confirmed) {
-                              await ref
-                                  .read(libraryActionsProvider)
-                                  .deleteFile(f.id);
-                              ref.invalidate(userFilesProvider(userId));
-                            }
-                          }
-                        : null,
-                  );
-                },
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 100),
+      children: [
+        if (tracks.isNotEmpty) ...[
+          const _AuthorSectionHeader(
+            icon: PhosphorIconsFill.musicNotes,
+            gradient: [SeeUColors.plum, SeeUColors.info],
+            title: 'Аудиотека · треки',
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < tracks.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: TrackRow(
+                track: tracks[i],
+                queue: tracks,
+                index: i,
+                source: 'profile',
+                trailing: TrackRowTrailing.time,
               ),
             ),
-          ],
-        );
-      },
+          const SizedBox(height: 18),
+        ],
+        if (files.isNotEmpty) ...[
+          const _AuthorSectionHeader(
+            icon: PhosphorIconsFill.books,
+            gradient: [Color(0xFFA0562E), Color(0xFF7A3F1E)],
+            title: 'Библиотека · файлы',
+          ),
+          const SizedBox(height: 6),
+          for (final f in files)
+            _ProfileFileCard(
+              file: f,
+              isMe: isMe,
+              onDelete: isMe
+                  ? () async {
+                      final confirmed = await showSeeUConfirm(
+                        context,
+                        title: 'Удалить файл?',
+                        message: '«${f.displayTitle}» будет удалён.',
+                        confirmLabel: 'Удалить',
+                        destructive: true,
+                        icon: PhosphorIcons.trash(),
+                      );
+                      if (confirmed) {
+                        await ref
+                            .read(libraryActionsProvider)
+                            .deleteFile(f.id);
+                        ref.invalidate(userFilesProvider(userId));
+                      }
+                    }
+                  : null,
+            ),
+        ],
+      ],
     );
   }
+}
 
+/// Заголовок секции вкладки «Автор»: цветная иконка-плитка + подпись.
+class _AuthorSectionHeader extends StatelessWidget {
+  final IconData icon;
+  final List<Color> gradient;
+  final String title;
+  const _AuthorSectionHeader({
+    required this.icon,
+    required this.gradient,
+    required this.title,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: gradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 15, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: SeeUTypography.subtitle.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: c.ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProfileFileCard extends StatelessWidget {
@@ -343,29 +393,7 @@ class _ProfileFileCard extends StatelessWidget {
   }
 }
 
-class _FileStat extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FileStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(value,
-            style: SeeUTypography.mono.copyWith(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: SeeUColors.accent)),
-        const SizedBox(height: 2),
-        Text(label.toUpperCase(),
-            style: SeeUTypography.kicker.copyWith(color: c.ink3)),
-      ],
-    );
-  }
-}
+// (_FileStat удалён вместе с ProfileFilesTab — его единственным потребителем.)
 
 class ProfilePrivateContent extends StatelessWidget {
   const ProfilePrivateContent({super.key});

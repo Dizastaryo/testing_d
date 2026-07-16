@@ -13,9 +13,15 @@ import 'text_reader_screen.dart';
 ///   Flutter открывает результат через PdfReaderScreen.
 /// ExtractedTextReaderScreen и SlidePreviewScreen оставлены для обратной
 ///   совместимости — удаляются в Фазе 3.
-void openReader(BuildContext context, FileItem file) {
+/// [jumpTo] — позиция закладки (`{page,total}` для PDF, `{offset,total}` для
+/// текста). Когда задана, ридер открывается на этом месте, а не на последнем
+/// прочитанном.
+void openReader(BuildContext context, FileItem file,
+    {Map<String, dynamic>? jumpTo}) {
   final ext = file.fileExtension;
   final isBook = file.category?.slug == 'books';
+  final jumpPage = (jumpTo?['page'] as num?)?.toInt();
+  final jumpFraction = _fractionFrom(jumpTo);
   switch (ext) {
     case 'pdf':
       Navigator.of(context).push(MaterialPageRoute(
@@ -26,6 +32,7 @@ void openReader(BuildContext context, FileItem file) {
           author: file.authorName,
           coverUrl: file.coverUrl,
           isBook: isBook,
+          initialPage: jumpPage,
         ),
       ));
     case 'epub':
@@ -49,6 +56,7 @@ void openReader(BuildContext context, FileItem file) {
           author: file.authorName,
           coverUrl: file.coverUrl,
           isBook: isBook,
+          initialFraction: jumpFraction,
         ),
       ));
     case 'fb2':
@@ -65,6 +73,20 @@ void openReader(BuildContext context, FileItem file) {
         ),
       ));
   }
+}
+
+/// Доля прочитанного из позиции закладки: новый формат `pct` или старый
+/// пиксельный `offset`/`total` (offset/total = доля на момент сохранения).
+double? _fractionFrom(Map<String, dynamic>? pos) {
+  if (pos == null) return null;
+  final pct = (pos['pct'] as num?)?.toDouble();
+  if (pct != null) return pct.clamp(0.0, 1.0);
+  final offset = (pos['offset'] as num?)?.toDouble();
+  final total = (pos['total'] as num?)?.toDouble();
+  if (offset != null && total != null && total > 0) {
+    return (offset / total).clamp(0.0, 1.0);
+  }
+  return null;
 }
 
 bool canRead(FileItem file) => file.isTier1;

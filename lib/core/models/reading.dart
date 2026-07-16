@@ -43,8 +43,14 @@ class ReadingProgress {
     return 0;
   }
 
+  /// Постраничный прогресс (PDF) против пиксельного offset'а (TXT/MD). У
+  /// текстовых книг `total` — это maxScrollExtent в пикселях, поэтому «страница
+  /// X из Y» и оценка времени по нему — бессмыслица.
+  bool get isPageBased =>
+      position.containsKey('page') && position.containsKey('total');
+
   String get displayProgress {
-    if (position.containsKey('page') && position.containsKey('total')) {
+    if (isPageBased) {
       return 'Стр. ${(position['page'] as num?)?.toInt() ?? 0} / ${(position['total'] as num?)?.toInt() ?? 0}';
     }
     return '${(percentage * 100).toInt()}%';

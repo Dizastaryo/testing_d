@@ -2,12 +2,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
 import '../../core/models/collection.dart';
 import '../../core/providers/collection_provider.dart';
-import 'collection_detail_screen.dart';
+import 'library_design.dart';
 
 enum _CollectionsSort { updated, name, size }
 
@@ -33,89 +34,86 @@ class CollectionsScreen extends ConsumerWidget {
         width: 148,
         onTap: () => _showCreateSheet(context, ref),
       ),
-      body: Stack(
-        children: [
-          async.when(
-            loading: () => Padding(
-              padding: EdgeInsets.only(top: topInset),
-              child: const SeeUListSkeleton(count: 6),
-            ),
-            error: (e, _) => SeeUErrorState(
-              error: '$e',
-              onRetry: () => ref.invalidate(collectionsProvider),
-            ),
-            data: (collections) {
-              final sorted = [...collections];
-              switch (sort) {
-                case _CollectionsSort.updated:
-                  sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-                case _CollectionsSort.name:
-                  sorted.sort((a, b) =>
-                      a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-                case _CollectionsSort.size:
-                  sorted.sort((a, b) => b.filesCount.compareTo(a.filesCount));
-              }
-
-              if (sorted.isEmpty) {
-                return SeeUEmptyState(
-                  icon: PhosphorIconsRegular.bookBookmark,
-                  title: 'Нет коллекций',
-                  subtitle: 'Нажмите «Создать», чтобы добавить первую',
-                  action: SeeUStateAction(
-                    label: 'Создать',
-                    icon: PhosphorIconsBold.plus,
-                    onTap: () => _showCreateSheet(context, ref),
+      body: PaperBackground(
+        child: Stack(
+          children: [
+            async.when(
+              loading: () => Padding(
+                padding: EdgeInsets.only(top: topInset),
+                child: const SeeUListSkeleton(count: 6),
+              ),
+              error: (e, _) => SeeUErrorState(
+                error: '$e',
+                onRetry: () => ref.invalidate(collectionsProvider),
+              ),
+              data: (collections) {
+                final sorted = [...collections];
+                switch (sort) {
+                  case _CollectionsSort.updated:
+                    sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                  case _CollectionsSort.name:
+                    sorted.sort((a, b) =>
+                        a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+                  case _CollectionsSort.size:
+                    sorted.sort((a, b) => b.filesCount.compareTo(a.filesCount));
+                }
+  
+                if (sorted.isEmpty) {
+                  return SeeUEmptyState(
+                    icon: PhosphorIconsRegular.bookBookmark,
+                    title: 'Нет коллекций',
+                    subtitle: 'Нажмите «Создать», чтобы добавить первую',
+                    action: SeeUStateAction(
+                      label: 'Создать',
+                      icon: PhosphorIconsBold.plus,
+                      onTap: () => _showCreateSheet(context, ref),
+                    ),
+                  );
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(collectionsProvider),
+                  child: GridView.builder(
+                    padding: EdgeInsets.fromLTRB(16, topInset, 16, 96),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.82,
+                    ),
+                    itemCount: sorted.length,
+                    itemBuilder: (ctx, i) =>
+                        _CollectionCard(collection: sorted[i]),
                   ),
                 );
-              }
-              return RefreshIndicator(
-                onRefresh: () async => ref.invalidate(collectionsProvider),
-                child: GridView.builder(
-                  padding: EdgeInsets.fromLTRB(16, topInset, 16, 96),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.82,
-                  ),
-                  itemCount: sorted.length,
-                  itemBuilder: (ctx, i) =>
-                      _CollectionCard(collection: sorted[i]),
-                ),
-              );
-            },
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SeeUGlassBar(
-              kicker: 'Библиотека',
-              titleText: 'Коллекции',
-              leading: Tappable(
-                onTap: () => Navigator.of(context).pop(),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: Icon(PhosphorIconsRegular.arrowLeft,
-                      size: 20, color: c.ink),
-                ),
-              ),
-              actions: [
-                Tappable(
-                  onTap: () => _showSortSheet(context, ref, sort),
-                  child: SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: Icon(PhosphorIconsRegular.funnel,
-                        size: 20, color: c.ink3),
-                  ),
-                ),
-              ],
+              },
             ),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SeeUGlassBar(
+                kicker: 'Библиотека',
+                titleText: 'Коллекции',
+                leading: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: LibBackButton(size: 40),
+                ),
+                actions: [
+                  Tappable(
+                    onTap: () => _showSortSheet(context, ref, sort),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Icon(PhosphorIconsRegular.funnel,
+                          size: 20, color: c.ink3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -171,8 +169,9 @@ class CollectionsScreen extends ConsumerWidget {
       builder: (_) => _CollectionFormSheet(
         title: 'Новая коллекция',
         submitLabel: 'Создать',
-        onSubmit: (name, desc) =>
-            ref.read(collectionsProvider.notifier).create(name, desc),
+        onSubmit: (name, desc) async =>
+            (await ref.read(collectionsProvider.notifier).create(name, desc)) !=
+            null,
       ),
     );
   }
@@ -188,9 +187,9 @@ class _CollectionCard extends ConsumerWidget {
     final c = context.seeuColors;
 
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => CollectionDetailScreen(collectionId: collection.id),
-      )),
+      // Через роут, а не MaterialPageRoute: тот же путь, по которому подборка
+      // открывается из расшаренной ссылки.
+      onTap: () => context.push('/collection/${collection.id}'),
       onLongPress: () {
         HapticFeedback.mediumImpact();
         _showOptions(context, ref);
@@ -236,6 +235,17 @@ class _CollectionCard extends ConsumerWidget {
                         _filesCountLabel(collection.filesCount),
                         style:
                             SeeUTypography.caption.copyWith(color: c.ink3),
+                      ),
+                      const Spacer(),
+                      // Сразу видно, какая подборка отдана по ссылке.
+                      Icon(
+                        collection.isPublic
+                            ? PhosphorIconsRegular.linkSimple
+                            : PhosphorIconsRegular.lockSimple,
+                        size: 12,
+                        color: collection.isPublic
+                            ? SeeUColors.success
+                            : c.ink4,
                       ),
                     ],
                   ),
@@ -342,7 +352,7 @@ class _CollectionFormSheet extends StatefulWidget {
   final String submitLabel;
   final String initialName;
   final String initialDesc;
-  final Future<void> Function(String name, String desc) onSubmit;
+  final Future<bool> Function(String name, String desc) onSubmit;
   const _CollectionFormSheet({
     required this.title,
     required this.submitLabel,
@@ -372,13 +382,21 @@ class _CollectionFormSheetState extends State<_CollectionFormSheet> {
   Future<void> _submit() async {
     if (_nameCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
+    bool ok;
     try {
-      await widget.onSubmit(_nameCtrl.text.trim(), _descCtrl.text.trim());
-      if (mounted) Navigator.of(context).pop();
+      ok = await widget.onSubmit(_nameCtrl.text.trim(), _descCtrl.text.trim());
     } catch (_) {
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      ok = false;
     }
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop();
+      return;
+    }
+    // Раньше провал молча закрывал лист и коллекция не появлялась/не менялась.
+    setState(() => _saving = false);
+    showSeeUSnackBar(context, 'Не удалось сохранить коллекцию',
+        tone: SeeUTone.danger);
   }
 
   @override

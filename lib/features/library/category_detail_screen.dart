@@ -8,7 +8,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../core/design/design.dart';
 import '../../core/models/file_item.dart';
 import '../../core/providers/library_provider.dart';
-import 'widgets/file_cover_widget.dart';
+import 'library_design.dart';
 import '../../core/utils/format.dart';
 
 /// «Полка» одной категории медиатеки: крупная обложка-заголовок с иконкой
@@ -34,10 +34,19 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
   String _sort = 'date';
   final _scrollCtrl = ScrollController();
 
-  // Category resolved from [slug] when not supplied via extra.
-  FileCategory? _resolvedCategory;
-
-  FileCategory? get _cat => widget.category ?? _resolvedCategory;
+  /// Категория: из extra или по slug из справочника. Getter вместо поля,
+  /// которое раньше присваивалось прямо в build() (мутация State во время
+  /// сборки — хрупко и могло рассинхрониться при повторных build).
+  FileCategory? get _cat {
+    final w = widget.category;
+    if (w != null) return w;
+    final cats = ref.read(fileCategoriesProvider).valueOrNull;
+    if (cats == null) return null;
+    for (final x in cats) {
+      if (x.slug == widget.slug) return x;
+    }
+    return null;
+  }
 
   LibraryListParams get _params =>
       LibraryListParams(categoryId: _cat?.id ?? '', sort: _sort);
@@ -88,7 +97,6 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
           }
         }
         if (found == null) return _buildNotFound();
-        _resolvedCategory = found;
         return _buildContent(found);
       },
       loading: () => _buildResolving(),
@@ -160,7 +168,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: RefreshIndicator(
+      body: PaperBackground(
+        child: RefreshIndicator(
         color: accent,
         onRefresh: () async {
           await ref.read(libraryListProvider(_params).notifier).load(reset: true);
@@ -168,7 +177,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
         child: CustomScrollView(
           controller: _scrollCtrl,
           slivers: [
-            SliverToBoxAdapter(child: _buildHeader(c, accent, cat)),
+            SliverToBoxAdapter(
+                child: _buildHeader(c, accent, cat, listState.items.length)),
             SliverToBoxAdapter(child: _buildSortChips(c, accent)),
             const SliverToBoxAdapter(child: SizedBox(height: 4)),
 
@@ -182,15 +192,19 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                     : _buildEmpty(c, accent, cat),
               )
             else
+              // Полка: обложки-корешки в три колонки, как книги на стеллаже.
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                sliver: SliverList(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                sliver: SliverGrid(
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 18,
+                    childAspectRatio: 0.58,
+                  ),
                   delegate: SliverChildBuilderDelegate(
-                    (_, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _CategoryFileCard(
-                          file: listState.items[i], accent: accent),
-                    ),
+                    (_, i) => _CategoryShelfItem(file: listState.items[i]),
                     childCount: listState.items.length,
                   ),
                 ),
@@ -231,96 +245,112 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
             const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
           ],
         ),
+        ),
       ),
     );
   }
 
   // ── Header ──────────────────────────────────────────────────────────────
-  Widget _buildHeader(SeeUThemeColors c, Color accent, FileCategory cat) {
-    final count = cat.filesCount;
-    return Container(
+  // Полка категории: единая стрелка «Назад», крупная плашка-иконка в цвете
+  // категории, серифный заголовок и строка «N материалов · сортировка».
+  Widget _buildHeader(
+      SeeUThemeColors c, Color accent, FileCategory cat, int loadedCount) {
+    // Категория, пришедшая с чипа файла, не несёт files_count (0) — берём
+    // число из полного справочника категорий, иначе шапка показывала «Пока
+    // пусто» над непустой полкой.
+    var count = cat.filesCount;
+    if (count <= 0) {
+      final full = ref
+          .watch(fileCategoriesProvider)
+          .valueOrNull
+          ?.where((x) => x.id == cat.id || x.slug == cat.slug)
+          .firstOrNull;
+      if (full != null) count = full.filesCount;
+    }
+    // Справочник недоступен, но файлы уже загружены — честнее промолчать,
+    // чем писать «Пока пусто».
+    final showEmptyLabel = count <= 0 && loadedCount == 0;
+    return Padding(
       padding: EdgeInsets.fromLTRB(
-          20, MediaQuery.of(context).padding.top + 8, 20, 20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            accent.withValues(alpha: c.isDark ? 0.22 : 0.14),
-            accent.withValues(alpha: 0.0),
-          ],
-        ),
-      ),
+          20, MediaQuery.of(context).padding.top + 4, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Back button
-          Row(
-            children: [
-              SeeUGlassCircleButton(
-                icon: Icon(PhosphorIconsBold.arrowLeft, size: 18, color: c.ink),
-                tint: accent,
-                onTap: () => context.pop(),
-              ),
-            ],
-          ),
+          const LibBackButton(),
           const SizedBox(height: 18),
-          // Big icon badge in category color
           Container(
-            width: 72,
-            height: 72,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  accent.withValues(alpha: 0.95),
-                  accent.withValues(alpha: 0.7),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.35),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              color: accent.withValues(alpha: c.isDark ? 0.2 : 0.14),
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(cat.iconData, size: 38, color: Colors.white),
+            child: Icon(cat.iconData, size: 32, color: accent),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'КАТЕГОРИЯ',
-            style: SeeUTypography.kicker.copyWith(color: c.ink3),
-          ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 14),
           Text(
             cat.name,
-            style: SeeUTypography.displayL.copyWith(color: c.ink),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            count > 0
-                ? '$count ${pluralMaterials(count)}'
-                : 'Пока пусто',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: accent,
+            style: SeeUTypography.displayS.copyWith(
+              fontSize: 38,
+              height: 1,
+              letterSpacing: -1,
+              fontWeight: FontWeight.w700,
+              color: c.ink,
             ),
           ),
           if (cat.description != null && cat.description!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
               cat.description!,
-              style: TextStyle(fontSize: 14, height: 1.45, color: c.ink2),
+              style: TextStyle(fontSize: 14, height: 1.5, color: c.ink2),
             ),
           ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              if (count > 0 || showEmptyLabel) ...[
+                Text(
+                  count > 0
+                      ? '$count ${pluralMaterials(count)}'
+                      : 'Пока пусто',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: LibColors.kicker(context),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.ink4,
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Icon(PhosphorIcons.arrowsDownUp(), size: 13, color: c.ink3),
+              const SizedBox(width: 5),
+              Text(
+                _sortLabel(_sort),
+                style: TextStyle(fontSize: 12, color: c.ink3),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
+
+  static String _sortLabel(String sort) => switch (sort) {
+        'likes' => 'Популярные',
+        'views' => 'Просматриваемые',
+        'rating' => 'По оценке',
+        'downloads' => 'Скачиваемые',
+        'title' => 'А–Я',
+        _ => 'Новые',
+      };
 
   // ── Sort chips ──────────────────────────────────────────────────────────
   Widget _buildSortChips(SeeUThemeColors c, Color accent) {
@@ -417,123 +447,47 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
   }
 }
 
-// ─── Compact file card (category color accent) ──────────────────────────────
-class _CategoryFileCard extends StatelessWidget {
+/// Книга на полке категории: корешок + короткое название под ним.
+class _CategoryShelfItem extends StatelessWidget {
   final FileItem file;
-  final Color accent;
-  const _CategoryFileCard({required this.file, required this.accent});
+  const _CategoryShelfItem({required this.file});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final c = context.seeuColors;
-    return GestureDetector(
+    return Tappable.scaled(
       onTap: () {
         HapticFeedback.selectionClick();
         context.push('/files/${file.id}');
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          border: Border.all(color: c.line.withValues(alpha: 0.5)),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (_, box) => BookSpine(
+                file: file,
+                width: box.maxWidth,
+                height: box.maxHeight,
+                radius: 10,
+              ),
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Hero(
-                tag: 'file_cover_${file.id}',
-                child: FileCoverWidget(
-                    file: file, width: 54, height: 74, borderRadius: 10),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.displayTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          height: 1.3),
-                    ),
-                    if (file.authorName.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        file.authorName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: c.ink3),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: colorForFileType(file.fileExtension)
-                                .withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            file.formatLabel,
-                            style: TextStyle(
-                              fontFamily: AppFonts.I.sans,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: colorForFileType(file.fileExtension),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          file.isLiked
-                              ? PhosphorIconsFill.heart
-                              : PhosphorIconsRegular.heart,
-                          size: 13,
-                          color: file.isLiked ? SeeUColors.like : c.ink4,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${file.likesCount}',
-                          style: TextStyle(
-                              fontSize: 11.5,
-                              color: c.ink3,
-                              fontWeight: FontWeight.w500),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(PhosphorIconsRegular.eye, size: 13, color: c.ink4),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${file.viewsCount}',
-                          style: TextStyle(
-                              fontSize: 11.5,
-                              color: c.ink3,
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
-        ),
+          const SizedBox(height: 6),
+          Text(
+            file.displayTitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+              color: c.ink,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+

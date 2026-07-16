@@ -19,9 +19,21 @@ class NfcBandService {
     final completer = Completer<String?>();
     await NfcManager.instance.startSession(
       onDiscovered: (NfcTag tag) async {
-        final hash = _extractHash(tag);
-        await NfcManager.instance.stopSession();
-        if (!completer.isCompleted) completer.complete(hash);
+        // try/finally: раньше исключение в _extractHash (парсинг NDEF)
+        // не давало вызвать stopSession и completer.complete — сессия
+        // висела открытой, а caller'ский await зависал навсегда (кнопка
+        // «Сканировать» в вечной загрузке).
+        String? hash;
+        try {
+          hash = _extractHash(tag);
+        } catch (_) {
+          hash = null;
+        } finally {
+          try {
+            await NfcManager.instance.stopSession();
+          } catch (_) {}
+          if (!completer.isCompleted) completer.complete(hash);
+        }
       },
       // Without this, a cancelled/timed-out session (e.g. user dismisses the
       // iOS NFC sheet) never calls onDiscovered, so the completer — and the

@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
@@ -85,21 +84,19 @@ class SparkSendersSheet extends ConsumerWidget {
                   itemCount: senders.length,
                   itemBuilder: (ctx, i) {
                     final s = senders[i];
+                    // Отправитель виден по КАРТОЧКЕ, не по профилю — перехода в
+                    // профиль нет (инвариант архитектуры).
                     return ListTile(
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        context.push('/profile/${s.username}');
-                      },
                       leading: CircleAvatar(
                         radius: 22,
                         backgroundColor: c.surface2,
-                        backgroundImage: s.avatarUrl.isNotEmpty
-                            ? CachedNetworkImageProvider(s.avatarUrl)
+                        backgroundImage: s.photoUrl.isNotEmpty
+                            ? CachedNetworkImageProvider(s.photoUrl)
                             : null,
-                        child: s.avatarUrl.isEmpty
+                        child: s.photoUrl.isEmpty
                             ? Text(
-                                s.username.isNotEmpty
-                                    ? s.username[0].toUpperCase()
+                                s.displayName.isNotEmpty
+                                    ? s.displayName[0].toUpperCase()
                                     : '?',
                                 style: TextStyle(
                                     color: c.ink3,
@@ -108,13 +105,17 @@ class SparkSendersSheet extends ConsumerWidget {
                             : null,
                       ),
                       title: Text(
-                        s.fullName.isNotEmpty ? s.fullName : s.username,
+                        s.displayName,
                         style: SeeUTypography.body.copyWith(
                             color: c.ink, fontWeight: FontWeight.w600),
                       ),
-                      subtitle: Text('@${s.username}',
-                          style:
-                              SeeUTypography.caption.copyWith(color: c.ink3)),
+                      subtitle: s.text.isNotEmpty
+                          ? Text(s.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: SeeUTypography.caption
+                                  .copyWith(color: c.ink3))
+                          : null,
                     );
                   },
                 );

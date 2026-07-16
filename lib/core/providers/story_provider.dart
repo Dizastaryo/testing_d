@@ -22,11 +22,15 @@ class StoryState {
     List<StoryGroup>? storyGroups,
     bool? isLoading,
     String? error,
+    bool clearError = false,
   }) {
+    // Как в FeedState: без явного clearError любое copyWith(storyGroups: …)
+    // молча стирало error — фоновые апдейты (например, live-счётчик
+    // просмотров) гасили сообщение об ошибке загрузки.
     return StoryState(
       storyGroups: storyGroups ?? this.storyGroups,
       isLoading: isLoading ?? this.isLoading,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -87,8 +91,8 @@ class StoryNotifier extends StateNotifier<StoryState> {
   }
 
   /// Server pushed an updated view-count for one of our stories. Replace
-  /// the field in-place — viewer-state (isSeen, my_reaction) is per-viewer
-  /// and stays untouched.
+  /// the field in-place — viewer-state (isSeen) is per-viewer and stays
+  /// untouched.
   void applyViewsCountUpdate(String storyId, int viewsCount) {
     final groups = state.storyGroups.map((g) {
       final stories = g.stories.map((s) {
@@ -105,7 +109,7 @@ class StoryNotifier extends StateNotifier<StoryState> {
   }
 
   Future<void> loadStories() async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       final resp = await _api.get(ApiEndpoints.storyFeed);
       final data = resp.data;
@@ -122,7 +126,7 @@ class StoryNotifier extends StateNotifier<StoryState> {
 
   /// Optimistically marks [storyId] as seen. On network failure, rolls back
   /// to the pre-mutation state — mirrors the rollback pattern in
-  /// [toggleReaction] below (save original before mutating, restore in catch).
+  /// [toggleLike] below (save original before mutating, restore in catch).
   Future<void> markSeen(String storyId) async {
     Story? original;
     final updatedGroups = state.storyGroups.map((group) {
@@ -159,66 +163,8 @@ class StoryNotifier extends StateNotifier<StoryState> {
     }
   }
 
-  /// Optimistic emoji-reaction toggle on a story. Same emoji = unreact
-  /// (DELETE), different emoji = upsert (POST). Mirrors post-reactions.
-  Future<void> toggleReaction(String storyId, String emoji) async {
-    Story? original;
-    final newGroups = state.storyGroups.map((g) {
-      final stories = g.stories.map((s) {
-        if (s.id != storyId) return s;
-        original = s;
-        final isSame = s.myReaction == emoji;
-        final newCounts = Map<String, int>.from(s.reactions);
-        if (s.myReaction.isNotEmpty) {
-          newCounts[s.myReaction] = (newCounts[s.myReaction] ?? 1) - 1;
-          if ((newCounts[s.myReaction] ?? 0) <= 0) {
-            newCounts.remove(s.myReaction);
-          }
-        }
-        final newMine = isSame ? '' : emoji;
-        if (newMine.isNotEmpty) {
-          newCounts[newMine] = (newCounts[newMine] ?? 0) + 1;
-        }
-        return s.copyWith(reactions: newCounts, myReaction: newMine);
-      }).toList();
-      return StoryGroup(
-        author: g.author,
-        stories: stories,
-        allSeen: g.allSeen,
-      );
-    }).toList();
-
-    if (original == null) return;
-    state = state.copyWith(storyGroups: newGroups);
-
-    final isSame = original!.myReaction == emoji;
-    try {
-      if (isSame) {
-        await _api.delete(ApiEndpoints.reactStory(storyId));
-      } else {
-        await _api.post(
-          ApiEndpoints.reactStory(storyId),
-          data: {'emoji': emoji},
-        );
-      }
-    } catch (_) {
-      // Rollback on failure — preserve previous state.
-      final rolled = state.storyGroups.map((g) {
-        final stories = g.stories
-            .map((s) => s.id == storyId ? original! : s)
-            .toList();
-        return StoryGroup(
-          author: g.author,
-          stories: stories,
-          allSeen: g.allSeen,
-        );
-      }).toList();
-      state = state.copyWith(storyGroups: rolled);
-    }
-  }
-
-  /// Optimistic like/unlike toggle on a story — mirrors [toggleReaction]'s
-  /// optimistic-then-reconcile pattern (and FeedNotifier.toggleLike for posts).
+  /// Optimistic like/unlike toggle on a story — optimistic-then-reconcile
+  /// pattern (mirrors FeedNotifier.toggleLike for posts).
   /// The server hydrates `is_liked` on every story fetch now, so this just
   /// keeps the in-memory state in sync with what the backend already
   /// persists — no more purely-local `_likedStoryIds` set that reset every

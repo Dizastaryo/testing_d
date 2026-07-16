@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/post.dart';
+import '../../core/analytics/interest_tracker.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/providers/feed_provider.dart';
 import '../../widgets/report_sheet.dart';
 import '../../widgets/share_sheet.dart';
 import '../feed/widgets/post_card.dart';
@@ -97,8 +99,25 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                 title: Text('Не показывать', style: SeeUTypography.body),
                 onTap: () {
                   Navigator.of(ctx).pop();
+                  // Раньше пункт только показывал «Пост скрыт», ничего не
+                  // делая. Теперь — как «не интересно» в ленте: negative
+                  // interest-сигнал + пометка просмотренным + убрать из
+                  // ленты + закрыть экран.
+                  ref
+                      .read(apiClientProvider)
+                      .post(ApiEndpoints.viewPost(post.id))
+                      .ignore();
+                  ref.read(interestTrackerProvider).track(
+                        eventType: 'not_interested',
+                        entityType: 'post',
+                        entityId: post.id,
+                        authorId: post.author.id,
+                        source: 'post_detail_menu',
+                      );
+                  ref.read(feedProvider.notifier).removePost(post.id);
                   showSeeUSnackBar(context, 'Пост скрыт',
                       icon: PhosphorIcons.eyeSlash());
+                  Navigator.of(context).maybePop();
                 },
               ),
             ],

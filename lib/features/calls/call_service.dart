@@ -410,6 +410,14 @@ class CallService {
     if (payload is! Map) return;
     final p = Map<String, dynamic>.from(payload);
     final from = p['from_user_id']?.toString() ?? '';
+    // Сигналинг активного 1-на-1 звонка принимаем только от нашего peer'а:
+    // чужой call.offer/ice во время разговора применял бы чужой SDP к
+    // текущему RTCPeerConnection. call.invite обрабатывается отдельно
+    // (busy-decline для третьих лиц внутри _handleIncomingInvite).
+    if (type != 'call.invite') {
+      final s = session.value;
+      if (s != null && from.isNotEmpty && from != s.peerId) return;
+    }
     switch (type) {
       case 'call.invite':
         _handleIncomingInvite(from, p);
@@ -598,6 +606,14 @@ class CallService {
       return;
     }
     if (session.value != null && session.value!.status != CallStatus.ended) {
+      // Дубликат ТОГО ЖЕ invite (реинъекция pending-probe после reconnect
+      // может вернуть звонок, который уже пришёл живым событием) — молча
+      // игнорируем, иначе мы бы отклонили абонента, чей звонок сейчас звонит.
+      final s = session.value!;
+      if (s.peerId == from && s.status == CallStatus.incomingRinging) {
+        appLog('[CallService] duplicate invite from ringing peer — ignored');
+        return;
+      }
       appLog('[CallService] busy (1-on-1 active) — declining incoming from $from');
       _send('call.decline', {'to_user_id': from});
       return;

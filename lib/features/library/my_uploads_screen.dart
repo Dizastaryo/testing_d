@@ -12,6 +12,7 @@ import '../../core/utils/format.dart';
 import 'edit_file_sheet.dart';
 import 'readers/open_reader.dart';
 import 'widgets/file_cover_widget.dart';
+import 'library_design.dart';
 
 enum _UploadsSort { newest, downloads, views, rating, likes }
 
@@ -54,48 +55,49 @@ class MyUploadsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: c.bg,
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: async.when(
-              loading: () => const Center(
-                  child: CircularProgressIndicator(color: SeeUColors.accent)),
-              error: (e, _) => SeeUErrorState(
-                error: e.toString(),
-                onRetry: () => ref.invalidate(userFilesProvider(userId)),
-              ),
-              data: (files) {
-                if (files.isEmpty) {
-                  return const SeeUEmptyState(
-                    icon: PhosphorIconsRegular.uploadSimple,
-                    title: 'Нет загруженных файлов',
-                    subtitle: 'Загрузите файл через библиотеку',
-                  );
-                }
-                return _buildContent(context, ref, files, sort, topInset);
-              },
-            ),
-          ),
-          Align(
-            alignment: Alignment.topCenter,
-            child: SeeUGlassBar(
-              kicker: 'БИБЛИОТЕКА',
-              titleText: 'Мои загрузки',
-              leading: SeeUGlassCircleButton(
-                icon: PhosphorIcon(PhosphorIconsRegular.arrowLeft,
-                    color: c.ink, size: 20),
-                onTap: () => Navigator.of(context).pop(),
-              ),
-              actions: [
-                SeeUGlassCircleButton(
-                  icon: PhosphorIcon(PhosphorIconsRegular.funnel,
-                      color: c.ink, size: 20),
-                  onTap: () => _showSortSheet(context, ref, sort),
+      body: PaperBackground(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: async.when(
+                loading: () => const Center(
+                    child: CircularProgressIndicator(color: SeeUColors.accent)),
+                error: (e, _) => SeeUErrorState(
+                  error: e.toString(),
+                  onRetry: () => ref.invalidate(userFilesProvider(userId)),
                 ),
-              ],
+                data: (files) {
+                  if (files.isEmpty) {
+                    return const SeeUEmptyState(
+                      icon: PhosphorIconsRegular.uploadSimple,
+                      title: 'Нет загруженных файлов',
+                      subtitle: 'Загрузите файл через библиотеку',
+                    );
+                  }
+                  return _buildContent(context, ref, files, sort, topInset);
+                },
+              ),
             ),
-          ),
-        ],
+            Align(
+              alignment: Alignment.topCenter,
+              child: SeeUGlassBar(
+                kicker: 'БИБЛИОТЕКА',
+                titleText: 'Мои загрузки',
+                leading: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: LibBackButton(size: 40),
+                ),
+                actions: [
+                  SeeUGlassCircleButton(
+                    icon: PhosphorIcon(PhosphorIconsRegular.funnel,
+                        color: c.ink, size: 20),
+                    onTap: () => _showSortSheet(context, ref, sort),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -498,7 +500,18 @@ class _UploadCard extends ConsumerWidget {
       icon: PhosphorIconsRegular.trash,
     );
     if (confirmed) {
-      await ref.read(libraryActionsProvider).deleteFile(file.id);
+      try {
+        await ref.read(libraryActionsProvider).deleteFile(file.id);
+      } catch (_) {
+        // Ошибку удаления раньше проглатывали — Dismissible «удалял» строку
+        // визуально, хотя на сервере файл оставался. Теперь откатываем и
+        // сообщаем.
+        if (context.mounted) {
+          showSeeUSnackBar(context, 'Не удалось удалить файл',
+              tone: SeeUTone.danger);
+        }
+        return false;
+      }
       onDeleted();
       return true;
     }

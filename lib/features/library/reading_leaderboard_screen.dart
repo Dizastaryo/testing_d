@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/library_provider.dart';
+import 'library_design.dart';
 
 final _leaderboardMetricProvider = StateProvider<String>((ref) => 'books');
 
@@ -34,53 +35,59 @@ class ReadingLeaderboardScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(PhosphorIcons.caretLeft(), size: 22, color: c.ink),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          'Читатели',
-          style: SeeUTypography.displayS.copyWith(color: c.ink),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: [
-                _MetricChip(
-                  label: 'По книгам',
-                  value: 'books',
-                  icon: PhosphorIconsRegular.books,
-                  selected: metric == 'books',
-                  onTap: () => ref.read(_leaderboardMetricProvider.notifier).state = 'books',
+      body: PaperBackground(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const LibBackBar(kicker: 'БИБЛИОТЕКА', title: 'Читатели'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Row(
+                  children: [
+                    _MetricChip(
+                      label: 'По книгам',
+                      value: 'books',
+                      icon: PhosphorIconsRegular.books,
+                      selected: metric == 'books',
+                      onTap: () => ref
+                          .read(_leaderboardMetricProvider.notifier)
+                          .state = 'books',
+                    ),
+                    const SizedBox(width: 8),
+                    _MetricChip(
+                      label: 'По страницам',
+                      value: 'pages',
+                      icon: PhosphorIconsRegular.fileText,
+                      selected: metric == 'pages',
+                      onTap: () => ref
+                          .read(_leaderboardMetricProvider.notifier)
+                          .state = 'pages',
+                    ),
+                    const SizedBox(width: 8),
+                    _MetricChip(
+                      label: 'По серии',
+                      value: 'streak',
+                      icon: PhosphorIconsRegular.flame,
+                      selected: metric == 'streak',
+                      onTap: () => ref
+                          .read(_leaderboardMetricProvider.notifier)
+                          .state = 'streak',
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                _MetricChip(
-                  label: 'По страницам',
-                  value: 'pages',
-                  icon: PhosphorIconsRegular.fileText,
-                  selected: metric == 'pages',
-                  onTap: () => ref.read(_leaderboardMetricProvider.notifier).state = 'pages',
-                ),
-                const SizedBox(width: 8),
-                _MetricChip(
-                  label: 'По серии',
-                  value: 'streak',
-                  icon: PhosphorIconsRegular.flame,
-                  selected: metric == 'streak',
-                  onTap: () => ref.read(_leaderboardMetricProvider.notifier).state = 'streak',
-                ),
-              ],
-            ),
+              ),
+              Expanded(child: _buildList(context, ref, c, async, metric)),
+            ],
           ),
         ),
       ),
-      body: async.when(
+    );
+  }
+
+  Widget _buildList(BuildContext context, WidgetRef ref, SeeUThemeColors c,
+      AsyncValue<List<Map<String, dynamic>>> async, String metric) {
+    return async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
           child: Padding(
@@ -127,7 +134,6 @@ class ReadingLeaderboardScreen extends ConsumerWidget {
             ),
           );
         },
-      ),
     );
   }
 }

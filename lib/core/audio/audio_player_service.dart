@@ -7,6 +7,8 @@ import 'package:just_audio/just_audio.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../models/audio_track.dart';
+import '../providers/audio_provider.dart';
+import '../../features/music/audio_design.dart';
 import '../providers/realtime_provider.dart';
 import 'audio_handler.dart';
 
@@ -17,8 +19,6 @@ class AudioPlayerService {
   AudioPlayerService() : _handler = audioHandlerInstance;
 
   final SeeUAudioHandler _handler;
-
-  AudioPlayer get raw => _handler.raw;
 
   AudioTrack? _current;
   AudioTrack? get current => _current;
@@ -56,6 +56,8 @@ class AudioPlayerService {
 
   Future<void> addToQueue(AudioTrack track) => _handler.addToQueue(track);
   Future<void> reorder(List<String> targetIds) => _handler.reorder(targetIds);
+  Future<void> removeAt(int index) => _handler.removeAt(index);
+  Future<void> removeRange(int from) => _handler.removeRange(from);
   Future<void> seekToIndex(int index) => _handler.seekToIndex(index);
   Future<void> seekToNext() => _handler.seekToNext();
   Future<void> seekToPrevious() => _handler.seekToPrevious();
@@ -191,6 +193,7 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     }));
     _subs.add(_service.positionStream.listen((p) {
       state = state.copyWith(position: p ?? Duration.zero);
+      _maybeSavePosition();
     }));
     _subs.add(_service.durationStream.listen((d) {
       state = state.copyWith(duration: d);
@@ -207,8 +210,61 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   final List<StreamSubscription> _subs = [];
   Timer? _stoppedTimer;
 
+  /// Когда в последний раз отправили позицию на сервер.
+  DateTime? _lastPositionSave;
+
+  /// Позиция сохраняется только у того, что имеет смысл продолжать: у книги и
+  /// подкаста. Песню никто не «дослушивает с 1:07», а трёхсекундный мем — тем
+  /// более. Пишем раз в 10 секунд, чтобы не долбить сервер на каждый тик.
+  void _maybeSavePosition() {
+    final t = state.track;
+    if (t == null || !state.playing) return;
+    if (!modeOf(t).resumable) return;
+    if (t.durationSeconds <= 0) return;
+
+    final now = DateTime.now();
+    if (_lastPositionSave != null &&
+        now.difference(_lastPositionSave!) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastPositionSave = now;
+    _flushPosition(t);
+  }
+
+  void _flushPosition(AudioTrack t) {
+    final pos = state.position.inSeconds;
+    final dur = state.duration?.inSeconds ?? t.durationSeconds;
+    if (dur <= 0) return;
+
+    // Дослушал почти до конца — помечаем завершённым, иначе трек навсегда
+    // застрянет в «Продолжить» с надписью «осталось меньше минуты».
+    final completed = dur - pos <= 15;
+
+    saveAudioPosition(
+      _ref.read(apiClientProvider),
+      trackId: t.id,
+      positionSeconds: pos,
+      durationSeconds: dur,
+      completed: completed,
+    );
+  }
+
+  /// Продолжить с того места, где остановился. Зовётся при запуске книги или
+  /// подкаста — песня всегда начинается сначала.
+  Future<void> _restorePosition(AudioTrack track) async {
+    if (!modeOf(track).resumable) return;
+    final saved = await fetchAudioPosition(_ref.read(apiClientProvider), track.id);
+    if (saved <= 5) return;
+    // Трек могли перезалить короче — не прыгаем за конец.
+    if (track.durationSeconds > 0 && saved >= track.durationSeconds - 10) return;
+    await seek(Duration(seconds: saved));
+  }
+
   @override
   void dispose() {
+    // Уходим — записываем, где остановились, иначе последние минуты потеряются.
+    final t = state.track;
+    if (t != null && modeOf(t).resumable) _flushPosition(t);
     _stoppedTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
@@ -258,6 +314,10 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     // explicitly here. _onIndexChanged handles subsequent auto-advances; the
     // dedupe in _announce prevents a double record if the stream does emit.
     _announce(track, source);
+
+    // Книгу и подкаст продолжаем с того места, где остановились.
+    _lastPositionSave = null;
+    await _restorePosition(track);
   }
 
   /// Append [track] to the live queue (and original order) without interrupting.
@@ -301,6 +361,40 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
       originalQueue: state.shuffle ? state.originalQueue : list,
     );
     await _service.reorder(list.map((t) => t.id).toList());
+  }
+
+  /// Убрать трек из очереди. Играющий убрать нельзя — для этого есть «дальше»
+  /// и закрытие плеера.
+  Future<void> removeFromQueue(int index) async {
+    if (index <= state.queueIndex || index >= state.queue.length) return;
+    final removedId = state.queue[index].id;
+    await _service.removeAt(index);
+    final list = List<AudioTrack>.from(state.queue)..removeAt(index);
+    state = state.copyWith(
+      queue: list,
+      // Убранный трек надо выкинуть и из originalQueue, иначе при выключении
+      // shuffle он «воскреснет» — а в источнике плеера его уже нет, и очередь
+      // рассинхронится (фантомный трек, кривой индекс, битый now-playing).
+      originalQueue: state.shuffle
+          ? state.originalQueue.where((t) => t.id != removedId).toList()
+          : list,
+    );
+  }
+
+  /// «Очистить» в очереди: отрезаем всё, что после текущего трека. Сам трек
+  /// продолжает играть — обрывать звук на кнопке «очистить» было бы грубо.
+  Future<void> clearUpcoming() async {
+    if (state.queue.length <= state.queueIndex + 1) return;
+    await _service.removeRange(state.queueIndex + 1);
+    final list = state.queue.sublist(0, state.queueIndex + 1);
+    state = state.copyWith(
+      queue: list,
+      // Как и в removeFromQueue: подрезаем originalQueue до реально оставшихся
+      // треков, иначе выключение shuffle вернёт отрезанные (их нет в источнике).
+      originalQueue: state.shuffle
+          ? state.originalQueue.where((t) => list.any((k) => k.id == t.id)).toList()
+          : list,
+    );
   }
 
   Future<void> next() async {
@@ -399,6 +493,13 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
     final t = q[index];
     state = state.copyWith(track: t, queueIndex: index);
     _announce(t, state.queueSource);
+    // Автопереход к следующей книге/подкасту тоже должен продолжаться с
+    // сохранённого места — раньше _restorePosition звался только для первого
+    // тапнутого трека, и все последующие resumable начинались с 0:00.
+    if (modeOf(t).resumable) {
+      _lastPositionSave = null;
+      _restorePosition(t);
+    }
   }
 
   /// Record the play (deduped) + broadcast now-playing for a track change.
@@ -427,10 +528,21 @@ class MiniPlayerNotifier extends StateNotifier<MiniPlayerState> {
   }
 
   Future<void> toggle() => _service.togglePlayPause();
+
+  /// Просто остановить, не закрывая плеер — таймер сна и системная пауза.
+  Future<void> pause() async {
+    if (state.playing) await _service.togglePlayPause();
+  }
+
   Future<void> seek(Duration p) => _service.seek(p);
 
   Future<void> close() async {
     _stoppedTimer?.cancel();
+    // Осознанное закрытие книги/подкаста должно сохранить последнюю позицию —
+    // позиции пишутся раз в 10с, и без этого потеряется до ~10с, а у самого
+    // конца — не проставится «дослушано». Симметрично dispose().
+    final t = state.track;
+    if (t != null && modeOf(t).resumable) _flushPosition(t);
     // Reset the play-record + now-playing dedupe so re-playing the same track
     // after a Стоп records the play and re-announces presence again.
     _lastRecordedTrackId = null;
@@ -502,8 +614,25 @@ class NowPlayingFriendsNotifier
   static const _ttl = Duration(seconds: 90);
   final Ref _ref;
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _sub;
+  Timer? _pruneTimer;
 
   NowPlayingFriendsNotifier(this._ref) : super(const {}) {
+    // Прунинг по TTL раньше жил только внутри listener'а — если друг замолчал
+    // и его `music.stopped` потерялся, а новых realtime-событий нет, его
+    // карточка «слушает сейчас» висела вечно. Периодический таймер её убирает.
+    _pruneTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final cutoff = DateTime.now().subtract(_ttl);
+      final filtered = <String, NowPlayingInfo>{};
+      var changed = false;
+      state.forEach((k, v) {
+        if (v.since.isAfter(cutoff)) {
+          filtered[k] = v;
+        } else {
+          changed = true;
+        }
+      });
+      if (changed) state = filtered;
+    });
     _sub = _ref.listen<AsyncValue<RealtimeEvent>>(
       realtimeEventsProvider,
       (_, next) {
@@ -547,6 +676,7 @@ class NowPlayingFriendsNotifier
 
   @override
   void dispose() {
+    _pruneTimer?.cancel();
     _sub?.close();
     super.dispose();
   }

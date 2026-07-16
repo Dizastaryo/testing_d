@@ -19,45 +19,52 @@ class UserProfileState {
   final User? user;
   final List<Post> posts;
   final List<Post> savedPosts;
-  final List<Post> taggedPosts;
   final List<Highlight> highlights;
   final bool isLoading;
   final String? error;
   /// true = приватный профиль, viewer не подписан → бэк отдал 403 на /posts.
   /// Header показывается, но posts-grid заменяется на «Закрытый профиль».
   final bool isLocked;
+  /// Состояние загрузки «Сохранённого» — чтобы отличать «идёт загрузка» и
+  /// «ошибка» от честного «пусто» (раньше сбой сети маскировался пустым
+  /// списком «Пока ничего не сохранено»).
+  final bool savedPostsLoading;
+  final bool savedPostsError;
 
   const UserProfileState({
     this.user,
     this.posts = const [],
     this.savedPosts = const [],
-    this.taggedPosts = const [],
     this.highlights = const [],
     this.isLoading = false,
     this.error,
     this.isLocked = false,
+    this.savedPostsLoading = false,
+    this.savedPostsError = false,
   });
 
   UserProfileState copyWith({
     User? user,
     List<Post>? posts,
     List<Post>? savedPosts,
-    List<Post>? taggedPosts,
     List<Highlight>? highlights,
     bool? isLoading,
     String? error,
     bool clearError = false,
     bool? isLocked,
+    bool? savedPostsLoading,
+    bool? savedPostsError,
   }) {
     return UserProfileState(
       user: user ?? this.user,
       posts: posts ?? this.posts,
       savedPosts: savedPosts ?? this.savedPosts,
-      taggedPosts: taggedPosts ?? this.taggedPosts,
       highlights: highlights ?? this.highlights,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
       isLocked: isLocked ?? this.isLocked,
+      savedPostsLoading: savedPostsLoading ?? this.savedPostsLoading,
+      savedPostsError: savedPostsError ?? this.savedPostsError,
     );
   }
 }
@@ -172,19 +179,24 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
   }
 
   Future<void> loadSavedPosts() async {
+    if (mounted) {
+      state = state.copyWith(savedPostsLoading: true, savedPostsError: false);
+    }
     try {
       final resp = await _api.get(ApiEndpoints.userSavedPosts(username));
       final posts = _extractList(resp.data)
           .map((j) => Post.fromJson(j as Map<String, dynamic>))
           .toList();
-      if (mounted) state = state.copyWith(savedPosts: posts);
+      if (mounted) {
+        state = state.copyWith(
+            savedPosts: posts, savedPostsLoading: false, savedPostsError: false);
+      }
     } catch (_) {
-      if (mounted) state = state.copyWith(savedPosts: []);
+      // Ошибку показываем как ошибку, а не как «пусто».
+      if (mounted) {
+        state = state.copyWith(savedPostsLoading: false, savedPostsError: true);
+      }
     }
-  }
-
-  Future<void> loadTaggedPosts() async {
-    state = state.copyWith(taggedPosts: []);
   }
 
   /// Returns a friendly Russian error string on failure, null on success.
@@ -237,21 +249,48 @@ class UserProfileNotifier extends StateNotifier<UserProfileState> {
             : null;
         if (status == 'requested' && mounted) {
           // Приватный → запрос отправлен. Откатываем optimistic isFollowing
-          // и счётчик; вместо этого выставляем pending=true.
+          // и счётчик, ставим pending=true — поверх ТЕКУЩЕГО state.user,
+          // чтобы не потерять presence-обновление, пришедшее за время await.
+          final cur = state.user ?? user;
           state = state.copyWith(
-            user: user.copyWith(hasPendingFollowRequest: true),
+            user: cur.copyWith(
+              isFollowing: false,
+              followersCount: user.followersCount,
+              hasPendingFollowRequest: true,
+            ),
           );
         }
       }
       return null;
     } on DioException catch (e) {
-      if (mounted) state = state.copyWith(user: user);
+      // Откат по follow-полям поверх актуального state.user (а не замена на
+      // устаревший снапшот `user`) — иначе теряется presence-обновление,
+      // прилетевшее по WS во время запроса.
+      if (mounted) {
+        final cur = state.user ?? user;
+        state = state.copyWith(
+          user: cur.copyWith(
+            isFollowing: wasFollowing,
+            hasPendingFollowRequest: wasPending,
+            followersCount: user.followersCount,
+          ),
+        );
+      }
       if (e.response?.statusCode == 403) {
         return 'Нельзя подписаться: пользователь вас заблокировал или вы его';
       }
       return apiErrorMessage(e);
     } catch (_) {
-      if (mounted) state = state.copyWith(user: user);
+      if (mounted) {
+        final cur = state.user ?? user;
+        state = state.copyWith(
+          user: cur.copyWith(
+            isFollowing: wasFollowing,
+            hasPendingFollowRequest: wasPending,
+            followersCount: user.followersCount,
+          ),
+        );
+      }
       return 'Что-то пошло не так';
     }
   }
@@ -303,17 +342,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
   }
 
-  Future<void> search(String query) async {
+  /// Дебаунс-поиск. Намеренно void: раньше метод возвращал Future от
+  /// Completer'а, который никогда не завершался, если таймер отменялся
+  /// повторным вводом — любой `await search(...)` завис бы навсегда.
+  void search(String query) {
     _debounceTimer?.cancel();
     if (query.trim().isEmpty) {
       state = const SearchState();
       return;
     }
-    final completer = Completer<void>();
     _debounceTimer = Timer(const Duration(milliseconds: 400), () {
-      _doSearch(query).then((_) => completer.complete());
+      _doSearch(query);
     });
-    return completer.future;
   }
 
   Future<void> _doSearch(String query) async {
@@ -371,7 +411,9 @@ class TrendingTag {
   factory TrendingTag.fromJson(Map<String, dynamic> json) {
     return TrendingTag(
       tag: json['tag']?.toString() ?? '',
-      postsCount: (json['posts_count'] ?? 0) as int,
+      // BUG-20 паттерн: агрегаты могут прийти double'ом — прямой `as int`
+      // ронял парсинг трендов CastError'ом.
+      postsCount: (json['posts_count'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -441,38 +483,9 @@ class ExploreState {
 class ExploreNotifier extends StateNotifier<ExploreState> {
   static const _limit = 20;
   final ApiClient _api;
-  final Ref _ref;
-  ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
-  ExploreNotifier(this._api, this._ref) : super(const ExploreState()) {
+  ExploreNotifier(this._api) : super(const ExploreState()) {
     refresh();
-    _listenRealtime();
-  }
-
-  void _listenRealtime() {
-    _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(
-      realtimeEventsProvider,
-      (prev, next) {
-        next.whenData((evt) {
-          if (evt.type != 'post.reaction' || evt.payload is! Map) return;
-          final p = (evt.payload as Map).cast<String, dynamic>();
-          final postId = p['post_id']?.toString() ?? '';
-          if (postId.isEmpty) return;
-          final raw = p['reactions'];
-          final counts = raw is Map
-              ? Map<String, int>.from(raw.map(
-                  (k, v) => MapEntry(k.toString(), (v as num).toInt())))
-              : <String, int>{};
-          applyReactionUpdate(postId, counts);
-        });
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    _wsSub?.close();
-    super.dispose();
   }
 
   Future<void> refresh() async {
@@ -602,71 +615,51 @@ class ExploreNotifier extends StateNotifier<ExploreState> {
     }
   }
 
-  /// Optimistic emoji-reaction toggle. Same shape as FeedNotifier — Explore
-  /// lives in its own state silo so we can't share code without coupling.
-  Future<void> toggleReaction(String postId, String emoji) async {
-    final idx = state.posts.indexWhere((p) => p.id == postId);
-    if (idx < 0) return;
-    final original = state.posts[idx];
-    final isSame = original.myReaction == emoji;
-
-    final newCounts = Map<String, int>.from(original.reactions);
-    if (original.myReaction.isNotEmpty) {
-      newCounts[original.myReaction] =
-          (newCounts[original.myReaction] ?? 1) - 1;
-      if ((newCounts[original.myReaction] ?? 0) <= 0) {
-        newCounts.remove(original.myReaction);
-      }
-    }
-    final newMine = isSame ? '' : emoji;
-    if (newMine.isNotEmpty) {
-      newCounts[newMine] = (newCounts[newMine] ?? 0) + 1;
-    }
-    state = state.copyWith(
-      posts: [
-        ...state.posts.sublist(0, idx),
-        original.copyWith(reactions: newCounts, myReaction: newMine),
-        ...state.posts.sublist(idx + 1),
-      ],
-    );
-
+  /// Гарантирует, что пост с [postId] есть в ленте (см.
+  /// ContentFeedNotifier.ensurePost — тот же сценарий для вьюера).
+  Future<void> ensurePost(String postId) async {
+    if (state.posts.any((p) => p.id == postId)) return;
     try {
-      if (isSame) {
-        await _api.delete(ApiEndpoints.reactPost(postId));
-      } else {
-        await _api.post(ApiEndpoints.reactPost(postId),
-            data: {'emoji': emoji});
-      }
+      final r = await _api.get(ApiEndpoints.postById(postId));
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final post = Post.fromJson(data as Map<String, dynamic>);
+      if (!mounted || state.posts.any((p) => p.id == postId)) return;
+      state = state.copyWith(posts: [post, ...state.posts]);
     } catch (_) {
-      final i = state.posts.indexWhere((p) => p.id == postId);
-      if (i >= 0) {
-        state = state.copyWith(
-          posts: [
-            ...state.posts.sublist(0, i),
-            original,
-            ...state.posts.sublist(i + 1),
-          ],
-        );
-      }
+      // Пост удалён/недоступен — вьюер останется на первой странице.
     }
   }
 
-  /// Apply a server-pushed reaction update (incoming WS event).
-  void applyReactionUpdate(String postId, Map<String, int> reactions) {
-    final idx = state.posts.indexWhere((p) => p.id == postId);
+  /// Заменить пост обновлённой версией (мутация пришла из PostCard или
+  /// другого экрана). No-op, если поста здесь нет.
+  void applyPostUpdate(Post updated) {
+    final idx = state.posts.indexWhere((p) => p.id == updated.id);
     if (idx < 0) return;
     state = state.copyWith(
       posts: [
         ...state.posts.sublist(0, idx),
-        state.posts[idx].copyWith(reactions: reactions),
+        updated,
         ...state.posts.sublist(idx + 1),
       ],
     );
   }
+
+  /// Сдвиг счётчика комментариев после add/delete комментария.
+  void adjustCommentsCount(String postId, int delta) {
+    final idx = state.posts.indexWhere((p) => p.id == postId);
+    if (idx < 0) return;
+    final p = state.posts[idx];
+    applyPostUpdate(p.copyWith(
+      commentsCount: (p.commentsCount + delta).clamp(0, 1 << 31),
+    ));
+  }
+
 }
 
 final exploreProvider =
     StateNotifierProvider<ExploreNotifier, ExploreState>((ref) {
   final api = ref.watch(apiClientProvider);
-  return ExploreNotifier(api, ref);
+  return ExploreNotifier(api);
 });

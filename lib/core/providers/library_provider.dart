@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../api/api_endpoints.dart';
 import '../config/server_config.dart';
@@ -46,18 +45,6 @@ final trendingFilesProvider = FutureProvider<List<FileItem>>((ref) async {
   return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
-// ─── Recently Viewed ────────────────────────────────────────────────────────
-final recentlyViewedProvider = FutureProvider<List<FileItem>>((ref) async {
-  final dio = ref.watch(libraryApiClientProvider);
-  try {
-    final resp = await dio.get(ApiEndpoints.myRecentlyViewed, queryParameters: {'limit': 20});
-    final data = resp.data['data'] as List? ?? [];
-    return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
-  } catch (_) {
-    return [];
-  }
-});
-
 // ─── Recommendations ────────────────────────────────────────────────────────
 final recommendationsProvider = FutureProvider<List<FileItem>>((ref) async {
   final dio = ref.watch(libraryApiClientProvider);
@@ -65,28 +52,6 @@ final recommendationsProvider = FutureProvider<List<FileItem>>((ref) async {
     final resp = await dio.get(ApiEndpoints.myRecommendations, queryParameters: {'limit': 10});
     final data = resp.data['data'] as List? ?? [];
     return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
-  } catch (_) {
-    return [];
-  }
-});
-
-// ─── Search Suggestions ─────────────────────────────────────────────────────
-final searchSuggestionsProvider =
-    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, q) async {
-  if (q.length < 2) return [];
-  final dio = ref.watch(libraryApiClientProvider);
-  // Provider-level debounce: each keystroke recreates this autoDispose family
-  // instance for the new query and disposes the previous one. Cancelling the
-  // in-flight request on dispose means only the last keystroke actually fires.
-  final cancelToken = CancelToken();
-  ref.onDispose(() => cancelToken.cancel());
-  await Future.delayed(const Duration(milliseconds: 300));
-  if (cancelToken.isCancelled) return [];
-  try {
-    final resp = await dio.get(ApiEndpoints.filesSuggestions,
-        queryParameters: {'q': q}, cancelToken: cancelToken);
-    final data = resp.data['data'] as List? ?? [];
-    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   } catch (_) {
     return [];
   }
@@ -260,22 +225,6 @@ final userFilesProvider = FutureProvider.family<List<FileItem>, String>((ref, us
   return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
-// ─── Similar files (same category, excluding current) ─────────────────────
-final similarFilesProvider =
-    FutureProvider.autoDispose.family<List<FileItem>, ({String fileId, String categoryId})>(
-        (ref, arg) async {
-  if (arg.categoryId.isEmpty) return [];
-  final dio = ref.watch(libraryApiClientProvider);
-  final resp = await dio.get(ApiEndpoints.files, queryParameters: {
-    'category_id': arg.categoryId,
-    'exclude_id': arg.fileId,
-    'limit': 8,
-    'sort': 'likes',
-  });
-  final data = resp.data['data'] as List? ?? [];
-  return data.map((e) => FileItem.fromJson(e as Map<String, dynamic>)).toList();
-});
-
 // ─── Files by author ───────────────────────────────────────────────────────
 final authorFilesProvider =
     FutureProvider.autoDispose.family<List<FileItem>, String>((ref, author) async {
@@ -353,40 +302,16 @@ class LibraryActions {
   final Dio _dio;
   LibraryActions(this._dio);
 
-  Future<Map<String, dynamic>> download(String fileId) async {
-    final resp = await _dio.get(ApiEndpoints.fileDownload(fileId));
-    return resp.data['data'] as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> preview(String fileId) async {
-    final resp = await _dio.get(ApiEndpoints.filePreview(fileId));
-    return resp.data['data'] as Map<String, dynamic>;
-  }
+  // Мёртвые методы download/preview/upsertReadingStatus/deleteReadingStatus/
+  // getReadingStatus удалены: скачивание идёт через downloadInfo, статус чтения
+  // — через ReadingStatusNotifier. Ни один не имел вызовов.
 
   Future<void> deleteFile(String fileId) async {
     await _dio.delete(ApiEndpoints.fileById(fileId));
   }
 
-  Future<void> upsertReadingStatus(String fileId, String status) async {
-    await _dio.put(ApiEndpoints.fileReadingStatus(fileId), data: {'status': status});
-  }
-
-  Future<void> deleteReadingStatus(String fileId) async {
-    await _dio.delete(ApiEndpoints.fileReadingStatus(fileId));
-  }
-
   Future<void> updateFileMeta(String fileId, Map<String, dynamic> data) async {
     await _dio.patch(ApiEndpoints.fileById(fileId), data: data);
-  }
-
-  Future<String?> getReadingStatus(String fileId) async {
-    try {
-      final resp = await _dio.get(ApiEndpoints.fileReadingStatus(fileId));
-      if (resp.statusCode == 204) return null;
-      return resp.data['data']?['status'] as String?;
-    } catch (_) {
-      return null;
-    }
   }
 
   // ── View / Like ─────────────────────────────────────────────────────────
@@ -507,44 +432,5 @@ final libraryActionsProvider = Provider<LibraryActions>((ref) {
   return LibraryActions(ref.watch(libraryApiClientProvider));
 });
 
-// ─── Search History ─────────────────────────────────────────────────────────
-const _searchHistoryKey = 'library_search_history';
-const _maxSearchHistory = 10;
-
-class SearchHistoryNotifier extends StateNotifier<List<String>> {
-  SearchHistoryNotifier() : super([]) {
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = prefs.getStringList(_searchHistoryKey) ?? [];
-  }
-
-  Future<void> add(String query) async {
-    final q = query.trim();
-    if (q.isEmpty) return;
-    final updated = [q, ...state.where((s) => s != q)];
-    if (updated.length > _maxSearchHistory) updated.removeRange(_maxSearchHistory, updated.length);
-    state = updated;
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList(_searchHistoryKey, updated);
-  }
-
-  Future<void> remove(String query) async {
-    state = state.where((s) => s != query).toList();
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setStringList(_searchHistoryKey, state);
-  }
-
-  Future<void> clear() async {
-    state = [];
-    final prefs = await SharedPreferences.getInstance();
-    prefs.remove(_searchHistoryKey);
-  }
-}
-
-final searchHistoryProvider =
-    StateNotifierProvider<SearchHistoryNotifier, List<String>>(
-  (ref) => SearchHistoryNotifier(),
-);
+// Библиотечная история поиска (SearchHistoryNotifier/searchHistoryProvider)
+// удалена — её никто не watch'ил (используется только аудио-история).

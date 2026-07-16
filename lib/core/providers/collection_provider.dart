@@ -24,10 +24,14 @@ class CollectionsNotifier extends StateNotifier<AsyncValue<List<Collection>>> {
     }
   }
 
-  Future<Collection?> create(String name, String description) async {
+  Future<Collection?> create(String name, String description,
+      {bool isPublic = false}) async {
     try {
-      final resp = await _dio.post(ApiEndpoints.collections,
-          data: {'name': name, 'description': description});
+      final resp = await _dio.post(ApiEndpoints.collections, data: {
+        'name': name,
+        'description': description,
+        'is_public': isPublic,
+      });
       final c = Collection.fromJson(resp.data['data'] as Map<String, dynamic>);
       state = state.whenData((list) => [c, ...list]);
       return c;
@@ -36,30 +40,44 @@ class CollectionsNotifier extends StateNotifier<AsyncValue<List<Collection>>> {
     }
   }
 
-  Future<bool> update(String id, String name, String description) async {
+  /// PUT перезаписывает коллекцию целиком, поэтому шлём и публичность —
+  /// иначе правка названия молча закрыла бы расшаренную подборку.
+  Future<bool> update(String id, String name, String description,
+      {bool? isPublic}) async {
     try {
-      await _dio.put(ApiEndpoints.collectionById(id),
-          data: {'name': name, 'description': description});
-      state = state.whenData((list) => list.map((c) {
-            if (c.id == id) {
-              return Collection(
-                id: c.id,
-                userId: c.userId,
-                name: name,
-                description: description,
-                coverFileId: c.coverFileId,
-                filesCount: c.filesCount,
-                files: c.files,
-                createdAt: c.createdAt,
-                updatedAt: DateTime.now(),
-              );
-            }
-            return c;
-          }).toList());
+      final current = state.valueOrNull?.firstWhere(
+        (c) => c.id == id,
+        orElse: () => throw StateError('not found'),
+      );
+      final pub = isPublic ?? current?.isPublic ?? false;
+
+      await _dio.put(ApiEndpoints.collectionById(id), data: {
+        'name': name,
+        'description': description,
+        'is_public': pub,
+      });
+      state = state.whenData((list) => list
+          .map((c) => c.id == id
+              ? c.copyWith(
+                  name: name,
+                  description: description,
+                  isPublic: pub,
+                  updatedAt: DateTime.now(),
+                )
+              : c)
+          .toList());
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Открыть/закрыть подборку по ссылке — то, что делает её «плейлистом,
+  /// которым можно делиться».
+  Future<bool> setPublic(String id, bool isPublic) async {
+    final c = state.valueOrNull?.where((x) => x.id == id).firstOrNull;
+    if (c == null) return false;
+    return update(id, c.name, c.description, isPublic: isPublic);
   }
 
   Future<bool> delete(String id) async {
@@ -76,23 +94,10 @@ class CollectionsNotifier extends StateNotifier<AsyncValue<List<Collection>>> {
     try {
       await _dio.post(ApiEndpoints.collectionFiles(collectionId),
           data: {'file_id': fileId});
-      // Update local state: increment filesCount
-      state = state.whenData((list) => list.map((c) {
-            if (c.id == collectionId) {
-              return Collection(
-                id: c.id,
-                userId: c.userId,
-                name: c.name,
-                description: c.description,
-                coverFileId: c.coverFileId,
-                filesCount: c.filesCount + 1,
-                files: c.files,
-                createdAt: c.createdAt,
-                updatedAt: DateTime.now(),
-              );
-            }
-            return c;
-          }).toList());
+      // Бэк идемпотентен (повторное добавление — no-op), поэтому слепой «+1»
+      // завышал filesCount при добавлении уже лежащего файла. Берём правду с
+      // сервера: load() без loading-состояния, мерцания нет.
+      await load();
       return true;
     } catch (_) {
       return false;
@@ -102,23 +107,15 @@ class CollectionsNotifier extends StateNotifier<AsyncValue<List<Collection>>> {
   Future<bool> removeFile(String collectionId, String fileId) async {
     try {
       await _dio.delete(ApiEndpoints.collectionFile(collectionId, fileId));
-      // Update local state: decrement filesCount
-      state = state.whenData((list) => list.map((c) {
-            if (c.id == collectionId) {
-              return Collection(
-                id: c.id,
-                userId: c.userId,
-                name: c.name,
-                description: c.description,
-                coverFileId: c.coverFileId,
-                filesCount: (c.filesCount - 1).clamp(0, 999999),
-                files: c.files.where((f) => f.id != fileId).toList(),
-                createdAt: c.createdAt,
-                updatedAt: DateTime.now(),
-              );
-            }
-            return c;
-          }).toList());
+      state = state.whenData((list) => list
+          .map((c) => c.id == collectionId
+              ? c.copyWith(
+                  filesCount: (c.filesCount - 1).clamp(0, 999999),
+                  files: c.files.where((f) => f.id != fileId).toList(),
+                  updatedAt: DateTime.now(),
+                )
+              : c)
+          .toList());
       return true;
     } catch (_) {
       return false;

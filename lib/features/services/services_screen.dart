@@ -5,63 +5,85 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../core/models/sbor.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/nearest_sbor_provider.dart';
 
+/// Витрина сервисов (§06 дизайн-ядра): не список из трёх строк, а три двери в
+/// разные миры. Каждая карточка носит характер своего сервиса. Порядок
+/// фиксированный по приоритету продукта: Сборы (ближе всего к сути — привести
+/// людей в одно место офлайн) → Аудиотека → Библиотека.
 class ServicesScreen extends ConsumerWidget {
   const ServicesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final stats = ref.watch(readingStatsProvider).valueOrNull;
+    final nearestSbor = ref.watch(nearestSborProvider).valueOrNull;
     final c = context.seeuColors;
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SeeUSectionHeader(
-                kicker: 'SEEU · РАЗДЕЛЫ',
-                title: 'Сервисы',
-                hairline: true,
-                padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Бренд-wordmark + серифный заголовок раздела, как в ленте.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SeeU',
+                    style: TextStyle(
+                      fontFamily: AppFonts.I.brand,
+                      fontSize: 26,
+                      height: 1.0,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Сервисы',
+                    style: SeeUTypography.displayL.copyWith(
+                      height: 1.0,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: ListView(
-                  children: [
-                    _SboryHeroCard(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        context.push('/sbory');
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    _ServiceCard(
-                      icon: PhosphorIconsBold.musicNotes,
-                      label: 'Аудиотека',
-                      subtitle: 'Музыка, плейлисты, новинки',
-                      gradient: const [SeeUColors.plum, SeeUColors.info],
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        context.push('/music');
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    _LibraryServiceCard(
-                      stats: stats,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        context.push('/files');
-                      },
-                    ),
-                  ],
-                ),
+            ),
+            const SizedBox(height: 18),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                children: [
+                  _SboryHeroCard(
+                    nearest: nearestSbor,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.push('/sbory');
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _AudioServiceCard(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.push('/music');
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _LibraryServiceCard(
+                    stats: stats,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.push('/files');
+                    },
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -72,17 +94,34 @@ class ServicesScreen extends ConsumerWidget {
 
 class _SboryHeroCard extends StatelessWidget {
   final VoidCallback onTap;
-  const _SboryHeroCard({required this.onTap});
+  final Sbor? nearest;
+  const _SboryHeroCard({required this.onTap, this.nearest});
+
+  /// Живая строка: «когда · место · N идут» ближайшего сбора. Пусто → CTA.
+  String? _liveLine() {
+    final s = nearest;
+    if (s == null) return null;
+    final parts = <String>[];
+    if (s.when.isNotEmpty) parts.add(s.when);
+    if (s.place.isNotEmpty) parts.add(s.place);
+    if (s.joined > 0) parts.add('${s.joined} идут');
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final live = _liveLine();
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
-        height: 120,
+        height: 132,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [SeeUColors.accent, SeeUColors.accentSecondary, SeeUColors.amber],
+            colors: [
+              SeeUColors.accent,
+              SeeUColors.accentSecondary,
+              SeeUColors.amber
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             stops: [0, 0.55, 1],
@@ -90,22 +129,25 @@ class _SboryHeroCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(SeeURadii.card),
           boxShadow: [
             BoxShadow(
-              color: SeeUColors.accent.withValues(alpha: 0.30),
-              blurRadius: 20,
+              color: SeeUColors.accent.withValues(alpha: 0.28),
+              blurRadius: 24,
               offset: const Offset(0, 8),
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
         child: Stack(
+          clipBehavior: Clip.hardEdge,
           children: [
             Positioned(
-              right: -10, bottom: -20,
+              right: -14,
+              bottom: -20,
               child: Opacity(
-                opacity: 0.18,
+                opacity: 0.16,
                 child: Icon(
-                  PhosphorIconsBold.usersThree,
-                  size: 120, color: Colors.white,
+                  PhosphorIconsFill.usersThree,
+                  size: 130,
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -116,17 +158,19 @@ class _SboryHeroCard extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      width: 48, height: 48,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(SeeURadii.medium),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(
                         PhosphorIconsBold.usersThree,
-                        color: Colors.white, size: 24,
+                        color: Colors.white,
+                        size: 22,
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -135,9 +179,9 @@ class _SboryHeroCard extends StatelessWidget {
                           style: SeeUTypography.title
                               .copyWith(color: Colors.white),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 4),
                         Text(
-                          'Оффлайн и онлайн активности',
+                          'Встречи людей рядом',
                           style: SeeUTypography.caption
                               .copyWith(color: Colors.white70),
                         ),
@@ -145,35 +189,60 @@ class _SboryHeroCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                Row(
-                  children: [
-                    Container(
-                      height: 28,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(SeeURadii.pill),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Смотреть сборы',
-                            style: SeeUTypography.caption.copyWith(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(PhosphorIconsBold.arrowRight,
-                              size: 12, color: Colors.white),
-                        ],
-                      ),
+                // Живой pill: ближайший сбор (время · место · сколько идут).
+                // Пока впереди пусто — обычный CTA «Смотреть сборы».
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(SeeURadii.pill),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.35),
                     ),
-                  ],
+                  ),
+                  child: live != null
+                      ? Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                live,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: SeeUTypography.caption.copyWith(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Смотреть сборы',
+                              style: SeeUTypography.caption.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            const Icon(PhosphorIconsBold.arrowRight,
+                                size: 12, color: Colors.white),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -184,74 +253,61 @@ class _SboryHeroCard extends StatelessWidget {
   }
 }
 
-// ─── Service card ─────────────────────────────────────────────────
+// ─── Аудиотека — тёмная сливовая дверь ─────────────────────────────
 
-class _ServiceCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final List<Color> gradient;
+class _AudioServiceCard extends StatelessWidget {
   final VoidCallback onTap;
-
-  const _ServiceCard({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.gradient,
-    required this.onTap,
-  });
+  const _AudioServiceCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Tappable.scaled(
       onTap: onTap,
       child: Container(
-        height: 100,
+        height: 104,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: gradient,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF241033), Color(0xFF3D1A5C)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(SeeURadii.card),
-          boxShadow: [
-            BoxShadow(
-              color: gradient.first.withValues(alpha: 0.3),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             Container(
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(SeeURadii.medium),
+                gradient: const LinearGradient(
+                  colors: [SeeUColors.plum, SeeUColors.info],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: Colors.white, size: 26),
+              child: const Icon(PhosphorIconsFill.musicNotes,
+                  color: Colors.white, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    label,
+                    'Аудиотека',
                     style: SeeUTypography.title.copyWith(
-                      fontSize: 18,
+                      fontSize: 17,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
-                    subtitle,
+                    'Звуки, музыка и голоса',
                     style: SeeUTypography.caption.copyWith(
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -259,8 +315,8 @@ class _ServiceCard extends StatelessWidget {
             ),
             Icon(
               PhosphorIconsRegular.caretRight,
-              color: Colors.white.withValues(alpha: 0.7),
-              size: 20,
+              color: Colors.white.withValues(alpha: 0.5),
+              size: 18,
             ),
           ],
         ),
@@ -269,13 +325,21 @@ class _ServiceCard extends StatelessWidget {
   }
 }
 
-// ─── Library card with reading stats ──────────────────────────────────────────
+// ─── Библиотека — тёплая бумажная дверь со статистикой чтения ───────
 
 class _LibraryServiceCard extends StatelessWidget {
   final Map<String, dynamic>? stats;
   final VoidCallback onTap;
 
   const _LibraryServiceCard({required this.stats, required this.onTap});
+
+  // Палитра библиотечного мира (тёплая бумага), как в library_design.
+  static const Color _paper = Color(0xFFF3ECE0);
+  static const Color _paperLine = Color(0xFFE4D8C6);
+  static const Color _spineTop = Color(0xFFA0562E);
+  static const Color _spineBottom = Color(0xFF7A3F1E);
+  static const Color _ink = Color(0xFF3A2A1E);
+  static const Color _inkMuted = Color(0xFF6A5A48);
 
   @override
   Widget build(BuildContext context) {
@@ -288,21 +352,11 @@ class _LibraryServiceCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [SeeUColors.success, SeeUColors.info],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: _paper,
+          border: Border.all(color: _paperLine),
           borderRadius: BorderRadius.circular(SeeURadii.card),
-          boxShadow: [
-            BoxShadow(
-              color: SeeUColors.success.withValues(alpha: 0.3),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Row(
@@ -311,13 +365,23 @@ class _LibraryServiceCard extends StatelessWidget {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(SeeURadii.medium),
+                    gradient: const LinearGradient(
+                      colors: [_spineTop, _spineBottom],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _spineBottom.withValues(alpha: 0.25),
+                        offset: const Offset(2, 2),
+                      ),
+                    ],
                   ),
-                  child: const Icon(PhosphorIconsBold.books,
-                      color: Colors.white, size: 26),
+                  child: const Icon(PhosphorIconsFill.books,
+                      color: Colors.white, size: 24),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -326,55 +390,57 @@ class _LibraryServiceCard extends StatelessWidget {
                       Text(
                         'Библиотека',
                         style: SeeUTypography.title.copyWith(
+                          fontFamily: AppFonts.I.serif,
                           fontSize: 18,
-                          color: Colors.white,
+                          color: _ink,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         hasStats
                             ? '$reading читаю · $done прочитано'
                             : 'Книги, документы, чтение',
-                        style: SeeUTypography.caption.copyWith(
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
+                        style: SeeUTypography.caption.copyWith(color: _inkMuted),
                       ),
                     ],
                   ),
                 ),
-                Icon(
+                const Icon(
                   PhosphorIconsRegular.caretRight,
-                  color: Colors.white.withValues(alpha: 0.7),
-                  size: 20,
+                  color: Color(0xFFB0A08C),
+                  size: 18,
                 ),
               ],
             ),
             if (streak > 0) ...[
               const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(PhosphorIconsFill.flame,
-                        size: 13, color: Colors.white),
-                    const SizedBox(width: 5),
-                    Text(
-                      '$streak ${_pluralDays(streak)} подряд',
-                      style: SeeUTypography.caption.copyWith(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: SeeUColors.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(SeeURadii.pill),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(PhosphorIconsFill.flame,
+                            size: 11, color: SeeUColors.accent),
+                        const SizedBox(width: 5),
+                        Text(
+                          '$streak ${_pluralDays(streak)} подряд',
+                          style: SeeUTypography.caption.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFB0442A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -384,9 +450,14 @@ class _LibraryServiceCard extends StatelessWidget {
   }
 
   String _pluralDays(int n) {
-    if (n % 10 == 1 && n % 100 != 11) { return 'день'; }
-    if (n % 10 >= 2 && n % 10 <= 4 &&
-        (n % 100 < 10 || n % 100 >= 20)) { return 'дня'; }
+    if (n % 10 == 1 && n % 100 != 11) {
+      return 'день';
+    }
+    if (n % 10 >= 2 &&
+        n % 10 <= 4 &&
+        (n % 100 < 10 || n % 100 >= 20)) {
+      return 'дня';
+    }
     return 'дней';
   }
 }

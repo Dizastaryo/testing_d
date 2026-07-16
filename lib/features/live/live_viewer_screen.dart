@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/api/api_client.dart';
 import '../../core/design/design.dart';
 import '../../core/models/live_stream.dart';
+import '../../core/providers/realtime_provider.dart';
 import '../camera/widgets/camera_ui_kit.dart';
 import 'live_viewer_service.dart';
 
@@ -287,6 +288,29 @@ class _LiveViewerScreenState extends ConsumerState<LiveViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Серверные WS-события об окончании/кике — надёжный сигнал, не завязанный
+    // на LiveKit-таймаут. Если вещатель завершил эфир по HTTP (или нас кикнули
+    // блокировкой), а LiveKit-сессия ещё висит, зритель иначе смотрел бы
+    // замороженный кадр. Показываем «эфир завершён».
+    ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
+      next.whenData((evt) {
+        if (evt.type != 'live_stream.ended' &&
+            evt.type != 'live_stream.kicked') {
+          return;
+        }
+        final payload = evt.payload is Map<String, dynamic>
+            ? evt.payload as Map<String, dynamic>
+            : null;
+        if (payload != null &&
+            payload['stream_id']?.toString() != widget.streamId) {
+          return;
+        }
+        if (!mounted || _endedShown) return;
+        _endedShown = true;
+        _showEndedDialog();
+      });
+    });
+
     final status = LiveViewerService.instance.status.value;
     final viewerCount = LiveViewerService.instance.viewerCount.value;
     final track = LiveViewerService.instance.remoteVideoTrack.value;

@@ -15,7 +15,12 @@ import '../../core/providers/auth_provider.dart';
 /// или сканирует QR-код (seeu://bind/SEEU_XXXXXX).
 /// POST /users/me/device { serial_number }
 class ChipSetupScreen extends ConsumerStatefulWidget {
-  const ChipSetupScreen({super.key});
+  /// Серийник из ссылки `seeu://bind/SEEU_xxxx` (QR из админки). Подставляется
+  /// в поле, но привязку всё равно подтверждает человек — сканирование чужого
+  /// QR не должно молча привязывать браслет.
+  final String? initialSerial;
+
+  const ChipSetupScreen({super.key, this.initialSerial});
 
   @override
   ConsumerState<ChipSetupScreen> createState() => _ChipSetupScreenState();
@@ -24,6 +29,12 @@ class ChipSetupScreen extends ConsumerStatefulWidget {
 class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
   final _ctrl = TextEditingController();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSerial != null) _ctrl.text = widget.initialSerial!;
+  }
 
   @override
   void dispose() {
@@ -60,7 +71,7 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
   }
 
   void _bind() {
-    _bindSerial(_ctrl.text.trim().toUpperCase());
+    _bindSerial(_ctrl.text.trim());
   }
 
   Future<void> _unbind() async {
@@ -246,7 +257,6 @@ class _ChipSetupScreenState extends ConsumerState<ChipSetupScreen> {
             SeeUInput(
               controller: _ctrl,
               autocorrect: false,
-              textCapitalization: TextCapitalization.characters,
               hintText: 'SEEU_000001',
               prefix: Icon(PhosphorIcons.hash(), color: c.ink3),
               onSubmitted: (_) => _bind(),
@@ -320,13 +330,15 @@ class _QRScanPageState extends State<_QRScanPage> {
       final raw = barcode.rawValue;
       if (raw == null) continue;
 
-      // Expected format: seeu://bind/SEEU_XXXXXX
+      // Expected format: seeu://bind/SEEU_XXXXXX — serial_number is generated
+      // backend-side as SEEU_ + lowercase hex (uuid.New()), and the DB lookup
+      // is case-sensitive, so this must be passed through unchanged.
       String? serial;
       if (raw.startsWith('seeu://bind/')) {
-        serial = raw.substring('seeu://bind/'.length).trim().toUpperCase();
+        serial = raw.substring('seeu://bind/'.length).trim();
       } else if (raw.toUpperCase().startsWith('SEEU_')) {
         // Fallback: plain serial number in QR
-        serial = raw.trim().toUpperCase();
+        serial = raw.trim();
       }
 
       if (serial != null && serial.isNotEmpty) {

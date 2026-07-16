@@ -285,7 +285,8 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
       // Roll back.
       if (!mounted) return;
       setState(() => _requests = [req, ...?_requests]);
-      final msg = e.response?.data?['error'] as String?;
+      final d = e.response?.data;
+      final msg = d is Map ? d['error'] as String? : null;
       showSeeUSnackBar(context, msg ?? 'Не удалось принять заявку',
           tone: SeeUTone.danger);
     } finally {
@@ -307,7 +308,8 @@ class _SborRequestsScreenState extends ConsumerState<SborRequestsScreen> {
       // Roll back.
       if (!mounted) return;
       setState(() => _requests = [req, ...?_requests]);
-      final msg = e.response?.data?['error'] as String?;
+      final d = e.response?.data;
+      final msg = d is Map ? d['error'] as String? : null;
       showSeeUSnackBar(context, msg ?? 'Не удалось отклонить заявку',
           tone: SeeUTone.danger);
     } finally {

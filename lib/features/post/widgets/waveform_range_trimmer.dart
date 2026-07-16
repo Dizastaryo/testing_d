@@ -497,15 +497,15 @@ class _RangeWaveformPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final data = (peaks != null && peaks!.isNotEmpty)
+    // Волна рисуется только из НАСТОЯЩИХ пиков трека. Раньше здесь при их
+    // отсутствии генерировалась псевдослучайная гребёнка — человек видел
+    // «форму звука», которой у этого трека никто не считал, и подрезал музыку
+    // по выдуманным пикам. Нет данных — рисуем ровную полосу: она честно
+    // говорит «формы не знаем», но обрезать по ней всё равно можно.
+    final hasPeaks = peaks != null && peaks!.isNotEmpty;
+    final data = hasPeaks
         ? peaks!
-        : List<double>.generate(64, (i) {
-            // #65: deterministic pseudo-random amplitude per bar — organic,
-            // not an obvious repeating sine.
-            final h = ((i * 2654435761) & 0x7fffffff) / 0x7fffffff;
-            final h2 = (((i * 40503) ^ 0x5bd1e995) & 0x7fffffff) / 0x7fffffff;
-            return (0.22 + 0.7 * (0.4 * h + 0.6 * h2)).clamp(0.12, 1.0);
-          });
+        : List<double>.filled(64, 0.18);
     final count = data.length;
     final slotW = size.width / count;
     final barW = (slotW * 0.55).clamp(1.5, 5.0);

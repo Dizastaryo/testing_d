@@ -39,6 +39,16 @@ class _PrivateWhitelistScreenState
     _load();
   }
 
+  // Разворачивает конверт {data:{items:[...]}} (как все list-эндпоинты) —
+  // раньше читалось data['items'] напрямую → null-каст → TypeError, который
+  // не ловился (catch только DioException) → вечный спиннер.
+  List<dynamic> _items(dynamic body) {
+    final data = body is Map && body.containsKey('data') ? body['data'] : body;
+    if (data is Map && data['items'] is List) return data['items'] as List;
+    if (data is List) return data;
+    return const [];
+  }
+
   Future<void> _load() async {
     final api = ref.read(apiClientProvider);
     try {
@@ -48,17 +58,20 @@ class _PrivateWhitelistScreenState
         api.get('/users/me/mutuals'),
       ]);
 
-      final whitelistIds = (results[0].data['items'] as List)
-          .map((e) => e['user_id'] as String)
+      final whitelistIds = _items(results[0].data)
+          .whereType<Map>()
+          .map((e) => e['user_id']?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
           .toSet();
 
       // /users/me/mutuals возвращает UserShort: { id, username, full_name, avatar_url }
-      final mutuals = (results[1].data['items'] as List)
+      final mutuals = _items(results[1].data)
+          .whereType<Map>()
           .map((e) => _UserItem(
-                id: e['id'] as String,
-                username: e['username'] as String,
-                fullName: e['full_name'] as String? ?? '',
-                avatarUrl: e['avatar_url'] as String? ?? '',
+                id: e['id']?.toString() ?? '',
+                username: e['username']?.toString() ?? '',
+                fullName: e['full_name']?.toString() ?? '',
+                avatarUrl: e['avatar_url']?.toString() ?? '',
               ))
           .toList();
 
@@ -71,10 +84,12 @@ class _PrivateWhitelistScreenState
           _loading = false;
         });
       }
-    } on DioException catch (e) {
+    } catch (e) {
+      // Общий catch (не только DioException): иначе любой TypeError оставлял
+      // экран навсегда в загрузке.
       if (mounted) {
         setState(() {
-          _error = apiErrorMessage(e);
+          _error = e is DioException ? apiErrorMessage(e) : 'Ошибка загрузки';
           _loading = false;
         });
       }

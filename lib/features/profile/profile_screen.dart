@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/api/api_client.dart';
 import '../../core/providers/pair_provider.dart';
 import '../spark/spark_senders_sheet.dart';
 import '../../core/design/design.dart';
@@ -17,7 +14,6 @@ import 'widgets/profile_access_card.dart';
 import 'widgets/profile_buttons.dart';
 import 'widgets/profile_content_tabs.dart';
 import 'widgets/profile_highlights.dart';
-import 'widgets/profile_passport_header.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/blocks_provider.dart';
 import '../../core/providers/story_provider.dart';
@@ -39,18 +35,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedTab = 0;
-  // VIDEO-4: switch default tab to «Videos» (idx=1) once when we see this
-  // is a channel-user. Toggle ensures we only do it on first load.
-  bool _appliedChannelDefaultTab = false;
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // Дизайн-ядро (§05): две вкладки — «Публикации» и «Автор». Сохранённое
+    // ушло из вкладок в отдельный экран (иконка-закладка в шапке).
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
-      if (_tabController.index == 3) {
-        final username = _resolveUsername();
-        ref.read(userProfileProvider(username).notifier).loadSavedPosts();
-      }
       if (mounted) {
         setState(() => _selectedTab = _tabController.index);
       }
@@ -86,19 +77,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   );
                 },
               ),
-              ListTile(
-                leading: Icon(PhosphorIcons.shieldWarning(),
-                    color: SeeUColors.accent),
-                title: const Text('Ограничить'),
-                subtitle: const Text(
-                  'Его комменты будут видны только ему и вам',
-                  style: TextStyle(fontSize: 11),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  _restrictUser(context, user);
-                },
-              ),
+              Builder(builder: (_) {
+                final isRestricted = ref
+                    .watch(restrictionsProvider)
+                    .maybeWhen(
+                        data: (s) => s.contains(user.username),
+                        orElse: () => false);
+                return ListTile(
+                  leading: Icon(PhosphorIcons.shieldWarning(),
+                      color: SeeUColors.accent),
+                  title: Text(
+                      isRestricted ? 'Снять ограничение' : 'Ограничить'),
+                  subtitle: Text(
+                    isRestricted
+                        ? 'Его комментарии снова будут видны всем'
+                        : 'Его комменты будут видны только ему и вам',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _toggleRestrict(context, user, !isRestricted);
+                  },
+                );
+              }),
               ListTile(
                 leading: Icon(PhosphorIcons.prohibit(), color: SeeUColors.error),
                 title: const Text('Заблокировать',
@@ -137,24 +138,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           icon: PhosphorIcons.prohibit());
       // Refresh profile so the follow state is gone.
       ref.invalidate(userProfileProvider(user.username));
+      // Блок рвёт подписки в обе стороны — обновляем и СВОЙ профиль, иначе
+      // мои followers/following счётчики отстают до пересоздания провайдера.
+      final myUsername = ref.read(authProvider).user?.username;
+      if (myUsername != null) {
+        ref.invalidate(userProfileProvider(myUsername));
+      }
     }
   }
 
-  /// PROFILE-4: ограничить юзера — его комменты будут видны только ему
-  /// и автору поста. Подтверждение через простой dialog (менее агрессивно
-  /// чем block — без длинного предупреждения).
-  Future<void> _restrictUser(BuildContext context, User user) async {
-    try {
-      final api = ref.read(apiClientProvider);
-      await api.post('/users/${user.username}/restrict');
-      if (!context.mounted) return;
-      showSeeUSnackBar(context, '@${user.username} ограничен',
-          icon: PhosphorIcons.shieldWarning());
-    } catch (e) {
-      if (!context.mounted) return;
-      showSeeUSnackBar(context, 'Не удалось ограничить: $e',
-          tone: SeeUTone.danger);
+  /// PROFILE-4: ограничить/снять ограничение — комменты ограниченного видны
+  /// только ему и автору поста. Тоггл через restrictionsProvider (раньше был
+  /// только «Ограничить» без обратного действия из UI).
+  Future<void> _toggleRestrict(
+      BuildContext context, User user, bool restrict) async {
+    final err = await ref
+        .read(restrictionsProvider.notifier)
+        .toggle(user.username, restrict);
+    if (!context.mounted) return;
+    if (err != null) {
+      showSeeUSnackBar(context, 'Не удалось: $err', tone: SeeUTone.danger);
+      return;
     }
+    showSeeUSnackBar(
+      context,
+      restrict
+          ? '@${user.username} ограничен'
+          : 'Ограничение с @${user.username} снято',
+      icon: PhosphorIcons.shieldWarning(),
+    );
   }
 
   void _showCreateSheet(BuildContext context) {
@@ -176,6 +188,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 leading: Icon(PhosphorIcons.plusCircle(), color: SeeUColors.accent),
                 title: const Text('Создать историю'),
                 onTap: () { Navigator.pop(context); context.push('/story/create'); },
+              ),
+              ListTile(
+                leading:
+                    Icon(PhosphorIcons.waveform(), color: SeeUColors.accent),
+                title: const Text('Новая волна'),
+                subtitle: const Text('Текст-первый пост',
+                    style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/wave/create');
+                },
               ),
               ListTile(
                 leading: Icon(PhosphorIconsBold.textT, color: SeeUColors.accent),
@@ -241,15 +264,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           size: 20, color: c.ink),
                     )
                   : null,
+              // Логин — латиницей, без @ (§05): в шапке это идентификатор, а не
+              // упоминание. Имя-витрина Playfair показываем ниже, у аватара.
               title: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
                     child: Text(
-                      '@${user.username}',
+                      user.username,
                       overflow: TextOverflow.ellipsis,
-                      style: SeeUTypography.kicker.copyWith(
-                        fontSize: 13,
+                      style: SeeUTypography.subtitle.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
                         color: c.ink,
                       ),
                     ),
@@ -265,6 +292,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     onTap: () => _showOtherProfileMenu(context, user),
                   ),
                 if (isOwnProfile) ...[
+                  // Закладка — сохранённые публикации (вкладка «Сохранённое»
+                  // из старого профиля переехала сюда, чтобы освободить место
+                  // под «Публикации/Автор»).
+                  ProfileHeaderIconButton(
+                    icon: PhosphorIcons.bookmarkSimple(),
+                    tooltip: 'Сохранённое',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            _SavedPostsScreen(username: user.username),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   ProfileHeaderIconButton(
                     icon: PhosphorIcons.plusCircle(),
                     tooltip: 'Создать',
@@ -291,44 +332,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ],
                 body: Column(
                   children: [
-                    // ── Tabs (glass strip) ────────────────────────────
-                    ClipRect(
-                      child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: SeeUColors.background
-                                .withValues(alpha: 0.7),
-                            border: Border.symmetric(
-                              horizontal: BorderSide(
-                                color: c.line,
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              ProfileTabButton(
-                                icon: PhosphorIcons.squaresFour(),
-                                isActive: _selectedTab == 0,
-                                onTap: () => _tabController.animateTo(0),
-                              ),
-                              ProfileTabButton(
-                                icon: PhosphorIcons.folderSimple(),
-                                isActive: _selectedTab == 1,
-                                onTap: () => _tabController.animateTo(1),
-                              ),
-                              ProfileTabButton(
-                                icon: PhosphorIcons.heart(),
-                                isActive: _selectedTab == 2,
-                                onTap: () => _tabController.animateTo(2),
-                              ),
-                            ],
-                          ),
+                    // ── Вкладки: «Публикации» · «Автор» (текст + иконка,
+                    // подчёркивание чернильное, непрозрачная полоса) ──────
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: c.bg,
+                        border: Border(
+                          bottom: BorderSide(color: c.line, width: 0.5),
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          _ProfileTextTab(
+                            icon: PhosphorIcons.squaresFour(),
+                            activeIcon: PhosphorIconsFill.squaresFour,
+                            label: 'Публикации',
+                            isActive: _selectedTab == 0,
+                            onTap: () => _tabController.animateTo(0),
+                          ),
+                          _ProfileTextTab(
+                            icon: PhosphorIcons.feather(),
+                            activeIcon: PhosphorIconsFill.feather,
+                            label: 'Автор',
+                            isActive: _selectedTab == 1,
+                            onTap: () => _tabController.animateTo(1),
+                          ),
+                        ],
+                      ),
                     ),
-                    // ── Grid ──────────────────────────────────────────
+                    // ── Содержимое вкладок ────────────────────────────
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
@@ -339,10 +371,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           profileState.isLocked
                               ? const ProfilePrivateContent()
                               : ProfilePostsGrid(posts: profileState.posts),
-                          ProfileFilesTab(userId: profileState.user?.id ?? ''),
-                          isOwnProfile
-                              ? ProfilePostsGrid(posts: profileState.savedPosts)
-                              : const ProfilePrivateContent(),
+                          // «Автор» — что юзер сам выложил: треки в Аудиотеку
+                          // и файлы в Библиотеку (§05 A2).
+                          profileState.isLocked
+                              ? const ProfilePrivateContent()
+                              : ProfileAuthorTab(
+                                  userId: profileState.user?.id ?? ''),
                         ],
                       ),
                     ),
@@ -378,23 +412,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     UserProfileState profileState,
   ) {
     final c = context.seeuColors;
-    final storyState = ref.watch(storyProvider);
-    final userStoryGroup = storyState.storyGroups
-        .where((g) => g.author.username == user.username)
-        .toList();
-    final hasStories = userStoryGroup.isNotEmpty;
-    final hasUnseenStories = hasStories && !userStoryGroup.first.allSeen;
+    // select на группу конкретного юзера (single object) — ребилды от
+    // isLoading/error StoryState и групп других авторов больше не задевают
+    // профиль (раньше watch всего StoryState перестраивал его на любое
+    // story-событие).
+    final userGroup = ref.watch(storyProvider.select((s) {
+      for (final g in s.storyGroups) {
+        if (g.author.username == user.username) return g;
+      }
+      return null;
+    }));
+    final hasStories = userGroup != null;
+    final hasUnseenStories = hasStories && !userGroup.allSeen;
 
-    // VIDEO-4: channel-user default tab = Videos. Меняем один раз когда
-    // профиль впервые подъехал. Не дёргаем при self-tab-switch потом.
-    if (user.isChannel && !_appliedChannelDefaultTab) {
-      _appliedChannelDefaultTab = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabController.index == 0) {
-          _tabController.animateTo(1);
-        }
-      });
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -431,67 +461,108 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               ],
             ),
           ),
-        // ── Паспорт: фото + ИМЯ/ЛОГИН ────────────────────────────────
-        ProfilePassportHeader(
-          user: user,
-          hasStories: hasStories,
-          hasUnseenStories: hasUnseenStories,
-          onAvatarTap: hasStories
-              ? () {
-                  final groupIndex =
-                      storyState.storyGroups.indexOf(userStoryGroup.first);
-                  Navigator.of(context).push(
-                    CupertinoPageRoute(
-                      builder: (_) => StoryViewerRoute(
-                        groups: storyState.storyGroups,
-                        initialGroupIndex: groupIndex,
-                        currentUserId: ref.read(authProvider).user?.id,
-                      ),
-                    ),
-                  );
-                }
-              : null,
-        ),
-
-        // ── Статистика ────────────────────────────────────────────
+        // ── Круглый аватар (story-ring) + счётчики в ряд (§05) ───────
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-          child: Column(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  ProfileStatItem(count: user.postsCount, label: 'ПОСТЫ'),
-                  Container(width: 0.5, height: 24, color: c.line),
-                  GestureDetector(
-                    onTap: () => context
-                        .push('/profile/${user.username}/followers'),
-                    child: ProfileStatItem(
-                        count: user.followersCount, label: 'ПОДПИСЧИКИ'),
+              GestureDetector(
+                onTap: hasStories
+                    ? () {
+                        // Читаем полный список только в момент тапа (не watch).
+                        final groups =
+                            ref.read(storyProvider).storyGroups;
+                        final groupIndex = groups.indexOf(userGroup);
+                        if (groupIndex < 0) return;
+                        Navigator.of(context).push(
+                          CupertinoPageRoute(
+                            builder: (_) => StoryViewerRoute(
+                              groups: groups,
+                              initialGroupIndex: groupIndex,
+                              currentUserId: ref.read(authProvider).user?.id,
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+                child: Container(
+                  width: 82,
+                  height: 82,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: hasUnseenStories ? SeeUColors.accent : c.line,
+                      width: 2,
+                    ),
                   ),
-                  Container(width: 0.5, height: 24, color: c.line),
-                  GestureDetector(
-                    onTap: () => context
-                        .push('/profile/${user.username}/following'),
-                    child: ProfileStatItem(
-                        count: user.followingCount, label: 'ПОДПИСКИ'),
+                  child: ClipOval(
+                    child: (user.avatarUrl != null &&
+                            user.avatarUrl!.isNotEmpty)
+                        ? CachedNetworkImage(
+                            imageUrl: user.avatarUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: c.surface2),
+                            errorWidget: (_, __, ___) =>
+                                _avatarFallback(c, user),
+                          )
+                        : _avatarFallback(c, user),
                   ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Spark 🔥 — единый сигнал тепла (заменил монеты). Список
-              // отправителей виден только владельцу профиля.
-              Center(
-                child: _SparkStatItem(
-                  count: user.sparksCount,
-                  isPaired: ref
-                      .watch(pairCheckProvider(user.id))
-                      .maybeWhen(data: (v) => v, orElse: () => false),
-                  onTap: isOwnProfile
-                      ? () => SparkSendersSheet.show(context)
-                      : null,
                 ),
               ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ProfileStatItem(
+                          count: user.postsCount, label: 'посты'),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => context
+                            .push('/profile/${user.username}/followers'),
+                        child: ProfileStatItem(
+                            count: user.followersCount,
+                            label: 'подписчики'),
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => context
+                            .push('/profile/${user.username}/following'),
+                        child: ProfileStatItem(
+                            count: user.followingCount, label: 'подписки'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Имя-витрина (Playfair) + галочка ──────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  user.fullName.isNotEmpty ? user.fullName : user.username,
+                  overflow: TextOverflow.ellipsis,
+                  style: SeeUTypography.displayS.copyWith(
+                    height: 1.0,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              if (user.isVerified) ...[
+                const SizedBox(width: 6),
+                Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
+                    color: SeeUColors.accent, size: 16),
+              ],
             ],
           ),
         ),
@@ -537,6 +608,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ),
           ),
 
+        // ── Spark — компактная плашка с живым пламенем (§05) ────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+          child: _SparkPill(
+            count: user.sparksCount,
+            isPaired: ref
+                .watch(pairCheckProvider(user.id))
+                .maybeWhen(data: (v) => v, orElse: () => false),
+            onTap: isOwnProfile ? () => SparkSendersSheet.show(context) : null,
+          ),
+        ),
+
         // ── Action buttons ─────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
@@ -568,52 +651,182 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
 }
 
-class _SparkStatItem extends StatelessWidget {
+/// Компактная плашка Spark (§05): тёплый фон, коралловая рамка, живое пламя
+/// Lottie и число. Владельцу тап открывает список отправителей. Статус «Пара»
+/// добавляет второй огонёк.
+class _SparkPill extends StatelessWidget {
   final int count;
   final bool isPaired;
   final VoidCallback? onTap;
 
-  const _SparkStatItem({required this.count, this.isPaired = false, this.onTap});
+  const _SparkPill({required this.count, this.isPaired = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.seeuColors;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Column(
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 5, 14, 5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3EE),
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+          border: Border.all(color: const Color(0xFFF5E0D6)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: Lottie.asset('assets/small flame.json', repeat: true),
+            ),
+            if (isPaired)
               SizedBox(
-                width: 24,
-                height: 24,
+                width: 34,
+                height: 34,
                 child: Lottie.asset('assets/small flame.json', repeat: true),
               ),
-              // Второй огонёк — статус «Пара» 🔥🔥 (Фаза 5).
-              if (isPaired)
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: Lottie.asset('assets/small flame.json', repeat: true),
-                ),
-              const SizedBox(width: 4),
-              Text(
-                '$count',
-                style: SeeUTypography.body.copyWith(
-                  color: colors.ink,
-                  fontWeight: FontWeight.w700,
-                ),
+            const SizedBox(width: 4),
+            Text(
+              '$count',
+              style: SeeUTypography.title.copyWith(
+                color: const Color(0xFF161310),
+                fontWeight: FontWeight.w800,
+                fontSize: 17,
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Вкладка профиля: иконка + подпись, чернильное подчёркивание активной (§05).
+class _ProfileTextTab extends StatelessWidget {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _ProfileTextTab({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final color = isActive ? c.ink : c.ink3;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isActive ? c.ink : Colors.transparent,
+                width: 2,
+              ),
+            ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            isPaired ? 'Spark · Пара' : 'Spark',
-            style: SeeUTypography.micro.copyWith(color: colors.ink3),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(isActive ? activeIcon : icon, size: 18, color: color),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: SeeUTypography.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Плейсхолдер круглого аватара, когда фото нет/не загрузилось.
+Widget _avatarFallback(SeeUThemeColors c, User user) {
+  return Container(
+    color: c.ink3.withValues(alpha: 0.3),
+    alignment: Alignment.center,
+    child: Text(
+      user.username.isNotEmpty ? user.username[0].toUpperCase() : '?',
+      style: SeeUTypography.displayS.copyWith(color: Colors.white),
+    ),
+  );
+}
+
+/// Сохранённые публикации — отдельный экран (закладка в шапке профиля §05).
+/// Раньше это была третья вкладка профиля; теперь вкладок две, а сохранённое
+/// открывается по иконке-закладке.
+class _SavedPostsScreen extends ConsumerStatefulWidget {
+  final String username;
+  const _SavedPostsScreen({required this.username});
+
+  @override
+  ConsumerState<_SavedPostsScreen> createState() => _SavedPostsScreenState();
+}
+
+class _SavedPostsScreenState extends ConsumerState<_SavedPostsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(userProfileProvider(widget.username).notifier)
+          .loadSavedPosts();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    final state = ref.watch(userProfileProvider(widget.username));
+    return Scaffold(
+      backgroundColor: c.bg,
+      appBar: AppBar(
+        backgroundColor: c.bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(PhosphorIcons.arrowLeft(), color: c.ink, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text('Сохранённое', style: SeeUTypography.subtitle),
+      ),
+      body: SafeArea(
+        child: state.savedPostsLoading && state.savedPosts.isEmpty
+            ? const Center(
+                child: CircularProgressIndicator(color: SeeUColors.accent))
+            : state.savedPostsError && state.savedPosts.isEmpty
+                ? SeeUErrorState(
+                    error: 'Не удалось загрузить сохранённое',
+                    onRetry: () => ref
+                        .read(userProfileProvider(widget.username).notifier)
+                        .loadSavedPosts(),
+                  )
+                : state.savedPosts.isEmpty
+                    ? const SeeUEmptyState(
+                        icon: PhosphorIconsRegular.bookmarkSimple,
+                        title: 'Пока ничего не сохранено',
+                        subtitle:
+                            'Сохраняйте публикации закладкой — они появятся здесь',
+                      )
+                    : ProfilePostsGrid(posts: state.savedPosts),
       ),
     );
   }

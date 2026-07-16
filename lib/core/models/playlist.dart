@@ -16,12 +16,17 @@ class Playlist {
   final String coverUrl;
   final int tracksCount;
 
+  /// До 4 обложек треков — из них собирается мозаика 2×2. Пусто, пока в
+  /// плейлисте нет треков с обложками: тогда рисуем сплошной цвет.
+  final List<String> coverUrls;
+
   const Playlist({
     required this.id,
     required this.userId,
     required this.name,
     required this.coverUrl,
     required this.tracksCount,
+    this.coverUrls = const [],
   });
 
   factory Playlist.fromJson(Map<String, dynamic> j) => Playlist(
@@ -30,6 +35,10 @@ class Playlist {
         name: j['name']?.toString() ?? '',
         coverUrl: _absUrl(j['cover_url']?.toString()),
         tracksCount: (j['tracks_count'] as num?)?.toInt() ?? 0,
+        coverUrls: (j['cover_urls'] as List? ?? [])
+            .map((e) => _absUrl(e?.toString()))
+            .where((e) => e.isNotEmpty)
+            .toList(),
       );
 }
 

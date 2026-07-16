@@ -36,7 +36,7 @@ class Comment {
     return Comment(
       id: json['id']?.toString() ?? '',
       postId: json['post_id']?.toString() ?? '',
-      author: User.fromJson(json['author'] as Map<String, dynamic>? ?? {}),
+      author: User.fromJson(json['user'] as Map<String, dynamic>? ?? {}),
       text: json['text']?.toString() ?? '',
       gifUrl: json['gif_url']?.toString() ?? '',
       // BUG-20: safe-cast через num? — backend BIGINT может прийти как
@@ -55,7 +55,7 @@ class Comment {
   Map<String, dynamic> toJson() => {
     'id': id,
     'post_id': postId,
-    'author': author.toJson(),
+    'user': author.toJson(),
     'text': text,
     'gif_url': gifUrl,
     'likes_count': likesCount,

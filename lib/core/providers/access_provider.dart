@@ -7,7 +7,10 @@ import '../models/access.dart';
 
 // ── Access check (per userId) ──────────────────────────────────────────────────
 
-final accessCheckProvider = FutureProvider.family<bool, String>((ref, userId) async {
+// autoDispose: результат кэшируется по userId — без autoDispose инстанс на
+// каждый когда-либо открытый профиль жил до конца сессии.
+final accessCheckProvider =
+    FutureProvider.autoDispose.family<bool, String>((ref, userId) async {
   final api = ref.read(apiClientProvider);
   try {
     final res = await api.get(ApiEndpoints.accessCheck(userId));
@@ -22,8 +25,9 @@ final accessCheckProvider = FutureProvider.family<bool, String>((ref, userId) as
 
 class AccessListNotifier extends StateNotifier<AsyncValue<List<AccessPartner>>> {
   final ApiClient _api;
+  final Ref _ref;
 
-  AccessListNotifier(this._api) : super(const AsyncValue.loading()) {
+  AccessListNotifier(this._api, this._ref) : super(const AsyncValue.loading()) {
     load();
   }
 
@@ -44,13 +48,16 @@ class AccessListNotifier extends StateNotifier<AsyncValue<List<AccessPartner>>> 
 
   Future<void> revoke(String userId) async {
     await _api.delete(ApiEndpoints.accessRevoke(userId));
+    // Сбрасываем кэш проверки доступа — иначе на профиле отозванного
+    // оставалась рабочая на вид кнопка «Написать», ведущая в 403.
+    _ref.invalidate(accessCheckProvider(userId));
     await load();
   }
 }
 
 final accessListProvider =
     StateNotifierProvider<AccessListNotifier, AsyncValue<List<AccessPartner>>>(
-  (ref) => AccessListNotifier(ref.read(apiClientProvider)),
+  (ref) => AccessListNotifier(ref.read(apiClientProvider), ref),
 );
 
 // ── Access request notifier ──────────────────────────────────────────────────────
@@ -138,6 +145,13 @@ class SentRequestsNotifier
     } on DioException catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  /// Отмена своей отправленной заявки — раньше её нельзя было отозвать
+  /// вообще (тупик «ОЖИДАНИЕ» навсегда).
+  Future<void> cancel(String requestId) async {
+    await _api.delete(ApiEndpoints.accessRequestCancel(requestId));
+    await load();
   }
 }
 

@@ -9,6 +9,7 @@ import '../../core/api/api_client.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/pair_provider.dart';
 import '../../core/providers/scanner_provider.dart';
+import '../../core/services/logger.dart';
 import '../../services/nfc_band_service.dart';
 
 /// Экран «Поднеси телефон к браслету» (Фазы 4–5).
@@ -86,35 +87,34 @@ class _NfcScanScreenState extends ConsumerState<NfcScanScreen>
       _status = 'Браслет найден…';
     });
 
-    // Фаза 5: фиксируем касание (для пары) — не блокируем переход профилем.
-    recordNfcTap(ref, hash).catchError((_) => 'ignored');
-
-    // Фаза 4: резолвим владельца и открываем профиль.
-    final api = ref.read(apiClientProvider);
-    final profiles = await resolveScanProfiles(api, [hash]);
+    // Фаза 5: фиксируем касание (для пары И для by-device резолва — сервер
+    // теперь пускает деанонимизацию только при доказанном касании). Ждём
+    // записи ДО резолва, иначе гейт отклонит запрос. Ошибку логируем, но не
+    // роняем поток — резолв всё равно попробуем.
+    try {
+      await recordNfcTap(ref, hash);
+    } catch (e) {
+      appLog.warn('[nfc] recordNfcTap failed: $e');
+    }
     if (!mounted) return;
 
-    if (profiles.isEmpty) {
-      setState(() {
-        _stage = _NfcStage.error;
-        _busy = false;
-        _status = 'Браслет пока не привязан к аккаунту.';
-      });
-      return;
-    }
+    // Фаза 4: физическое NFC-касание = согласие → резолвим РЕАЛЬНОГО владельца
+    // и открываем его Профиль (это консентный мост, не анонимный ambient-скан).
+    final api = ref.read(apiClientProvider);
+    final username = await resolveUsernameByDevice(api, hash);
+    if (!mounted) return;
 
-    final profile = profiles.values.first;
-    if (profile.username.isEmpty) {
+    if (username == null) {
       setState(() {
         _stage = _NfcStage.error;
         _busy = false;
-        _status = 'Не удалось открыть профиль владельца.';
+        _status = 'Не удалось открыть профиль. Коснитесь браслета ещё раз.';
       });
       return;
     }
 
     // Заменяем экран сканера профилем владельца.
-    context.pushReplacement('/profile/${profile.username}');
+    context.pushReplacement('/profile/$username');
   }
 
   Color get _stageColor => switch (_stage) {

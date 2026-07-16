@@ -66,17 +66,39 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(_sborDetailProvider(widget.sborId));
 
-    // Участник получает WS-событие об отмене сбора → авто-закрытие экрана.
+    // WS-события по этому сбору: отмена → авто-закрытие; одобрение/отклонение
+    // заявки и новая заявка → перезагрузка карточки, чтобы myRequestStatus /
+    // isJoined / счётчик заявок обновились без ручного pull-to-refresh.
     ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        if (evt.type != 'sbor.cancelled') return;
         final payload = evt.payload is Map<String, dynamic>
             ? evt.payload as Map<String, dynamic>
             : null;
-        if (payload == null || payload['sbor_id']?.toString() != widget.sborId) return;
+        if (payload == null ||
+            payload['sbor_id']?.toString() != widget.sborId) {
+          return;
+        }
         if (!mounted) return;
-        showSeeUSnackBar(context, 'Сбор был отменён организатором');
-        context.pop();
+        switch (evt.type) {
+          case 'sbor.cancelled':
+            showSeeUSnackBar(context, 'Сбор был отменён организатором');
+            context.pop();
+            return;
+          case 'sbor.request.approved':
+            showSeeUSnackBar(context, 'Ваша заявка одобрена 🎉');
+            ref.invalidate(_sborDetailProvider(widget.sborId));
+            return;
+          case 'sbor.request.rejected':
+            showSeeUSnackBar(context, 'Ваша заявка отклонена');
+            ref.invalidate(_sborDetailProvider(widget.sborId));
+            return;
+          case 'sbor.request.received':
+            // Организатору: пришла новая заявка → обновить счётчик/список.
+            ref.invalidate(_sborDetailProvider(widget.sborId));
+            return;
+          default:
+            return;
+        }
       });
     });
 
@@ -320,29 +342,33 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    _bookmarkLoading
-                        ? Container(
-                            width: 34, height: 34,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.16),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Center(
-                              child: SizedBox(
-                                width: 14, height: 14,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2,
+                    // Закладка не показывается организатору — свой сбор нельзя
+                    // «сохранить на потом», он и так в «Мои».
+                    if (s.myRole != SborRole.organizer) ...[
+                      const SizedBox(width: 6),
+                      _bookmarkLoading
+                          ? Container(
+                              width: 34, height: 34,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.16),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 14, height: 14,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2,
+                                  ),
                                 ),
                               ),
+                            )
+                          : _HeroAction(
+                              icon: (_bookmarked ?? false)
+                                  ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.bookmarkSimple(),
+                              onTap: () => _toggleBookmark(s),
                             ),
-                          )
-                        : _HeroAction(
-                            icon: (_bookmarked ?? false)
-                                ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
-                                : PhosphorIcons.bookmarkSimple(),
-                            onTap: () => _toggleBookmark(s),
-                          ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -884,6 +910,10 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (s.isJoined) ...[
+                // Чат доступен, пока сбор не завершён. После окончания сбор
+                // уходит в «прошедшие» — из страницы сбора в чат не попасть, но
+                // он ещё живёт в списке чатов ~24ч, потом удаляется сам.
+                if (!s.isPast) ...[
                 // ── Joined: "Открыть чат" primary button ──
                 GestureDetector(
                   onTap: () => _openChat(s),
@@ -920,6 +950,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                ],
                 // ── Joined: secondary action row ──
                 if (isOrganizer) ...[
                   // Organizer: [Заявки] [Редактировать] в ряд
@@ -1050,7 +1081,8 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
     final status = s.myRequestStatus; // '' | 'pending' | 'approved' | 'rejected'
 
     if (s.isPast) {
-      return _disabledButton(c, PhosphorIcons.clockCountdown(), 'Сбор уже прошёл');
+      return _disabledButton(c, PhosphorIcons.clockCountdown(),
+          s.isEnded ? 'Сбор завершён' : 'Сбор уже прошёл');
     }
     if (s.isFull && status.isEmpty) {
       return _disabledButton(c, PhosphorIcons.lockSimple(), 'Мест нет');
@@ -1242,7 +1274,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       final status = e.response?.statusCode;
       final text = status == 403
           ? 'Организатор не может добавить свой сбор в закладки'
-          : (e.response?.data?['error'] as String? ?? 'Ошибка при сохранении');
+          : apiErrorMessage(e);
       showSeeUSnackBar(context, text, tone: SeeUTone.danger);
     } catch (e) {
       if (!mounted) return;
@@ -1533,8 +1565,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
           tone: SeeUTone.success);
     } on DioException catch (e) {
       if (!mounted) return;
-      final msg = e.response?.data?['error'] as String?;
-      showSeeUSnackBar(context, msg ?? 'Ошибка: $e', tone: SeeUTone.danger);
+      showSeeUSnackBar(context, apiErrorMessage(e), tone: SeeUTone.danger);
     } catch (e) {
       if (!mounted) return;
       showSeeUSnackBar(context, 'Ошибка: $e', tone: SeeUTone.danger);
@@ -1554,8 +1585,7 @@ class _SborDetailScreenState extends ConsumerState<SborDetailScreen> {
       ref.invalidate(_sborDetailProvider(widget.sborId));
     } on DioException catch (e) {
       if (!mounted) return;
-      final msg = e.response?.data?['error'] as String?;
-      showSeeUSnackBar(context, msg ?? 'Ошибка: $e', tone: SeeUTone.danger);
+      showSeeUSnackBar(context, apiErrorMessage(e), tone: SeeUTone.danger);
     } catch (e) {
       if (!mounted) return;
       showSeeUSnackBar(context, 'Ошибка: $e', tone: SeeUTone.danger);

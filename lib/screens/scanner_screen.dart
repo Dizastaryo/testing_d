@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,12 +10,15 @@ import '../core/api/api_client.dart';
 import '../core/design/design.dart';
 import '../core/providers/auth_provider.dart';
 import '../core/providers/scanner_provider.dart';
+import '../core/services/logger.dart';
 import '../models/ble_device_model.dart';
 import '../services/account_session.dart';
 import '../services/user_resolver.dart';
 import 'widgets/my_bracelet_sheet.dart';
-import 'widgets/scanner_painters.dart';
 import '../features/spark/spark_send_sheet.dart';
+import '../features/card/card_style.dart';
+import '../features/card/card_portrait.dart';
+import '../features/card/card_detail_sheet.dart';
 
 // ── Entry: BLE device + resolved local info + server profile ─────────────────
 
@@ -58,6 +60,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
   late UserResolver _resolver;
 
   final Map<String, ScanProfile> _scanProfiles = {};
+  // Negative-cache: хэши без карточки, чтобы не долбить сервер бесконечно на
+  // каждом срабатывании дебаунса. TTL — сбрасывается при рестарте скана.
+  final Set<String> _noCardHashes = {};
   Timer? _resolveTimer;
 
   @override
@@ -107,8 +112,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       _pauseAnimations();
+      // Останавливаем непрерывный BLE-скан в фоне — иначе он сажает батарею
+      // (и на iOS всё равно деградирует системой).
+      FlutterBluePlus.stopScan();
     } else if (state == AppLifecycleState.resumed) {
       _resumeAnimations();
+      // Возобновляем скан при возврате (если экран ещё жив и BT включён).
+      if (mounted && _bluetoothOn && !FlutterBluePlus.isScanningNow) {
+        _startScan();
+      }
     }
   }
 
@@ -150,8 +162,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       final profile = d.seeuPacket != null
           ? _scanProfiles[d.seeuPacket!.idHex]
           : null;
-      // Only show entries where backend resolved a real user.
-      if (profile == null || profile.username.isEmpty) continue;
+      // Показываем только заполненные карточки (у карточки есть фото — оно
+      // обязательно). Незаполненная карточка не показывается рядом.
+      if (profile == null || !profile.isFilled) continue;
       entries.add(ScannerResolvedEntry(
         device: d,
         resolved: resolved,
@@ -178,7 +191,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
 
   Future<void> _startScan() async {
     if (!await _requestBlePermissions()) return;
+    // adapterState.first может эмитить после ухода с экрана (iOS init CBCentral
+    // unknown→poweredOn) — без guard'а setState падал после dispose.
+    if (!mounted) return;
     _devicesMap.clear();
+    _scanProfiles.clear(); // не тащим карточки прошлого скана
+    _noCardHashes.clear();
     _devicesMapVersion++;
     setState(() {});
     _scanSub?.cancel();
@@ -216,7 +234,13 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       final hashes = <String>[];
       for (final d in _devicesMap.values) {
         final hex = d.seeuPacket?.idHex;
-        if (hex != null && hex.isNotEmpty && !_scanProfiles.containsKey(hex)) {
+        // Пропускаем уже резолвнутые И те, что сервер уже пометил «без
+        // карточки» (negative cache) — иначе устройство без карточки
+        // перезапрашивалось на каждом тике таймера бесконечно.
+        if (hex != null &&
+            hex.isNotEmpty &&
+            !_scanProfiles.containsKey(hex) &&
+            !_noCardHashes.contains(hex)) {
           hashes.add(hex);
         }
       }
@@ -224,13 +248,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       try {
         final api = ref.read(apiClientProvider);
         final resolved = await resolveScanProfiles(api, hashes);
-        if (mounted && resolved.isNotEmpty) {
-          setState(() {
-            _scanProfiles.addAll(resolved);
-            _devicesMapVersion++;
-          });
-        }
-      } catch (_) {}
+        if (!mounted) return;
+        setState(() {
+          _scanProfiles.addAll(resolved);
+          // Хэши, которые сервер НЕ вернул → без карточки, в negative-cache.
+          for (final h in hashes) {
+            if (!resolved.containsKey(h)) _noCardHashes.add(h);
+          }
+          _devicesMapVersion++;
+        });
+      } catch (e, st) {
+        // Раньше ошибка резолва проглатывалась молча — отладка в поле была
+        // невозможна (пользователь видел «ищем» с нулём карточек).
+        appLog.error('[scanner] resolve failed', e, st);
+      }
     });
   }
 
@@ -247,39 +278,27 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     }
   }
 
-  String _personWord(int count) {
-    final mod10 = count % 10;
-    final mod100 = count % 100;
-    if (mod10 == 1 && mod100 != 11) return 'человек';
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-      return 'человека';
-    }
-    return 'человек';
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  void _sendSpark(ScanProfile p) {
+    HapticFeedback.mediumImpact();
+    SparkSendSheet.show(
+      context,
+      ref,
+      receiverId: p.ownerId,
+      receiverName: p.displayName,
+      proofDeviceHash: p.deviceHash,
+      avatarUrl: p.photoUrl,
+    );
   }
 
-  String _topTitle(List<ScannerResolvedEntry> entries) {
-    if (entries.isNotEmpty) {
-      return '${entries.length} ${_personWord(entries.length)} рядом';
-    }
-    return _isScanning ? 'Ищем рядом…' : 'На паузе';
-  }
-
-  // Честный индикатор близости из RSSI: 3 — рядом, 2 — близко, 1 — далеко.
-  int _rssiLevel(int rssi) {
-    if (rssi >= -60) return 3;
-    if (rssi >= -75) return 2;
-    return 1;
-  }
-
-  String _rssiLabel(int rssi) {
-    switch (_rssiLevel(rssi)) {
-      case 3:
-        return 'рядом';
-      case 2:
-        return 'близко';
-      default:
-        return 'далеко';
-    }
+  void _openBraceletPage() {
+    HapticFeedback.lightImpact();
+    // Отдельная полноэкранная страница браслета. Передаём карту BLE-устройств —
+    // GATT-режим требует живого скана рядом.
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => BraceletScreen(devicesMap: Map.unmodifiable(_devicesMap)),
+    ));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -289,158 +308,173 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     final c = context.seeuColors;
     final entries = _sortedDevices;
     final user = ref.watch(authProvider).user;
-    final showList = entries.isNotEmpty; // ≥1 человек → сразу список (B).
+    final hasPeople = entries.isNotEmpty;
+
+    // Фото «я» в центре радара — фото карточки, иначе аватар профиля.
+    final mePhoto = (user?.scanPhotoUrl.isNotEmpty ?? false)
+        ? user!.scanPhotoUrl
+        : (user?.avatarUrl ?? '');
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.5),
-            radius: 1.2,
-            colors: [c.accentSoft, c.bg],
-          ),
-        ),
-        child: Column(
-          children: [
-            // Top bar — editorial-заголовок + пилюля браслета. Кнопка play/pause
-            // показывается только в режиме списка; в радаре управление скана —
-            // одна большая кнопка (без дублирующей верхней).
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'СЕЙЧАС ВОКРУГ',
-                            style: SeeUTypography.monoLabel.copyWith(
-                                color: c.ink3, letterSpacing: 0.8),
-                          ),
-                          Text(
-                            _topTitle(entries),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: SeeUTypography.subtitle
-                                .copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (showList) ...[
-                      _buildScanToggle(c),
-                      const SizedBox(width: 8),
+      backgroundColor: c.bg,
+      body: Stack(
+        children: [
+          // Верхнее коралловое свечение (radial 50% 60% at 50% 0).
+          Positioned(
+            top: -60,
+            left: 0,
+            right: 0,
+            height: 300,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.topCenter,
+                    radius: 0.95,
+                    colors: [
+                      c.accentSoft,
+                      c.accentSoft.withValues(alpha: 0),
                     ],
-                    _buildMyBraceletPill(c),
-                  ],
+                    stops: const [0.0, 0.72],
+                  ),
                 ),
               ),
             ),
-            // Content: список (B) либо радар (A/C).
-            Expanded(
-              child: showList
-                  ? _buildAccountList(entries)
-                  : _buildRadarView(user?.avatarUrl),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Top control: Stop/Start (стеклянная круглая кнопка) ──────────────────────
-
-  Widget _buildScanToggle(SeeUThemeColors c) {
-    return Tappable.scaled(
-      onTap: _bluetoothOn ? _toggleScan : null,
-      scaleFactor: 0.9,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withValues(alpha: 0.18),
-                  Colors.white.withValues(alpha: 0.04),
-                ],
-              ),
-              border: Border.all(
-                  color: SeeUColors.accent.withValues(alpha: 0.45),
-                  width: 0.8),
-            ),
-            child: Icon(
-              _isScanning ? PhosphorIconsBold.pause : PhosphorIconsBold.play,
-              size: 20,
-              color: _bluetoothOn ? SeeUColors.accent : c.ink4,
+          ),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                _buildTopBar(c, hasPeople, entries.length),
+                Expanded(
+                  // Bluetooth выключен — отдельное состояние с явным текстом,
+                  // а не молчаливо-задизейбленная кнопка (тупик без объяснения).
+                  child: !_bluetoothOn
+                      ? _buildBluetoothOff(c)
+                      : hasPeople
+                          ? _buildFeed(entries)
+                          : (_isScanning
+                              ? _buildSearching(c, mePhoto)
+                              : _buildPaused(c, mePhoto)),
+                ),
+              ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  // ── B: Account list ──────────────────────────────────────────────────────────
-
-  Widget _buildAccountList(List<ScannerResolvedEntry> entries) {
-    final c = context.seeuColors;
-    final paused = !_isScanning;
-    // Никакого pull-to-refresh — скан живёт постоянно и сам обновляет список.
-    return ListView(
-      padding: const EdgeInsets.only(top: 4, bottom: 120),
-      children: [
-        if (paused) _buildPausedBanner(c),
-        // Section header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-          child: Text(
-            'Рядом сейчас',
-            style:
-                SeeUTypography.displayS.copyWith(fontWeight: FontWeight.w500),
-          ),
-        ),
-        // Account cards (людей точками в радаре НЕ дублируем).
-        ...entries.asMap().entries.map(
-              (e) => _buildPersonCard(e.value, e.key),
-            ),
-      ],
-    );
-  }
-
-  Widget _buildPausedBanner(SeeUThemeColors c) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(SeeURadii.medium),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.8),
-      ),
-      child: Row(
-        children: [
-          const Icon(PhosphorIconsFill.pause, size: 15, color: SeeUColors.accent),
-          const SizedBox(width: 8),
-          Text('Скан на паузе',
-              style: SeeUTypography.caption
-                  .copyWith(fontWeight: FontWeight.w600, color: c.ink)),
         ],
       ),
     );
   }
 
-  Widget _buildPersonCard(ScannerResolvedEntry entry, int index) {
-    final c = context.seeuColors;
-    final profile = entry.scanProfile!;
+  // ── Top bar ────────────────────────────────────────────────────────────────
+
+  Widget _buildTopBar(SeeUThemeColors c, bool hasPeople, int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+      child: Row(
+        children: [
+          if (hasPeople) _nearbyPill(c, count),
+          const Spacer(),
+          _roundIconButton(
+            c,
+            PhosphorIcons.identificationCard(),
+            () {
+              HapticFeedback.lightImpact();
+              context.push('/settings/card'); // студия «Моя карточка»
+            },
+          ),
+          const SizedBox(width: 9),
+          _roundIconButton(
+            c,
+            PhosphorIcons.usersThree(),
+            () {
+              HapticFeedback.lightImpact();
+              context.push('/settings/card/audience'); // кто рядом смотрел
+            },
+          ),
+          const SizedBox(width: 9),
+          _roundIconButton(c, PhosphorIcons.broadcast(), _openBraceletPage),
+        ],
+      ),
+    );
+  }
+
+  /// Пилюля «N рядом» с дышащей коралловой точкой.
+  Widget _nearbyPill(SeeUThemeColors c, int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF161310).withValues(alpha: 0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _BreathingDot(),
+          const SizedBox(width: 6),
+          Text(
+            '$count рядом',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: c.ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Круглая белая кнопка 44px с коралловой иконкой.
+  Widget _roundIconButton(SeeUThemeColors c, IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: c.surface,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF161310).withValues(alpha: 0.10),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 20, color: SeeUColors.accent),
+      ),
+    );
+  }
+
+  // ── Лента карточек ─────────────────────────────────────────────────────────
+
+  Widget _buildFeed(List<ScannerResolvedEntry> entries) {
+    return ListView.builder(
+      padding: EdgeInsets.fromLTRB(18, 4, 18, 28 + context.bottomBarInset),
+      itemCount: entries.length,
+      itemBuilder: (_, i) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: _personCard(entries[i], i),
+      ),
+    );
+  }
+
+  /// Карточка человека рядом. Тап открывает CardDetailSheet (это фиксирует
+  /// просмотр — view-event, симметрия видимости; раньше тап не делал ничего,
+  /// и ни один просмотр не регистрировался). Spark — по кнопке справа.
+  Widget _personCard(ScannerResolvedEntry entry, int index) {
+    final p = entry.scanProfile!;
+    final t = templateFromStyle(p.style);
 
     return TweenAnimationBuilder<double>(
       key: ValueKey(entry.device.macAddress),
@@ -449,365 +483,388 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       curve: Curves.easeOutCubic,
       builder: (_, val, child) => Opacity(
         opacity: val,
-        child:
-            Transform.translate(offset: Offset(0, 8 * (1 - val)), child: child),
+        child: Transform.translate(offset: Offset(0, 8 * (1 - val)), child: child),
       ),
       child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          context.push('/profile/${profile.username}');
-        },
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-          padding: const EdgeInsets.all(14),
-          // «Дешёвое стекло» — тинт+градиент+бордюр, без BackdropFilter (скролл-лента).
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                c.surface.withValues(alpha: 0.85),
-                c.surface.withValues(alpha: 0.55),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(SeeURadii.medium),
-            border:
-                Border.all(color: Colors.white.withValues(alpha: 0.6), width: 0.8),
-            boxShadow: SeeUShadows.sm,
-          ),
-          child: Row(
-            children: [
-              // Avatar
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: c.surface2,
-                backgroundImage: profile.avatarUrl.isNotEmpty
-                    ? CachedNetworkImageProvider(profile.avatarUrl)
-                    : null,
-                child: profile.avatarUrl.isEmpty
-                    ? Text(
-                        profile.username.isNotEmpty
-                            ? profile.username[0].toUpperCase()
-                            : '?',
-                        style: SeeUTypography.subtitle.copyWith(
-                            fontWeight: FontWeight.w600, color: c.ink2),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              // Username + честный индикатор близости
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '@${profile.username}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: SeeUTypography.subtitle.copyWith(
-                          fontWeight: FontWeight.w600, color: c.ink),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildProximity(entry.device.rssi, c),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Spark button (отправка Spark — отдельным действием)
-              _buildSparkButton(c, profile),
-            ],
-          ),
+        onTap: () => CardDetailSheet.show(context, ref, p),
+        behavior: HitTestBehavior.opaque,
+        child: CardPortrait(
+          template: t,
+          photoUrl: p.photoUrl,
+          nickname: p.displayName,
+          text: p.text,
+          trailing: SparkHaloButton(onTap: () => _sendSpark(p)),
         ),
       ),
     );
   }
 
-  Widget _buildProximity(int rssi, SeeUThemeColors c) {
-    final level = _rssiLevel(rssi);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 3 полоски сигнала
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(3, (i) {
-            final active = i < level;
-            return Container(
-              width: 3,
-              height: 5.0 + i * 4,
-              margin: const EdgeInsets.only(right: 2),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(1),
-                color: active
-                    ? SeeUColors.accent
-                    : c.ink4.withValues(alpha: 0.3),
-              ),
-            );
-          }),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          _rssiLabel(rssi),
-          style: SeeUTypography.monoLabel
-              .copyWith(color: c.ink3, letterSpacing: 0.6),
-        ),
-      ],
-    );
-  }
+  // ── Состояние: идёт поиск ──────────────────────────────────────────────────
 
-  Widget _buildSparkButton(SeeUThemeColors c, ScanProfile profile) {
-    return Tappable.scaled(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        SparkSendSheet.show(
-          context,
-          ref,
-          receiverId: profile.userId,
-          receiverName: profile.fullName.isNotEmpty
-              ? profile.fullName
-              : profile.username,
-          proofDeviceHash: profile.deviceHash,
-          avatarUrl: profile.avatarUrl,
-        );
-      },
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: c.accentSoft,
-        ),
-        child: const Icon(PhosphorIconsFill.fireSimple,
-            size: 20, color: SeeUColors.accent),
-      ),
-    );
-  }
-
-  // ── A / C: Radar view (ищем / пауза) ─────────────────────────────────────────
-
-  Widget _buildRadarView(String? avatarUrl) {
-    final c = context.seeuColors;
-    final paused = !_isScanning;
-    return Stack(
-      children: [
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Радар с фото профиля в центре. На паузе — приглушён и не дышит
-              // (контроллер остановлен, значение заморожено).
-              Opacity(
-                opacity: paused ? 0.55 : 1.0,
-                child: SizedBox(
-                  width: 260,
-                  height: 260,
-                  child: AnimatedBuilder(
-                    animation: _pulseController,
-                    builder: (_, __) => CustomPaint(
-                      painter: ScannerRadarPainter(
-                          pulseProgress: _pulseController.value),
-                      child: Center(child: _buildCenterAvatar(avatarUrl, 104)),
+  Widget _buildSearching(SeeUThemeColors c, String mePhoto) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
+      child: Column(
+        children: [
+          SizedBox(
+            width: 280,
+            height: 280,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Мягкое свечение под кольцами.
+                Container(
+                  width: 230,
+                  height: 230,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        SeeUColors.accent.withValues(alpha: 0.12),
+                        SeeUColors.accent.withValues(alpha: 0),
+                      ],
+                      stops: const [0.0, 0.68],
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                paused ? 'Скан на паузе' : 'Ищем людей рядом…',
-                style: SeeUTypography.displayS,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                paused
-                    ? 'Поиск приостановлен — возобновите, когда будете\nрядом с другими пользователями SeeU'
-                    : 'Держите Bluetooth включённым и будьте\nрядом с другими пользователями SeeU',
-                textAlign: TextAlign.center,
-                style: SeeUTypography.caption
-                    .copyWith(color: c.ink3, height: 1.45),
-              ),
-              const SizedBox(height: 28),
-              _buildScanControlBig(paused),
-            ],
+                const _PulseRings(),
+                _radarCenterPhoto(c, mePhoto, searching: true),
+              ],
+            ),
           ),
-        ),
-        if (!_bluetoothOn)
-          Positioned(
-            top: 12,
-            left: 24,
-            right: 24,
+          const SizedBox(height: 26),
+          Text(
+            'Ищем, кто рядом',
+            style: SeeUTypography.displayS.copyWith(fontSize: 24, color: c.ink),
+          ),
+          const SizedBox(height: 9),
+          SizedBox(
+            width: 280,
+            child: Text(
+              'Держи Bluetooth включённым и будь среди людей — их карточки появятся здесь сами.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, height: 1.5, color: c.ink3),
+            ),
+          ),
+          const SizedBox(height: 28),
+          // Кнопка-обводка «Остановить поиск».
+          GestureDetector(
+            onTap: _bluetoothOn ? _toggleScan : null,
+            behavior: HitTestBehavior.opaque,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
               decoration: BoxDecoration(
                 color: c.surface,
-                borderRadius: BorderRadius.circular(SeeURadii.medium),
-                border: Border.all(color: c.line),
-                boxShadow: SeeUShadows.sm,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: SeeUColors.accent.withValues(alpha: 0.5),
+                  width: 1.2,
+                ),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(PhosphorIconsRegular.bluetoothSlash,
-                      size: 16, color: SeeUColors.accent),
-                  const SizedBox(width: 8),
-                  Text('Bluetooth выключен',
-                      style: SeeUTypography.caption.copyWith(
-                          fontWeight: FontWeight.w600, color: c.ink)),
+                  Icon(PhosphorIconsBold.stop, size: 19, color: SeeUColors.accent),
+                  const SizedBox(width: 7),
+                  const Text(
+                    'Остановить поиск',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
-  /// Центр радара — фото профиля в стеклянном кольце + мягкий glow.
-  /// Нет фото → фолбэк-лого «глаз» (никакой буквы «Я»).
-  Widget _buildCenterAvatar(String? url, double size) {
-    final hasPhoto = url != null && url.isNotEmpty;
+  // ── Состояние: поиск остановлен ────────────────────────────────────────────
+
+  /// Состояние «Bluetooth выключен» — с явным объяснением, что делать.
+  Widget _buildBluetoothOff(SeeUThemeColors c) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(PhosphorIcons.bluetoothSlash(), size: 56, color: c.ink3),
+            const SizedBox(height: 20),
+            Text('Bluetooth выключен',
+                style: SeeUTypography.displayS
+                    .copyWith(fontSize: 22, color: c.ink)),
+            const SizedBox(height: 10),
+            Text(
+              'Сканер находит людей рядом по Bluetooth. Включите Bluetooth '
+              '(и разрешите геолокацию на Android), чтобы искать.',
+              textAlign: TextAlign.center,
+              style: SeeUTypography.body.copyWith(color: c.ink3, height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaused(SeeUThemeColors c, String mePhoto) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
+      child: Column(
+        children: [
+          Opacity(
+            opacity: 0.5,
+            child: SizedBox(
+              width: 280,
+              height: 280,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  _staticRing(130, c.ink3.withValues(alpha: 0.4)),
+                  _staticRing(200, c.ink3.withValues(alpha: 0.25)),
+                  _radarCenterPhoto(c, mePhoto, searching: false),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 26),
+          Text(
+            'Поиск остановлен',
+            style: SeeUTypography.displayS.copyWith(fontSize: 24, color: c.ink),
+          ),
+          const SizedBox(height: 9),
+          SizedBox(
+            width: 290,
+            child: Text(
+              'Ты сейчас не сканируешь окружение. Включи снова, когда будешь среди людей.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, height: 1.5, color: c.ink3),
+            ),
+          ),
+          const SizedBox(height: 28),
+          // Коралловая кнопка «Искать рядом».
+          GestureDetector(
+            onTap: _bluetoothOn ? _toggleScan : null,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+              decoration: BoxDecoration(
+                color: SeeUColors.accent,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: SeeUColors.accent.withValues(alpha: 0.4),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(PhosphorIconsBold.magnifyingGlass,
+                      size: 19, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Искать рядом',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _staticRing(double size, Color color) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: SeeUColors.surface,
-        border: Border.all(
-            color: Colors.white.withValues(alpha: 0.75), width: 2.5),
+        border: Border.all(color: color, width: 2),
+      ),
+    );
+  }
+
+  /// Фото «я» в центре радара: белое кольцо 3px + свечение.
+  Widget _radarCenterPhoto(SeeUThemeColors c, String url,
+      {required bool searching}) {
+    const size = 112.0;
+    final photo = Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: c.surface,
         boxShadow: [
-          BoxShadow(
-            color: SeeUColors.accent.withValues(alpha: 0.35),
-            blurRadius: 28,
-            spreadRadius: 2,
-          ),
+          searching
+              ? BoxShadow(
+                  color: SeeUColors.accent.withValues(alpha: 0.4),
+                  blurRadius: 34,
+                )
+              : BoxShadow(
+                  color: const Color(0xFF161310).withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
         ],
       ),
       child: ClipOval(
-        child: hasPhoto
-            ? CachedNetworkImage(
-                imageUrl: url,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => _centerFallback(size),
-              )
-            : _centerFallback(size),
-      ),
-    );
-  }
-
-  Widget _centerFallback(double size) {
-    return Container(
-      color: SeeUColors.accentSoft,
-      alignment: Alignment.center,
-      child: Icon(PhosphorIconsFill.user,
-          size: size * 0.42, color: SeeUColors.accent),
-    );
-  }
-
-  /// Единственный контрол скана в режиме радара: «Пуск» на паузе, «Пауза» во
-  /// время поиска. Дублирующей верхней кнопки в этом состоянии нет.
-  Widget _buildScanControlBig(bool paused) {
-    final filled = paused; // «Пуск» — акцентная заливка; «Пауза» — outline.
-    return Tappable.scaled(
-      onTap: _bluetoothOn ? _toggleScan : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
-        decoration: BoxDecoration(
-          color: filled ? SeeUColors.accent : context.seeuColors.surface,
-          borderRadius: BorderRadius.circular(SeeURadii.pill),
-          border: filled
-              ? null
-              : Border.all(
-                  color: SeeUColors.accent.withValues(alpha: 0.5), width: 1.2),
-          boxShadow: filled
-              ? [
-                  BoxShadow(
-                    color: SeeUColors.accent.withValues(alpha: 0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              paused ? PhosphorIconsBold.play : PhosphorIconsBold.pause,
-              color: filled ? Colors.white : SeeUColors.accent,
-              size: 20,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              paused ? 'Пуск' : 'Пауза',
-              style: SeeUTypography.subtitle.copyWith(
-                  color: filled ? Colors.white : SeeUColors.accent,
-                  fontWeight: FontWeight.w700),
-            ),
-          ],
+        child: Container(
+          color: searching ? c.accentSoft : c.surface2,
+          child: url.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) =>
+                      Icon(PhosphorIcons.user(), size: 40, color: c.ink3),
+                )
+              : Icon(PhosphorIcons.user(), size: 40, color: c.ink3),
         ),
       ),
     );
+
+    // На паузе фото приглушено (grayscale в дизайне).
+    if (searching) return photo;
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(<double>[
+        0.46, 0.35, 0.09, 0, 0, //
+        0.16, 0.65, 0.09, 0, 0, //
+        0.16, 0.35, 0.39, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ]),
+      child: photo,
+    );
+  }
+}
+
+// ─── Мелкие анимированные элементы ──────────────────────────────────────────
+
+/// Дышащая коралловая точка в пилюле «N рядом».
+class _BreathingDot extends StatefulWidget {
+  const _BreathingDot();
+
+  @override
+  State<_BreathingDot> createState() => _BreathingDotState();
+}
+
+class _BreathingDotState extends State<_BreathingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
   }
 
-  // ── UI Components ──────────────────────────────────────────────────────────
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
-  Widget _buildMyBraceletPill(SeeUThemeColors c) {
-    final user = ref.watch(authProvider).user;
-    final scanEnabled = user?.scanEnabled ?? true;
-    final hasDevice = (user?.devicePublicId ?? '').isNotEmpty;
-
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        _showMyBraceletSheet();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: (scanEnabled && hasDevice) ? c.accentSoft : c.surface2,
-          borderRadius: BorderRadius.circular(SeeURadii.pill),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInOut.transform(_c.value);
+        return Transform.scale(
+          scale: 1 + 0.05 * t,
+          child: Opacity(
+            opacity: 0.9 + 0.1 * t,
+            child: Container(
+              width: 7,
+              height: 7,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: (scanEnabled && hasDevice)
-                    ? SeeUColors.accent
-                    : c.ink3,
-                boxShadow: (scanEnabled && hasDevice)
-                    ? [BoxShadow(color: SeeUColors.accent, blurRadius: 8)]
-                    : null,
+                color: SeeUColors.accent,
+                boxShadow: [
+                  BoxShadow(color: SeeUColors.accent, blurRadius: 8),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-            Text(
-              hasDevice
-                  ? (scanEnabled ? 'браслет вкл' : 'браслет выкл')
-                  : 'нет браслета',
-              style: SeeUTypography.caption.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: (scanEnabled && hasDevice)
-                      ? SeeUColors.accent
-                      : c.ink3),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
+}
 
-  void _showMyBraceletSheet() {
-    showSeeUBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) =>
-          MyBraceletSheet(devicesMap: Map.unmodifiable(_devicesMap)),
-    );
+/// Три расходящихся кольца радара (поиск). Из дизайна: 130px, border 2px
+/// rgba(255,90,60,.55), scale .35→1.75, затухание к 80%, 3.2s, сдвиг фазы 1/3.
+class _PulseRings extends StatefulWidget {
+  const _PulseRings();
+
+  @override
+  State<_PulseRings> createState() => _PulseRingsState();
+}
+
+class _PulseRingsState extends State<_PulseRings>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3200),
+    )..repeat();
   }
 
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        return Stack(
+          alignment: Alignment.center,
+          children: List.generate(3, (i) {
+            final phase = (_c.value + i / 3) % 1.0;
+            final scale = 0.35 + (1.75 - 0.35) * phase;
+            // Затухание: к 80% прогресса кольцо полностью прозрачно.
+            final opacity =
+                (0.55 * (1 - (phase / 0.8))).clamp(0.0, 0.55).toDouble();
+            return Transform.scale(
+              scale: scale,
+              child: Container(
+                width: 130,
+                height: 130,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: SeeUColors.accent.withValues(alpha: opacity),
+                    width: 2,
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
 }

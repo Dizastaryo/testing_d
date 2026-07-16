@@ -51,18 +51,21 @@ Color colorForFileType(String ext) {
 }
 
 /// Russian plural for «материал» (1 материал / 2 материала / 5 материалов).
-String pluralMaterials(int n) {
+String pluralMaterials(int n) => pluralRu(n, 'материал', 'материала', 'материалов');
+
+/// Общая русская плюрализация: pluralRu(2, 'ответ', 'ответа', 'ответов').
+String pluralRu(int n, String one, String few, String many) {
   final mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return 'материалов';
+  if (mod100 >= 11 && mod100 <= 14) return many;
   switch (n % 10) {
     case 1:
-      return 'материал';
+      return one;
     case 2:
     case 3:
     case 4:
-      return 'материала';
+      return few;
     default:
-      return 'материалов';
+      return many;
   }
 }
 

@@ -79,13 +79,29 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       case NotificationType.postTag:
         // radar-style for post tag (nearby mapping)
         return PhosphorIcons.tag(PhosphorIconsStyle.fill);
+      case NotificationType.storyLike:
+        return PhosphorIcons.heart(PhosphorIconsStyle.fill);
+      case NotificationType.missedCall:
+        return PhosphorIcons.phoneX(PhosphorIconsStyle.fill);
       case NotificationType.scannerLike:
         return PhosphorIcons.bluetoothConnected(PhosphorIconsStyle.fill);
+      case NotificationType.coin:
+        return PhosphorIcons.coin(PhosphorIconsStyle.fill);
       case NotificationType.spark:
         return PhosphorIcons.fireSimple(PhosphorIconsStyle.fill);
+      case NotificationType.accessRequest:
+      case NotificationType.accessAccepted:
+        return PhosphorIcons.lockKey(PhosphorIconsStyle.fill);
       case NotificationType.pairPrompt:
       case NotificationType.pairConfirmed:
         return PhosphorIcons.heart(PhosphorIconsStyle.fill);
+      case NotificationType.sborRequest:
+      case NotificationType.sborApproved:
+      case NotificationType.sborRejected:
+      case NotificationType.sborCancelled:
+        return PhosphorIcons.usersThree(PhosphorIconsStyle.fill);
+      case NotificationType.unknown:
+        return PhosphorIcons.bell(PhosphorIconsStyle.fill);
     }
   }
 
@@ -103,13 +119,29 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         return const Color(0xFF85B7EB);
       case NotificationType.postTag:
         return SeeUColors.success;
+      case NotificationType.storyLike:
+        return SeeUColors.like;
+      case NotificationType.missedCall:
+        return SeeUColors.like;
       case NotificationType.scannerLike:
         return SeeUColors.like;
+      case NotificationType.coin:
+        return SeeUColors.amber;
       case NotificationType.spark:
+        return SeeUColors.accent;
+      case NotificationType.accessRequest:
+      case NotificationType.accessAccepted:
         return SeeUColors.accent;
       case NotificationType.pairPrompt:
       case NotificationType.pairConfirmed:
         return SeeUColors.like;
+      case NotificationType.sborRequest:
+      case NotificationType.sborApproved:
+      case NotificationType.sborRejected:
+      case NotificationType.sborCancelled:
+        return SeeUColors.plum;
+      case NotificationType.unknown:
+        return SeeUColors.accent;
     }
   }
 
@@ -148,9 +180,29 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   void _onNotificationTap(AppNotification n) {
     ref.read(notificationProvider.notifier).markRead(n.id);
-    if (n.type == NotificationType.follow) {
-      context.push('/profile/${n.fromUser.username}');
-    } else if (n.commentId != null && n.postId != null) {
+    // Sbor-события → карточка сбора.
+    if (n.sborId != null) {
+      context.push('/sbory/${n.sborId}');
+      return;
+    }
+    switch (n.type) {
+      case NotificationType.follow:
+      case NotificationType.accessRequest:
+      case NotificationType.accessAccepted:
+      case NotificationType.scannerLike:
+      case NotificationType.coin:
+      case NotificationType.spark:
+      case NotificationType.pairPrompt:
+      case NotificationType.pairConfirmed:
+        // Ведут на профиль отправителя (у него пустой username — не навигируем).
+        if (n.fromUser.username.isNotEmpty) {
+          context.push('/profile/${n.fromUser.username}');
+        }
+        return;
+      default:
+        break;
+    }
+    if (n.commentId != null && n.postId != null) {
       // Deep-link: открываем сразу комментарии с автоскроллом к нему.
       context.push('/post/${n.postId}/comments?commentId=${n.commentId}');
     } else if (n.postId != null) {
@@ -227,7 +279,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                       child: AnimationLimiter(
                         child: ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.only(bottom: 100),
+                          padding: const EdgeInsets.only(bottom: 24),
                           itemCount: flatItems.length,
                           itemBuilder: (context, index) =>
                               flatItems[index],

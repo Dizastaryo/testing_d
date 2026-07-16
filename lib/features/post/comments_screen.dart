@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/utils/time_format.dart';
@@ -6,13 +7,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/design/design.dart';
 import '../../core/models/comment.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/feed_provider.dart';
+import '../../core/providers/user_provider.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../widgets/gif_picker_sheet.dart';
 
-final _commentsProvider =
-    StateNotifierProvider.family<CommentsNotifier, CommentsState, String>(
-  (ref, postId) => CommentsNotifier(postId, ref.watch(apiClientProvider)),
+// autoDispose: раньше нотифайер каждого когда-либо открытого поста жил в
+// памяти до конца сессии вместе со списком комментариев.
+final _commentsProvider = StateNotifierProvider.autoDispose
+    .family<CommentsNotifier, CommentsState, String>(
+  (ref, postId) => CommentsNotifier(postId, ref.watch(apiClientProvider), ref),
 );
 
 class CommentsState {
@@ -41,8 +46,10 @@ class CommentsState {
 class CommentsNotifier extends StateNotifier<CommentsState> {
   final String postId;
   final ApiClient _api;
+  final Ref _ref;
 
-  CommentsNotifier(this.postId, this._api) : super(const CommentsState()) {
+  CommentsNotifier(this.postId, this._api, this._ref)
+      : super(const CommentsState()) {
     load();
   }
 
@@ -61,6 +68,13 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
     }
   }
 
+  /// Синк бейджа «N комментариев» на карточках поста в лентах — иначе
+  /// счётчик отстаёт от реальности до полного рефетча ленты.
+  void _propagateCountDelta(int delta) {
+    _ref.read(feedProvider.notifier).adjustCommentsCount(postId, delta);
+    _ref.read(exploreProvider.notifier).adjustCommentsCount(postId, delta);
+  }
+
   Future<void> addComment(String text, {String gifUrl = ''}) async {
     final resp = await _api.post(ApiEndpoints.postComments(postId), data: {
       'text': text,
@@ -70,6 +84,7 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
     final commentData = data is Map && data.containsKey('data') ? data['data'] : data;
     final comment = Comment.fromJson(commentData as Map<String, dynamic>);
     state = state.copyWith(comments: [comment, ...state.comments]);
+    _propagateCountDelta(1);
   }
 
   Future<void> addReply(String parentId, String text, {String gifUrl = ''}) async {
@@ -91,6 +106,38 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
       return c;
     }).toList();
     state = state.copyWith(comments: updated);
+    _propagateCountDelta(1);
+  }
+
+  /// Удалить свой комментарий (или ответ). Возвращает false при ошибке.
+  /// Топ-уровневый комментарий уносит с собой все ответы (бэкенд каскадит) —
+  /// счётчик поста уменьшаем на всё поддерево.
+  Future<bool> deleteComment(String commentId) async {
+    try {
+      await _api.delete(ApiEndpoints.deleteComment(commentId));
+    } catch (_) {
+      return false;
+    }
+    var removed = 0;
+    final updated = <Comment>[];
+    for (final c in state.comments) {
+      if (c.id == commentId) {
+        removed = 1 + c.repliesCount;
+        continue;
+      }
+      if (c.replies.any((r) => r.id == commentId)) {
+        removed = 1;
+        updated.add(c.copyWith(
+          replies: c.replies.where((r) => r.id != commentId).toList(),
+          repliesCount: (c.repliesCount - 1).clamp(0, 1 << 31),
+        ));
+        continue;
+      }
+      updated.add(c);
+    }
+    state = state.copyWith(comments: updated);
+    if (removed > 0) _propagateCountDelta(-removed);
+    return true;
   }
 
   void toggleReplies(String commentId) {
@@ -99,8 +146,34 @@ class CommentsNotifier extends StateNotifier<CommentsState> {
       set.remove(commentId);
     } else {
       set.add(commentId);
+      // Ленивая подгрузка: бэк может отдать repliesCount > 0 без inline-
+      // ответов — раньше «Показать ответы (N)» разворачивался в пустоту.
+      final c = state.comments.where((x) => x.id == commentId).firstOrNull;
+      if (c != null && c.replies.length < c.repliesCount) {
+        _loadReplies(commentId);
+      }
     }
     state = state.copyWith(expandedReplies: set);
+  }
+
+  Future<void> _loadReplies(String commentId) async {
+    try {
+      final resp = await _api.get(ApiEndpoints.commentReplies(commentId));
+      final data = resp.data;
+      final listData =
+          data is Map && data.containsKey('data') ? data['data'] : data;
+      final replies = (listData is List ? listData : const [])
+          .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (!mounted) return;
+      state = state.copyWith(
+        comments: state.comments
+            .map((c) => c.id == commentId ? c.copyWith(replies: replies) : c)
+            .toList(),
+      );
+    } catch (_) {
+      // Не удалось подгрузить — оставляем как есть (кнопка останется).
+    }
   }
 
   Future<void> likeComment(String commentId) async {
@@ -226,6 +299,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     _commentCtrl.clear();
     setState(() {
       _replyToId = null;
@@ -241,7 +315,13 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Восстанавливаем и текст, И контекст ответа — иначе повторная отправка
+      // уходила обычным комментарием вместо ответа.
       _commentCtrl.text = text;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить комментарий',
           tone: SeeUTone.danger);
     }
@@ -249,6 +329,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
 
   Future<void> _submitGif(String url) async {
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     setState(() {
       _replyToId = null;
       _replyToUsername = null;
@@ -263,7 +344,21 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _deleteComment(String id) async {
+    final ok = await ref
+        .read(_commentsProvider(widget.postId).notifier)
+        .deleteComment(id);
+    if (!ok && mounted) {
+      showSeeUSnackBar(context, 'Не удалось удалить комментарий',
           tone: SeeUTone.danger);
     }
   }
@@ -342,6 +437,8 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
                               isExpanded: isExpanded,
                               isHighlighted: isFocused,
                               hairline: index > 0,
+                              myUserId: me?.id,
+                              onDelete: (id) => _deleteComment(id),
                               onLike: () => ref
                                   .read(_commentsProvider(widget.postId)
                                       .notifier)
@@ -505,6 +602,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     _commentCtrl.clear();
     setState(() {
       _replyToId = null;
@@ -522,7 +620,12 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Восстанавливаем текст И контекст ответа (см. CommentsScreen).
       _commentCtrl.text = text;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить комментарий',
           tone: SeeUTone.danger);
     }
@@ -530,6 +633,7 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
 
   Future<void> _submitGif(String url) async {
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     setState(() {
       _replyToId = null;
       _replyToUsername = null;
@@ -546,7 +650,21 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _deleteComment(String id) async {
+    final ok = await ref
+        .read(_commentsProvider(widget.postId).notifier)
+        .deleteComment(id);
+    if (!ok && mounted) {
+      showSeeUSnackBar(context, 'Не удалось удалить комментарий',
           tone: SeeUTone.danger);
     }
   }
@@ -574,6 +692,8 @@ class _CommentsSectionState extends ConsumerState<CommentsSection> {
               isExpanded:
                   commentsState.expandedReplies.contains(e.$2.id),
               hairline: e.$1 > 0,
+              myUserId: me?.id,
+              onDelete: (id) => _deleteComment(id),
               onLike: () => ref
                   .read(_commentsProvider(widget.postId).notifier)
                   .likeComment(e.$2.id),
@@ -655,6 +775,11 @@ class _CommentTile extends StatelessWidget {
   final VoidCallback onLike;
   final VoidCallback onReply;
   final VoidCallback onToggleReplies;
+  /// id текущего пользователя — long-press на СВОЁМ комментарии/ответе
+  /// предлагает удалить его (раньше удалить комментарий было нельзя вовсе,
+  /// хотя ручка DELETE /comments/:id существовала).
+  final String? myUserId;
+  final ValueChanged<String>? onDelete;
 
   const _CommentTile({
     super.key,
@@ -665,7 +790,21 @@ class _CommentTile extends StatelessWidget {
     required this.onLike,
     required this.onReply,
     required this.onToggleReplies,
+    this.myUserId,
+    this.onDelete,
   });
+
+  Future<void> _confirmDelete(BuildContext context, String id) async {
+    final ok = await showSeeUConfirm(
+      context,
+      title: 'Удалить комментарий?',
+      message: 'Это действие нельзя отменить.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+      icon: PhosphorIcons.trash(),
+    );
+    if (ok) onDelete?.call(id);
+  }
 
   String _likesWord(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'лайк';
@@ -741,16 +880,22 @@ class _CommentTile extends StatelessWidget {
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(SeeURadii.medium),
-                        child: CachedNetworkImage(
-                          imageUrl: comment.gifUrl,
+                        // Image.network, not CachedNetworkImage — the latter's
+                        // disk-cache path breaks per-frame GIF timing and
+                        // plays the animation back many times too fast.
+                        child: Image.network(
+                          comment.gifUrl,
                           width: 160,
                           height: 160,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            width: 160,
-                            height: 160,
-                            color: c.surface2,
-                          ),
+                          loadingBuilder: (_, child, progress) =>
+                              progress == null
+                                  ? child
+                                  : Container(
+                                      width: 160,
+                                      height: 160,
+                                      color: c.surface2,
+                                    ),
                         ),
                       ),
                     ],
@@ -815,7 +960,19 @@ class _CommentTile extends StatelessWidget {
                     if (isExpanded && comment.replies.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       ...comment.replies.map(
-                        (reply) => Padding(
+                        (reply) => GestureDetector(
+                          // Свой ответ удаляется long-press'ом, как и
+                          // топ-уровневый комментарий.
+                          onLongPress: onDelete != null &&
+                                  myUserId != null &&
+                                  reply.author.id == myUserId
+                              ? () {
+                                  HapticFeedback.mediumImpact();
+                                  _confirmDelete(context, reply.id);
+                                }
+                              : null,
+                          behavior: HitTestBehavior.deferToChild,
+                          child: Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: IntrinsicHeight(
                             child: Row(
@@ -888,16 +1045,21 @@ class _CommentTile extends StatelessWidget {
                                           child: ClipRRect(
                                             borderRadius: BorderRadius.circular(
                                                 SeeURadii.medium),
-                                            child: CachedNetworkImage(
-                                              imageUrl: reply.gifUrl,
+                                            child: Image.network(
+                                              reply.gifUrl,
                                               width: 120,
                                               height: 120,
                                               fit: BoxFit.cover,
-                                              placeholder: (_, __) => Container(
-                                                width: 120,
-                                                height: 120,
-                                                color: c.surface2,
-                                              ),
+                                              loadingBuilder:
+                                                  (_, child, progress) =>
+                                                      progress == null
+                                                          ? child
+                                                          : Container(
+                                                              width: 120,
+                                                              height: 120,
+                                                              color:
+                                                                  c.surface2,
+                                                            ),
                                             ),
                                           ),
                                         ),
@@ -906,6 +1068,7 @@ class _CommentTile extends StatelessWidget {
                                 ),
                               ],
                             ),
+                          ),
                           ),
                         ),
                       ),
@@ -934,7 +1097,21 @@ class _CommentTile extends StatelessWidget {
         ],
       ),
     );
-    if (!hairline) return tile;
+    // Long-press на своём комментарии → удаление.
+    final canDelete = onDelete != null &&
+        myUserId != null &&
+        comment.author.id == myUserId;
+    final wrapped = canDelete
+        ? GestureDetector(
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              _confirmDelete(context, comment.id);
+            },
+            behavior: HitTestBehavior.deferToChild,
+            child: tile,
+          )
+        : tile;
+    if (!hairline) return wrapped;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -942,7 +1119,7 @@ class _CommentTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Divider(height: 0.5, thickness: 0.5, color: c.line),
         ),
-        tile,
+        wrapped,
       ],
     );
   }
@@ -999,6 +1176,7 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     final notifier = ref.read(_commentsProvider(widget.postId).notifier);
     _commentCtrl.clear();
     setState(() {
@@ -1013,7 +1191,12 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Восстанавливаем текст И контекст ответа (см. CommentsScreen).
       _commentCtrl.text = text;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить комментарий',
           tone: SeeUTone.danger);
     }
@@ -1021,6 +1204,7 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
 
   Future<void> _submitGif(String url) async {
     final replyId = _replyToId;
+    final replyUsername = _replyToUsername;
     final notifier = ref.read(_commentsProvider(widget.postId).notifier);
     setState(() {
       _replyToId = null;
@@ -1034,7 +1218,21 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _replyToId = replyId;
+        _replyToUsername = replyUsername;
+      });
       showSeeUSnackBar(context, 'Не удалось отправить GIF',
+          tone: SeeUTone.danger);
+    }
+  }
+
+  Future<void> _deleteComment(String id) async {
+    final ok = await ref
+        .read(_commentsProvider(widget.postId).notifier)
+        .deleteComment(id);
+    if (!ok && mounted) {
+      showSeeUSnackBar(context, 'Не удалось удалить комментарий',
           tone: SeeUTone.danger);
     }
   }
@@ -1096,6 +1294,8 @@ class _CommentsSheetBodyState extends ConsumerState<_CommentsSheetBody> {
                             isExpanded:
                                 state.expandedReplies.contains(cm.id),
                             hairline: i > 0,
+                            myUserId: me?.id,
+                            onDelete: (id) => _deleteComment(id),
                             onLike: () => ref
                                 .read(_commentsProvider(widget.postId).notifier)
                                 .likeComment(cm.id),

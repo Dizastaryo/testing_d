@@ -134,6 +134,38 @@ class SeeUAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Убрать трек из живой очереди. Нужен настоящий remove: [reorder] только
+  /// переставляет, и «удалённый» трек всё равно доиграл бы свою очередь.
+  Future<void> removeAt(int index) async {
+    if (_playlist == null) return;
+    if (index < 0 || index >= _trackOrder.length) return;
+    _reordering = true;
+    try {
+      await _playlist!.removeAt(index);
+      _trackOrder.removeAt(index);
+      final items = List<MediaItem>.from(queue.value)..removeAt(index);
+      queue.add(items);
+    } finally {
+      _reordering = false;
+    }
+  }
+
+  /// Отрезать хвост очереди, начиная с [from]. Играющий трек не трогаем.
+  Future<void> removeRange(int from) async {
+    if (_playlist == null) return;
+    if (from < 0 || from >= _trackOrder.length) return;
+    _reordering = true;
+    try {
+      await _playlist!.removeRange(from, _trackOrder.length);
+      _trackOrder.removeRange(from, _trackOrder.length);
+      final items = List<MediaItem>.from(queue.value)
+        ..removeRange(from, queue.value.length);
+      queue.add(items);
+    } finally {
+      _reordering = false;
+    }
+  }
+
   Future<void> seekToIndex(int index) async {
     await _player.seek(Duration.zero, index: index);
   }
@@ -190,7 +222,6 @@ class SeeUAudioHandler extends BaseAudioHandler with SeekHandler {
 
   // ── Streams / state forwarded to AudioPlayerService ──────────────────────
 
-  AudioPlayer get raw => _player;
   Stream<bool> get playingStream => _player.playingStream;
   Stream<Duration?> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -201,7 +232,6 @@ class SeeUAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration get position => _player.position;
   Duration? get duration => _player.duration;
   double get speed => _player.speed;
-  int? get currentIndex => _player.currentIndex;
 
   // ── Private helpers ───────────────────────────────────────────────────────
 

@@ -18,9 +18,13 @@ final offlineCatalogProvider = Provider<OfflineCatalogRepository>((ref) {
 
 /// Синхронный O(1) провайдер: скачан ли файл для офлайн.
 ///
-/// Заменяет [isFileDownloadedProvider] из offline_storage_service.dart.
-/// Работает из in-memory Set без I/O.
+/// Реактивный: подписан на [OfflineCatalogRepository.revision], поэтому бейдж
+/// «Офлайн» обновляется, когда файл скачали/удалили, а не залипает на первом
+/// вычислении. Работает из in-memory Set без I/O.
 final isOfflineProvider = Provider.family<bool, String>((ref, fileId) {
   final repo = ref.read(offlineCatalogProvider);
+  void listener() => ref.invalidateSelf();
+  repo.revision.addListener(listener);
+  ref.onDispose(() => repo.revision.removeListener(listener));
   return repo.isDownloaded(fileId);
 });

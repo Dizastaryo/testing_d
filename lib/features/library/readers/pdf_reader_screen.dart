@@ -27,6 +27,10 @@ class PdfReaderScreen extends ConsumerStatefulWidget {
   /// Только для книг включается трекер чтения (страницы, статистика).
   final bool isBook;
 
+  /// Открыт по закладке → прыгаем на её страницу (1-based), а не на последнюю
+  /// прочитанную. null = обычное продолжение чтения.
+  final int? initialPage;
+
   const PdfReaderScreen({
     super.key,
     required this.fileId,
@@ -36,6 +40,7 @@ class PdfReaderScreen extends ConsumerStatefulWidget {
     this.coverUrl,
     this.originalFormat = 'pdf',
     this.isBook = false,
+    this.initialPage,
   });
 
   @override
@@ -93,6 +98,10 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
     if (progress != null) {
       final page = (progress['page'] as num?)?.toInt() ?? 0;
       if (page > 0) _resumePage = page;
+    }
+    // Открыт по закладке — её страница важнее последней прочитанной.
+    if (widget.initialPage != null && widget.initialPage! > 0) {
+      _resumePage = widget.initialPage;
     }
     _progressLoaded = true;
     // Progress may resolve before or after onRender — apply exactly once when
@@ -182,7 +191,10 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
       title: widget.title,
       docFormat: widget.originalFormat,
       positionNotifier: _positionNotifier,
+      totalPages: _total,
       isPdf: true,
+      onGoToPage: (page) =>
+          _pdfController?.setPage(page.clamp(1, _total == 0 ? 1 : _total) - 1),
       child: Stack(
         children: [
           // Background color around PDF pages

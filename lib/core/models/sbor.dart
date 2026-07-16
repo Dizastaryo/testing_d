@@ -134,6 +134,8 @@ class Sbor {
   final bool isBookmarked;
   final String? chatId;
   final DateTime? scheduledAt;
+  final DateTime? endsAt;
+  final bool isEnded; // сбор завершён (время окончания прошло, чат удалён)
   // Request flow
   final String myRequestStatus;    // '' | 'pending' | 'approved' | 'rejected'
   final int pendingRequestsCount;  // visible to organizer only
@@ -164,13 +166,24 @@ class Sbor {
     this.isBookmarked = false,
     this.chatId,
     this.scheduledAt,
+    this.endsAt,
+    this.isEnded = false,
     this.myRequestStatus = '',
     this.pendingRequestsCount = 0,
   });
 
   int get remaining => max == null ? 999 : max! - joined;
   bool get isFull => max != null && joined >= max!;
-  bool get isPast => scheduledAt != null && scheduledAt!.isBefore(DateTime.now());
+  /// «Прошедший» = завершён. Раньше сбор считался прошедшим сразу как только
+  /// наступало время НАЧАЛА (scheduledAt) — то есть идущий прямо сейчас сбор
+  /// уезжал в архив. Правильно: прошедший только после ОКОНЧАНИЯ (endsAt) или
+  /// явного флага isEnded. Без endsAt (легаси) откатываемся на начало.
+  bool get isPast {
+    if (isEnded) return true;
+    final now = DateTime.now();
+    if (endsAt != null) return endsAt!.isBefore(now);
+    return scheduledAt != null && scheduledAt!.isBefore(now);
+  }
 
   SborCategoryMeta get categoryMeta =>
       kSborCategories[category] ?? kSborCategories[SborCategory.other]!;
@@ -188,8 +201,9 @@ class Sbor {
       place: j['place'] as String? ?? '',
       distance: j['distance'] as String?,
       live: j['live'] as bool? ?? false,
-      joined: j['joined'] as int? ?? 0,
-      max: j['max'] as int?,
+      // num?→toInt: счётчики могут прийти как double/BIGINT (BUG-20 паттерн).
+      joined: (j['joined'] as num?)?.toInt() ?? 0,
+      max: (j['max'] as num?)?.toInt(),
       memberNames: (j['member_names'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
@@ -207,7 +221,7 @@ class Sbor {
               .toList() ??
           [],
       coverUrl: j['cover_url'] as String?,
-      price: j['price'] as int? ?? 0,
+      price: (j['price'] as num?)?.toInt() ?? 0,
       description: j['description'] as String?,
       myRole: _roleFromString(j['my_role'] as String?),
       isJoined: j['is_joined'] as bool? ?? false,
@@ -216,8 +230,12 @@ class Sbor {
       scheduledAt: j['scheduled_at'] != null
           ? DateTime.tryParse(j['scheduled_at'] as String)
           : null,
+      endsAt: j['ends_at'] != null
+          ? DateTime.tryParse(j['ends_at'] as String)
+          : null,
+      isEnded: j['is_ended'] as bool? ?? false,
       myRequestStatus: j['my_request_status'] as String? ?? '',
-      pendingRequestsCount: j['pending_requests_count'] as int? ?? 0,
+      pendingRequestsCount: (j['pending_requests_count'] as num?)?.toInt() ?? 0,
     );
   }
 

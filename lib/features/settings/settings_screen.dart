@@ -14,6 +14,7 @@ import '../../core/design/design.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/blocks_provider.dart';
 import '../../core/providers/invites_provider.dart';
+import '../../core/providers/profile_badge_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../widgets/share_sheet.dart';
 import '_export_download_web.dart' if (dart.library.io) '_export_download_io.dart' as exporter;
@@ -56,7 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // Body
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(0, 16, 0, 100),
+              padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
               children: [
                 _buildSection(
                   title: 'АККАУНТ',
@@ -76,11 +77,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                       onTap: () => context.push('/settings/blocked'),
                     ),
-                    if (ref.watch(authProvider).user?.isPrivate == true)
+                    // Пункт виден для приватного профиля ИЛИ пока есть
+                        // непринятые заявки (снятие приватности при висящих
+                        // заявках больше не прячет их из UI). Со счётчиком.
+                    if (ref.watch(authProvider).user?.isPrivate == true ||
+                        (ref
+                                .watch(followRequestsCountProvider)
+                                .valueOrNull ??
+                            0) >
+                            0)
                       _SettingsRowData(
                         icon: PhosphorIcons.usersThree(),
                         label: 'Запросы на подписку',
-                        value: '',
+                        value: () {
+                          final n = ref
+                                  .watch(followRequestsCountProvider)
+                                  .valueOrNull ??
+                              0;
+                          return n > 0 ? '$n' : '';
+                        }(),
                         onTap: () =>
                             context.push('/settings/follow-requests'),
                       ),
@@ -314,12 +329,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _togglePrivate() async {
-    final cur = ref.read(authProvider).user?.isPrivate ?? false;
-    final next = !cur;
+    final auth = ref.read(authProvider.notifier);
+    final user = ref.read(authProvider).user;
+    if (user == null) return;
+    final next = !user.isPrivate;
+    // Оптимистично двигаем тумблер (иначе тап «залипает» на время сети),
+    // откатываем при ошибке.
+    auth.updateUser(user.copyWith(isPrivate: next));
     try {
       final api = ref.read(apiClientProvider);
       await api.put(ApiEndpoints.me, data: {'is_private': next});
-      await ref.read(authProvider.notifier).reloadMe();
       if (!mounted) return;
       showSeeUSnackBar(
         context,
@@ -329,6 +348,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         tone: SeeUTone.success,
       );
     } on DioException catch (e) {
+      auth.updateUser(user); // откат
       if (!mounted) return;
       showSeeUSnackBar(context, 'Не удалось обновить: ${apiErrorMessage(e)}',
           tone: SeeUTone.danger);
@@ -339,12 +359,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// last_seen_at от других зрителей, владелец продолжает видеть свой
   /// реальный статус.
   Future<void> _toggleHideLastSeen() async {
-    final cur = ref.read(authProvider).user?.hideLastSeen ?? false;
-    final next = !cur;
+    final auth = ref.read(authProvider.notifier);
+    final user = ref.read(authProvider).user;
+    if (user == null) return;
+    final next = !user.hideLastSeen;
+    auth.updateUser(user.copyWith(hideLastSeen: next));
     try {
       final api = ref.read(apiClientProvider);
       await api.put(ApiEndpoints.me, data: {'hide_last_seen': next});
-      await ref.read(authProvider.notifier).reloadMe();
       if (!mounted) return;
       showSeeUSnackBar(
         context,
@@ -354,6 +376,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         tone: SeeUTone.success,
       );
     } on DioException catch (e) {
+      auth.updateUser(user); // откат
       if (!mounted) return;
       showSeeUSnackBar(context, 'Не удалось обновить: ${apiErrorMessage(e)}',
           tone: SeeUTone.danger);
@@ -469,16 +492,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (!confirmed || !context.mounted) return;
 
+    // Второй барьер для необратимого действия: ввод слова-подтверждения.
+    final typed = await _promptDeleteConfirmation(context);
+    if (typed != true || !context.mounted) return;
+
     try {
       await ref.read(authProvider.notifier).deleteAccount();
       if (!context.mounted) return;
       showSeeUSnackBar(context, 'Аккаунт удалён', tone: SeeUTone.success);
       context.go('/login');
-    } catch (e) {
+    } on DioException catch (e) {
       if (!context.mounted) return;
-      showSeeUSnackBar(context, 'Не удалось удалить аккаунт: $e',
+      showSeeUSnackBar(context, 'Не удалось удалить аккаунт: ${apiErrorMessage(e)}',
+          tone: SeeUTone.danger);
+    } catch (_) {
+      if (!context.mounted) return;
+      showSeeUSnackBar(context, 'Не удалось удалить аккаунт',
           tone: SeeUTone.danger);
     }
+  }
+
+  /// Type-to-confirm: пользователь вводит «УДАЛИТЬ», чтобы точно не удалить
+  /// аккаунт случайным двойным тапом по одному диалогу.
+  Future<bool?> _promptDeleteConfirmation(BuildContext context) {
+    final ctrl = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      builder: (dctx) {
+        final c = dctx.seeuColors;
+        return StatefulBuilder(builder: (dctx, setLocal) {
+          final ok = ctrl.text.trim().toUpperCase() == 'УДАЛИТЬ';
+          return AlertDialog(
+            backgroundColor: c.surface,
+            title: Text('Подтвердите удаление',
+                style: SeeUTypography.subtitle.copyWith(color: c.ink)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Введите слово УДАЛИТЬ, чтобы подтвердить.',
+                    style: SeeUTypography.caption.copyWith(color: c.ink2)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  onChanged: (_) => setLocal(() {}),
+                  decoration: const InputDecoration(hintText: 'УДАЛИТЬ'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dctx).pop(false),
+                child: const Text('Отмена'),
+              ),
+              TextButton(
+                onPressed: ok ? () => Navigator.of(dctx).pop(true) : null,
+                child: Text('Удалить',
+                    style: TextStyle(
+                        color: ok ? SeeUColors.error : c.ink4)),
+              ),
+            ],
+          );
+        });
+      },
+    ).whenComplete(ctrl.dispose);
   }
 
   void _showAbout(BuildContext context) {

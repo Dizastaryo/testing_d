@@ -54,6 +54,9 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
       title: widget.title,
       docFormat: 'epub',
       positionNotifier: _positionNotifier,
+      // Заглушка: не помечаем книгу «Читаю» и не трекаем прогресс — читать
+      // внутри всё равно нельзя.
+      trackReading: false,
       child: SeeUEmptyState(
         icon: PhosphorIconsRegular.bookOpen,
         title: 'EPUB-ридер недоступен в этой сборке',

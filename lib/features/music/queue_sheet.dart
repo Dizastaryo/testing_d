@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,9 +5,13 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
+import 'audio_design.dart';
 
-/// Bottom sheet showing the live play queue. The current track is highlighted;
-/// tap any track to jump to it; drag the handle to reorder upcoming tracks.
+/// Очередь: что играет сейчас и что дальше.
+///
+/// Показываем, **откуда** очередь взялась («Из микса „Твой день“») — иначе
+/// непонятно, почему после мема вдруг играет медитация. Порядок меняется
+/// перетаскиванием, лишнее убирается крестиком.
 void showQueueSheet(BuildContext context) {
   showSeeUBottomSheet<void>(
     context: context,
@@ -23,158 +26,294 @@ class _QueueSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
-    final state = ref.watch(miniPlayerProvider);
+    final player = ref.watch(miniPlayerProvider);
     final notifier = ref.read(miniPlayerProvider.notifier);
-    final queue = state.queue;
+
+    final current = player.track;
+    if (current == null) return const SizedBox.shrink();
+
+    final mode = modeOf(current);
+    final upcoming = player.queue
+        .asMap()
+        .entries
+        .where((e) => e.key > player.queueIndex)
+        .toList();
 
     return SafeArea(
+      top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.75,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Icon(PhosphorIcons.listBullets(), color: SeeUColors.accent),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('ОЧЕРЕДЬ',
-                            style: SeeUTypography.kicker
-                                .copyWith(color: c.ink3)),
-                        const SizedBox(height: 2),
-                        Text('Играет сейчас',
-                            style: SeeUTypography.displayS
-                                .copyWith(color: c.ink)),
-                      ],
-                    ),
+                  Text(
+                    'Очередь',
+                    style: SeeUTypography.displayS
+                        .copyWith(fontSize: 22, color: c.ink),
                   ),
-                  Text('${queue.length} треков',
-                      style: SeeUTypography.caption.copyWith(color: c.ink3)),
-                  const SizedBox(width: 12),
+                  const Spacer(),
+                  if (upcoming.isNotEmpty)
+                    Tappable(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        // Оставляем играющий трек, отрезаем всё, что после.
+                        notifier.clearUpcoming();
+                      },
+                      child: Text(
+                        'Очистить',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AudioColors.kicker(context),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-            Divider(height: 1, color: c.line),
-            Flexible(
-              child: queue.isEmpty
-                  ? const SeeUEmptyState(
-                      icon: PhosphorIconsRegular.queue,
-                      title: 'Очередь пуста',
-                      subtitle:
-                          'Добавьте треки — они появятся здесь по порядку',
-                    )
-                  : ReorderableListView.builder(
-                      buildDefaultDragHandles: false,
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      itemCount: queue.length,
-                      // ignore: deprecated_member_use
-                      onReorder: (oldIndex, newIndex) {
-                        HapticFeedback.selectionClick();
-                        notifier.reorderQueue(oldIndex, newIndex);
-                      },
-                      itemBuilder: (context, i) {
-                        final t = queue[i];
-                        final isCurrent = i == state.queueIndex;
-                        return Container(
-                          key: ValueKey(t.id),
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 2),
-                          decoration: isCurrent
-                              ? BoxDecoration(
-                                  color: c.accentSoft,
-                                  borderRadius: BorderRadius.circular(
-                                      SeeURadii.medium),
-                                  border: Border.all(
-                                    color: SeeUColors.accent
-                                        .withValues(alpha: 0.35),
-                                    width: 0.8,
-                                  ),
-                                )
-                              : null,
-                          child: ListTile(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              if (isCurrent) {
-                                notifier.toggle();
-                              } else {
-                                notifier.jumpTo(i);
-                              }
-                              Navigator.of(context).maybePop();
-                            },
-                            leading: ClipRRect(
-                              borderRadius:
-                                  BorderRadius.circular(SeeURadii.small),
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: t.coverUrl.isNotEmpty
-                                    ? CachedNetworkImage(
-                                        imageUrl: t.coverUrl,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, __, ___) =>
-                                            Container(color: c.surface2),
-                                      )
-                                    : Container(
-                                        color: c.surface2,
-                                        child: Icon(
-                                            PhosphorIcons.musicNotesSimple(),
-                                            color: c.ink3,
-                                            size: 18),
-                                      ),
-                              ),
-                            ),
-                            title: Text(
-                              t.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: isCurrent ? SeeUColors.accent : c.ink,
-                              ),
-                            ),
-                            subtitle: Text(
-                              t.displayArtist,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: c.ink3),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isCurrent && state.playing)
-                                  Icon(PhosphorIcons.waveform(),
-                                      color: SeeUColors.accent, size: 18)
-                                else if (isCurrent)
-                                  Icon(PhosphorIcons.pause(),
-                                      color: SeeUColors.accent, size: 18),
-                                ReorderableDragStartListener(
-                                  index: i,
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(left: 8),
-                                    child: Icon(PhosphorIcons.dotsSixVertical(),
-                                        color: c.ink3, size: 20),
-                                  ),
-                                ),
-                              ],
+
+            // Откуда очередь — иначе непонятно, почему играет именно это.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                decoration: BoxDecoration(
+                  color: mode.soft(context),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsFill.listPlus, size: 13, color: mode.color),
+                    const SizedBox(width: 7),
+                    Text(
+                      _sourceLabel(player.queueSource),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: mode.color,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(
+                'СЕЙЧАС',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                  color: c.ink3,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: mode.soft(context),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: mode.color.withValues(alpha: 0.28)),
+                ),
+                child: Row(
+                  children: [
+                    TrackCover(track: current, size: 46, radius: 10),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            current.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: c.ink,
                             ),
                           ),
-                        );
-                      },
+                          const SizedBox(height: 2),
+                          Text(
+                            current.artist.isNotEmpty
+                                ? current.artist
+                                : formatDuration(current.durationSeconds),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: c.ink3),
+                          ),
+                        ],
+                      ),
                     ),
+                    if (player.playing)
+                      NowPlayingBars(color: mode.color, height: 16),
+                  ],
+                ),
+              ),
             ),
+
+            if (upcoming.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
+                child: Text(
+                  'Дальше ничего — это последний трек в очереди.',
+                  style: TextStyle(fontSize: 13, color: c.ink3),
+                ),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
+                child: Row(
+                  children: [
+                    Text(
+                      'ДАЛЬШЕ · ${upcoming.length}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: c.ink3,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'перетащи ⇅',
+                      style: TextStyle(fontSize: 11, color: c.ink4),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  itemCount: upcoming.length,
+                  onReorderItem: (oldIndex, newIndex) {
+                    HapticFeedback.selectionClick();
+                    // onReorderItem уже отдаёт скорректированный newIndex, а
+                    // reorderQueue корректирует ещё раз — компенсируем, иначе
+                    // при движении вниз трек уедет на позицию выше нужной.
+                    final base = player.queueIndex + 1;
+                    final to = newIndex > oldIndex ? newIndex + 1 : newIndex;
+                    notifier.reorderQueue(base + oldIndex, base + to);
+                  },
+                  itemBuilder: (_, i) {
+                    final entry = upcoming[i];
+                    final t = entry.value;
+                    return Padding(
+                      key: ValueKey('${t.id}_${entry.key}'),
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Icon(PhosphorIcons.dotsSixVertical(),
+                                  size: 20, color: c.ink4),
+                            ),
+                          ),
+                          Expanded(
+                            child: Tappable(
+                              onTap: () {
+                                notifier.jumpTo(entry.key);
+                                Navigator.of(context).pop();
+                              },
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 6),
+                                child: Row(
+                                  children: [
+                                    TrackCover(track: t, size: 44, radius: 10),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            t.title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: c.ink,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            [
+                                              if (t.artist.isNotEmpty) t.artist,
+                                              formatDuration(t.durationSeconds),
+                                            ]
+                                                .where((e) => e.isNotEmpty)
+                                                .join(' · '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: c.ink3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Tappable(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              notifier.removeFromQueue(entry.key);
+                            },
+                            child: SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: Icon(PhosphorIcons.x(),
+                                  size: 17, color: c.ink3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  static String _sourceLabel(String src) => switch (src) {
+        'daily_mix' => 'Из микса «Твой день»',
+        'playlist' => 'Из плейлиста',
+        'saved' => 'Из сохранённого',
+        'recent' => 'Из недавнего',
+        'trending' => 'Из «Набирают»',
+        'search' => 'Из поиска',
+        'category' => 'Из категории',
+        'continue' => 'Из «Продолжить»',
+        'moment' => 'Один звук',
+        _ => 'Из ленты',
+      };
 }

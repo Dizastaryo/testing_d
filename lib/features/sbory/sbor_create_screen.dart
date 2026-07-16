@@ -40,6 +40,10 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
 
   DateTime? _scheduledDate;
   TimeOfDay? _scheduledTime;
+  // Время окончания. Если не задать — сбор идёт 3 часа от начала, затем сам
+  // удаляется джанитором вместе с чатом.
+  DateTime? _endDate;
+  TimeOfDay? _endTime;
 
   static const _catOrder = [
     SborCategory.basketball,
@@ -195,6 +199,25 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
     if (picked != null) setState(() => _scheduledTime = picked);
   }
 
+  Future<void> _pickEndDate() async {
+    final base = _scheduledDate ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? base,
+      firstDate: _scheduledDate ?? DateTime.now(),
+      lastDate: base.add(const Duration(days: 366)),
+    );
+    if (picked != null) setState(() => _endDate = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime ?? const TimeOfDay(hour: 17, minute: 0),
+    );
+    if (picked != null) setState(() => _endTime = picked);
+  }
+
   // ─── Submit ────────────────────────────────────────────────────────────────
 
   Future<void> _submit() async {
@@ -218,15 +241,45 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
       }
 
       DateTime? dt;
+      DateTime? endDt;
       if (!_flexibleTime && _scheduledDate != null) {
         final t = _scheduledTime ?? const TimeOfDay(hour: 12, minute: 0);
-        dt = DateTime(
+        // Собираем в локальном времени, чтобы сравнить с локальным now:
+        // date-picker запрещает прошлые ДНИ, но не прошлое ВРЕМЯ сегодня
+        // (сегодня 15:00, а можно выбрать 08:00). Проверяем, что старт в будущем.
+        final localDt = DateTime(
           _scheduledDate!.year,
           _scheduledDate!.month,
           _scheduledDate!.day,
           t.hour,
           t.minute,
-        ).toUtc();
+        );
+        if (!localDt.isAfter(DateTime.now())) {
+          if (mounted) {
+            showSeeUSnackBar(context, 'Время начала должно быть в будущем',
+                tone: SeeUTone.danger);
+          }
+          setState(() => _submitting = false);
+          return;
+        }
+        dt = localDt.toUtc();
+
+        // Время окончания: явно заданное — иначе +3 часа от начала.
+        if (_endDate != null || _endTime != null) {
+          final ed = _endDate ?? _scheduledDate!;
+          final et = _endTime ?? t;
+          endDt = DateTime(ed.year, ed.month, ed.day, et.hour, et.minute).toUtc();
+        } else {
+          endDt = dt.add(const Duration(hours: 3));
+        }
+        if (!endDt.isAfter(dt)) {
+          if (mounted) {
+            showSeeUSnackBar(context, 'Время окончания должно быть позже начала',
+                tone: SeeUTone.danger);
+          }
+          setState(() => _submitting = false);
+          return;
+        }
       }
 
       final city = ref.read(sboryCityProvider).city;
@@ -255,6 +308,7 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
         'max_slots': _noLimit ? null : _slots,
         'flexible_time': _flexibleTime,
         if (dt != null) 'scheduled_at': dt.toUtc().toIso8601String(),
+        if (endDt != null) 'ends_at': endDt.toUtc().toIso8601String(),
       });
 
       if (!mounted) return;
@@ -773,31 +827,70 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
           crossFadeState: _flexibleTime
               ? CrossFadeState.showSecond
               : CrossFadeState.showFirst,
-          firstChild: Row(
+          firstChild: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _DateTimeChip(
-                  icon: PhosphorIcons.calendarBlank(),
-                  value: _scheduledDate != null
-                      ? '${_scheduledDate!.day} ${_monthName(_scheduledDate!.month)}'
-                      : 'Дата',
-                  filled: _scheduledDate != null,
-                  onTap: _pickDate,
-                  c: c,
-                ),
+              // Начало
+              Row(
+                children: [
+                  Expanded(
+                    child: _DateTimeChip(
+                      icon: PhosphorIcons.calendarBlank(),
+                      value: _scheduledDate != null
+                          ? '${_scheduledDate!.day} ${_monthName(_scheduledDate!.month)}'
+                          : 'Дата',
+                      filled: _scheduledDate != null,
+                      onTap: _pickDate,
+                      c: c,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: _DateTimeChip(
+                      icon: PhosphorIcons.clock(),
+                      value: _scheduledTime != null
+                          ? _scheduledTime!.format(context)
+                          : 'Начало',
+                      filled: _scheduledTime != null,
+                      onTap: _pickTime,
+                      c: c,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 100,
-                child: _DateTimeChip(
-                  icon: PhosphorIcons.clock(),
-                  value: _scheduledTime != null
-                      ? _scheduledTime!.format(context)
-                      : 'Время',
-                  filled: _scheduledTime != null,
-                  onTap: _pickTime,
-                  c: c,
-                ),
+              const SizedBox(height: 8),
+              // Окончание
+              Row(
+                children: [
+                  Expanded(
+                    child: _DateTimeChip(
+                      icon: PhosphorIcons.calendarBlank(),
+                      value: (_endDate ?? _scheduledDate) != null
+                          ? 'до ${(_endDate ?? _scheduledDate)!.day} ${_monthName((_endDate ?? _scheduledDate)!.month)}'
+                          : 'Дата конца',
+                      filled: _endDate != null,
+                      onTap: _pickEndDate,
+                      c: c,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: _DateTimeChip(
+                      icon: PhosphorIcons.clock(),
+                      value: _endTime != null ? _endTime!.format(context) : 'Конец',
+                      filled: _endTime != null,
+                      onTap: _pickEndTime,
+                      c: c,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Не укажешь конец — сбор идёт 3 часа, потом сам удаляется вместе с чатом.',
+                style: TextStyle(fontSize: 11, color: c.ink3, height: 1.4),
               ),
             ],
           ),
@@ -836,6 +929,8 @@ class _SborCreateScreenState extends ConsumerState<SborCreateScreen> {
               if (_flexibleTime) {
                 _scheduledDate = null;
                 _scheduledTime = null;
+                _endDate = null;
+                _endTime = null;
               }
             });
           },

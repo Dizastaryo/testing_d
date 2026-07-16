@@ -414,23 +414,28 @@ String apiErrorMessage(DioException e) {
     return 'Время ожидания истекло. Попробуйте ещё раз.';
   }
   final statusCode = e.response?.statusCode;
+  // Тело ошибки не всегда JSON-объект: сервер (или прокси) может вернуть строку
+  // или HTML. Индексация non-Map (`'text'['error']`) кидает рантайм-ошибку прямо
+  // внутри обработчика ошибок. Приводим к Map один раз и дальше безопасно.
+  final data = e.response?.data;
+  final Map? body = data is Map ? data : null;
   if (statusCode == 401) return 'Сессия истекла. Войдите снова.';
   if (statusCode == 403) return 'У вас нет прав для этого действия.';
   if (statusCode == 404) return 'Не найдено.';
   if (statusCode == 422) {
-    final errors = e.response?.data?['errors'];
+    final errors = body?['errors'];
     if (errors is Map) {
       return errors.values.first?.toString() ?? 'Ошибка валидации.';
     }
-    return e.response?.data?['error']?.toString() ??
-        e.response?.data?['message']?.toString() ??
+    return body?['error']?.toString() ??
+        body?['message']?.toString() ??
         'Ошибка валидации.';
   }
   if (statusCode != null && statusCode >= 500) {
-    return e.response?.data?['error']?.toString() ??
+    return body?['error']?.toString() ??
         'Ошибка на сервере. Попробуйте ещё раз.';
   }
-  return e.response?.data?['error']?.toString() ??
-      e.response?.data?['message']?.toString() ??
+  return body?['error']?.toString() ??
+      body?['message']?.toString() ??
       'Что-то пошло не так.';
 }

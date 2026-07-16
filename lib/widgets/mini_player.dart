@@ -1,22 +1,22 @@
-import 'dart:ui';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../core/audio/audio_player_service.dart';
 import '../core/design/design.dart';
 import '../core/models/audio_track.dart';
-import 'full_screen_player.dart';
+import '../features/music/audio_design.dart';
 
-/// Floating mini-player над bottom-nav. Виден когда есть активный трек,
-/// иначе — `SizedBox.shrink()`. Тап — раскрытие в full-screen player'е через
-/// существующий music screen (`/services` → music tab).
+/// Мини-плеер над нижним меню. Виден, когда есть активный трек, иначе —
+/// `SizedBox.shrink()`. Тап — раскрытие в полноэкранный плеер.
 ///
-/// Стиль: glass-card на оранжевом tint'е с blur'ом, обложка слева, заголовок
-/// + артист в центре, play/pause + close справа. Sub-pixel progress bar
-/// сверху по периметру (тонкая оранжевая полоска).
+/// Стиль: плотная карточка с коралловым оттенком (обложка слева, название и
+/// артист в центре, play/pause и закрытие справа, тонкая полоса прогресса
+/// снизу). Не стекло: панель под ним непрозрачная, контент туда не заезжает —
+/// размывать нечего.
 class SeeUMiniPlayer extends ConsumerWidget {
   const SeeUMiniPlayer({super.key, this.onTap});
 
@@ -84,29 +84,29 @@ class SeeUMiniPlayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch only the track here so the (expensive) BackdropFilter blur does NOT
-    // repaint on every position tick. Playing state and progress are isolated
-    // into their own leaf widgets below.
+    // Здесь следим только за треком: состояние проигрывания и прогресс живут
+    // в отдельных листовых виджетах, чтобы карточка не перерисовывалась на
+    // каждый тик позиции.
     final track = ref.watch(miniPlayerProvider.select((s) => s.track));
     if (track == null) return const SizedBox.shrink();
+
+    final c = context.seeuColors;
+    // Плотная карточка: мини-плеер сидит на непрозрачной нижней панели, под ним
+    // нет контента — размывать нечего. Коралловый характер держим не альфой,
+    // а подмешанным в поверхность оттенком.
+    final surface = Color.alphaBlend(
+      SeeUColors.accent.withValues(alpha: 0.10),
+      c.surface,
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(SeeURadii.medium),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
+        child: Container(
             height: 64,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  SeeUColors.accent.withValues(alpha: 0.16),
-                  SeeUColors.accent.withValues(alpha: 0.06),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: surface,
               border: Border.all(
                 color: SeeUColors.accent.withValues(alpha: 0.22),
                 width: 1,
@@ -131,21 +131,7 @@ class SeeUMiniPlayer extends ConsumerWidget {
                           const SizedBox(width: 12),
                           Expanded(child: _TitleArtist(track: track)),
                           const _PlayPauseBtn(),
-                          Tappable.scaled(
-                            onTap: () =>
-                                ref.read(miniPlayerProvider.notifier).close(),
-                            child: SizedBox(
-                              width: 36,
-                              height: 36,
-                              child: Center(
-                                child: Icon(
-                                  PhosphorIcons.x(),
-                                  size: 18,
-                                  color: SeeUColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
+                          _ContextAction(track: track),
                         ],
                       ),
                     ),
@@ -161,9 +147,93 @@ class SeeUMiniPlayer extends ConsumerWidget {
               ),
             ),
           ),
-        ),
       ),
     );
+  }
+}
+
+/// Один контекстный элемент — и только там, где он честно нужен.
+///
+/// Мини-плеер виден во всём SeeU, поэтому дисциплина жёсткая: он не пульт.
+/// У разговора вместо «закрыть» полезнее «+30 секунд» (промотать рекламу или
+/// затянутое место, не открывая плеер), у мема — «повторить». В остальном —
+/// закрытие.
+class _ContextAction extends ConsumerWidget {
+  const _ContextAction({required this.track});
+  final AudioTrack track;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = modeOf(track);
+
+    switch (mode) {
+      case ListenMode.talk:
+        return Tappable.scaled(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            final pos = ref.read(miniPlayerProvider).position;
+            ref
+                .read(miniPlayerProvider.notifier)
+                .seek(pos + Duration(seconds: mode.skipSeconds));
+          },
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(PhosphorIcons.arrowClockwise(),
+                    size: 20, color: mode.color),
+                Text(
+                  '${mode.skipSeconds}',
+                  style: TextStyle(
+                    fontSize: 7,
+                    fontWeight: FontWeight.w700,
+                    color: mode.color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case ListenMode.moment:
+        return Tappable.scaled(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            final notifier = ref.read(miniPlayerProvider.notifier);
+            notifier.seek(Duration.zero);
+            // Мем — одиночная очередь: доиграв, он в состоянии completed
+            // (playing == false), и один seek(0) звук не возобновляет. Если
+            // не играет — досылаем toggle, чтобы «повтор» реально зазвучал.
+            if (!ref.read(miniPlayerProvider).playing) {
+              notifier.toggle();
+            }
+          },
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(PhosphorIconsFill.repeat, size: 19, color: mode.color),
+          ),
+        );
+
+      case ListenMode.song:
+      case ListenMode.book:
+        return Tappable.scaled(
+          onTap: () => ref.read(miniPlayerProvider.notifier).close(),
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: Center(
+              child: Icon(
+                PhosphorIcons.x(),
+                size: 18,
+                color: SeeUColors.textSecondary,
+              ),
+            ),
+          ),
+        );
+    }
   }
 }
 
@@ -304,7 +374,7 @@ class SeeUMiniPlayerBar extends ConsumerWidget {
         0, 6, 0, MediaQuery.of(context).padding.bottom + 6,
       ),
       child: SeeUMiniPlayer(
-        onTap: () => showFullScreenPlayer(context),
+        onTap: () => context.push('/music/player'),
       ),
     );
   }

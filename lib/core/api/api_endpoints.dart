@@ -21,7 +21,6 @@ class ApiEndpoints {
   static const String posts = '/posts';
   static String postById(String id) => '/posts/$id';
   static String likePost(String id) => '/posts/$id/like';
-  static String reactPost(String id) => '/posts/$id/react';
   static String savePost(String id) => '/posts/$id/save';
   static String postComments(String id) => '/posts/$id/comments';
   static String commentReplies(String commentId) => '/comments/$commentId/replies';
@@ -36,7 +35,6 @@ class ApiEndpoints {
   static String storyViewers(String id) => '/stories/$id/viewers';
   static String userStories(String username) => '/stories/$username';
   static String likeStory(String id) => '/stories/$id/like';
-  static String reactStory(String id) => '/stories/$id/react';
   static String storyPollVote(String id) => '/stories/$id/poll-vote';
 
   // Users
@@ -54,10 +52,23 @@ class ApiEndpoints {
   // Device binding (BLE chip)
   static const String myDevice = '/users/me/device';
   static const String myScanProfile = '/users/me/scan-profile';
+  // Консентный резолв владельца браслета по ФИЗИЧЕСКОМУ NFC-касанию (мост в
+  // Профиль). Отличается от анонимного ambient-скана /scanner/resolve.
+  static String userByDevice(String publicId) => '/users/by-device/$publicId';
 
-  // Scanner (BLE — resolve real accounts)
+  // Scanner (BLE — resolve ANONYMOUS cards, never real accounts)
   static const String scannerResolve = '/scanner/resolve';
   static String scannerResolveOne(String deviceHash) => '/scanner/resolve/$deviceHash';
+
+  // Карточка: открыть чужую (фиксирует просмотр), аудитория/статистика,
+  // card-level блокировка, библиотека кастомизации.
+  static String cardOpen(String ownerId) => '/scanner/cards/$ownerId/open';
+  static const String cardAudience = '/scanner/card/audience';
+  static const String cardStats = '/scanner/card/stats';
+  static const String cardBlock = '/scanner/card/block';
+  static String cardUnblock(String ownerId) => '/scanner/card/block/$ownerId';
+  static const String cardBlocks = '/scanner/card/blocks';
+  static const String cardLibrary = '/scanner/library';
 
   // Access system (closed messaging: request→accept; bracelet QR = /users/me/device)
   static String accessCheck(String userId) => '/access/check/$userId';
@@ -69,6 +80,11 @@ class ApiEndpoints {
   static const String accessRequestsSent = '/access/requests/sent';
   static String accessRequestAccept(String id) => '/access/requests/$id/accept';
   static String accessRequestReject(String id) => '/access/requests/$id/reject';
+  static String accessRequestCancel(String id) => '/access/requests/$id';
+
+  // Restrictions (ограничение комментариев пользователя)
+  static const String myRestrictions = '/users/me/restrictions';
+  static String restrictUser(String username) => '/users/$username/restrict';
 
   // Контакты телефона: приватный матчинг по SHA-256 хэшам (Фаза 2)
   static const String contactsSync = '/contacts/sync';
@@ -109,6 +125,9 @@ class ApiEndpoints {
   static const String recentAudioTracks = '/audio-tracks/recent'; // MUSIC-3
   static const String likedAudioTracks = '/audio-tracks/liked'; // MUSIC-3
   static const String dailyMixTracks = '/audio-tracks/daily-mix'; // MUSIC-4
+  // Позиция прослушивания (миграция 000143): «Продолжить» и режимы Книга/Разговор.
+  static const String continueListening = '/audio-tracks/continue';
+  static String audioTrackPosition(String id) => '/audio-tracks/$id/position';
   static String audioTrackById(String id) => '/audio-tracks/$id';
   static String audioTrackPlay(String id) =>
       '/audio-tracks/$id/play'; // MUSIC-3 record
@@ -194,8 +213,9 @@ class ApiEndpoints {
   static const String bookmarkedSbory = '/sbory/bookmarked';
   static String sborById(String id) => '/sbory/$id';
   static String sborMembers(String id) => '/sbory/$id/members';
-  // POST /sbory/:id/join → join; DELETE /sbory/:id/join → leave (same path, different method)
-  static String joinSbor(String id) => '/sbory/$id/join';
+  // Вступление — только через заявку (POST /sbory/:id/requests → одобрение
+  // организатора). Прямой POST /:id/join удалён как обход гейта. Осталось лишь
+  // DELETE /sbory/:id/join — покинуть сбор.
   static String leaveSbor(String id) => '/sbory/$id/join';
   static String cancelSbor(String id) => '/sbory/$id';
   static String bookmarkSbor(String id) => '/sbory/$id/bookmark';
@@ -205,10 +225,10 @@ class ApiEndpoints {
   static String rejectSborRequest(String sborId, String reqId) => '/sbory/$sborId/requests/$reqId/reject';
   static String leaveGroupChat(String id) => '/chats/$id/leave';
 
-  // Rooms (private voice + text channels)
+  // Rooms (voice + text channels). Вход по коду вместо приглашений.
   static const String rooms = '/rooms';
+  static const String roomJoinByCode = '/rooms/join'; // POST {code}
   static String roomById(String id) => '/rooms/$id';
-  static String joinRoom(String id) => '/rooms/$id/join';
   static String leaveRoom(String id) => '/rooms/$id/join';
   static String muteRoom(String id) => '/rooms/$id/mute';
   static String roomVoice(String id) => '/rooms/$id/voice';
@@ -219,13 +239,8 @@ class ApiEndpoints {
   static String roomPin(String id) => '/rooms/$id/pin';
   static String roomRead(String id) => '/rooms/$id/read';
   static String roomMembers(String id) => '/rooms/$id/members';
-  static String roomInvite(String id) => '/rooms/$id/invite';
-  static String roomCandidates(String id) => '/rooms/$id/candidates';
   static String roomMember(String id, String userId) => '/rooms/$id/members/$userId';
   static String roomAdmin(String id, String userId) => '/rooms/$id/admins/$userId';
-  static const String roomInvitesMe = '/rooms/invites/me';
-  static String roomInviteAccept(String id) => '/rooms/invites/$id/accept';
-  static String roomInviteDecline(String id) => '/rooms/invites/$id/decline';
 
   // === Library Service endpoints ===
   static const String files = '/files';
@@ -234,11 +249,9 @@ class ApiEndpoints {
   static const String filesTrending = '/files/trending';
   static const String filesPopularAuthors = '/files/authors/popular';
   static const String filesFormatStats = '/files/stats/formats';
-  static const String filesSuggestions = '/files/suggestions';
   static const String myRecommendations = '/users/me/recommendations';
   static String fileById(String id) => '/files/$id';
   static String fileDownload(String id) => '/files/$id/download';
-  static String filePreview(String id) => '/files/$id/preview';
   static String fileView(String id) => '/files/$id/view';
   static String fileRating(String id) => '/files/$id/rating';
   static String fileReviews(String id) => '/files/$id/reviews';
@@ -257,10 +270,10 @@ class ApiEndpoints {
   static String fileReadingStatus(String id) => '/files/$id/reading-status';
   static String fileStats(String id) => '/files/$id/stats';
   static String userFiles(String userId) => '/users/$userId/files';
+  static const String myBookmarks = '/users/me/bookmarks';
   static const String myReadingStats = '/users/me/reading-stats';
   static const String myReadingList = '/users/me/reading-list';
   static const String myRecentlyRead = '/users/me/recently-read';
-  static const String myRecentlyViewed = '/users/me/recently-viewed';
   static const String myReadingGoal = '/users/me/reading-goal';
   static const String readingLeaderboard = '/reading/leaderboard';
   static const String readingActivity = '/reading/activity';

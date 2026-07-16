@@ -1,13 +1,13 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../core/audio/audio_player_service.dart';
 import '../core/design/tokens.dart';
+import '../core/design/seeu_theme_colors.dart';
 import '../core/design/tappable.dart';
-import 'full_screen_player.dart';
+import '../core/providers/profile_badge_provider.dart';
 import 'mini_player.dart';
 
 /// Global notifier for hiding bottom nav from within a screen (e.g., feed camera swipe).
@@ -35,7 +35,10 @@ class MainScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: child,
-      extendBody: true,
+      // Нижняя панель непрозрачная, поэтому тянуть контент под неё нельзя —
+      // он просто спрячется за глухой стеной. Scaffold сам укладывает тело
+      // экрана НАД панелью, и экранам не нужно угадывать нижний отступ.
+      extendBody: false,
       bottomNavigationBar: _SeeUBottomArea(showTabs: showTabs),
     );
   }
@@ -66,6 +69,42 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
 
   void _onHiddenChanged() => setState(() {});
 
+  /// Библиотека живёт со своим нижним меню: пока пользователь внутри Читальни,
+  /// общее меню приложения заменяется библиотечным (4 вкладки), а выход обратно
+  /// в «Сервисы» — по кнопке «Выйти» сверху справа.
+  static const _libraryTabs = [
+    '/files',
+    '/library/discover',
+    '/library/shelf',
+    '/library/profile',
+  ];
+
+  static bool _isLibrary(String loc) =>
+      _libraryTabs.any((t) => loc == t || loc.startsWith('$t/'));
+
+  static int _libraryIndex(String loc) {
+    final i = _libraryTabs.indexWhere((t) => loc == t || loc.startsWith('$t/'));
+    return i < 0 ? 0 : i;
+  }
+
+  /// Аудиотека — свой каркас: три вкладки, а не четыре. Каталог маленький,
+  /// дробить его по типам рано: тип решается режимом внутри трека, а не
+  /// отдельным разделом.
+  static const _audioTabs = ['/music', '/music/search', '/music/mine'];
+
+  /// Плеер и очередь показываем во весь экран — там своё нижнее управление,
+  /// вкладки только мешали бы.
+  static bool _isAudio(String loc) =>
+      loc == '/music' ||
+      loc.startsWith('/music/search') ||
+      loc.startsWith('/music/mine');
+
+  static int _audioIndex(String loc) {
+    if (loc.startsWith('/music/search')) return 1;
+    if (loc.startsWith('/music/mine')) return 2;
+    return 0;
+  }
+
   static int _locationToIndex(String loc) {
     if (loc.startsWith('/feed')) return 0;
     if (loc.startsWith('/explore')) return 1;
@@ -86,6 +125,16 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     context.go(routes[index]);
   }
 
+  void _onLibraryTabTap(int index) {
+    HapticFeedback.lightImpact();
+    context.go(_libraryTabs[index]);
+  }
+
+  void _onAudioTabTap(int index) {
+    HapticFeedback.lightImpact();
+    context.go(_audioTabs[index]);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (bottomNavHiddenNotifier.value) return const SizedBox.shrink();
@@ -101,9 +150,10 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     if (!hasMiniPlayer && !showTabs) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currentIndex = showTabs
-        ? _locationToIndex(GoRouterState.of(context).matchedLocation)
-        : 0;
+    final loc = GoRouterState.of(context).matchedLocation;
+    final isLibrary = showTabs && _isLibrary(loc);
+    final isAudio = showTabs && _isAudio(loc);
+    final currentIndex = showTabs ? _locationToIndex(loc) : 0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -116,50 +166,173 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
               0,
               showTabs ? 6 : MediaQuery.of(context).padding.bottom + 6,
             ),
-            child: SeeUMiniPlayer(onTap: () => showFullScreenPlayer(context)),
+            child: SeeUMiniPlayer(onTap: () => context.push('/music/player')),
           ),
-        if (showTabs) _buildTabBar(context, isDark, currentIndex),
+        if (isLibrary)
+          _buildLibraryTabBar(context, isDark, _libraryIndex(loc))
+        else if (isAudio)
+          _buildServiceTabBar(
+            context,
+            index: _audioIndex(loc),
+            onTap: _onAudioTabTap,
+            items: const [
+              (PhosphorIconsRegular.vinylRecord, PhosphorIconsFill.vinylRecord,
+                  'Главная'),
+              (
+                PhosphorIconsRegular.magnifyingGlass,
+                PhosphorIconsFill.magnifyingGlass,
+                'Поиск'
+              ),
+              (PhosphorIconsRegular.playlist, PhosphorIconsFill.playlist,
+                  'Моё'),
+            ],
+          )
+        else if (showTabs)
+          _buildTabBar(context, isDark, currentIndex),
       ],
     );
   }
 
-  Widget _buildTabBar(BuildContext context, bool isDark, int currentIndex) {
-    // Frosted bottom nav — same glass recipe as camera_top_bar: a real
-    // backdrop-blur behind a soft theme-aware gradient (light highlight → tint)
-    // and a thin top hairline. Reads as one glass stack with the mini-player
-    // floating above it (no opaque seam).
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: isDark
-                  ? [
-                      Colors.white.withValues(alpha: 0.10),
-                      SeeUColors.darkBg.withValues(alpha: 0.82),
-                    ]
-                  : [
-                      Colors.white.withValues(alpha: 0.55),
-                      SeeUColors.background.withValues(alpha: 0.85),
-                    ],
-            ),
-            border: Border(
-              top: BorderSide(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : SeeUColors.borderSubtle.withValues(alpha: 0.7),
-                width: 0.5,
-              ),
-            ),
+  /// Нижнее меню сервиса (Аудиотека и всё, что придёт следом): непрозрачная
+  /// полоса, Phosphor-иконки, активная — залитая цветом акцента.
+  Widget _buildServiceTabBar(
+    BuildContext context, {
+    required int index,
+    required void Function(int) onTap,
+    required List<(IconData, IconData, String)> items,
+  }) {
+    final c = context.seeuColors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 58,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Expanded(
+                  child: Tappable.scaled(
+                    onTap: () => onTap(i),
+                    scaleFactor: 0.88,
+                    child: SizedBox(
+                      height: 58,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            i == index ? items[i].$2 : items[i].$1,
+                            size: 23,
+                            color: i == index ? SeeUColors.accent : c.ink3,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            items[i].$3,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: i == index
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: i == index ? SeeUColors.accent : c.ink3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 56,
-              child: Row(
+        ),
+      ),
+    );
+  }
+
+  /// Библиотечное меню: Читальня · Обзор · Полка · Профиль. Тёплая бумага,
+  /// тонкая линейка сверху, Phosphor-иконки (активная — залитая).
+  Widget _buildLibraryTabBar(BuildContext context, bool isDark, int index) {
+    final c = context.seeuColors;
+    final items = <(IconData, IconData, String)>[
+      (PhosphorIcons.bookOpen(), PhosphorIconsFill.bookOpen, 'Читальня'),
+      (PhosphorIcons.compass(), PhosphorIconsFill.compass, 'Обзор'),
+      (
+        PhosphorIcons.bookmarkSimple(),
+        PhosphorIconsFill.bookmarkSimple,
+        'Полка'
+      ),
+      (PhosphorIcons.userCircle(), PhosphorIconsFill.userCircle, 'Профиль'),
+    ];
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.bg,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 58,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Tappable.scaled(
+                  onTap: () => _onLibraryTabTap(i),
+                  scaleFactor: 0.88,
+                  child: SizedBox(
+                    width: 62,
+                    height: 58,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          i == index ? items[i].$2 : items[i].$1,
+                          size: 24,
+                          color: i == index ? SeeUColors.accent : c.ink3,
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          items[i].$3,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight:
+                                i == index ? FontWeight.w700 : FontWeight.w500,
+                            color: i == index ? SeeUColors.accent : c.ink3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabBar(BuildContext context, bool isDark, int currentIndex) {
+    // Непрозрачная нижняя панель: сплошная заливка фоном темы и тонкая линия
+    // сверху. Никакого blur — контент под панель не заезжает, размывать нечего,
+    // а BackdropFilter на каждом кадре стоил дорого.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isDark ? SeeUColors.darkBg : SeeUColors.background,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? SeeUColors.darkLine : SeeUColors.borderSubtle,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 56,
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _NavItem(
@@ -193,10 +366,14 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
                 label: 'Профиль',
                 isSelected: currentIndex == 4,
                 onTap: () => _onTabTap(4),
+                // Бейдж «требует внимания» (§05): входящие запросы доступа +
+                // follow-запросы. Best-effort — 0 прячет бейдж.
+                badgeCount: ref.watch(profileBadgeProvider).maybeWhen(
+                      data: (n) => n,
+                      orElse: () => 0,
+                    ),
               ),
             ],
-              ),
-            ),
           ),
         ),
       ),
@@ -291,6 +468,7 @@ class _NavItem extends StatefulWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  final int badgeCount;
 
   const _NavItem({
     required this.icon,
@@ -298,6 +476,7 @@ class _NavItem extends StatefulWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -364,27 +543,63 @@ class _NavItemState extends State<_NavItem>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedBuilder(
-              animation: _bounceAnimation,
-              builder: (context, child) {
-                final scale =
-                    widget.isSelected ? _bounceAnimation.value : 1.0;
-                final effectiveScale =
-                    widget.isSelected && !_bounceController.isAnimating
-                        ? 1.1
-                        : scale;
-                return Transform.scale(
-                  scale: effectiveScale,
-                  child: child,
-                );
-              },
-              child: ColorFiltered(
-                colorFilter: ColorFilter.mode(
-                  widget.isSelected ? activeColor : inactiveColor,
-                  BlendMode.srcIn,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedBuilder(
+                  animation: _bounceAnimation,
+                  builder: (context, child) {
+                    final scale =
+                        widget.isSelected ? _bounceAnimation.value : 1.0;
+                    final effectiveScale =
+                        widget.isSelected && !_bounceController.isAnimating
+                            ? 1.1
+                            : scale;
+                    return Transform.scale(
+                      scale: effectiveScale,
+                      child: child,
+                    );
+                  },
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      widget.isSelected ? activeColor : inactiveColor,
+                      BlendMode.srcIn,
+                    ),
+                    child: widget.isSelected ? widget.activeIcon : widget.icon,
+                  ),
                 ),
-                child: widget.isSelected ? widget.activeIcon : widget.icon,
-              ),
+                // Бейдж непрочитанного (§05): #FF3B6B, обводка фоном панели.
+                if (widget.badgeCount > 0)
+                  Positioned(
+                    top: -4,
+                    right: -8,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 16),
+                      height: 16,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: SeeUColors.like,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isDark
+                              ? SeeUColors.darkBg
+                              : SeeUColors.background,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        widget.badgeCount > 9 ? '9+' : '${widget.badgeCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 2),
             Text(
@@ -432,75 +647,78 @@ class _NavIconPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     switch (name) {
-      // «Лента» — стопка карточек (feed). Крупная передняя карточка + два
-      // верхних края карточек, лежащих позади и сужающихся кверху → читается
-      // как колода/поток постов. Контур = неактивна, залив = активна.
+      // «Лента» — передняя карточка + карточка позади (по мотиву дизайна ядра
+      // §02): скруглённый квадрат впереди и вторая карточка, выглядывающая
+      // сверху-справа. Неактив — задняя карточка тонким уголком-скобкой;
+      // актив — обе залиты (задняя приглушена до 40%).
       case 'feed':
-        // Верхние края двух карточек в стопке позади (рисуем первыми — они
-        // должны оказаться «за» передней карточкой по z-порядку).
-        final deckPaint = Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = filled ? 2.4 : 1.7
-          ..strokeCap = StrokeCap.round;
-        // Самая дальняя (верхняя, у́же всех).
-        canvas.drawLine(
-          Offset(s * 0.32, s * 0.22), Offset(s * 0.68, s * 0.22), deckPaint);
-        // Средняя.
-        canvas.drawLine(
-          Offset(s * 0.24, s * 0.32), Offset(s * 0.76, s * 0.32), deckPaint);
-
-        // Передняя карточка — крупный скруглённый прямоугольник.
-        final cardRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(s * 0.13, s * 0.42, s * 0.74, s * 0.44),
-          Radius.circular(s * 0.11),
+        final frontRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(s * 0.142, s * 0.292, s * 0.55, s * 0.55),
+          Radius.circular(s * 0.129),
         );
-        canvas.drawRRect(
-          cardRect,
-          paint
-            ..style = filled ? PaintingStyle.fill : PaintingStyle.stroke
-            ..strokeWidth = filled ? 2.0 : 1.7,
-        );
+        if (filled) {
+          // Задняя карточка — та же форма, приподнята и приглушена до 40%.
+          // ColorFiltered в _NavItem перекрасит белый в коралл, сохранив альфу.
+          final backRect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(s * 0.392, s * 0.192, s * 0.45, s * 0.45),
+            Radius.circular(s * 0.121),
+          );
+          canvas.drawRRect(
+            backRect,
+            Paint()
+              ..color = Colors.white.withValues(alpha: 0.4)
+              ..style = PaintingStyle.fill,
+          );
+          canvas.drawRRect(
+            frontRect,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+        } else {
+          // Задняя карточка редуцирована до верхне-правого уголка (скобка ⌐).
+          final bracket = Path()
+            ..moveTo(s * 0.383, s * 0.192)
+            ..lineTo(s * 0.733, s * 0.192)
+            ..arcToPoint(
+              Offset(s * 0.842, s * 0.30),
+              radius: Radius.circular(s * 0.108),
+            )
+            ..lineTo(s * 0.842, s * 0.60);
+          canvas.drawPath(
+            bracket,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.8
+              ..strokeCap = StrokeCap.round
+              ..strokeJoin = StrokeJoin.round,
+          );
+          canvas.drawRRect(
+            frontRect,
+            paint
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.8,
+          );
+        }
         break;
 
+      // «Интересное» — мозаичная сетка открытий (§02): высокая карточка слева,
+      // квадрат справа-сверху, карточка справа-снизу и низкая слева-снизу.
+      // Лупа со звездой из прежней версии выброшена: дизайн-ядро задаёт именно
+      // сетку. Неактив — контуры, актив — заливка.
       case 'search':
-        final searchCenter = Offset(s * 0.42, s * 0.42);
-        final searchR = s * 0.28;
-
-        canvas.drawCircle(
-          searchCenter,
-          searchR,
-          paint
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = filled ? 2.0 : 1.7,
-        );
-        canvas.drawLine(
-          Offset(s * 0.63, s * 0.63),
-          Offset(s * 0.86, s * 0.86),
-          paint
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = filled ? 2.4 : 1.7,
-        );
-
-        {
-          final sc = searchCenter;
-          final starPaint = Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.fill;
-          final armLong = s * 0.11;
-          final armShort = s * 0.045;
-          final starPath = Path();
-          starPath.moveTo(sc.dx, sc.dy - armLong);
-          starPath.quadraticBezierTo(sc.dx + armShort, sc.dy - armShort,
-              sc.dx + armLong, sc.dy);
-          starPath.quadraticBezierTo(sc.dx + armShort, sc.dy + armShort,
-              sc.dx, sc.dy + armLong);
-          starPath.quadraticBezierTo(sc.dx - armShort, sc.dy + armShort,
-              sc.dx - armLong, sc.dy);
-          starPath.quadraticBezierTo(sc.dx - armShort, sc.dy - armShort,
-              sc.dx, sc.dy - armLong);
-          starPath.close();
-          canvas.drawPath(starPath, starPaint);
+        final tileR = Radius.circular(s * 0.083);
+        paint
+          ..style = filled ? PaintingStyle.fill : PaintingStyle.stroke
+          ..strokeWidth = 1.8;
+        for (final rc in [
+          Rect.fromLTWH(s * 0.146, s * 0.146, s * 0.333, s * 0.458),
+          Rect.fromLTWH(s * 0.563, s * 0.146, s * 0.292, s * 0.292),
+          Rect.fromLTWH(s * 0.563, s * 0.521, s * 0.292, s * 0.333),
+          Rect.fromLTWH(s * 0.146, s * 0.688, s * 0.333, s * 0.167),
+        ]) {
+          canvas.drawRRect(RRect.fromRectAndRadius(rc, tileR), paint);
         }
         break;
 
@@ -550,59 +768,74 @@ class _NavIconPainter extends CustomPainter {
         }
         break;
 
+      // «Сервисы» — скруглённый квадрат-контейнер с четырьмя точками внутри
+      // (§02): единая дверь, а не четыре отдельные плитки. Квадрат всегда
+      // контуром, точки всегда залиты; актив только меняет цвет на коралл.
       case 'services':
-        final gap = s * 0.08;
-        final cellSize = (s * 0.8 - gap) / 2;
-        final left = s * 0.1;
-        final top2 = s * 0.1;
-        final r = Radius.circular(s * 0.08);
-        paint.style = filled ? PaintingStyle.fill : PaintingStyle.stroke;
-        paint.strokeWidth = filled ? 1.8 : 1.7;
-        canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, top2, cellSize, cellSize), r), paint);
-        canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(left + cellSize + gap, top2, cellSize, cellSize), r), paint);
-        canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, top2 + cellSize + gap, cellSize, cellSize), r), paint);
-        canvas.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(left + cellSize + gap, top2 + cellSize + gap, cellSize, cellSize), r), paint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(s * 0.142, s * 0.142, s * 0.717, s * 0.717),
+            Radius.circular(s * 0.208),
+          ),
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = filled ? 2.0 : 1.8,
+        );
+        final dotPaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill;
+        for (final o in [
+          Offset(s * 0.375, s * 0.375),
+          Offset(s * 0.625, s * 0.375),
+          Offset(s * 0.375, s * 0.625),
+          Offset(s * 0.625, s * 0.625),
+        ]) {
+          canvas.drawCircle(o, s * 0.067, dotPaint);
+        }
         break;
 
+      // «Профиль» — силуэт: голова-круг + плечи-дуга (§02). Неактив контуром,
+      // актив залит (дуга плеч замыкается снизу).
       case 'user':
-        canvas.drawCircle(
-          Offset(s * 0.5, s * 0.32),
-          s * 0.19,
-          paint
-            ..style =
-                filled ? PaintingStyle.fill : PaintingStyle.stroke
-            ..strokeWidth = filled ? 2.0 : 1.7,
-        );
-        final bodyPath = Path();
-        bodyPath.moveTo(s * 0.14, s * 0.88);
-        bodyPath.cubicTo(
-          s * 0.14, s * 0.56,
-          s * 0.30, s * 0.54,
-          s * 0.50, s * 0.54,
-        );
-        bodyPath.cubicTo(
-          s * 0.70, s * 0.54,
-          s * 0.86, s * 0.56,
-          s * 0.86, s * 0.88,
-        );
+        final headCenter = Offset(s * 0.5, s * 0.342);
+        final headR = s * 0.183;
+        final body = Path()
+          ..moveTo(s * 0.167, s * 0.85)
+          ..cubicTo(s * 0.167, s * 0.617, s * 0.333, s * 0.583, s * 0.5, s * 0.583)
+          ..cubicTo(s * 0.667, s * 0.583, s * 0.833, s * 0.617, s * 0.833, s * 0.85);
         if (filled) {
-          bodyPath.close();
+          canvas.drawCircle(
+            headCenter,
+            headR,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+          body.close();
           canvas.drawPath(
-            bodyPath,
-            paint
-              ..style = PaintingStyle.fill
-              ..strokeWidth = 2.0,
+            body,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
           );
         } else {
-          canvas.drawPath(
-            bodyPath,
-            paint
+          canvas.drawCircle(
+            headCenter,
+            headR,
+            Paint()
+              ..color = Colors.white
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.7,
+              ..strokeWidth = 1.8,
+          );
+          canvas.drawPath(
+            body,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.8
+              ..strokeCap = StrokeCap.round
+              ..strokeJoin = StrokeJoin.round,
           );
         }
         break;

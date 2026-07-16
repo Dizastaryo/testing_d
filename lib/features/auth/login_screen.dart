@@ -132,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               SeeUInput(
                 controller: ctrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                hintText: '172.20.10.3',
+                hintText: '192.168.1.2',
                 prefix: Icon(PhosphorIconsRegular.wifiHigh, size: 18, color: c.ink3),
               ),
               const SizedBox(height: 20),

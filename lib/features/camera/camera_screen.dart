@@ -65,12 +65,17 @@ class CameraScreen extends ConsumerStatefulWidget {
   /// Causes MediaPrepareScreen to default to История mode.
   final bool storyMode;
 
+  /// Звук, выбранный ДО камеры — «Взять в видео» на карточке трека или в
+  /// шторке мема. Камера открывается с ним уже подложенным.
+  final AudioTrack? initialTrack;
+
   const CameraScreen({
     super.key,
     this.onClose,
     this.onNext,
     this.onOpenMusic,
     this.storyMode = false,
+    this.initialTrack,
   });
 
   @override
@@ -178,6 +183,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // «Взять в видео»: звук выбран ещё в Аудиотеке — камера открывается с ним.
+    _selectedTrack = widget.initialTrack;
 
     _switchController = AnimationController(
       vsync: this,

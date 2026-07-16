@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:video_player/video_player.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/utils/time_format.dart';
@@ -226,17 +227,22 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   /// against the provider's authoritative state after each toggle (see
   /// [_toggleLike]) since StoryNotifier.toggleLike rolls back on failure.
   final Map<String, bool> _likedOverride = {};
+
+  /// Локальный оверрайд poll'а после голосования. `widget.groups` — тот же
+  /// список объектов, что лежит в состоянии StoryNotifier'а; мутировать его
+  /// по индексу (как раньше делал _updateStoryPoll) значило менять
+  /// «иммутабельный» стейт мимо провайдера.
+  final Map<String, StoryPoll> _pollOverride = {};
+
+  /// Истории, для которых просмотр уже отправлен в ЭТОЙ сессии вьюера.
+  final Set<String> _seenSent = {};
+
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
 
   // Like animation
   AnimationController? _likeAnimController;
   Animation<double>? _likeScaleAnim;
   bool _showCenterHeart = false;
-
-  // Emoji reaction animation
-  AnimationController? _emojiAnimController;
-  Animation<double>? _emojiScaleAnim;
-  String? _activeEmoji;
 
   // Heart button scale animation
   AnimationController? _heartBtnAnimController;
@@ -254,6 +260,17 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   AudioPlayer? _audioPlayer;
   final Map<String, AudioTrack?> _audioCache = {};
   String? _currentLoadedTrackId; // последний загруженный URL в плеер
+  /// Generation-guard для _syncAudio (как _initToken у FeedVideoPlayer):
+  /// при быстром перелистывании конкурентные вызовы не должны доигрывать
+  /// setUrl/play трека уже пропущенной истории.
+  int _audioSyncToken = 0;
+
+  // ── Video stories ──────────────────────────────────────────────────────
+  // Раньше видео-истории рендерились CachedNetworkImage'ем (mp4 как
+  // картинка → вечный спиннер/градиент): плеера в вьюере не было вовсе.
+  VideoPlayerController? _videoCtrl;
+  String? _videoUrl; // URL, загруженный в _videoCtrl
+  int _videoInitToken = 0;
 
   @override
   void initState() {
@@ -275,11 +292,15 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         if (_isReplyOpen) return;
         _nextStory();
       });
-    _progressController.forward();
+    _startProgressForCurrent();
 
     // Audio: пробуем стартануть music для первой story в фоне (не ждём).
     _audioPlayer = AudioPlayer();
     _syncAudio();
+    _syncVideo();
+    // Регистрируем просмотр первой истории — раньше markSeen не вызывался
+    // НИГДЕ: кольцо никогда не гасло, а счётчик просмотров автора не рос.
+    _markCurrentSeen();
 
     // Subscribe to realtime view-count pushes (`story.view.added`) so the
     // open viewer's «X views» badge updates live as new viewers arrive,
@@ -319,26 +340,6 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       curve: Curves.easeOut,
     ));
 
-    // Emoji reaction animation
-    _emojiAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          if (!mounted) return;
-          setState(() => _activeEmoji = null);
-        }
-      });
-    _emojiScaleAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.6), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 1.6, end: 1.0), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 25),
-    ]).animate(CurvedAnimation(
-      parent: _emojiAnimController!,
-      curve: Curves.easeOut,
-    ));
-
     // Heart button bounce
     _heartBtnAnimController = AnimationController(
       vsync: this,
@@ -352,43 +353,121 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       curve: Curves.easeInOut,
     ));
 
-    // M14: Named listener so it can be removed in dispose
-    _replyController.addListener(_onReplyChanged);
+    // Кнопка отправки ответа подписана на _replyController через
+    // ValueListenableBuilder — глобальный listener+setState не нужен.
   }
-
-  // M14: Named reply listener for proper cleanup
-  void _onReplyChanged() => setState(() {});
 
   @override
   void dispose() {
     _wsSub?.close();
     _progressController.dispose();
     _likeAnimController?.dispose();
-    _emojiAnimController?.dispose();
     _heartBtnAnimController?.dispose();
-    _replyController.removeListener(_onReplyChanged);
     _replyController.dispose();
     _replyFocusNode.dispose();
     _audioPlayer?.dispose();
+    _videoCtrl?.dispose();
     super.dispose();
+  }
+
+  /// Стартует прогресс для текущей истории. Фото/текст — фиксированные 5 сек;
+  /// для видео прогресс запускает _syncVideo, когда клип инициализирован
+  /// (длительность бара = длительность клипа).
+  void _startProgressForCurrent() {
+    if (_currentStory.isVideo) return;
+    _progressController.duration = const Duration(seconds: 5);
+    _progressController.forward();
+  }
+
+  /// Пауза истории целиком: прогресс + видео (если играет).
+  void _pauseStory() {
+    _progressController.stop();
+    _videoCtrl?.pause();
+  }
+
+  /// Продолжить с места паузы.
+  void _resumeStory() {
+    _progressController.forward();
+    final vc = _videoCtrl;
+    if (vc != null && vc.value.isInitialized) vc.play();
+  }
+
+  /// Подгоняет видео-плеер под текущую историю (generation-guard от быстрых
+  /// перелистываний — зеркалит _syncAudio/_initToken FeedVideoPlayer).
+  Future<void> _syncVideo() async {
+    final token = ++_videoInitToken;
+    final story = _currentStory;
+
+    if (!story.isVideo || story.mediaUrl.isEmpty) {
+      final old = _videoCtrl;
+      _videoCtrl = null;
+      _videoUrl = null;
+      if (old != null) await old.dispose();
+      return;
+    }
+    if (_videoUrl == story.mediaUrl && _videoCtrl != null) {
+      _videoCtrl!
+        ..seekTo(Duration.zero)
+        ..play();
+      _progressController
+        ..reset()
+        ..forward();
+      return;
+    }
+
+    final old = _videoCtrl;
+    _videoCtrl = null;
+    _videoUrl = null;
+    if (old != null) await old.dispose();
+    if (!mounted || token != _videoInitToken) return;
+
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(story.mediaUrl));
+    try {
+      await ctrl.initialize();
+    } catch (_) {
+      await ctrl.dispose();
+      return;
+    }
+    if (!mounted || token != _videoInitToken) {
+      await ctrl.dispose();
+      return;
+    }
+    _videoCtrl = ctrl;
+    _videoUrl = story.mediaUrl;
+    final d = ctrl.value.duration;
+    if (d > Duration.zero) {
+      _progressController.duration = d;
+    }
+    _progressController
+      ..reset()
+      ..forward();
+    ctrl
+      ..setLooping(false)
+      ..play();
+    setState(() {});
   }
 
   StoryGroup get _currentGroup => widget.groups[_groupIndex];
   Story get _currentStory => _currentGroup.stories[_storyIndex];
 
-  /// STORY-3: вызывается из _StoryPollOverlay после успешного POST.
-  /// Локально обновляет story.poll чтобы вся UI увидела новые counts без
-  /// re-fetch. Группа stories хранится в `widget.groups[_groupIndex].stories`,
-  /// но Story.copyWith создаёт новый instance — заменяем в списке.
+  /// STORY-3: вызывается из StoryPollOverlay после успешного POST — кладём
+  /// свежие counts в локальный оверрайд (см. [_pollOverride]).
   void _updateStoryPoll(String storyId, StoryPoll updatedPoll) {
-    final stories = widget.groups[_groupIndex].stories;
-    for (var i = 0; i < stories.length; i++) {
-      if (stories[i].id == storyId) {
-        stories[i] = stories[i].copyWith(poll: updatedPoll);
-        if (mounted) setState(() {});
-        return;
-      }
+    if (mounted) setState(() => _pollOverride[storyId] = updatedPoll);
+  }
+
+  /// Регистрирует просмотр текущей истории: кольцо у аватарки гаснет, автор
+  /// видит зрителя в списке. Дедуп на сессию вьюера; свои истории и так не
+  /// считаются (бэк игнорирует self-view), но и не дёргаем их вовсе.
+  void _markCurrentSeen() {
+    if (!mounted) return;
+    if (widget.currentUserId != null &&
+        _currentGroup.author.id == widget.currentUserId) {
+      return;
     }
+    final story = _currentStory;
+    if (!_seenSent.add(story.id)) return;
+    ref.read(storyProvider.notifier).markSeen(story.id);
   }
 
   void _nextStory() {
@@ -398,7 +477,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       setState(() => _storyIndex++);
       // M15: mounted check before forward after potential navigation
       if (!mounted) return;
-      _progressController.forward();
+      _startProgressForCurrent();
     } else if (_groupIndex < widget.groups.length - 1) {
       // H24: setState directly, no PageController needed
       setState(() {
@@ -406,11 +485,14 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         _storyIndex = 0;
       });
       if (!mounted) return;
-      _progressController.forward();
+      _startProgressForCurrent();
     } else {
       Navigator.of(context).pop();
+      return;
     }
     _syncAudio();
+    _syncVideo();
+    _markCurrentSeen();
   }
 
   void _prevStory() {
@@ -426,8 +508,10 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       });
     }
     if (!mounted) return;
-    _progressController.forward();
+    _startProgressForCurrent();
     _syncAudio();
+    _syncVideo();
+    _markCurrentSeen();
   }
 
   void _nextGroup() {
@@ -439,8 +523,10 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         _storyIndex = 0;
       });
       if (!mounted) return;
-      _progressController.forward();
+      _startProgressForCurrent();
       _syncAudio();
+      _syncVideo();
+      _markCurrentSeen();
     } else {
       Navigator.of(context).pop();
     }
@@ -455,8 +541,10 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         _storyIndex = 0;
       });
       if (!mounted) return;
-      _progressController.forward();
+      _startProgressForCurrent();
       _syncAudio();
+      _syncVideo();
+      _markCurrentSeen();
     }
   }
 
@@ -465,6 +553,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
   ///   звучит сам, дублировать не надо).
   /// - есть id → fetch из кэша или /audio-tracks/:id → setUrl + play.
   Future<void> _syncAudio() async {
+    final token = ++_audioSyncToken;
     final story = _currentStory;
     final player = _audioPlayer;
     if (player == null) return;
@@ -498,21 +587,27 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       _audioCache[trackId] = track;
     }
     if (track == null || track.audioUrl.isEmpty) return;
-    if (!mounted) return;
+    // За время fetch'а юзер мог перелистнуть — доигрывать чужой трек нельзя.
+    if (!mounted || token != _audioSyncToken) return;
     try {
       await player.setUrl(track.audioUrl);
+      if (!mounted || token != _audioSyncToken) {
+        await player.stop();
+        return;
+      }
       // MUSIC-7: seek на offset до play если juzер выбрал не-начало трека.
       if (story.audioStartSeconds > 0) {
         await player.seek(Duration(seconds: story.audioStartSeconds));
       }
       _currentLoadedTrackId = trackId;
+      if (!mounted || token != _audioSyncToken) return;
       await player.play();
       if (mounted) setState(() {});
     } catch (_) {/* network/decoding error — silent */}
   }
 
   void _openReply() {
-    _progressController.stop();
+    _pauseStory();
     setState(() => _isReplyOpen = true);
     _replyFocusNode.requestFocus();
   }
@@ -521,7 +616,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
     _replyFocusNode.unfocus();
     _replyController.clear();
     setState(() => _isReplyOpen = false);
-    _progressController.forward();
+    _resumeStory();
   }
 
   /// Отправляет ответ на сторис как обычное личное сообщение автору
@@ -551,7 +646,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
       _replyController.clear();
       _replyFocusNode.unfocus();
       setState(() => _isReplyOpen = false);
-      _progressController.forward();
+      _resumeStory();
       showSeeUSnackBar(
         context,
         'Сообщение отправлено',
@@ -660,32 +755,18 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
 
   Future<void> _openViewersSheet(Story story) async {
     HapticFeedback.lightImpact();
-    _progressController.stop();
+    _pauseStory();
     await showSeeUBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetCtx) => StoryViewersSheet(storyId: story.id),
+      builder: (sheetCtx) => StoryViewersSheet(
+        storyId: story.id,
+        totalCount: _liveViewsOverride[story.id] ?? story.viewsCount,
+      ),
     );
     if (mounted && !_isReplyOpen) {
-      _progressController.forward();
+      _resumeStory();
     }
-  }
-
-  void _reactWithEmoji(String emoji) {
-    HapticFeedback.lightImpact();
-    _progressController.stop();
-    setState(() => _activeEmoji = emoji);
-    _emojiAnimController!.reset();
-    _emojiAnimController!.forward().then((_) {
-      if (mounted && !_isReplyOpen) {
-        _progressController.forward();
-      }
-    });
-    // Fire-and-forget: provider does optimistic update + rollback on failure.
-    // We intentionally don't await — the emoji animation runs immediately and
-    // the network call shouldn't block the UI feedback loop.
-    final storyId = _currentStory.id;
-    ref.read(storyProvider.notifier).toggleReaction(storyId, emoji);
   }
 
   @override
@@ -738,6 +819,36 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
           ),
         ),
       );
+    } else if (story.isVideo) {
+      // Видео-история — реальный плеер (раньше mp4 скармливался
+      // CachedNetworkImage и показывался вечный спиннер/градиент).
+      final vc = _videoCtrl;
+      final ready = vc != null &&
+          _videoUrl == story.mediaUrl &&
+          vc.value.isInitialized;
+      storyImageWidget = ready
+          ? FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: vc.value.size.width,
+                height: vc.value.size.height,
+                child: VideoPlayer(vc),
+              ),
+            )
+          : Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: gradientColors,
+                ),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                    color: Colors.white54, strokeWidth: 2),
+              ),
+            );
     } else {
       // Full-screen story media — decode/cache to the device width rather than
       // the full-res source to keep memory bounded.
@@ -787,7 +898,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
           GestureDetector(
         onTapDown: (details) {
           if (_isReplyOpen) return;
-          _progressController.stop();
+          _pauseStory();
         },
         onTapUp: (details) {
           // M17: Ignore tap-up if a long-press was in progress
@@ -806,17 +917,17 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
         onLongPressStart: (_) {
           if (_isReplyOpen) return;
           _isLongPressing = true;
-          _progressController.stop();
+          _pauseStory();
         },
         onLongPressEnd: (_) {
           if (_isReplyOpen) return;
           _isLongPressing = false;
-          _progressController.forward();
+          _resumeStory();
         },
         onHorizontalDragStart: (details) {
           if (_isReplyOpen) return;
           _isSwiping = true;
-          _progressController.stop();
+          _pauseStory();
         },
         onHorizontalDragEnd: (details) {
           if (!_isSwiping || _isReplyOpen) return;
@@ -827,7 +938,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
           } else if (velocity > 300) {
             _prevGroup();
           } else {
-            _progressController.forward();
+            _resumeStory();
           }
         },
         onVerticalDragEnd: (details) {
@@ -1080,7 +1191,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
             // Автор не видит интерактивные кнопки — для него просто превью.
             if (story.poll != null)
               LayoutBuilder(builder: (ctx, cs) {
-                final p = story.poll!;
+                final p = _pollOverride[story.id] ?? story.poll!;
                 final isAuthor = widget.currentUserId == story.author.id;
                 return Positioned(
                   left: (p.x.clamp(0.0, 0.9)) * cs.maxWidth,
@@ -1141,21 +1252,6 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                 ),
               ),
 
-            // Center emoji reaction animation
-            if (_activeEmoji != null && _emojiScaleAnim != null)
-              Center(
-                child: AnimatedBuilder(
-                  animation: _emojiScaleAnim!,
-                  builder: (_, __) => Transform.scale(
-                    scale: _emojiScaleAnim!.value,
-                    child: Text(
-                      _activeEmoji!,
-                      style: const TextStyle(fontSize: 80),
-                    ),
-                  ),
-                ),
-              ),
-
             // View count (bottom-left)
             Positioned(
               bottom: 130,
@@ -1184,7 +1280,7 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
               ),
             ),
 
-            // Bottom section: viewers (own) or emoji reactions + reply bar (others)
+            // Bottom section: viewers (own) or reply bar + like (others)
             if (!_isReplyOpen)
               Positioned(
                 bottom: 0,
@@ -1198,24 +1294,6 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                         : Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Emoji quick-react row
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceEvenly,
-                            children: kQuickReactionEmojis.map((emoji) {
-                              return SeeUGlassCircleButton(
-                                onTap: () => _reactWithEmoji(emoji),
-                                size: 44,
-                                icon: Text(
-                                  emoji,
-                                  style: const TextStyle(fontSize: 22),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
                         // Reply bar + like button
                         Row(
                           children: [
@@ -1378,46 +1456,50 @@ class _InlineStoryViewerState extends ConsumerState<_InlineStoryViewer>
                             ),
                           ),
                           const SizedBox(width: 8),
-                          AnimatedOpacity(
-                            opacity: _replyController.text
-                                    .trim()
-                                    .isNotEmpty
-                                ? 1.0
-                                : 0.4,
-                            duration:
-                                const Duration(milliseconds: 150),
-                            child: GestureDetector(
-                              onTap: _sendReply,
-                              child: Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: _replyController.text
-                                          .trim()
-                                          .isNotEmpty
-                                      ? SeeUColors.accent
-                                      : Colors.white.withValues(
-                                          alpha: 0.10),
-                                  border: _replyController.text
-                                          .trim()
-                                          .isNotEmpty
-                                      ? null
-                                      : Border.all(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.22),
-                                          width: 0.8,
-                                        ),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Center(
-                                  child: Icon(
-                                    PhosphorIconsRegular.paperPlaneTilt,
-                                    color: Colors.white,
-                                    size: 20,
+                          // Кнопка отправки слушает ТОЛЬКО контроллер поля —
+                          // раньше на каждый символ вызывался setState всего
+                          // вьюера (blur-оверлеи + прогрессбары), заметный
+                          // джанк при наборе.
+                          ValueListenableBuilder<TextEditingValue>(
+                            valueListenable: _replyController,
+                            builder: (_, value, __) {
+                              final hasText =
+                                  value.text.trim().isNotEmpty;
+                              return AnimatedOpacity(
+                                opacity: hasText ? 1.0 : 0.4,
+                                duration:
+                                    const Duration(milliseconds: 150),
+                                child: GestureDetector(
+                                  onTap: _sendReply,
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: hasText
+                                          ? SeeUColors.accent
+                                          : Colors.white.withValues(
+                                              alpha: 0.10),
+                                      border: hasText
+                                          ? null
+                                          : Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.22),
+                                              width: 0.8,
+                                            ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        PhosphorIconsRegular
+                                            .paperPlaneTilt,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                         ],
                       ),

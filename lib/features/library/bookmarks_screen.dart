@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/design/design.dart';
+import '../../core/models/file_item.dart';
 import '../../core/models/reading.dart';
 import '../../core/providers/reading_provider.dart';
+import 'readers/open_reader.dart';
 
 /// Screen that shows all bookmarks for a given file.
 /// Accessible from the file detail screen.
@@ -14,10 +16,15 @@ class BookmarksScreen extends ConsumerWidget {
   final String fileId;
   final String fileTitle;
 
+  /// Файл нужен, чтобы тап по закладке открыл ридер на её месте (раньше тап
+  /// вообще ничего не делал — фича была write-only).
+  final FileItem file;
+
   const BookmarksScreen({
     super.key,
     required this.fileId,
     required this.fileTitle,
+    required this.file,
   });
 
   @override
@@ -57,6 +64,8 @@ class BookmarksScreen extends ConsumerWidget {
                   itemBuilder: (ctx, i) => _BookmarkCard(
                     bookmark: bookmarks[i],
                     index: i + 1,
+                    onTap: () => openReader(ctx, file,
+                        jumpTo: bookmarks[i].position),
                     onDelete: () async {
                       HapticFeedback.mediumImpact();
                       final err = await ref
@@ -105,11 +114,13 @@ class _BookmarkCard extends StatelessWidget {
   final FileBookmark bookmark;
   final int index;
   final VoidCallback onDelete;
+  final VoidCallback onTap;
 
   const _BookmarkCard({
     required this.bookmark,
     required this.index,
     required this.onDelete,
+    required this.onTap,
   });
 
   @override
@@ -131,7 +142,10 @@ class _BookmarkCard extends StatelessWidget {
             color: SeeUColors.danger, size: 22),
       ),
       onDismissed: (_) => onDelete(),
-      child: Container(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: theme.cardColor,
@@ -211,6 +225,7 @@ class _BookmarkCard extends StatelessWidget {
                 size: 18, color: SeeUColors.accent),
           ],
         ),
+      ),
       ),
     );
   }

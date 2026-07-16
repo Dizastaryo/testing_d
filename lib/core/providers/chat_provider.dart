@@ -469,7 +469,11 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           // last_message, unread, kind, title, participants_count.
           const triggerEvents = {
             'chat.message',
-            'chat.message.read',
+            // Фактический тип read-receipt события — chat.read (старое имя
+            // chat.message.read бэкенд никогда не слал): по нему обновляем
+            // last_message/unread, когда «я прочитал» пришло с другого
+            // моего устройства.
+            'chat.read',
             'chat.message.edited',
             'chat.group.joined',
             'chat.group.member.added',
@@ -731,6 +735,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final ApiClient _api;
   final Ref _ref;
   ProviderSubscription<AsyncValue<RealtimeEvent>>? _wsSub;
+  /// Счётчик id оптимистичных сообщений (см. sendMessage).
+  int _localMsgSeq = 0;
 
   ChatMessagesNotifier(this.chatId, this._api, this._ref)
       : super(const ChatMessagesState()) {
@@ -772,13 +778,21 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
                 ? Map<String, int>.from(raw.map((k, v) =>
                     MapEntry(k.toString(), (v is num) ? v.toInt() : 0)))
                 : <String, int>{};
+            // Сервер теперь шлёт chat.reaction и СВОИМ устройствам автора,
+            // включая reactor_id/reactor_emoji — по ним второе устройство
+            // синкает myReaction (раньше обновлялись только счётчики и
+            // подсветка своей реакции рассинхронивалась в мультидевайсе).
+            final reactorId = p['reactor_id']?.toString() ?? '';
+            final reactorEmoji = p['reactor_emoji']?.toString() ?? '';
+            final myId = _ref.read(authProvider).user?.id ?? '';
             state = state.copyWith(
               messages: state.messages.map((m) {
                 if (m.id != messageId) return m;
-                // myReaction not affected — it's *current user's* reaction.
-                // Server pushes only to peers, so for *us* this is always
-                // someone else's change.
-                return m.copyWith(reactions: newCounts);
+                return m.copyWith(
+                  reactions: newCounts,
+                  myReaction:
+                      reactorId == myId ? reactorEmoji : m.myReaction,
+                );
               }).toList(),
             );
             return;
@@ -1033,7 +1047,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     // Optimistic UI: add message locally (no preview yet — server fills it).
     final myId = _ref.read(authProvider).user?.id ?? 'me';
     final optimistic = ChatMessage(
-      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+      // Монотонный счётчик, НЕ millisecondsSinceEpoch: два сообщения в одну
+      // миллисекунду (двойной тап, icebreaker-чипы) получали одинаковый id,
+      // и первый же ответ сервера заменял ОБА — дубль + потеря второго.
+      id: 'local_${_localMsgSeq++}',
       chatId: chatId,
       senderId: myId,
       text: text,
@@ -1261,10 +1278,6 @@ class TypingState {
 
   bool get isActive => users.isNotEmpty;
 
-  /// Backward-compat для старого `state.userId` (если когда-нибудь.
-  /// Возвращает first key или null. Новый код должен использовать `users`.
-  String? get userId => users.isEmpty ? null : users.keys.first;
-
   /// Готовый display-label («@a, @b и ещё N печатают…»). null если никто.
   /// `fallbackLabel` — что показывать когда username не пришёл (анон typer).
   String? buildLabel({String fallbackLabel = 'кто-то'}) {
@@ -1406,8 +1419,12 @@ final chatListProvider =
   return ChatListNotifier(api, ref);
 });
 
-final chatMessagesProvider = StateNotifierProvider.family<ChatMessagesNotifier,
-    ChatMessagesState, String>((ref, chatId) {
+// autoDispose (как roomMessagesProvider): раньше нотифайер каждого когда-либо
+// открытого чата жил вечно вместе со своей WS-подпиской и полным списком
+// сообщений — 30 открытых за сессию чатов = 30 постоянных listener'ов,
+// обрабатывающих КАЖДОЕ входящее WS-событие.
+final chatMessagesProvider = StateNotifierProvider.autoDispose
+    .family<ChatMessagesNotifier, ChatMessagesState, String>((ref, chatId) {
   final api = ref.watch(apiClientProvider);
   return ChatMessagesNotifier(chatId, api, ref);
 });

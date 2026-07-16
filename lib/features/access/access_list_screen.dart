@@ -121,16 +121,41 @@ class _IncomingTab extends ConsumerWidget {
             request: items[i],
             onAccept: () async {
               final req = items[i];
-              await ref.read(incomingRequestsProvider.notifier).accept(req.id);
-              ref.read(accessListProvider.notifier).load();
-              ref.invalidate(accessCheckProvider(req.user.id));
-              if (ctx.mounted) {
-                showSeeUSnackBar(ctx, 'Доступ открыт',
-                    icon: PhosphorIconsRegular.check, tone: SeeUTone.success);
+              try {
+                await ref
+                    .read(incomingRequestsProvider.notifier)
+                    .accept(req.id);
+                ref.read(accessListProvider.notifier).load();
+                ref.invalidate(accessCheckProvider(req.user.id));
+                if (ctx.mounted) {
+                  showSeeUSnackBar(ctx, 'Доступ открыт',
+                      icon: PhosphorIconsRegular.check,
+                      tone: SeeUTone.success);
+                }
+              } catch (_) {
+                if (ctx.mounted) {
+                  showSeeUSnackBar(ctx, 'Не удалось принять заявку',
+                      tone: SeeUTone.danger);
+                }
               }
             },
-            onReject: () =>
-                ref.read(incomingRequestsProvider.notifier).reject(items[i].id),
+            // Раньше reject не await-ился и без обратной связи: ошибка
+            // становилась unhandled, пользователь не знал результат.
+            onReject: () async {
+              try {
+                await ref
+                    .read(incomingRequestsProvider.notifier)
+                    .reject(items[i].id);
+                if (ctx.mounted) {
+                  showSeeUSnackBar(ctx, 'Заявка отклонена');
+                }
+              } catch (_) {
+                if (ctx.mounted) {
+                  showSeeUSnackBar(ctx, 'Не удалось отклонить заявку',
+                      tone: SeeUTone.danger);
+                }
+              }
+            },
           ),
         );
       },
@@ -379,8 +404,28 @@ class _SentTab extends ConsumerWidget {
                 ),
                 subtitle: Text('@${u.username}',
                     style: SeeUTypography.caption.copyWith(color: c.ink3)),
-                trailing: Text('ОЖИДАНИЕ'.toUpperCase(),
-                    style: SeeUTypography.kicker.copyWith(color: c.ink4)),
+                // Кнопка отмены — раньше отправленную заявку нельзя было
+                // отозвать вовсе (вечное «ОЖИДАНИЕ»).
+                trailing: TextButton(
+                  onPressed: () async {
+                    try {
+                      await ref
+                          .read(sentRequestsProvider.notifier)
+                          .cancel(items[i].id);
+                      if (ctx.mounted) {
+                        showSeeUSnackBar(ctx, 'Заявка отменена');
+                      }
+                    } catch (_) {
+                      if (ctx.mounted) {
+                        showSeeUSnackBar(ctx, 'Не удалось отменить заявку',
+                            tone: SeeUTone.danger);
+                      }
+                    }
+                  },
+                  child: Text('Отменить',
+                      style: SeeUTypography.caption
+                          .copyWith(color: SeeUColors.accent)),
+                ),
                 onTap: () => context.push('/profile/${u.username}'),
               ),
             );

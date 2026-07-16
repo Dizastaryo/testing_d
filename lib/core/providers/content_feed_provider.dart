@@ -97,6 +97,25 @@ class ContentFeedNotifier extends StateNotifier<ContentFeedState> {
     }
   }
 
+  /// Гарантирует, что пост с [postId] есть в ленте: плитка грида
+  /// «Интересного» приходит из другой выборки (/explore) и может
+  /// отсутствовать здесь — раньше вьюер молча открывал первый пост этой
+  /// ленты вместо тапнутого. Дотягиваем пост по id и вставляем первым.
+  Future<void> ensurePost(String postId) async {
+    if (state.posts.any((p) => p.id == postId)) return;
+    try {
+      final r = await _api.get(ApiEndpoints.postById(postId));
+      final data = r.data is Map && (r.data as Map).containsKey('data')
+          ? r.data['data']
+          : r.data;
+      final post = Post.fromJson(data as Map<String, dynamic>);
+      if (!mounted || state.posts.any((p) => p.id == postId)) return;
+      state = state.copyWith(posts: [post, ...state.posts]);
+    } catch (_) {
+      // Пост удалён/недоступен — вьюер останется на первой странице.
+    }
+  }
+
   Future<void> toggleLike(String postId) async {
     final idx = state.posts.indexWhere((p) => p.id == postId);
     if (idx < 0) return;
@@ -130,39 +149,6 @@ class ContentFeedNotifier extends StateNotifier<ContentFeedState> {
         await _api.post(ApiEndpoints.savePost(postId));
       } else {
         await _api.delete(ApiEndpoints.savePost(postId));
-      }
-    } catch (_) {
-      _replacePost(idx, original);
-    }
-  }
-
-  Future<void> toggleReaction(String postId, String emoji) async {
-    final idx = state.posts.indexWhere((p) => p.id == postId);
-    if (idx < 0) return;
-    final original = state.posts[idx];
-    final isSame = original.myReaction == emoji;
-
-    final newCounts = Map<String, int>.from(original.reactions);
-    if (original.myReaction.isNotEmpty) {
-      newCounts[original.myReaction] =
-          (newCounts[original.myReaction] ?? 1) - 1;
-      if ((newCounts[original.myReaction] ?? 0) <= 0) {
-        newCounts.remove(original.myReaction);
-      }
-    }
-    final newMine = isSame ? '' : emoji;
-    if (newMine.isNotEmpty) {
-      newCounts[newMine] = (newCounts[newMine] ?? 0) + 1;
-    }
-    _replacePost(
-        idx, original.copyWith(reactions: newCounts, myReaction: newMine));
-
-    try {
-      if (isSame) {
-        await _api.delete(ApiEndpoints.reactPost(postId));
-      } else {
-        await _api.post(ApiEndpoints.reactPost(postId),
-            data: {'emoji': emoji});
       }
     } catch (_) {
       _replacePost(idx, original);

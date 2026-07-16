@@ -142,6 +142,10 @@ class _ConvertedPdfReaderScreenState
       }
       try {
         final resp = await dio.get(ApiEndpoints.filePdfStatus(widget.fileId));
+        // Экран могли закрыть, пока летел запрос статуса — без guard'а setState
+        // и _fetchPdfUrl падали «called after dispose» (ветка failed ниже
+        // guard уже имела, а done — нет).
+        if (!mounted) return;
         final status = resp.data?['data']?['status'] as String? ?? 'pending';
         if (status == 'done') {
           // Ready — fetch the actual PDF URL

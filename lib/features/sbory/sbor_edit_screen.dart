@@ -73,6 +73,8 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
 
   DateTime? _scheduledDate;
   TimeOfDay? _scheduledTime;
+  DateTime? _endDate;
+  TimeOfDay? _endTime;
   bool _flexibleTime = false;
   int _slots = 8;
   bool _noLimit = false;
@@ -97,6 +99,10 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
     if (s.scheduledAt != null) {
       _scheduledDate = s.scheduledAt;
       _scheduledTime = TimeOfDay.fromDateTime(s.scheduledAt!.toLocal());
+    }
+    if (s.endsAt != null) {
+      _endDate = s.endsAt!.toLocal();
+      _endTime = TimeOfDay.fromDateTime(s.endsAt!.toLocal());
     }
     if (s.max != null) {
       _slots = s.max!;
@@ -334,7 +340,7 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
       children: [
         _label('Когда'),
         const SizedBox(height: 8),
-        if (!_flexibleTime)
+        if (!_flexibleTime) ...[
           Row(
             children: [
               Expanded(
@@ -354,13 +360,44 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
                   icon: PhosphorIcons.clock(),
                   value: _scheduledTime != null
                       ? _scheduledTime!.format(context)
-                      : 'Время',
+                      : 'Начало',
                   c: c,
                   onTap: () => _pickTime(context),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _FormField(
+                  icon: PhosphorIcons.calendarBlank(),
+                  value: (_endDate ?? _scheduledDate) != null
+                      ? 'до ${(_endDate ?? _scheduledDate)!.day} ${_monthName((_endDate ?? _scheduledDate)!.month)}'
+                      : 'Дата конца',
+                  c: c,
+                  onTap: () => _pickEndDate(context),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 110,
+                child: _FormField(
+                  icon: PhosphorIcons.clock(),
+                  value: _endTime != null ? _endTime!.format(context) : 'Конец',
+                  c: c,
+                  onTap: () => _pickEndTime(context),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Не укажешь конец — сбор идёт 3 часа, потом сам удаляется вместе с чатом.',
+            style: TextStyle(fontSize: 11, color: c.ink3, height: 1.4),
+          ),
+        ],
         const SizedBox(height: 8),
         GestureDetector(
           onTap: () => setState(() => _flexibleTime = !_flexibleTime),
@@ -744,6 +781,25 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
     if (picked != null) setState(() => _scheduledTime = picked);
   }
 
+  Future<void> _pickEndDate(BuildContext context) async {
+    final base = _scheduledDate ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? base,
+      firstDate: _scheduledDate ?? DateTime.now(),
+      lastDate: base.add(const Duration(days: 366)),
+    );
+    if (picked != null) setState(() => _endDate = picked);
+  }
+
+  Future<void> _pickEndTime(BuildContext context) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime ?? const TimeOfDay(hour: 17, minute: 0),
+    );
+    if (picked != null) setState(() => _endTime = picked);
+  }
+
   Future<void> _submit() async {
     HapticFeedback.mediumImpact();
     setState(() => _submitting = true);
@@ -751,12 +807,28 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
       final api = ref.read(apiClientProvider);
 
       DateTime? dt;
+      DateTime? endDt;
       if (!_flexibleTime && _scheduledDate != null) {
         final t = _scheduledTime ?? const TimeOfDay(hour: 12, minute: 0);
         dt = DateTime(
           _scheduledDate!.year, _scheduledDate!.month, _scheduledDate!.day,
           t.hour, t.minute,
         );
+        if (_endDate != null || _endTime != null) {
+          final ed = _endDate ?? _scheduledDate!;
+          final et = _endTime ?? t;
+          endDt = DateTime(ed.year, ed.month, ed.day, et.hour, et.minute);
+        } else {
+          endDt = dt.add(const Duration(hours: 3));
+        }
+        if (!endDt.isAfter(dt)) {
+          if (mounted) {
+            showSeeUSnackBar(context, 'Время окончания должно быть позже начала',
+                tone: SeeUTone.danger);
+          }
+          setState(() => _submitting = false);
+          return;
+        }
       }
 
       // Handle cover image
@@ -786,6 +858,8 @@ class _SborEditScreenState extends ConsumerState<_SborEditForm> {
         if (newCoverUrl != null) 'cover_url': newCoverUrl,
         if (dt != null) 'scheduled_at': dt.toUtc().toIso8601String(),
         if (_flexibleTime) 'scheduled_at': null,
+        if (endDt != null) 'ends_at': endDt.toUtc().toIso8601String(),
+        if (_flexibleTime) 'ends_at': null,
       };
 
       await api.patch(ApiEndpoints.sborById(widget.sbor.id), data: body);

@@ -48,6 +48,19 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
     }
   }
 
+  /// Вход в комнату по коду доступа. Возвращает id комнаты. Бросает
+  /// DioException при неверном коде/закрытой комнате — вызывающий покажет
+  /// сообщение. Комната сразу добавляется в список (realtime тоже обновит).
+  Future<String> joinByCode(String code) async {
+    final r = await _api.post(ApiEndpoints.roomJoinByCode, data: {'code': code.trim()});
+    final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
+    final room = Room.fromJson(data as Map<String, dynamic>);
+    if (!state.rooms.any((x) => x.id == room.id)) {
+      state = state.copyWith(rooms: [room, ...state.rooms]);
+    }
+    return room.id;
+  }
+
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
@@ -63,40 +76,55 @@ class RoomListNotifier extends StateNotifier<RoomListState> {
         if (refreshEvents.contains(evt.type)) {
           load(silent: true);
         } else if (evt.type == 'room.message') {
-          final payload = evt.payload is Map<String, dynamic>
-              ? evt.payload as Map<String, dynamic>
+          final payload = evt.payload is Map
+              ? (evt.payload as Map).cast<String, dynamic>()
               : null;
           if (payload == null) return;
-          final roomId = payload['room_id'] as String?;
-          final msgJson = payload['message'] as Map<String, dynamic>?;
+          final roomId = payload['room_id']?.toString();
+          final msgJson = payload['message'] is Map
+              ? (payload['message'] as Map).cast<String, dynamic>()
+              : null;
           if (roomId == null || msgJson == null) return;
-          final text = msgJson['text'] as String? ?? '';
-          final senderUsername = msgJson['sender_username'] as String? ?? '';
-          final atStr = msgJson['created_at'] as String?;
-          final at = atStr != null ? DateTime.tryParse(atStr) : null;
-          state = state.copyWith(
-            rooms: state.rooms.map((r) {
-              if (r.id != roomId) return r;
-              return r.copyWith(
-                lastMessage: text,
-                lastSenderUsername: senderUsername,
-                lastMessageAt: at,
-              );
-            }).toList(),
-          );
+          final text = msgJson['text']?.toString() ?? '';
+          final senderUsername = msgJson['sender_username']?.toString() ?? '';
+          final senderId = msgJson['sender_id']?.toString() ?? '';
+          final at = DateTime.tryParse(msgJson['created_at']?.toString() ?? '');
+          final myId = _ref.read(authProvider).user?.id;
+          final updated = state.rooms.map((r) {
+            if (r.id != roomId) return r;
+            return r.copyWith(
+              lastMessage: text,
+              lastSenderUsername: senderUsername,
+              lastMessageAt: at,
+              // Бейдж непрочитанного: чужое сообщение инкрементит счётчик
+              // (сбрасывает RoomMessagesNotifier.markRead при входе).
+              unreadCount:
+                  senderId == myId ? r.unreadCount : r.unreadCount + 1,
+            );
+          }).toList();
+          // Комната с новым сообщением всплывает наверх (как чаты) — раньше
+          // порядок обновлялся только следующим полным load().
+          final idx = updated.indexWhere((r) => r.id == roomId);
+          if (idx > 0) {
+            final room = updated.removeAt(idx);
+            updated.insert(0, room);
+          }
+          state = state.copyWith(rooms: updated);
         }
       });
     });
   }
 
   void addRoom(Room room) {
-
     state = state.copyWith(rooms: [room, ...state.rooms]);
   }
 
-  void removeRoom(String roomId) {
+  /// Сброс бейджа непрочитанного (вызывается при входе в комнату).
+  void clearUnread(String roomId) {
     state = state.copyWith(
-      rooms: state.rooms.where((r) => r.id != roomId).toList(),
+      rooms: state.rooms
+          .map((r) => r.id == roomId ? r.copyWith(unreadCount: 0) : r)
+          .toList(),
     );
   }
 }
@@ -171,9 +199,9 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
             if (payload != null && state.room != null) {
               state = state.copyWith(
                 room: state.room!.copyWith(
-                  name: payload['name'] as String?,
-                  description: payload['description'] as String?,
-                  coverUrl: payload['cover_url'] as String?,
+                  name: payload['name']?.toString(),
+                  description: payload['description']?.toString(),
+                  coverUrl: payload['cover_url']?.toString(),
                 ),
               );
             }
@@ -208,7 +236,7 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   void _handleLeft(Map<String, dynamic> p) {
     final room = state.room;
     if (room == null) return;
-    final userId = p['user_id'] as String?;
+    final userId = p['user_id']?.toString();
     final updated = room.participants.where((pt) => pt.userId != userId).toList();
     state = state.copyWith(
       room: room.copyWith(
@@ -221,7 +249,7 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   void _handleMuted(Map<String, dynamic> p) {
     final room = state.room;
     if (room == null) return;
-    final userId = p['user_id'] as String?;
+    final userId = p['user_id']?.toString();
     final isMuted = p['is_muted'] as bool? ?? false;
     final updated = room.participants.map((pt) {
       if (pt.userId == userId) return pt.copyWith(isMuted: isMuted);
@@ -291,7 +319,7 @@ class RoomDetailNotifier extends StateNotifier<RoomDetailState> {
   void _handleVoiceLeft(Map<String, dynamic> p) {
     final room = state.room;
     if (room == null) return;
-    final userId = p['user_id'] as String?;
+    final userId = p['user_id']?.toString();
     final updated = room.voiceParticipants.where((pt) => pt.userId != userId).toList();
     state = state.copyWith(
       room: room.copyWith(
@@ -350,6 +378,11 @@ class RoomMessagesState {
   final List<RoomMessage> messages;
   final bool isLoading;
   final bool isSending;
+  /// Пагинация истории: есть ли страницы старше и идёт ли их загрузка.
+  /// Раньше комната грузила ТОЛЬКО первую страницу — история старше была
+  /// недостижима (в чатах курсорная пагинация была всегда).
+  final bool hasMore;
+  final bool isLoadingMore;
   /// Non-null while a server-side search is active. Null = show all messages.
   final List<RoomMessage>? searchResults;
   final bool isSearching;
@@ -357,6 +390,8 @@ class RoomMessagesState {
     this.messages = const [],
     this.isLoading = false,
     this.isSending = false,
+    this.hasMore = true,
+    this.isLoadingMore = false,
     this.searchResults,
     this.isSearching = false,
   });
@@ -364,6 +399,8 @@ class RoomMessagesState {
     List<RoomMessage>? messages,
     bool? isLoading,
     bool? isSending,
+    bool? hasMore,
+    bool? isLoadingMore,
     List<RoomMessage>? searchResults,
     bool clearSearch = false,
     bool? isSearching,
@@ -372,6 +409,8 @@ class RoomMessagesState {
         messages: messages ?? this.messages,
         isLoading: isLoading ?? this.isLoading,
         isSending: isSending ?? this.isSending,
+        hasMore: hasMore ?? this.hasMore,
+        isLoadingMore: isLoadingMore ?? this.isLoadingMore,
         searchResults: clearSearch ? null : (searchResults ?? this.searchResults),
         isSearching: isSearching ?? this.isSearching,
       );
@@ -394,17 +433,68 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     super.dispose();
   }
 
+  static const _pageSize = 50;
+  int _page = 1;
+
+  /// Per-entry толерантный парсинг (как в чатах): одно «битое» сообщение не
+  /// должно ронять всю выдачу.
+  List<RoomMessage> _parseMessages(dynamic data) {
+    final out = <RoomMessage>[];
+    if (data is! List) return out;
+    for (final e in data) {
+      if (e is! Map) continue;
+      try {
+        out.add(RoomMessage.fromJson(e.cast<String, dynamic>()));
+      } catch (_) {
+        // пропускаем битую запись
+      }
+    }
+    return out;
+  }
+
   Future<void> load() async {
     state = state.copyWith(isLoading: true);
     try {
-      final r = await _api.get(ApiEndpoints.roomMessages(roomId));
+      final r = await _api.get(ApiEndpoints.roomMessages(roomId),
+          queryParameters: {'page': '1', 'limit': '$_pageSize'});
       final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
-      final msgs = (data as List<dynamic>)
-          .map((e) => RoomMessage.fromJson(e as Map<String, dynamic>))
-          .toList();
-      if (mounted) state = RoomMessagesState(messages: msgs);
+      final msgs = _parseMessages(data);
+      _page = 1;
+      if (mounted) {
+        state = RoomMessagesState(
+          messages: msgs,
+          hasMore: msgs.length >= _pageSize,
+        );
+      }
     } catch (_) {
       if (mounted) state = state.copyWith(isLoading: false);
+    }
+  }
+
+  /// Подгрузка страницы старее (скролл к верху списка). Бэкенд отдаёт
+  /// page/limit, отсортированные oldest-first внутри страницы — старшая
+  /// страница приклеивается В НАЧАЛО списка.
+  Future<void> loadOlder() async {
+    if (state.isLoadingMore || !state.hasMore || state.isLoading) return;
+    state = state.copyWith(isLoadingMore: true);
+    try {
+      final next = _page + 1;
+      final r = await _api.get(ApiEndpoints.roomMessages(roomId),
+          queryParameters: {'page': '$next', 'limit': '$_pageSize'});
+      final data = r.data is Map ? r.data['data'] ?? r.data['items'] ?? [] : r.data;
+      final older = _parseMessages(data);
+      final existing = state.messages.map((m) => m.id).toSet();
+      final fresh = older.where((m) => !existing.contains(m.id)).toList();
+      _page = next;
+      if (mounted) {
+        state = state.copyWith(
+          messages: [...fresh, ...state.messages],
+          isLoadingMore: false,
+          hasMore: older.length >= _pageSize,
+        );
+      }
+    } catch (_) {
+      if (mounted) state = state.copyWith(isLoadingMore: false);
     }
   }
 
@@ -414,6 +504,7 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     String? attachedMediaType,
     String? forwardedFromMessageId,
     String forwardedFromSourceKind = '',
+    String? replyToMessageId,
   }) async {
     if (text.trim().isEmpty && attachedMediaUrl == null) return;
     state = state.copyWith(isSending: true);
@@ -426,6 +517,9 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
       }
       if (forwardedFromSourceKind.isNotEmpty) {
         body['forwarded_from_source_kind'] = forwardedFromSourceKind;
+      }
+      if (replyToMessageId != null && replyToMessageId.isNotEmpty) {
+        body['reply_to_message_id'] = replyToMessageId;
       }
       final r = await _api.post(ApiEndpoints.roomMessages(roomId), data: body);
       final data = r.data is Map && r.data.containsKey('data') ? r.data['data'] : r.data;
@@ -452,11 +546,18 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
 
   /// Оптимистично помечает сообщение как «удалённое для всех».
   void markDeletedForAll(String messageId) {
+    _mapAll((m) => m.id == messageId
+        ? m.copyWith(text: '', kind: 'deleted', isDeletedForAll: true)
+        : m);
+  }
+
+  /// Применяет трансформацию и к основной ленте, И к активным результатам
+  /// поиска — раньше реакции/правки/удаления не отражались, пока открыт поиск.
+  void _mapAll(RoomMessage Function(RoomMessage) f) {
+    if (!mounted) return;
     state = state.copyWith(
-      messages: state.messages.map((m) {
-        if (m.id != messageId) return m;
-        return m.copyWith(text: '', kind: 'deleted', isDeletedForAll: true);
-      }).toList(),
+      messages: state.messages.map(f).toList(),
+      searchResults: state.searchResults?.map(f).toList(),
     );
   }
 
@@ -494,6 +595,8 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
   }
 
   Future<void> markRead() async {
+    // Локальный бейдж списка комнат сбрасываем сразу — сервер догонит.
+    _ref.read(roomListProvider.notifier).clearUnread(roomId);
     try {
       await _api.put(ApiEndpoints.roomRead(roomId));
     } catch (_) {
@@ -504,14 +607,21 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
   void _listenRealtime() {
     _wsSub = _ref.listen<AsyncValue<RealtimeEvent>>(realtimeEventsProvider, (_, next) {
       next.whenData((evt) {
-        final payload = evt.payload is Map<String, dynamic>
-            ? evt.payload as Map<String, dynamic>
+        final payload = evt.payload is Map
+            ? (evt.payload as Map).cast<String, dynamic>()
             : null;
-        if (payload == null || payload['room_id'] != roomId) return;
+        if (payload == null || payload['room_id']?.toString() != roomId) return;
 
         if (evt.type == 'room.message') {
-          final msgJson = payload['message'] as Map<String, dynamic>?;
-          if (msgJson != null) _appendIfAbsent(RoomMessage.fromJson(msgJson));
+          final msgJson = payload['message'] is Map
+              ? (payload['message'] as Map).cast<String, dynamic>()
+              : null;
+          if (msgJson == null) return;
+          try {
+            _appendIfAbsent(RoomMessage.fromJson(msgJson));
+          } catch (_) {
+            // битый payload не должен ронять WS-listener
+          }
           return;
         }
 
@@ -526,16 +636,13 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
         }
 
         if (evt.type == 'room.message.edited') {
-          final msgJson = payload['message'] as Map<String, dynamic>?;
+          final msgJson = payload['message'] is Map
+              ? (payload['message'] as Map).cast<String, dynamic>()
+              : null;
           if (msgJson == null) return;
           try {
             final msg = RoomMessage.fromJson(msgJson);
-            state = state.copyWith(
-              messages: state.messages.map((m) {
-                if (m.id != msg.id) return m;
-                return m.copyWith(text: msg.text);
-              }).toList(),
-            );
+            _mapAll((m) => m.id == msg.id ? m.copyWith(text: msg.text) : m);
           } catch (_) {}
           return;
         }
@@ -600,11 +707,24 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     });
   }
 
-  /// Applies a reaction event received via WS, updating in-place.
+  /// Applies a reaction event (optimistic или WS), updating in-place.
+  ///
+  /// Идемпотентность для СВОИХ событий: сервер шлёт room.reaction всем
+  /// участникам, ВКЛЮЧАЯ автора реакции. Раньше эхо применялось поверх
+  /// оптимистичного апдейта и счётчик задваивался («❤️ 2» от одного
+  /// человека). Теперь эхо, состояние которого уже отражено в myReaction,
+  /// пропускается; событие с другого своего устройства — применяется.
   void _applyReaction(String msgId, String userId, String emoji, bool added) {
     final myId = _ref.read(authProvider).user?.id ?? '';
-    final updated = state.messages.map((m) {
+    _mapAll((m) {
       if (m.id != msgId) return m;
+
+      if (userId == myId) {
+        final alreadyApplied =
+            added ? m.myReaction == emoji : m.myReaction != emoji;
+        if (alreadyApplied) return m; // эхо собственного действия
+      }
+
       final reactions = Map<String, int>.from(m.reactions);
       final prevEmoji = userId == myId ? m.myReaction : null;
 
@@ -633,8 +753,7 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
           ? (added ? emoji : '')
           : m.myReaction;
       return m.copyWith(reactions: reactions, myReaction: myReaction);
-    }).toList();
-    state = state.copyWith(messages: updated);
+    });
   }
 
   /// Sends a reaction to the server. Optimistic update first, rollback on error.
@@ -643,8 +762,8 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
     // Find current state to determine if adding or removing.
     final idx = state.messages.indexWhere((m) => m.id == msgId);
     if (idx == -1) return; // message no longer in list — skip silently
-    final msg = state.messages[idx];
-    final adding = msg.myReaction != emoji;
+    final original = state.messages[idx];
+    final adding = original.myReaction != emoji;
     // Optimistic update.
     _applyReaction(msgId, myId, emoji, adding);
     try {
@@ -653,8 +772,9 @@ class RoomMessagesNotifier extends StateNotifier<RoomMessagesState> {
         data: {'emoji': emoji},
       );
     } catch (_) {
-      // Roll back: invert the optimistic change.
-      _applyReaction(msgId, myId, emoji, !adding);
+      // Точный откат — вернуть исходное сообщение целиком. Инверсия дельты
+      // теряла прежнюю реакцию при replace (❤️→🔥 с ошибкой сети «съедал» ❤️).
+      _mapAll((m) => m.id == msgId ? original : m);
     }
   }
 
@@ -752,11 +872,6 @@ class RoomMembersNotifier extends StateNotifier<RoomMembersState> {
     } catch (e) {
       if (mounted) state = state.copyWith(isLoading: false, error: e.toString());
     }
-  }
-
-  Future<void> invite(String userId) async {
-    await _api.post(ApiEndpoints.roomInvite(roomId), data: {'user_id': userId});
-    await load();
   }
 
   Future<void> remove(String userId) async {

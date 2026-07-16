@@ -8,6 +8,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/profile_badge_provider.dart';
+import '../../core/providers/user_provider.dart';
 
 /// Inbox of pending follow requests addressed to the current user.
 /// Only relevant when the user has a private profile.
@@ -70,12 +73,21 @@ class _FollowRequestsScreenState
       await api.post(accept
           ? ApiEndpoints.acceptFollowRequest(id)
           : ApiEndpoints.declineFollowRequest(id));
+      // Приём заявки добавляет подписчика — обновляем свой профиль, чтобы
+      // followersCount не отставал. Сбрасываем и счётчик заявок в настройках.
+      if (accept) {
+        final myUsername = ref.read(authProvider).user?.username;
+        if (myUsername != null) {
+          ref.invalidate(userProfileProvider(myUsername));
+        }
+      }
+      ref.invalidate(followRequestsCountProvider);
       if (!mounted) return;
       showSeeUSnackBar(context, accept ? 'Принято' : 'Отклонено',
           tone: SeeUTone.success);
     } on DioException catch (e) {
-      setState(() => _requests = prev);
       if (!mounted) return;
+      setState(() => _requests = prev);
       showSeeUSnackBar(context, 'Ошибка: ${apiErrorMessage(e)}',
           tone: SeeUTone.danger);
     }

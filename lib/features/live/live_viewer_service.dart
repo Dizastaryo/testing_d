@@ -29,6 +29,10 @@ class LiveViewerService {
   String? _broadcasterIdentity;
   Timer? _joinTimeout;
   bool _closing = false;
+  // Поколение join'а: каждый вызов joinStream инкрементит счётчик. Если во
+  // время await'ов стартовал новый join (или случился leave), устаревший
+  // join распознаёт это по несовпадению gen и не портит состояние новее себя.
+  int _joinGen = 0;
 
   // Watchdog: if the broadcaster's video never arrives, surface a failure
   // instead of hanging on "Подключение к эфиру…" forever.
@@ -38,48 +42,61 @@ class LiveViewerService {
 
   Future<LiveStream> joinStream(ApiClient api, String streamId) async {
     if (status.value != LiveViewerStatus.idle) await leaveStream(api);
+    final gen = ++_joinGen;
     _closing = false;
     _streamId = streamId;
     status.value = LiveViewerStatus.joining;
 
-    final resp = await api.post(ApiEndpoints.streamJoin(streamId));
-    final data = resp.data['data'] as Map<String, dynamic>;
-    final stream = LiveStream.fromJson(data['stream'] as Map<String, dynamic>);
-    viewerCount.value =
-        (data['viewer_count'] as num?)?.toInt() ?? stream.viewerCount;
-    _broadcasterIdentity = stream.userId; // token identity == userID
-    final url = data['livekit_url'] as String? ?? '';
-    final token = data['token'] as String? ?? '';
-    if (url.isEmpty || token.isEmpty) {
-      status.value = LiveViewerStatus.failed;
-      throw StateError('Сервер не выдал доступ к эфиру (LiveKit не настроен)');
-    }
-
-    final room = Room();
-    _room = room;
-    _listener = room.createListener();
-    _wireEvents();
-
-    _joinTimeout?.cancel();
-    _joinTimeout = Timer(_joinTimeoutDuration, () {
-      if (status.value == LiveViewerStatus.joining) {
-        status.value = LiveViewerStatus.failed;
-      }
-    });
-
+    // Единый catch на весь join: раньше падение api.post/парсинга (строки до
+    // room.connect) выбрасывалось наружу, НЕ переводя status из joining →
+    // экран навсегда «Подключение к эфиру…». Теперь любая ошибка на пути
+    // join'а честно ставит failed (если этот join ещё актуален).
     try {
-      await room.connect(url, token);
-    } catch (e) {
-      debugPrint('[LiveViewer] connect FAILED: $e');
+      final resp = await api.post(ApiEndpoints.streamJoin(streamId));
+      if (gen != _joinGen) throw StateError('join superseded');
+      final data = resp.data['data'] as Map<String, dynamic>;
+      final stream = LiveStream.fromJson(data['stream'] as Map<String, dynamic>);
+      viewerCount.value =
+          (data['viewer_count'] as num?)?.toInt() ?? stream.viewerCount;
+      _broadcasterIdentity = stream.userId; // token identity == userID
+      final url = data['livekit_url'] as String? ?? '';
+      final token = data['token'] as String? ?? '';
+      if (url.isEmpty || token.isEmpty) {
+        throw StateError('Сервер не выдал доступ к эфиру (LiveKit не настроен)');
+      }
+
+      final room = Room();
+      _room = room;
+      _listener = room.createListener();
+      _wireEvents();
+
       _joinTimeout?.cancel();
-      status.value = LiveViewerStatus.failed;
-      await _disposeRoom();
+      _joinTimeout = Timer(_joinTimeoutDuration, () {
+        if (status.value == LiveViewerStatus.joining) {
+          status.value = LiveViewerStatus.failed;
+        }
+      });
+
+      await room.connect(url, token);
+      // Пока коннектились, стартовал более новый join / случился leave —
+      // не трогаем актуальное состояние, сворачиваем свою комнату.
+      if (gen != _joinGen) {
+        await room.disconnect();
+        throw StateError('join superseded');
+      }
+
+      // The broadcaster may already be publishing — pick up an existing track.
+      _attachExistingBroadcasterTrack();
+      return stream;
+    } catch (e) {
+      debugPrint('[LiveViewer] join FAILED: $e');
+      if (gen == _joinGen) {
+        _joinTimeout?.cancel();
+        if (!_closing) status.value = LiveViewerStatus.failed;
+        await _disposeRoom();
+      }
       rethrow;
     }
-
-    // The broadcaster may already be publishing — pick up an existing track.
-    _attachExistingBroadcasterTrack();
-    return stream;
   }
 
   // ── LiveKit events ────────────────────────────────────────────────────────
@@ -144,6 +161,7 @@ class LiveViewerService {
   Future<void> leaveStream(ApiClient api) async {
     final sid = _streamId;
     _closing = true;
+    _joinGen++; // отменяем любой join, ещё висящий на await'е
     _joinTimeout?.cancel();
     _joinTimeout = null;
     await _room?.disconnect();

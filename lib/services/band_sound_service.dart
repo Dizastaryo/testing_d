@@ -18,6 +18,12 @@ class BandSoundService {
 
     BluetoothDevice? found;
     StreamSubscription? sub;
+    // flutter_blue_plus держит ОДИН глобальный скан на процесс. Если радар
+    // сканера уже сканирует — переиспользуем его поток и НЕ дёргаем
+    // start/stopScan, иначе наш stopScan убил бы скан радара (карточки рядом
+    // пропадали) и наш startScan падал бы «Another scan is already in
+    // progress».
+    final scanAlreadyRunning = FlutterBluePlus.isScanningNow;
     try {
       sub = FlutterBluePlus.onScanResults.listen((results) {
         for (final r in results) {
@@ -27,12 +33,17 @@ class BandSoundService {
         }
       });
 
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
+      if (!scanAlreadyRunning) {
+        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
+      }
       final deadline = DateTime.now().add(const Duration(seconds: 6));
       while (found == null && DateTime.now().isBefore(deadline)) {
         await Future.delayed(const Duration(milliseconds: 200));
       }
-      await FlutterBluePlus.stopScan();
+      // Останавливаем скан ТОЛЬКО если запустили его сами.
+      if (!scanAlreadyRunning) {
+        await FlutterBluePlus.stopScan();
+      }
       await sub.cancel();
       sub = null;
 

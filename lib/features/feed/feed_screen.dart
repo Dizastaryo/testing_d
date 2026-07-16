@@ -353,18 +353,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final topInset = MediaQuery.of(context).padding.top;
     const contentHeight = 60.0;
 
-    // Серифный градиентный wordmark — центральный акцент шапки.
-    final wordmark = ShaderMask(
-      shaderCallback: (bounds) =>
-          SeeUColors.titleGradient.createShader(bounds),
-      blendMode: BlendMode.srcIn,
-      child: Text(
-        'SeeU',
-        style: SeeUTypography.displayM.copyWith(
-          fontFamily: AppFonts.I.brand,
-          color: Colors.white,
-          letterSpacing: 0,
-        ),
+    // Бренд-wordmark «SeeU» подписным Pacifico, сплошной коралл — как задаёт
+    // дизайн-ядро (§03). Без градиента: логотип должен читаться как один
+    // фирменный знак, а не как декоративная плашка.
+    final wordmark = Text(
+      'SeeU',
+      style: TextStyle(
+        fontFamily: AppFonts.I.brand,
+        fontSize: 27,
+        height: 1.0,
+        color: SeeUColors.accent,
       ),
     );
 

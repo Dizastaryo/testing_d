@@ -27,6 +27,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   XFile? _pickedFile;
   Uint8List? _pickedBytes;
   bool _avatarRemoved = false;
+  // Баннер профиля (channel_banner_url) — раньше рендерился на профиле, но
+  // задать его из приложения было нельзя (нет UI). Теперь редактируется.
+  XFile? _pickedBannerFile;
+  Uint8List? _pickedBannerBytes;
+  bool _bannerRemoved = false;
+  String? _uploadedBannerUrl;
   bool _isSaving = false;
   // Кэш URL уже загруженного на прошлой попытке аватара. Если PUT /users/me
   // упал после успешной загрузки файла, повторный тап "Сохранить" не должен
@@ -56,7 +62,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   Future<void> _pickFromSource(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(source: source, maxWidth: 800);
+    // maxHeight + imageQuality: раньше был только maxWidth — очень высокая
+    // картинка давала огромный несжатый буфер, который заливался как есть.
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 85,
+    );
     if (picked != null && mounted) {
       final bytes = await picked.readAsBytes();
       if (!mounted) return;
@@ -66,6 +79,25 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         _avatarRemoved = false;
         // Новый файл — предыдущая загрузка (если была) больше не актуальна.
         _uploadedAvatarUrl = null;
+      });
+    }
+  }
+
+  Future<void> _pickBanner() async {
+    // Баннер широкий (16:6) — больший maxWidth, но тоже сжимаем.
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked != null && mounted) {
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _pickedBannerFile = picked;
+        _pickedBannerBytes = bytes;
+        _bannerRemoved = false;
+        _uploadedBannerUrl = null;
       });
     }
   }
@@ -150,6 +182,27 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         avatarUrl = '';
       }
 
+      // Баннер — та же логика: заливаем новый / очищаем / не трогаем.
+      String? bannerUrl;
+      if (_uploadedBannerUrl != null) {
+        bannerUrl = _uploadedBannerUrl;
+      } else if (_pickedBannerFile != null && _pickedBannerBytes != null) {
+        final form = FormData.fromMap({
+          'file': MultipartFile.fromBytes(_pickedBannerBytes!,
+              filename: _pickedBannerFile!.name),
+        });
+        final uploadResp = await api.post(ApiEndpoints.mediaUpload, data: form);
+        final uploadData = uploadResp.data;
+        bannerUrl = (uploadData is Map && uploadData['data'] is Map)
+            ? uploadData['data']['url'] as String?
+            : uploadData is Map
+                ? uploadData['url'] as String?
+                : null;
+        _uploadedBannerUrl = bannerUrl;
+      } else if (_bannerRemoved) {
+        bannerUrl = '';
+      }
+
       final body = <String, dynamic>{
         'full_name': _fullNameCtrl.text.trim(),
         'username': _usernameCtrl.text.trim(),
@@ -158,6 +211,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       };
       if (avatarUrl != null) {
         body['avatar_url'] = avatarUrl;
+      }
+      // channel_banner_url — pointer на бэке: шлём только при изменении.
+      if (bannerUrl != null) {
+        body['channel_banner_url'] = bannerUrl;
       }
 
       final resp = await api.put(ApiEndpoints.me, data: body);
@@ -221,6 +278,72 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           children: [
+            const SizedBox(height: 16),
+
+            // Banner (16:6) — редактируемый channel_banner_url.
+            GestureDetector(
+              onTap: _pickBanner,
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(SeeURadii.card),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 6,
+                      child: _pickedBannerBytes != null
+                          ? Image.memory(_pickedBannerBytes!, fit: BoxFit.cover)
+                          : (!_bannerRemoved &&
+                                  (user?.channelBannerUrl.isNotEmpty ?? false))
+                              ? Image.network(user!.channelBannerUrl,
+                                  fit: BoxFit.cover)
+                              : Container(
+                                  color: SeeUColors.surfaceElevated,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(PhosphorIcons.image(),
+                                            color: SeeUColors.textTertiary,
+                                            size: 28),
+                                        const SizedBox(height: 4),
+                                        Text('Добавить баннер',
+                                            style: SeeUTypography.caption
+                                                .copyWith(
+                                                    color: SeeUColors
+                                                        .textTertiary)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                    ),
+                  ),
+                  // Кнопка удаления баннера, если он есть.
+                  if (_pickedBannerBytes != null ||
+                      (!_bannerRemoved &&
+                          (user?.channelBannerUrl.isNotEmpty ?? false)))
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          _bannerRemoved = true;
+                          _pickedBannerFile = null;
+                          _pickedBannerBytes = null;
+                          _uploadedBannerUrl = null;
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(PhosphorIcons.x(),
+                              color: Colors.white, size: 14),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
 
             // Avatar

@@ -26,18 +26,24 @@ class ReaderSettingsSheet extends ConsumerWidget {
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: SeeUColors.accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(SeeURadii.small),
+                  color: SeeUColors.accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(PhosphorIconsRegular.textAa,
-                    size: 18, color: SeeUColors.accent),
+                    size: 19, color: SeeUColors.accent),
               ),
               const SizedBox(width: 10),
-              Text('Настройки чтения',
-                  style: SeeUTypography.displayS.copyWith(color: c.ink)),
+              Text(
+                'Настройки текста',
+                style: SeeUTypography.displayS.copyWith(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),

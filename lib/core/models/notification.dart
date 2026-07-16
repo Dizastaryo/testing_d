@@ -7,17 +7,41 @@ enum NotificationType {
   mention,
   reply,
   postTag,
+  storyLike,
+  missedCall,
   scannerLike,
+  coin,
   spark,
+  accessRequest,
+  accessAccepted,
   pairPrompt,
   pairConfirmed,
+  sborRequest,
+  sborApproved,
+  sborRejected,
+  sborCancelled,
+  // Неизвестный/будущий тип с бэка. Раньше _parseType по умолчанию отдавал
+  // .like → чужие типы (missed_call, access_*, sbor_*) рендерились как «лайк»
+  // и тап вёл в никуда. Теперь неизвестное честно падает сюда: показываем
+  // серверный message как есть, навигацию не строим.
+  unknown,
 }
 
 class AppNotification {
   final String id;
   final NotificationType type;
   final User fromUser;
-  final String? postId;
+  /// entity_id с бэка (post_id для social-типов, sbor_id для sbor-типов,
+  /// request_id для access и т.д.). Раньше модель читала несуществующий
+  /// `post_id` → всегда null, и тап по уведомлению никуда не вёл.
+  final String? entityId;
+  /// entity_type с бэка: "post" | "comment" | "story" | "sbor" |
+  /// "access_request" | "follow_request" | ... Определяет навигацию.
+  final String? entityType;
+  /// Полностью готовый текст уведомления с сервера (`message`). Для sbor/
+  /// access/unknown-типов клиент не может восстановить осмысленный текст
+  /// (в нём имя сбора и т.п.), поэтому берём серверный.
+  final String? serverMessage;
   final String? postThumbnailUrl;
   final String? commentText;
   final bool isRead;
@@ -37,7 +61,9 @@ class AppNotification {
     required this.id,
     required this.type,
     required this.fromUser,
-    this.postId,
+    this.entityId,
+    this.entityType,
+    this.serverMessage,
     this.postThumbnailUrl,
     this.commentText,
     this.isRead = false,
@@ -46,6 +72,13 @@ class AppNotification {
     this.otherUsers = const [],
     this.commentId,
   });
+
+  /// ID поста для навигации на /post/:id. Есть только когда уведомление
+  /// привязано к посту (entity_type == 'post': лайк/коммент/ответ/упоминание).
+  String? get postId => entityType == 'post' ? entityId : null;
+
+  /// ID сбора для навигации на /sbory/:id (sbor-уведомления).
+  String? get sborId => entityType == 'sbor' ? entityId : null;
 
   /// Текст после юзернейма (юзернейм рендерится отдельным жирным TextSpan'ом
   /// в notifications_screen). При othersCount > 0 — батч-фраза с глаголом
@@ -63,13 +96,10 @@ class AppNotification {
           return 'и ещё $n $ppl ответили.';
         case NotificationType.postTag:
           return 'и ещё $n $ppl отметили вас.';
-        case NotificationType.follow:
-        case NotificationType.mention:
-        case NotificationType.scannerLike:
-        case NotificationType.spark:
-        case NotificationType.pairPrompt:
-        case NotificationType.pairConfirmed:
-          break; // эти типы backend не батчит — fallthrough к single-форме
+        case NotificationType.storyLike:
+          return 'и ещё $n $ppl лайкнули вашу историю.';
+        default:
+          break; // остальные типы backend не батчит — fallthrough к single-форме
       }
     }
     switch (type) {
@@ -89,14 +119,49 @@ class AppNotification {
             : 'ответил(а) на ваш комментарий.';
       case NotificationType.postTag:
         return 'отметил(а) вас в публикации.';
+      case NotificationType.storyLike:
+        return 'лайкнул(а) вашу историю.';
+      case NotificationType.missedCall:
+        return 'пропущенный звонок.';
       case NotificationType.scannerLike:
         return 'лайкнул(а) тебя в сканере.';
+      case NotificationType.coin:
+        return 'подарил(а) тебе монету харизмы.';
       case NotificationType.spark:
         return 'отправил(а) тебе Spark 🔥';
+      case NotificationType.accessRequest:
+        return 'запросил(а) доступ к переписке.';
+      case NotificationType.accessAccepted:
+        return 'открыл(а) вам доступ к переписке.';
       case NotificationType.pairPrompt:
         return 'Хотите стать парой? 🔥🔥';
       case NotificationType.pairConfirmed:
         return 'теперь вы пара 🔥🔥';
+      case NotificationType.sborRequest:
+      case NotificationType.sborApproved:
+      case NotificationType.sborRejected:
+      case NotificationType.sborCancelled:
+      case NotificationType.unknown:
+        // Для этих типов серверный message содержит имя сбора / детали —
+        // клиент не может его восстановить, берём как есть.
+        return serverMessage?.trim().isNotEmpty == true
+            ? serverMessage!.trim()
+            : _sborFallback(type);
+    }
+  }
+
+  static String _sborFallback(NotificationType type) {
+    switch (type) {
+      case NotificationType.sborRequest:
+        return 'подал(а) заявку в ваш сбор.';
+      case NotificationType.sborApproved:
+        return 'принял(а) вашу заявку в сбор.';
+      case NotificationType.sborRejected:
+        return 'отклонил(а) вашу заявку в сбор.';
+      case NotificationType.sborCancelled:
+        return 'отменил(а) сбор.';
+      default:
+        return 'новое уведомление.';
     }
   }
 
@@ -116,7 +181,9 @@ class AppNotification {
       id: json['id']?.toString() ?? '',
       type: _parseType(json['type']?.toString()),
       fromUser: User.fromJson(json['from_user'] as Map<String, dynamic>? ?? {}),
-      postId: json['post_id']?.toString(),
+      entityId: json['entity_id']?.toString(),
+      entityType: json['entity_type']?.toString(),
+      serverMessage: json['message']?.toString(),
       postThumbnailUrl: json['post_thumbnail_url']?.toString(),
       commentText: json['comment_text']?.toString(),
       isRead: (json['is_read'] as bool?) ?? false,
@@ -145,20 +212,41 @@ class AppNotification {
         return NotificationType.follow;
       case 'mention':
         return NotificationType.mention;
+      // Бэк шлёт 'comment_reply' (domain.NotificationTypeCommentReply), а не
+      // 'reply' — раньше это не мэтчилось и падало в default(.like).
+      case 'comment_reply':
       case 'reply':
         return NotificationType.reply;
       case 'post_tag':
         return NotificationType.postTag;
+      case 'story_like':
+        return NotificationType.storyLike;
+      case 'missed_call':
+        return NotificationType.missedCall;
       case 'scanner_like':
         return NotificationType.scannerLike;
+      case 'coin':
+        return NotificationType.coin;
       case 'spark':
         return NotificationType.spark;
+      case 'access_request':
+        return NotificationType.accessRequest;
+      case 'access_accepted':
+        return NotificationType.accessAccepted;
       case 'pair_prompt':
         return NotificationType.pairPrompt;
       case 'pair_confirmed':
         return NotificationType.pairConfirmed;
+      case 'sbor_request':
+        return NotificationType.sborRequest;
+      case 'sbor_approved':
+        return NotificationType.sborApproved;
+      case 'sbor_rejected':
+        return NotificationType.sborRejected;
+      case 'sbor_cancelled':
+        return NotificationType.sborCancelled;
       default:
-        return NotificationType.like;
+        return NotificationType.unknown;
     }
   }
 
@@ -166,7 +254,9 @@ class AppNotification {
     'id': id,
     'type': type.name,
     'from_user': fromUser.toJson(),
-    'post_id': postId,
+    'entity_id': entityId,
+    'entity_type': entityType,
+    'message': serverMessage,
     'post_thumbnail_url': postThumbnailUrl,
     'comment_text': commentText,
     'is_read': isRead,
@@ -179,6 +269,7 @@ class AppNotification {
           'avatar_url': u.avatarUrl,
           'is_verified': u.isVerified,
         }).toList(),
+    'comment_id': commentId,
   };
 
   AppNotification copyWith({bool? isRead}) {
@@ -186,7 +277,9 @@ class AppNotification {
       id: id,
       type: type,
       fromUser: fromUser,
-      postId: postId,
+      entityId: entityId,
+      entityType: entityType,
+      serverMessage: serverMessage,
       postThumbnailUrl: postThumbnailUrl,
       commentText: commentText,
       isRead: isRead ?? this.isRead,

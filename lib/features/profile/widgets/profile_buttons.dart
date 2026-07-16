@@ -33,37 +33,6 @@ class ProfileHeaderIconButton extends StatelessWidget {
   }
 }
 
-class ProfileTabButton extends StatelessWidget {
-  final IconData icon;
-  final bool isActive;
-  final VoidCallback onTap;
-  const ProfileTabButton({super.key, required this.icon, required this.isActive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isActive ? SeeUColors.accent : Colors.transparent,
-                width: 2),
-            ),
-          ),
-          child: Center(
-              child: Icon(icon,
-                  size: 20, color: isActive ? SeeUColors.accent : c.ink3)),
-        ),
-      ),
-    );
-  }
-}
-
 class ProfileActionButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
@@ -108,28 +77,6 @@ class ProfileActionButton extends StatelessWidget {
               color: SeeUColors.accent.withValues(alpha: 0.22), width: 1),
         ),
         child: Center(child: label0),
-      ),
-    );
-  }
-}
-
-class ProfileActionIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  const ProfileActionIconButton({super.key, required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40, height: 40,
-        decoration: BoxDecoration(
-          color: c.surface2,
-          borderRadius: BorderRadius.circular(SeeURadii.pill),
-        ),
-        child: Center(child: Icon(icon, size: 18, color: c.ink)),
       ),
     );
   }
@@ -236,6 +183,10 @@ class _ProfileOtherButtonsState extends ConsumerState<ProfileOtherButtons> {
         ref.invalidate(accessCheckProvider(widget.user.id));
       } else {
         setState(() => _accessRequested = true);
+        // Обновляем серверный список отправленных заявок — pending-состояние
+        // кнопки теперь переживает уход/возврат на профиль (раньше жило
+        // только в локальном флаге и сбрасывалось, позволяя слать дубли).
+        ref.read(sentRequestsProvider.notifier).load();
         showSeeUSnackBar(context, 'Заявка отправлена',
             tone: SeeUTone.success);
       }
@@ -273,12 +224,28 @@ class _ProfileOtherButtonsState extends ConsumerState<ProfileOtherButtons> {
     final accessState = ref.watch(accessCheckProvider(widget.user.id));
     final hasAccess = accessState.maybeWhen(data: (v) => v, orElse: () => false);
 
+    // Pending-заявка выводится и из серверного списка sentRequests — не
+    // только из локального флага, поэтому переживает возврат на профиль.
+    final serverPending = ref.watch(sentRequestsProvider).maybeWhen(
+          data: (list) => list.any((r) => r.user.id == widget.user.id),
+          orElse: () => false,
+        );
+    final accessRequested = _accessRequested || serverPending;
+
+    // Без доступа кнопка «Запросить доступ» реально работает только если есть
+    // NFC-касание браслетом или совпадение в контактах (сервер иначе отклонит
+    // заявку 403) — для случайного чужого профиля из BLE-сканера кнопку не
+    // показываем вовсе, чтобы не давать заведомо нерабочее действие.
+    if (!hasAccess && !widget.user.canRequestAccess && !accessRequested) {
+      return Row(children: [Expanded(child: followBtn)]);
+    }
+
     final Widget messageBtn;
     if (hasAccess) {
       messageBtn = _chatLoading
           ? ProfileActionButton(label: 'Открытие...', onTap: null)
           : ProfileActionButton(label: 'Написать', onTap: _openChat);
-    } else if (_accessRequested) {
+    } else if (accessRequested) {
       messageBtn = ProfileActionButton(label: 'Заявка отправлена', onTap: null);
     } else {
       messageBtn = _accessLoading

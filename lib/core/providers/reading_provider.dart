@@ -80,15 +80,82 @@ final bookmarksProvider =
   },
 );
 
+// ─── Все мои закладки (Полка → Закладки) ───────────────────────────────────
+
+/// Закладка вместе с книгой, к которой она относится — чтобы список закладок
+/// показывал название и автора, а не голый идентификатор файла.
+class BookmarkEntry {
+  final FileBookmark bookmark;
+  final String fileTitle;
+  final String authorName;
+  final String coverUrl;
+
+  const BookmarkEntry({
+    required this.bookmark,
+    required this.fileTitle,
+    required this.authorName,
+    required this.coverUrl,
+  });
+
+  factory BookmarkEntry.fromJson(Map<String, dynamic> j) {
+    final title = (j['file_title'] as String?) ?? '';
+    final filename = (j['filename'] as String?) ?? '';
+    return BookmarkEntry(
+      bookmark: FileBookmark.fromJson(j),
+      fileTitle: title.isNotEmpty ? title : filename,
+      authorName: (j['author_name'] as String?) ?? '',
+      coverUrl: (j['cover_url'] as String?) ?? '',
+    );
+  }
+
+  /// «Стр. 214» / «12%» — куда именно ведёт закладка.
+  String get positionLabel {
+    final pos = bookmark.position;
+    final page = (pos['page'] as num?)?.toInt();
+    if (page != null && page > 0) return 'Стр. $page';
+    final pct = (pos['pct'] as num?)?.toDouble();
+    if (pct != null) return '${(pct * 100).round()}%';
+    // Легаси-формат текстовых закладок (пиксельный offset/total) → доля.
+    final offset = (pos['offset'] as num?)?.toDouble();
+    final total = (pos['total'] as num?)?.toDouble();
+    if (offset != null && total != null && total > 0) {
+      return '${(offset / total * 100).clamp(0, 100).round()}%';
+    }
+    return '';
+  }
+}
+
+final allBookmarksProvider = FutureProvider<List<BookmarkEntry>>((ref) async {
+  final dio = ref.watch(libraryApiClientProvider);
+  final resp = await dio.get(ApiEndpoints.myBookmarks);
+  final items = resp.data?['data']?['items'] as List? ?? [];
+  return items
+      .whereType<Map>()
+      .map((e) => BookmarkEntry.fromJson(Map<String, dynamic>.from(e)))
+      .toList();
+});
+
 // ─── Reading Status ────────────────────────────────────────────────────────
 
 class ReadingStatusNotifier extends StateNotifier<String?> {
   final String fileId;
   final dynamic _dio;
   bool _loading = false;
+  Future<void>? _loadFuture;
 
   ReadingStatusNotifier(this.fileId, this._dio) : super(null) {
-    _load();
+    _loadFuture = _load();
+  }
+
+  /// Пометить «читаю», но ТОЛЬКО если у файла ещё нет статуса — и только после
+  /// того как исходный статус реально загрузился. Раньше ридер читал ещё не
+  /// загруженный (null) провайдер и гонкой затирал «Прочитано»/«Хочу» → «Читаю».
+  Future<void> autoSetReadingIfAbsent() async {
+    await _loadFuture;
+    if (!mounted) return;
+    if (state == null) {
+      await updateStatus('reading');
+    }
   }
 
   Future<void> _load() async {
@@ -149,27 +216,9 @@ final readingGoalProvider = FutureProvider<ReadingGoal?>((ref) async {
   }
 });
 
-class ReadingGoalNotifier extends StateNotifier<ReadingGoal?> {
-  final dynamic _dio;
-  ReadingGoalNotifier(this._dio) : super(null);
-
-  Future<void> setGoal(int goalBooks) async {
-    final year = DateTime.now().year;
-    final resp = await _dio.put(ApiEndpoints.myReadingGoal,
-        data: {'goal_books': goalBooks},
-        queryParameters: {'year': year});
-    final data = resp.data?['data'];
-    if (data != null) {
-      state = ReadingGoal.fromJson(data as Map<String, dynamic>);
-    }
-  }
-
-  Future<void> deleteGoal() async {
-    final year = DateTime.now().year;
-    await _dio.delete(ApiEndpoints.myReadingGoal, queryParameters: {'year': year});
-    state = null;
-  }
-}
+// ReadingGoalNotifier удалён: не имел провайдера и вызовов — цель ставится
+// напрямую через dio.put в library_profile_screen. Чтение цели идёт через
+// readingGoalProvider выше.
 
 // ─── Reading Activity (heatmap) ───────────────────────────────────────────────
 
@@ -199,7 +248,6 @@ final fileNoteProvider =
 class FileNoteNotifier extends StateNotifier<String> {
   final dynamic _dio;
   final String _fileId;
-  bool _loaded = false;
 
   FileNoteNotifier(this._dio, this._fileId) : super('') {
     _load();
@@ -210,7 +258,6 @@ class FileNoteNotifier extends StateNotifier<String> {
       final resp = await _dio.get(ApiEndpoints.fileNotes(_fileId));
       final content = resp.data?['data']?['content'] as String? ?? '';
       if (mounted) state = content;
-      _loaded = true;
     } catch (_) {}
   }
 
@@ -236,6 +283,4 @@ class FileNoteNotifier extends StateNotifier<String> {
       if (mounted) state = prev;
     }
   }
-
-  bool get isLoaded => _loaded;
 }

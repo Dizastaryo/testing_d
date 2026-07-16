@@ -253,8 +253,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             final status = CallService.instance.session.value?.status;
+            if (status == CallStatus.incomingRinging) {
+              // «Назад» на входящем = отклонить. Раньше экран просто
+              // закрывался: рингтон продолжал играть без какого-либо UI,
+              // а звонящий висел до своего таймаута.
+              CallService.instance.declineIncoming();
+              Navigator.of(context).pop();
+              return;
+            }
             if (status != null &&
-                status != CallStatus.incomingRinging &&
                 status != CallStatus.ended &&
                 status != CallStatus.idle) {
               _minimizeOrPip();

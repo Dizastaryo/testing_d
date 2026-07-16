@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, ValueNotifier;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -315,6 +315,12 @@ class OfflineCatalogRepository {
   late final DownloadQueueManager _queue;
 
   final Set<String> _knownIds = {};
+
+  /// Тикает при любом изменении набора офлайн-файлов (скачали/удалили). На него
+  /// подписан isOfflineProvider, чтобы бейдж «Офлайн» не залипал на первом
+  /// вычислении, а обновлялся по факту.
+  final ValueNotifier<int> revision = ValueNotifier(0);
+
   final Map<String, Completer<String>> _activeDownloads = {};
   late final Future<void> _initFuture;
 
@@ -355,6 +361,7 @@ class OfflineCatalogRepository {
     _queue.dispose();
     _knownIds.clear();
     _activeDownloads.clear();
+    revision.dispose();
     await _store.close();
   }
 
@@ -418,6 +425,7 @@ class OfflineCatalogRepository {
     }
     await _store.deleteById(fileId);
     _knownIds.remove(fileId);
+    revision.value++;
   }
 
   Future<void> deleteMany(List<String> fileIds) async {
@@ -431,6 +439,7 @@ class OfflineCatalogRepository {
     }
     await _store.deleteMany(fileIds);
     _knownIds.removeAll(fileIds);
+    revision.value++;
   }
 
   Future<void> markOpened(String fileId) async {
@@ -563,6 +572,7 @@ class OfflineCatalogRepository {
       try {
         await _store.upsert(entry);
         _knownIds.add(fileId);
+        revision.value++;
       } catch (_) {
         // Store может быть не открыт — файл всё равно скачан
       }
@@ -623,6 +633,7 @@ class OfflineCatalogRepository {
     );
     await _store.upsert(entry);
     _knownIds.add(fileId);
+    revision.value++;
 
     if (request.coverUrl != null && request.coverUrl!.isNotEmpty) {
       _downloadCover(fileId, request.coverUrl!);
@@ -689,7 +700,8 @@ class OfflineCatalogRepository {
           localPath: diskEntry.path,
           sizeBytes: diskEntry.sizeBytes,
           savedAt: diskEntry.savedAt,
-          title: diskEntry.fileId,
+          // Каталожная строка потеряна — не показываем сырой UUID как название.
+          title: 'Скачанный файл',
         );
         await _store.upsert(entry);
         _knownIds.add(diskEntry.fileId);
@@ -715,7 +727,7 @@ class OfflineCatalogRepository {
         localPath: e.path,
         sizeBytes: e.sizeBytes,
         savedAt: e.savedAt,
-        title: e.fileId,
+        title: 'Скачанный файл',
       );
       await _store.upsert(entry);
       _knownIds.add(e.fileId);

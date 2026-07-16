@@ -32,6 +32,10 @@ class User {
   /// !isFollowing. Используется чтобы Follow-кнопка показывала
   /// «Запрос отправлен» вместо «Подписаться».
   final bool hasPendingFollowRequest;
+  /// true = у viewer есть NFC-касание браслетом или совпадение в контактах с
+  /// этим юзером — без этого «Запросить доступ» будет отклонён сервером
+  /// (403), кнопка на UI скрывается. Не приходит для own-profile (viewer==self).
+  final bool canRequestAccess;
   /// true = у юзера есть хотя бы одно активное WS-соединение (онлайн прямо
   /// сейчас). Снимок на момент запроса.
   final bool isOnline;
@@ -49,6 +53,17 @@ class User {
   final String channelBannerUrl;
   // Scanner visibility toggle
   final bool scanEnabled;
+  // ── Карточка (анонимная, для BLE-сканера) ──────────────────────────────────
+  // Отдельно от профиля: никнейм/фото/текст карточки НЕ совпадают с реальными.
+  final String scanAlias;    // никнейм карточки
+  final String scanPhotoUrl; // фото карточки (обязательное поле карточки)
+  final String scanText;     // текст/цитата карточки
+  final String scanEmoji;    // акцентный эмодзи оформления
+  final String scanStyle;    // JSON визуального оформления
+  /// true = карточка уже создавалась. Если false — при входе в редактор
+  /// обязателен полноэкранный экран предупреждения (нельзя пропустить).
+  bool get hasCard =>
+      scanPhotoUrl.isNotEmpty || scanAlias.isNotEmpty || scanText.isNotEmpty;
   /// Суммарный социальный счёт из user_stats.total_likes.
   final int totalLikes;
   final int socialLevel;
@@ -82,6 +97,7 @@ class User {
     this.isPrivate = false,
     this.isVerified = false,
     this.hasPendingFollowRequest = false,
+    this.canRequestAccess = false,
     this.isOnline = false,
     this.lastSeenAt,
     this.hideLastSeen = false,
@@ -89,6 +105,11 @@ class User {
     this.channelAbout = '',
     this.channelBannerUrl = '',
     this.scanEnabled = true,
+    this.scanAlias = '',
+    this.scanPhotoUrl = '',
+    this.scanText = '',
+    this.scanEmoji = '',
+    this.scanStyle = '',
     this.totalLikes = 0,
     this.socialLevel = 0,
     this.socialLevelName = 'Новичок',
@@ -144,6 +165,7 @@ class User {
       isVerified: ((json['is_verified'] ?? json['isVerified']) as bool?) ?? false,
       hasPendingFollowRequest:
           (json['has_pending_follow_request'] as bool?) ?? false,
+      canRequestAccess: (json['can_request_access'] as bool?) ?? false,
       isOnline: (json['is_online'] as bool?) ?? false,
       lastSeenAt: json['last_seen_at'] != null
           ? DateTime.tryParse(json['last_seen_at'].toString())
@@ -153,6 +175,11 @@ class User {
       channelAbout: json['channel_about']?.toString() ?? '',
       channelBannerUrl: _absUrl(json['channel_banner_url']?.toString()),
       scanEnabled: (json['scan_enabled'] as bool?) ?? true,
+      scanAlias: json['scan_alias']?.toString() ?? '',
+      scanPhotoUrl: _absUrl(json['scan_avatar_url']?.toString()),
+      scanText: json['scan_status']?.toString() ?? '',
+      scanEmoji: json['scan_emoji']?.toString() ?? '',
+      scanStyle: json['scan_style']?.toString() ?? '',
       totalLikes: ((json['total_likes']) as num?)?.toInt() ?? 0,
       socialLevel: ((json['social_level']) as num?)?.toInt() ?? 0,
       socialLevelName: json['social_level_name']?.toString() ?? 'Новичок',
@@ -190,6 +217,9 @@ class User {
       'has_pending_follow_request': hasPendingFollowRequest,
       'is_online': isOnline,
       'last_seen_at': lastSeenAt?.toIso8601String(),
+      'social_level': socialLevel,
+      'social_level_name': socialLevelName,
+      'next_milestone': nextMilestone,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -222,6 +252,7 @@ class User {
     bool? isPrivate,
     bool? isVerified,
     bool? hasPendingFollowRequest,
+    bool? canRequestAccess,
     bool? isOnline,
     DateTime? lastSeenAt,
     bool? hideLastSeen,
@@ -229,11 +260,19 @@ class User {
     String? channelAbout,
     String? channelBannerUrl,
     bool? scanEnabled,
+    String? scanAlias,
+    String? scanPhotoUrl,
+    String? scanText,
+    String? scanEmoji,
+    String? scanStyle,
     int? totalLikes,
     int? coinsCharisma,
     int? coinsLiked,
     int? coinsWorthy,
     int? sparksCount,
+    int? socialLevel,
+    String? socialLevelName,
+    int? nextMilestone,
     DateTime? createdAt,
   }) {
     return User(
@@ -257,6 +296,7 @@ class User {
       isVerified: isVerified ?? this.isVerified,
       hasPendingFollowRequest:
           hasPendingFollowRequest ?? this.hasPendingFollowRequest,
+      canRequestAccess: canRequestAccess ?? this.canRequestAccess,
       isOnline: isOnline ?? this.isOnline,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       hideLastSeen: hideLastSeen ?? this.hideLastSeen,
@@ -264,11 +304,21 @@ class User {
       channelAbout: channelAbout ?? this.channelAbout,
       channelBannerUrl: channelBannerUrl ?? this.channelBannerUrl,
       scanEnabled: scanEnabled ?? this.scanEnabled,
+      scanAlias: scanAlias ?? this.scanAlias,
+      scanPhotoUrl: scanPhotoUrl ?? this.scanPhotoUrl,
+      scanText: scanText ?? this.scanText,
+      scanEmoji: scanEmoji ?? this.scanEmoji,
+      scanStyle: scanStyle ?? this.scanStyle,
       totalLikes: totalLikes ?? this.totalLikes,
       coinsCharisma: coinsCharisma ?? this.coinsCharisma,
       coinsLiked: coinsLiked ?? this.coinsLiked,
       coinsWorthy: coinsWorthy ?? this.coinsWorthy,
       sparksCount: sparksCount ?? this.sparksCount,
+      // Раньше эти три поля здесь отсутствовали — ЛЮБОЙ copyWith (presence,
+      // follow-тоггл) молча сбрасывал соц-уровень на дефолты.
+      socialLevel: socialLevel ?? this.socialLevel,
+      socialLevelName: socialLevelName ?? this.socialLevelName,
+      nextMilestone: nextMilestone ?? this.nextMilestone,
       createdAt: createdAt ?? this.createdAt,
     );
   }

@@ -40,28 +40,38 @@ class _ContactsMatchScreenState extends ConsumerState<ContactsMatchScreen> {
       _permissionDenied = false;
     });
 
-    final granted = await FlutterContacts.requestPermission(readonly: true);
-    if (!granted) {
+    try {
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
+        if (!mounted) return;
+        setState(() {
+          _reading = false;
+          _permissionDenied = true;
+        });
+        return;
+      }
+
+      final contacts = await FlutterContacts.getContacts(withProperties: true);
+      final phones = <String>[];
+      for (final c in contacts) {
+        for (final p in c.phones) {
+          final n = p.number.trim();
+          if (n.isNotEmpty) phones.add(n);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _reading = false);
+      await ref.read(contactsProvider.notifier).sync(phones);
+    } catch (_) {
+      // Ошибка плагина контактов раньше не ловилась → экран навсегда
+      // «читаем адресную книгу». Трактуем как отказ в доступе.
       if (!mounted) return;
       setState(() {
         _reading = false;
         _permissionDenied = true;
       });
-      return;
     }
-
-    final contacts = await FlutterContacts.getContacts(withProperties: true);
-    final phones = <String>[];
-    for (final c in contacts) {
-      for (final p in c.phones) {
-        final n = p.number.trim();
-        if (n.isNotEmpty) phones.add(n);
-      }
-    }
-
-    if (!mounted) return;
-    setState(() => _reading = false);
-    await ref.read(contactsProvider.notifier).sync(phones);
   }
 
   @override

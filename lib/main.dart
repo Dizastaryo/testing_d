@@ -17,6 +17,7 @@ import 'core/design/tokens.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/auth_provider.dart';
 import 'core/providers/theme_provider.dart';
+import 'core/services/deep_link_service.dart';
 import 'widgets/main_scaffold.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/register_screen.dart';
@@ -26,6 +27,7 @@ import 'features/explore/explore_screen.dart';
 import 'features/explore/leaderboard_screen.dart';
 import 'features/post/post_detail_screen.dart';
 import 'features/post/comments_screen.dart';
+import 'features/post/wave_compose_screen.dart';
 import 'features/camera/camera_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
@@ -41,6 +43,8 @@ import 'features/chat/chat_screen.dart';
 import 'features/settings/blocked_users_screen.dart';
 import 'features/settings/chip_setup_screen.dart';
 import 'features/settings/scan_profile_screen.dart';
+import 'features/card/card_editor_screen.dart';
+import 'features/card/card_audience_screen.dart';
 import 'features/access/access_list_screen.dart';
 import 'features/access/contacts_match_screen.dart';
 import 'features/nfc/nfc_scan_screen.dart';
@@ -50,21 +54,26 @@ import 'features/settings/settings_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/onboarding/complete_profile_screen.dart';
 import 'features/notifications/notifications_screen.dart';
-import 'core/providers/reels_provider.dart';
+import 'core/providers/content_feed_provider.dart';
 import 'features/explore/publication_viewer.dart';
 import 'features/library/category_detail_screen.dart';
+import 'features/library/collection_detail_screen.dart';
+import 'features/library/discover_screen.dart';
 import 'features/library/file_detail_screen.dart';
-import 'features/library/library_screen.dart';
+import 'features/library/library_profile_screen.dart';
 import 'features/library/offline_library_screen.dart';
+import 'features/library/reading_room_screen.dart';
+import 'features/library/shelf_screen.dart';
+import 'core/models/audio_track.dart' show AudioTrack;
 import 'core/models/file_item.dart' show FileCategory;
 import 'features/library/reading_leaderboard_screen.dart';
 import 'features/music/music_screen.dart';
+import 'features/music/player_screen.dart';
 import 'features/music/music_upload_screen.dart';
 import 'features/music/music_search_screen.dart';
 import 'features/music/category_screen.dart';
-import 'features/music/my_tracks_screen.dart';
+import 'features/music/my_audio_screen.dart';
 import 'features/music/playlist_detail_screen.dart';
-import 'features/music/saved_tracks_screen.dart';
 import 'features/music/track_detail_screen.dart';
 import 'features/services/services_screen.dart';
 import 'features/post/publish_success_screen.dart';
@@ -115,11 +124,16 @@ class _StoryCreateCameraWrapper extends StatelessWidget {
 }
 
 class _PostCreateCameraWrapper extends StatelessWidget {
-  const _PostCreateCameraWrapper();
+  /// Звук, принесённый из Аудиотеки кнопкой «Взять в видео».
+  final AudioTrack? initialTrack;
+
+  const _PostCreateCameraWrapper({this.initialTrack});
+
   @override
   Widget build(BuildContext context) {
     return CameraScreen(
       storyMode: false,
+      initialTrack: initialTrack,
       onClose: () => context.pop(),
     );
   }
@@ -135,6 +149,16 @@ class SeeUApp extends ConsumerStatefulWidget {
 class _SeeUAppState extends ConsumerState<SeeUApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   late final GoRouter _router;
+  late final DeepLinkService _deepLinks;
+
+  /// Готовы ли открывать пришедшую ссылку: пользователь вошёл и уже заполнил
+  /// профиль. Иначе redirect всё равно увёл бы его на /login или
+  /// /complete-profile, а ссылка потерялась бы.
+  bool _canNavigate() {
+    final auth = ref.read(authProvider);
+    return auth.isAuthenticated &&
+        (auth.user?.fullName.trim().isNotEmpty ?? false);
+  }
 
   @override
   void initState() {
@@ -264,6 +288,16 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           path: '/files/:id',
           pageBuilder: (_, state) => CupertinoPage(
             child: FileDetailScreen(id: state.pathParameters['id']!),
+          ),
+        ),
+        // Подборка книг. Открывается и по ссылке от другого человека —
+        // тогда она read-only и видна, только если владелец её открыл.
+        GoRoute(
+          path: '/collection/:id',
+          pageBuilder: (_, state) => CupertinoPage(
+            child: CollectionDetailScreen(
+              collectionId: state.pathParameters['id']!,
+            ),
           ),
         ),
         GoRoute(
@@ -405,9 +439,36 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 transitionsBuilder: _fadeTransition,
               ),
             ),
+            // ── Библиотека: 4 вкладки со своим нижним меню ──
+            // Вход из «Сервисов» → Читальня; «Выйти» сверху справа возвращает
+            // в «Сервисы» и вместе с ним обычное меню приложения.
             GoRoute(
               path: '/files',
-              pageBuilder: (_, __) => const CupertinoPage(child: LibraryScreen()),
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ReadingRoomScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/library/discover',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const DiscoverScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/library/shelf',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const ShelfScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
+            ),
+            GoRoute(
+              path: '/library/profile',
+              pageBuilder: (_, __) => CustomTransitionPage(
+                child: const LibraryProfileScreen(),
+                transitionsBuilder: _fadeTransition,
+              ),
             ),
             GoRoute(
               path: '/sbory',
@@ -430,8 +491,13 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
             GoRoute(
               path: '/post/create',
-              pageBuilder: (_, __) => const CupertinoPage(
-                child: _PostCreateCameraWrapper(),
+              // extra: AudioTrack — «Взять в видео» из Аудиотеки.
+              pageBuilder: (_, state) => CupertinoPage(
+                child: _PostCreateCameraWrapper(
+                  initialTrack: state.extra is AudioTrack
+                      ? state.extra as AudioTrack
+                      : null,
+                ),
               ),
             ),
             GoRoute(
@@ -480,6 +546,12 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               ),
             ),
             GoRoute(
+              path: '/wave/create',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: WaveComposeScreen(),
+              ),
+            ),
+            GoRoute(
               path: '/settings',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: SettingsScreen(),
@@ -493,14 +565,30 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             ),
             GoRoute(
               path: '/settings/chip',
-              pageBuilder: (_, __) => const CupertinoPage(
-                child: ChipSetupScreen(),
+              // ?serial=… приходит из ссылки seeu://bind/SEEU_xxxx (QR из
+              // админки) — подставляется в поле, привязку подтверждает человек.
+              pageBuilder: (_, state) => CupertinoPage(
+                child: ChipSetupScreen(
+                  initialSerial: state.uri.queryParameters['serial'],
+                ),
               ),
             ),
             GoRoute(
               path: '/settings/scan-profile',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: ScanProfileScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/card',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: CardEditorScreen(),
+              ),
+            ),
+            GoRoute(
+              path: '/settings/card/audience',
+              pageBuilder: (_, __) => const CupertinoPage(
+                child: CardAudienceScreen(),
               ),
             ),
             GoRoute(
@@ -544,17 +632,34 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/music',
               pageBuilder: (_, __) => const CupertinoPage(child: MusicScreen()),
             ),
+            // Плеер во весь экран — вкладки сервиса здесь только мешали бы.
+            GoRoute(
+              path: '/music/player',
+              pageBuilder: (_, __) => const CupertinoPage(
+                fullscreenDialog: true,
+                child: PlayerScreen(),
+              ),
+            ),
             GoRoute(
               path: '/music/upload',
-              pageBuilder: (_, __) => const CupertinoPage(child: MusicUploadScreen()),
+              // extra: AudioTrack — отклонённый трек отправляют повторно,
+              // поля уже заполнены.
+              pageBuilder: (_, state) => CupertinoPage(
+                child: MusicUploadScreen(
+                  editing: state.extra is AudioTrack
+                      ? state.extra as AudioTrack
+                      : null,
+                ),
+              ),
             ),
             GoRoute(
               path: '/music/mine',
-              pageBuilder: (_, __) => const CupertinoPage(child: MyTracksScreen()),
-            ),
-            GoRoute(
-              path: '/music/saved',
-              pageBuilder: (_, __) => const CupertinoPage(child: SavedTracksScreen()),
+              // ?tab=uploads — например, после отправки трека на модерацию.
+              pageBuilder: (_, state) => CupertinoPage(
+                child: MyAudioScreen(
+                  initialTab: state.uri.queryParameters['tab'] ?? '',
+                ),
+              ),
             ),
             GoRoute(
               path: '/music/search',
@@ -562,6 +667,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 child: MusicSearchScreen(
                   initialCategory:
                       state.uri.queryParameters['category'] ?? '',
+                  initialQuery: state.uri.queryParameters['q'] ?? '',
                 ),
               ),
             ),
@@ -588,6 +694,14 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
         ),
       ],
     );
+
+    // Слушаем seeu://-ссылки: и ту, которой приложение открыли с нуля, и те,
+    // что приходят на уже запущенное.
+    _deepLinks = DeepLinkService(
+      router: _router,
+      isAuthenticated: _canNavigate,
+    );
+    _deepLinks.start();
   }
 
   static Widget _fadeTransition(
@@ -617,6 +731,7 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
 
   @override
   void dispose() {
+    _deepLinks.dispose();
     _router.dispose();
     super.dispose();
   }
@@ -624,8 +739,22 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
   @override
   Widget build(BuildContext context) {
     ref.listen(authProvider, (previous, next) {
-      if (previous?.isAuthenticated != next.isAuthenticated) {
+      final authChanged = previous?.isAuthenticated != next.isAuthenticated;
+      // Profile completion also changes where `redirect` sends the user
+      // (needsProfile flips false), even though isAuthenticated stays true —
+      // without this, the app stays stuck on /complete-profile after saving.
+      final profileCompleted =
+          (previous?.user?.fullName.trim().isEmpty ?? false) &&
+              !(next.user?.fullName.trim().isEmpty ?? false);
+      if (authChanged || profileCompleted) {
         _router.refresh();
+        // Ссылка, пришедшая до входа, ждала здесь — открываем её после того,
+        // как redirect отработает и человек окажется на своём экране.
+        if (_canNavigate()) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _deepLinks.flushPending(),
+          );
+        }
       }
     });
 

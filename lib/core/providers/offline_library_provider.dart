@@ -18,6 +18,11 @@ class OfflineLibraryState {
   final CatalogSortField sortBy;
   final String? search;
 
+  /// Ошибка загрузки офлайн-каталога (SQLite/FTS5 может не открыться). Раньше
+  /// исключение просто пробрасывалось, isLoading оставался true, и экран висел
+  /// в вечном спиннере без ретрая.
+  final String? error;
+
   const OfflineLibraryState({
     this.items = const [],
     this.isLoading = true,
@@ -28,6 +33,7 @@ class OfflineLibraryState {
     this.kindFilter,
     this.sortBy = CatalogSortField.savedAt,
     this.search,
+    this.error,
   });
 
   OfflineLibraryState copyWith({
@@ -42,6 +48,8 @@ class OfflineLibraryState {
     CatalogSortField? sortBy,
     String? search,
     bool clearSearch = false,
+    String? error,
+    bool clearError = false,
   }) =>
       OfflineLibraryState(
         items: items ?? this.items,
@@ -53,6 +61,7 @@ class OfflineLibraryState {
         kindFilter: clearKindFilter ? null : (kindFilter ?? this.kindFilter),
         sortBy: sortBy ?? this.sortBy,
         search: clearSearch ? null : (search ?? this.search),
+        error: clearError ? null : (error ?? this.error),
       );
 }
 
@@ -67,42 +76,53 @@ class OfflineLibraryNotifier extends StateNotifier<OfflineLibraryState> {
   }
 
   Future<void> loadInitial() async {
-    state = state.copyWith(isLoading: true, offset: 0, items: []);
-    final items = await _repo.list(
-      search: state.search,
-      kind: state.kindFilter,
-      sortBy: state.sortBy,
-      limit: _pageSize,
-      offset: 0,
-    );
-    final total = await _repo.count(kind: state.kindFilter);
-    if (!mounted) return;
     state = state.copyWith(
-      items: items,
-      isLoading: false,
-      offset: items.length,
-      totalCount: total,
-      hasMore: items.length >= _pageSize,
-    );
+        isLoading: true, offset: 0, items: [], clearError: true);
+    try {
+      final items = await _repo.list(
+        search: state.search,
+        kind: state.kindFilter,
+        sortBy: state.sortBy,
+        limit: _pageSize,
+        offset: 0,
+      );
+      final total = await _repo.count(kind: state.kindFilter);
+      if (!mounted) return;
+      state = state.copyWith(
+        items: items,
+        isLoading: false,
+        offset: items.length,
+        totalCount: total,
+        hasMore: items.length >= _pageSize,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
   }
 
   Future<void> loadMore() async {
     if (state.isLoadingMore || !state.hasMore) return;
     state = state.copyWith(isLoadingMore: true);
-    final items = await _repo.list(
-      search: state.search,
-      kind: state.kindFilter,
-      sortBy: state.sortBy,
-      limit: _pageSize,
-      offset: state.offset,
-    );
-    if (!mounted) return;
-    state = state.copyWith(
-      items: [...state.items, ...items],
-      isLoadingMore: false,
-      offset: state.offset + items.length,
-      hasMore: items.length >= _pageSize,
-    );
+    try {
+      final items = await _repo.list(
+        search: state.search,
+        kind: state.kindFilter,
+        sortBy: state.sortBy,
+        limit: _pageSize,
+        offset: state.offset,
+      );
+      if (!mounted) return;
+      state = state.copyWith(
+        items: [...state.items, ...items],
+        isLoadingMore: false,
+        offset: state.offset + items.length,
+        hasMore: items.length >= _pageSize,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      state = state.copyWith(isLoadingMore: false);
+    }
   }
 
   void setKindFilter(OfflineKind? kind) {
@@ -128,17 +148,25 @@ class OfflineLibraryNotifier extends StateNotifier<OfflineLibraryState> {
 
   Future<void> deleteItem(String fileId) async {
     await _repo.delete(fileId);
+    final items = state.items.where((e) => e.fileId != fileId).toList();
     state = state.copyWith(
-      items: state.items.where((e) => e.fileId != fileId).toList(),
-      totalCount: state.totalCount - 1,
+      items: items,
+      // offset должен идти в ногу с items.length (loadMore читает с offset).
+      // Без этого каждое удаление сдвигает БД, и следующий loadMore пропускает
+      // по одной книге. totalCount не уводим в минус.
+      offset: items.length,
+      totalCount: (state.totalCount - 1).clamp(0, 1 << 30),
     );
   }
 
   Future<void> deleteItems(List<String> fileIds) async {
     await _repo.deleteMany(fileIds);
+    final items =
+        state.items.where((e) => !fileIds.contains(e.fileId)).toList();
     state = state.copyWith(
-      items: state.items.where((e) => !fileIds.contains(e.fileId)).toList(),
-      totalCount: state.totalCount - fileIds.length,
+      items: items,
+      offset: items.length,
+      totalCount: (state.totalCount - fileIds.length).clamp(0, 1 << 30),
     );
   }
 

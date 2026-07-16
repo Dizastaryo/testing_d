@@ -54,6 +54,15 @@ class ChipControlService {
       throw ChipControlException('Не удалось подключиться: $e');
     }
 
+    // Виджет закрылся во время connect (dispose уже отработал): не оставляем
+    // живой GATT-линк висеть — сразу рвём (у ESP32 лимит подключений).
+    if (_disposed) {
+      try {
+        await device.disconnect();
+      } catch (_) {}
+      throw ChipControlException('Отменено');
+    }
+
     _connected = true;
 
     List<BluetoothService> services;
@@ -155,12 +164,17 @@ class ChipControlService {
     }
   }
 
+  bool _disposed = false;
+
   Future<void> disconnect() async {
     await _cleanup();
   }
 
   Future<void> _cleanup() async {
-    _notifySub?.cancel();
+    // await отмены подписки ДО закрытия контроллера (ниже в dispose) —
+    // иначе пришедшая между планированием cancel и close нотификация режима
+    // стреляла _modeController.add на уже закрытом контроллере (StateError).
+    await _notifySub?.cancel();
     _notifySub = null;
     _modeChar  = null;
     _infoChar  = null;
@@ -172,8 +186,13 @@ class ChipControlService {
     _device = null;
   }
 
-  void dispose() {
-    _cleanup();
-    _modeController.close();
+  Future<void> dispose() async {
+    _disposed = true;
+    // Последовательно: сначала полный cleanup (с await cancel + disconnect),
+    // потом закрытие контроллера. Раньше _cleanup не await'ился, и close шёл
+    // немедленно — гонка с pending-нотификацией + утечка GATT-линка, если
+    // connect() завершался уже после dispose.
+    await _cleanup();
+    await _modeController.close();
   }
 }

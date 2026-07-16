@@ -7,10 +7,47 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/design/design.dart';
 import '../../core/providers/library_provider.dart';
+import 'file_preparation_screen.dart';
 
 const _allowedExtensions = [
   'pdf', 'epub', 'fb2', 'docx', 'pptx', 'txt', 'rtf', 'md', 'odt', 'odp'
 ];
+
+/// Открыть шторку загрузки и обработать результат: конвертируемые форматы
+/// уходят в подготовку («Готовим к чтению»), остальные сразу на полке.
+/// Возвращает true, если файл загружен.
+Future<bool> showUploadSheet(BuildContext context) async {
+  final result = await showModalBottomSheet<Map<String, dynamic>?>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const UploadSheet(),
+  );
+  if (result == null || result['uploaded'] != true) return false;
+  if (!context.mounted) return true;
+
+  final title = result['title'] as String? ?? 'Файл';
+  if (result['needsPrep'] == true) {
+    showSeeUSnackBar(
+      context,
+      '$title загружен — подготавливается к чтению',
+      tone: SeeUTone.success,
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+        label: 'Следить',
+        onPressed: () {
+          if (!context.mounted) return;
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const FilePreparationScreen()),
+          );
+        },
+      ),
+    );
+  } else {
+    showSeeUSnackBar(context, '$title загружен', tone: SeeUTone.success);
+  }
+  return true;
+}
 
 class UploadSheet extends ConsumerStatefulWidget {
   const UploadSheet({super.key});

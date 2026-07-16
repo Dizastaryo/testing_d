@@ -2,68 +2,57 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../core/audio/local_waveform.dart';
 import '../../core/design/design.dart';
+import '../../core/models/audio_category.dart';
+import '../../core/models/audio_track.dart';
 import '../../core/providers/audio_provider.dart';
+import 'audio_design.dart';
 
+/// Загрузка трека — не «форма», а отдельная задача.
+///
+/// Обязательны только **четыре** поля: файл, название, категория и видимость.
+/// Остальное можно пропустить и дозаполнить потом. Категория из 9×16 берётся
+/// **за два тапа** в шторке, а не длинным списком. «По ссылке» объяснено
+/// человеческим языком, а не термином.
 class MusicUploadScreen extends ConsumerStatefulWidget {
-  const MusicUploadScreen({super.key});
+  /// Отклонённый трек, который отправляют повторно: поля уже заполнены —
+  /// менять надо одно, а не начинать с нуля.
+  final AudioTrack? editing;
+
+  const MusicUploadScreen({super.key, this.editing});
 
   @override
   ConsumerState<MusicUploadScreen> createState() => _MusicUploadScreenState();
 }
 
 class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
-  File? _file;
-  String _fileName = '';
-  int _fileSize = 0;
-  String _fileExt = '';
+  late final _titleCtrl =
+      TextEditingController(text: widget.editing?.title ?? '');
+  late final _artistCtrl =
+      TextEditingController(text: widget.editing?.artist ?? '');
+  late final _albumCtrl =
+      TextEditingController(text: widget.editing?.album ?? '');
+  late final _descCtrl =
+      TextEditingController(text: widget.editing?.description ?? '');
 
-  bool _extraExpanded = false;
+  PlatformFile? _file;
 
-  final _titleCtrl = TextEditingController();
-  final _artistCtrl = TextEditingController();
-  final _albumCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _genreCtrl = TextEditingController();
+  /// Волна и длительность файла, посчитанные на устройстве. Пока считаются —
+  /// показываем, что идёт разбор, а не пустоту.
+  LocalAudioInfo? _info;
+  bool _analyzing = false;
 
-  String _category = 'music';
-  String _subcategory = '';
-  String _mood = '';
-  String _visibility = 'public';
-
-  static const _categories = [
-    ('music', 'Музыка'),
-    ('memes', 'Мемы'),
-    ('audiobooks', 'Аудиокниги'),
-    ('podcasts', 'Подкасты'),
-    ('education', 'Образование'),
-    ('meditation', 'Медитация'),
-    ('news', 'Новости'),
-    ('instrumental', 'Инструментал'),
-    ('other', 'Другое'),
-  ];
-
-  static const _visibilities = [
-    ('public', 'Публичный'),
-    ('unlisted', 'По ссылке'),
-    ('private', 'Приватный'),
-  ];
-
-  static const _subcategories = {
-    'music': ['Поп', 'Рэп / Hip-Hop', 'R&B', 'Рок', 'Электронная', 'House', 'Techno', 'Jazz', 'Classical', 'K-pop', 'Indie', 'Саундтреки', 'Другое'],
-    'memes': ['Смешное', 'Реакция', 'Голосовой мем', 'Звуковой эффект', 'Виральное'],
-    'audiobooks': ['Художественная', 'Бизнес', 'Саморазвитие', 'Детям', 'Фэнтези', 'Детектив', 'История', 'Наука'],
-    'podcasts': ['Интервью', 'Ток-шоу', 'Технологии', 'Бизнес', 'Спорт', 'Комедия'],
-    'education': ['Языки', 'Программирование', 'Школа', 'Университет', 'Наука', 'Финансы'],
-    'meditation': ['Сон', 'Фокус', 'Дыхание', 'Эмбиент', 'Природа'],
-    'instrumental': ['Бит', 'Lo-fi', 'Киношное', 'Игровая', 'Фоновая'],
-  };
-
-  static const _moods = ['', 'Радостное', 'Грустное', 'Энергичное', 'Спокойное', 'Мрачное', 'Романтичное', 'Агрессивное', 'Чилл'];
+  late String _category = widget.editing?.category ?? '';
+  late String _subcategory = widget.editing?.subcategory ?? '';
+  late String _mood = widget.editing?.mood ?? '';
+  late String _visibility = widget.editing?.visibility ?? 'public';
+  bool _more = false;
 
   @override
   void dispose() {
@@ -71,48 +60,85 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
     _artistCtrl.dispose();
     _albumCtrl.dispose();
     _descCtrl.dispose();
-    _genreCtrl.dispose();
     super.dispose();
   }
 
-  bool get _canSubmit => _file != null && _titleCtrl.text.trim().isNotEmpty;
-
-  List<String> get _currentSubcategories => _subcategories[_category] ?? [];
+  bool get _canSubmit =>
+      _file?.path != null &&
+      _titleCtrl.text.trim().isNotEmpty &&
+      _category.isNotEmpty;
 
   Future<void> _pickFile() async {
-    final res = await FilePicker.platform.pickFiles(type: FileType.audio, withData: false);
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      withData: false,
+    );
     if (res == null || res.files.isEmpty) return;
-    final pf = res.files.first;
-    if (pf.path == null) return;
+    if (!mounted) return;
+    final f = res.files.first;
+    // Ловим слишком большой файл ДО загрузки: сервер режет на 100 МБ, и без
+    // этой проверки человек ждёт полную заливку впустую, только чтобы получить
+    // отказ. Размер уже известен локально.
+    const maxBytes = 100 * 1024 * 1024;
+    if (f.size > maxBytes) {
+      showSeeUSnackBar(
+        context,
+        'Файл слишком большой — максимум 100 МБ',
+        tone: SeeUTone.danger,
+      );
+      return;
+    }
     setState(() {
-      _file = File(pf.path!);
-      _fileName = pf.name;
-      _fileSize = pf.size;
-      _fileExt = pf.extension?.toUpperCase() ?? '';
-      if (_titleCtrl.text.isEmpty) {
-        _titleCtrl.text = pf.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+      _file = f;
+      _info = null;
+      _analyzing = true;
+      // Имя файла — разумная догадка о названии; человек её перепишет.
+      if (_titleCtrl.text.trim().isEmpty) {
+        _titleCtrl.text = f.name.replaceAll(RegExp(r'\.[^.]+$'), '');
       }
+    });
+
+    // Волну считаем прямо здесь, на устройстве: тогда карточка файла честная,
+    // и трек не останется без волны, даже если media_worker на сервере не
+    // поднят.
+    final path = f.path;
+    if (path == null) {
+      setState(() => _analyzing = false);
+      return;
+    }
+    final info = await LocalWaveform.analyze(path);
+    if (!mounted) return;
+    setState(() {
+      _info = info;
+      _analyzing = false;
+    });
+  }
+
+  Future<void> _pickCategory() async {
+    final result = await showCategorySheet(
+      context,
+      category: _category,
+      subcategory: _subcategory,
+    );
+    if (result == null) return;
+    setState(() {
+      _category = result.$1;
+      _subcategory = result.$2;
     });
   }
 
   Future<void> _submit() async {
-    final title = _titleCtrl.text.trim();
-    if (title.isEmpty) {
-      _showSnack('Введите название трека');
-      return;
-    }
-    if (_file == null) {
-      _showSnack('Выберите аудиофайл');
-      return;
-    }
+    if (!_canSubmit) return;
+    HapticFeedback.mediumImpact();
 
     final track = await ref.read(audioUploadProvider.notifier).upload(
-          file: _file!,
-          title: title,
+          file: File(_file!.path!),
+          waveform: _info?.peaks,
+          durationSeconds: _info?.durationSeconds ?? 0,
+          title: _titleCtrl.text.trim(),
           artist: _artistCtrl.text.trim(),
           album: _albumCtrl.text.trim(),
           description: _descCtrl.text.trim(),
-          genre: _genreCtrl.text.trim(),
           category: _category,
           subcategory: _subcategory,
           mood: _mood,
@@ -120,311 +146,238 @@ class _MusicUploadScreenState extends ConsumerState<MusicUploadScreen> {
         );
 
     if (!mounted) return;
-    if (track != null) {
-      ref.invalidate(audioFeedProvider);
-      ref.invalidate(myTracksProvider);
-      _showSnack('«${track.title}» загружен!');
-      context.pop();
+    if (track == null) {
+      // Показываем конкретную причину (формат/размер/сеть/таймаут), которую
+      // провайдер уже вычислил — раньше она была мёртвым кодом, а юзер видел
+      // только общее «попробуй ещё раз».
+      final reason = ref.read(audioUploadProvider).error;
+      showSeeUSnackBar(
+        context,
+        reason ?? 'Не удалось загрузить — попробуй ещё раз',
+        tone: SeeUTone.danger,
+      );
+      return;
     }
-  }
 
-  void _showSnack(String msg) {
-    showSeeUSnackBar(context, msg);
+    ref.invalidate(myTracksProvider);
+    // Ведём туда, где трек теперь живёт, а не оставляем в пустой форме.
+    context.go('/music/mine?tab=uploads');
   }
 
   @override
   Widget build(BuildContext context) {
-    final uploadState = ref.watch(audioUploadProvider);
-    final isUploading = uploadState.isUploading;
     final c = context.seeuColors;
+    final upload = ref.watch(audioUploadProvider);
+
+    if (upload.isUploading) return _uploading(c, upload.progress);
 
     return Scaffold(
       backgroundColor: c.bg,
-      body: Column(
-        children: [
-          SeeUGlassBar(
-            titleText: 'Загрузить трек',
-            kicker: 'МУЗЫКА',
-            leading: SeeUBackButton(enabled: !isUploading),
-            actions: [
-              if (!isUploading && _canSubmit)
-                TextButton(
-                  onPressed: _submit,
-                  child: Text(
-                    'Загрузить',
-                    style: SeeUTypography.subtitle.copyWith(
-                        color: SeeUColors.accent,
-                        fontWeight: FontWeight.w600),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+              child: Row(
+                children: [
+                  AudioSquareButton(
+                    icon: PhosphorIcons.x(),
+                    onTap: () => context.pop(),
                   ),
+                  const SizedBox(width: 14),
+                  Text(
+                    widget.editing == null ? 'Новый трек' : 'Отправить снова',
+                    style: SeeUTypography.displayS
+                        .copyWith(fontSize: 22, color: c.ink),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                children: [
+                  _fileCard(c),
+                  const SizedBox(height: 16),
+                  _coverAndTitle(c),
+                  const SizedBox(height: 13),
+                  _field(c, 'АВТОР', _artistCtrl, 'Твоё имя или ник'),
+                  const SizedBox(height: 13),
+                  _categoryField(c),
+                  const SizedBox(height: 13),
+                  _visibilityField(c),
+                  const SizedBox(height: 16),
+                  _moreSection(c),
+                ],
+              ),
+            ),
+            _submitBar(c),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Файл ──────────────────────────────────────────────────────────────────
+
+  Widget _fileCard(SeeUThemeColors c) {
+    if (_file == null) {
+      return Tappable.scaled(
+        onTap: _pickFile,
+        child: Container(
+          height: 120,
+          decoration: BoxDecoration(
+            color: SeeUColors.accent.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: SeeUColors.accent.withValues(alpha: 0.45),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(PhosphorIconsRegular.fileArrowUp,
+                  size: 28, color: SeeUColors.accent),
+              const SizedBox(height: 8),
+              Text(
+                'Выбрать файл',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AudioColors.kicker(context),
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'MP3 · M4A · WAV · OGG',
+                style: TextStyle(fontSize: 11, color: c.ink3),
+              ),
             ],
           ),
-          Expanded(
-            child: isUploading
-                ? _UploadProgress(progress: uploadState.progress)
-                : _buildForm(uploadState.error),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
+    }
 
-  Widget _buildForm(String? error) {
-    final theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+    final f = _file!;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: c.ink,
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── File picker ──
-          _FileTile(
-            fileName: _fileName,
-            fileSize: _fileSize,
-            fileExt: _fileExt,
-            hasFile: _file != null,
-            onTap: _pickFile,
-          ),
-          const SizedBox(height: 16),
-
-          // ── Title ──
-          TextField(
-            controller: _titleCtrl,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'Название *',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            maxLength: 200,
-            buildCounter: _compactCounter,
-          ),
-          const SizedBox(height: 12),
-
-          // ── Category ──
-          DropdownButtonFormField<String>(
-            initialValue: _category,
-            decoration: const InputDecoration(
-              labelText: 'Категория',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: _categories
-                .map((c) => DropdownMenuItem(value: c.$1, child: Text(c.$2)))
-                .toList(),
-            onChanged: (v) => setState(() {
-              _category = v ?? 'music';
-              _subcategory = '';
-            }),
+          Row(
+            children: [
+              const Icon(PhosphorIconsFill.fileAudio,
+                  size: 16, color: SeeUColors.accentSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  f.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.bg,
+                  ),
+                ),
+              ),
+              Tappable(
+                onTap: _pickFile,
+                child: Icon(PhosphorIcons.arrowsClockwise(),
+                    size: 17, color: c.bg.withValues(alpha: 0.7)),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-
-          // ── Visibility ──
-          DropdownButtonFormField<String>(
-            initialValue: _visibility,
-            decoration: const InputDecoration(
-              labelText: 'Видимость',
-              border: OutlineInputBorder(),
-              isDense: true,
+          // Настоящая волна файла — посчитана здесь же, из самого файла.
+          // Если посчитать не вышло, честно не рисуем ничего вместо неё.
+          if (_analyzing)
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation(c.bg.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Разбираем файл…',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: c.bg.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_info?.peaks != null)
+            TrackWaveform(
+              peaks: _info!.peaks,
+              progress: 1,
+              color: c.bg.withValues(alpha: 0.85),
+              height: 40,
             ),
-            items: _visibilities
-                .map((v) => DropdownMenuItem(value: v.$1, child: Text(v.$2)))
-                .toList(),
-            onChanged: (v) => setState(() => _visibility = v ?? 'public'),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Expandable extra ──
-          _ExtraSection(
-            expanded: _extraExpanded,
-            onToggle: () => setState(() => _extraExpanded = !_extraExpanded),
-            child: _extraExpanded
-                ? _buildExtraFields(theme)
-                : const SizedBox.shrink(),
-          ),
-
-          // ── Error ──
-          if (error != null) ...[
-            const SizedBox(height: 12),
-            _ErrorBanner(message: error),
-          ],
-
-          const SizedBox(height: 20),
-
-          // ── Submit button ──
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: _canSubmit ? SeeUColors.accent : theme.disabledColor,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+          const SizedBox(height: 8),
+          Text(
+            [
+              _fileSize(f.size),
+              if ((_info?.durationSeconds ?? 0) > 0)
+                formatDuration(_info!.durationSeconds),
+            ].where((e) => e.isNotEmpty).join(' · '),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: c.bg.withValues(alpha: 0.6),
             ),
-            onPressed: _canSubmit ? _submit : null,
-            icon: Icon(PhosphorIcons.uploadSimple(), size: 18),
-            label: const Text('Загрузить трек'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildExtraFields(ThemeData theme) {
-    final subs = _currentSubcategories;
+  static String _fileSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  // ── Обложка + название ────────────────────────────────────────────────────
+
+  Widget _coverAndTitle(SeeUThemeColors c) {
+    final cat = findCategory(_category);
+    final color = cat?.color ?? SeeUColors.accent;
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 4),
-        TextField(
-          controller: _artistCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Артист',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          maxLength: 200,
-          buildCounter: _compactCounter,
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _albumCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Альбом',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          maxLength: 200,
-          buildCounter: _compactCounter,
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _genreCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Жанр',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          maxLength: 100,
-          buildCounter: _compactCounter,
-        ),
-        if (subs.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: _subcategory.isEmpty ? null : _subcategory,
-            decoration: const InputDecoration(
-              labelText: 'Подкатегория',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            hint: const Text('Выбрать'),
-            items: subs
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onChanged: (v) => setState(() => _subcategory = v ?? ''),
-          ),
-        ],
-        const SizedBox(height: 10),
-        DropdownButtonFormField<String>(
-          initialValue: _mood.isEmpty ? null : _mood,
-          decoration: const InputDecoration(
-            labelText: 'Настроение',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          hint: const Text('Выбрать'),
-          items: _moods
-              .where((m) => m.isNotEmpty)
-              .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-              .toList(),
-          onChanged: (v) => setState(() => _mood = v ?? ''),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _descCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Описание',
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          maxLines: 3,
-          maxLength: 2000,
-          buildCounter: _compactCounter,
-        ),
-      ],
-    );
-  }
-
-  // Shows counter only when field has content or max is near.
-  static Widget? _compactCounter(
-    BuildContext context, {
-    required int currentLength,
-    required bool isFocused,
-    required int? maxLength,
-  }) {
-    if (maxLength == null || currentLength == 0) return null;
-    if (!isFocused && currentLength < (maxLength * 0.8).round()) return null;
-    return Text(
-      '$currentLength/$maxLength',
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.outline,
-            fontSize: 11,
-          ),
-    );
-  }
-}
-
-// ── Sub-widgets ──────────────────────────────────────────────────────────────
-
-class _FileTile extends StatelessWidget {
-  final String fileName;
-  final int fileSize;
-  final String fileExt;
-  final bool hasFile;
-  final VoidCallback onTap;
-
-  const _FileTile({
-    required this.fileName,
-    required this.fileSize,
-    required this.fileExt,
-    required this.hasFile,
-    required this.onTap,
-  });
-
-  String get _sizeLabel {
-    if (fileSize <= 0) return '';
-    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(0)} KB';
-    return '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: hasFile ? SeeUColors.accent : theme.colorScheme.outlineVariant,
-            width: hasFile ? 1.5 : 1,
-          ),
-          borderRadius: BorderRadius.circular(12),
-          color: hasFile
-              ? SeeUColors.accent.withValues(alpha: 0.04)
-              : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        ),
-        child: Row(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
-                color: hasFile
-                    ? SeeUColors.accent.withValues(alpha: 0.12)
-                    : theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(14),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [color, Color.lerp(color, Colors.black, 0.35)!],
+                ),
               ),
               child: Icon(
-                hasFile ? PhosphorIcons.musicNotesSimple() : PhosphorIcons.uploadSimple(),
-                color: hasFile ? SeeUColors.accent : theme.colorScheme.outline,
-                size: 22,
+                cat?.iconData ?? PhosphorIconsFill.musicNotes,
+                size: 28,
+                color: Colors.white.withValues(alpha: 0.9),
               ),
             ),
             const SizedBox(width: 12),
@@ -432,158 +385,680 @@ class _FileTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    hasFile ? 'Файл выбран' : 'Выбрать аудиофайл',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: hasFile ? SeeUColors.accent : theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    hasFile
-                        ? [fileName, if (_sizeLabel.isNotEmpty) _sizeLabel, if (fileExt.isNotEmpty) fileExt]
-                            .join(' · ')
-                        : 'MP3, M4A, AAC, WAV, OGG · макс. 100 МБ',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.outline,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  _label(c, 'НАЗВАНИЕ', required: true),
+                  const SizedBox(height: 5),
+                  _input(c, _titleCtrl, 'Как называется трек', accent: true),
                 ],
               ),
             ),
-            if (hasFile)
-              Icon(PhosphorIconsFill.checkCircle, color: SeeUColors.accent, size: 20)
-            else
-              Icon(PhosphorIcons.caretRight(), color: theme.colorScheme.outline, size: 18),
           ],
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          'Обложку соберём из цвета категории — искать картинку не обязательно.',
+          style: TextStyle(fontSize: 11, color: c.ink3),
+        ),
+      ],
     );
   }
-}
 
-class _ExtraSection extends StatelessWidget {
-  final bool expanded;
-  final VoidCallback onToggle;
-  final Widget child;
+  // ── Категория ─────────────────────────────────────────────────────────────
 
-  const _ExtraSection({
-    required this.expanded,
-    required this.onToggle,
-    required this.child,
-  });
+  Widget _categoryField(SeeUThemeColors c) {
+    final cat = findCategory(_category);
+    final sub = cat?.subcategories
+        .where((s) => s.id == _subcategory)
+        .map((s) => s.titleRu)
+        .firstOrNull;
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        _label(c, 'КАТЕГОРИЯ', required: true),
+        const SizedBox(height: 5),
+        Tappable.scaled(
+          onTap: _pickCategory,
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: cat == null ? c.line : cat.color,
+              ),
+            ),
             child: Row(
               children: [
-                Icon(
-                  expanded ? PhosphorIcons.caretUp() : PhosphorIcons.caretDown(),
-                  size: 16,
-                  color: theme.colorScheme.outline,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Дополнительная информация',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: theme.colorScheme.outline,
-                    fontWeight: FontWeight.w500,
+                if (cat != null) ...[
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: cat.color,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(cat.iconData, size: 15, color: Colors.white),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    cat == null
+                        ? 'Куда отнести трек?'
+                        : [cat.title, if (sub != null) sub].join(' · '),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight:
+                          cat == null ? FontWeight.w400 : FontWeight.w600,
+                      color: cat == null ? c.ink3 : c.ink,
+                    ),
                   ),
                 ),
+                Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink3),
               ],
             ),
           ),
         ),
-        AnimatedCrossFade(
-          firstChild: const SizedBox.shrink(),
-          secondChild: child,
-          crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-          duration: const Duration(milliseconds: 200),
+      ],
+    );
+  }
+
+  // ── Видимость ─────────────────────────────────────────────────────────────
+
+  Widget _visibilityField(SeeUThemeColors c) {
+    final items = <(String, IconData, String, String)>[
+      (
+        'public',
+        PhosphorIconsFill.globeHemisphereWest,
+        'Публичный',
+        'В поиске, категориях, можно взять в видео',
+      ),
+      (
+        'unlisted',
+        PhosphorIconsRegular.link,
+        'По ссылке',
+        'Не в поиске. Откроют только те, кому дашь ссылку',
+      ),
+      (
+        'private',
+        PhosphorIconsRegular.lockSimple,
+        'Только я',
+        'Личный. Никто, кроме тебя, не увидит',
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(c, 'КТО УВИДИТ', required: true),
+        const SizedBox(height: 6),
+        for (final (id, icon, title, hint) in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Tappable.scaled(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _visibility = id);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _visibility == id
+                      ? SeeUColors.accent.withValues(alpha: 0.08)
+                      : c.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _visibility == id ? SeeUColors.accent : c.line,
+                    width: _visibility == id ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon,
+                        size: 20,
+                        color: _visibility == id ? SeeUColors.accent : c.ink3),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: c.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            hint,
+                            style: TextStyle(fontSize: 11, color: c.ink3),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_visibility == id)
+                      const Icon(PhosphorIconsFill.checkCircle,
+                          size: 20, color: SeeUColors.accent),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Необязательное ────────────────────────────────────────────────────────
+
+  Widget _moreSection(SeeUThemeColors c) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tappable(
+          onTap: () => setState(() => _more = !_more),
+          child: Row(
+            children: [
+              Text(
+                'Ещё · необязательно',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink2,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                _more ? PhosphorIcons.caretUp() : PhosphorIcons.caretDown(),
+                size: 14,
+                color: c.ink3,
+              ),
+            ],
+          ),
         ),
+        if (_more) ...[
+          const SizedBox(height: 12),
+          _field(c, 'АЛЬБОМ', _albumCtrl, 'Если трек из альбома'),
+          const SizedBox(height: 13),
+          _field(c, 'ОПИСАНИЕ', _descCtrl, 'О чём этот трек', lines: 3),
+          const SizedBox(height: 13),
+          _label(c, 'НАСТРОЕНИЕ'),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final m in const [
+                'Радостное',
+                'Грустное',
+                'Энергичное',
+                'Спокойное',
+                'Мрачное',
+                'Романтичное',
+                'Чилл',
+              ])
+                Tappable.scaled(
+                  onTap: () => setState(() => _mood = _mood == m ? '' : m),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _mood == m ? c.ink : c.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: _mood == m ? c.ink : c.line),
+                    ),
+                    child: Text(
+                      m,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: _mood == m ? c.bg : c.ink2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Кнопка ────────────────────────────────────────────────────────────────
+
+  Widget _submitBar(SeeUThemeColors c) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      decoration: BoxDecoration(
+        color: c.bg,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: Tappable.scaled(
+        onTap: _canSubmit ? _submit : null,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: _canSubmit ? SeeUColors.accent : c.surface2,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: _canSubmit
+                ? [
+                    BoxShadow(
+                      color: SeeUColors.accent.withValues(alpha: 0.55),
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
+                      spreadRadius: -10,
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(PhosphorIconsFill.uploadSimple,
+                  size: 16, color: _canSubmit ? Colors.white : c.ink4),
+              const SizedBox(width: 8),
+              Text(
+                'Отправить на модерацию',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: _canSubmit ? Colors.white : c.ink4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Загрузка идёт ─────────────────────────────────────────────────────────
+
+  Widget _uploading(SeeUThemeColors c, double progress) {
+    final pct = (progress * 100).round();
+
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 150,
+                height: 150,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 150,
+                      height: 150,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 15,
+                        backgroundColor: c.surface2,
+                        valueColor:
+                            const AlwaysStoppedAnimation(SeeUColors.accent),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$pct',
+                          style: SeeUTypography.displayS
+                              .copyWith(fontSize: 40, color: c.ink),
+                        ),
+                        Text(
+                          'процента',
+                          style: TextStyle(fontSize: 12, color: c.ink3),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Загружаем трек…',
+                style:
+                    SeeUTypography.displayS.copyWith(fontSize: 24, color: c.ink),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                [
+                  _titleCtrl.text.trim(),
+                  _fileSize(_file?.size ?? 0),
+                ].where((e) => e.isNotEmpty).join(' · '),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, height: 1.5, color: c.ink3),
+              ),
+              const SizedBox(height: 30),
+              // Что будет дальше — чтобы не гадать, куда делся трек.
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: c.line),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(PhosphorIconsFill.hourglassMedium,
+                        size: 22, color: SeeUColors.warning),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Дальше трек уйдёт на модерацию (≈ до суток). '
+                        'Найдёшь его в «Моё → Загрузки».',
+                        style: TextStyle(
+                            fontSize: 12.5, height: 1.5, color: c.ink2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Поля ──────────────────────────────────────────────────────────────────
+
+  Widget _label(SeeUThemeColors c, String text, {bool required = false}) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: c.ink3,
+          ),
+        ),
+        if (required)
+          const Text(
+            ' *',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: SeeUColors.accent,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _input(
+    SeeUThemeColors c,
+    TextEditingController ctrl,
+    String hint, {
+    int lines = 1,
+    bool accent = false,
+  }) {
+    final filled = accent && ctrl.text.trim().isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: filled ? SeeUColors.accent : c.line,
+          width: filled ? 1.5 : 1,
+        ),
+      ),
+      child: TextField(
+        controller: ctrl,
+        maxLines: lines,
+        onChanged: (_) => setState(() {}),
+        style: TextStyle(fontSize: 14, color: c.ink),
+        decoration: InputDecoration(
+          isCollapsed: true,
+          border: InputBorder.none,
+          hintText: hint,
+          hintStyle: TextStyle(fontSize: 14, color: c.ink3),
+        ),
+      ),
+    );
+  }
+
+  Widget _field(
+    SeeUThemeColors c,
+    String label,
+    TextEditingController ctrl,
+    String hint, {
+    int lines = 1,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(c, label),
+        const SizedBox(height: 5),
+        _input(c, ctrl, hint, lines: lines),
       ],
     );
   }
 }
 
-class _UploadProgress extends StatelessWidget {
-  final double progress;
-  const _UploadProgress({required this.progress});
+// ─── Шторка категории: два тапа вместо десяти ───────────────────────────────
+
+/// Категория → подкатегория в одной шторке. Второй шаг рисуется только для
+/// выбранной ветки: 9×16 не выкладываются простынёй.
+Future<(String, String)?> showCategorySheet(
+  BuildContext context, {
+  String category = '',
+  String subcategory = '',
+}) {
+  return showSeeUBottomSheet<(String, String)>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) =>
+        _CategorySheet(category: category, subcategory: subcategory),
+  );
+}
+
+class _CategorySheet extends StatefulWidget {
+  final String category;
+  final String subcategory;
+
+  const _CategorySheet({required this.category, required this.subcategory});
+
+  @override
+  State<_CategorySheet> createState() => _CategorySheetState();
+}
+
+class _CategorySheetState extends State<_CategorySheet> {
+  late String _cat = widget.category;
+  late String _sub = widget.subcategory;
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final pct = (progress * 100).toStringAsFixed(0);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(PhosphorIcons.musicNotesSimple(), size: 56, color: SeeUColors.accent),
-            const SizedBox(height: 24),
-            Text('Загружаем трек…',
-                style: SeeUTypography.subtitle
-                    .copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text('$pct%',
-                style: SeeUTypography.caption.copyWith(color: c.ink3)),
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: progress > 0 ? progress : null,
-              backgroundColor: c.surface2,
-              valueColor: const AlwaysStoppedAnimation<Color>(SeeUColors.accent),
-            ),
-            const SizedBox(height: 12),
-            Text('Не закрывайте экран',
-                style: SeeUTypography.micro.copyWith(color: c.ink4)),
-          ],
+    final cat = findCategory(_cat);
+
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 4, 22, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Куда отнести трек?',
+                style:
+                    SeeUTypography.displayS.copyWith(fontSize: 22, color: c.ink),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Тап по категории → выбери подкатегорию',
+                style: TextStyle(fontSize: 12.5, color: c.ink3),
+              ),
+              const SizedBox(height: 18),
+              _step(c, '1 · КАТЕГОРИЯ'),
+              const SizedBox(height: 10),
+              GridView.count(
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 1.9,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  for (final k in kAudioCategories)
+                    Tappable.scaled(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _cat = k.id;
+                          _sub = '';
+                        });
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _cat == k.id ? k.color : c.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _cat == k.id ? k.color : c.line,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              k.iconData,
+                              size: 17,
+                              color: _cat == k.id ? Colors.white : k.color,
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              k.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _cat == k.id ? Colors.white : c.ink2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+
+              // Второй шаг появляется только у выбранной ветки — и только если
+              // подкатегории у неё есть.
+              if (cat != null && cat.subcategories.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    _step(c, '2 · ПОДКАТЕГОРИЯ'),
+                    const SizedBox(width: 6),
+                    Text(
+                      '· ${cat.title}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: cat.color,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final s in cat.subcategories)
+                      Tappable.scaled(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _sub = _sub == s.id ? '' : s.id);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 13, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _sub == s.id ? cat.color : c.surface,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: _sub == s.id ? cat.color : c.line,
+                            ),
+                          ),
+                          child: Text(
+                            s.titleRu,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: _sub == s.id
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: _sub == s.id ? Colors.white : c.ink2,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: Tappable.scaled(
+                  onTap: _cat.isEmpty
+                      ? null
+                      : () => Navigator.of(context).pop((_cat, _sub)),
+                  child: Container(
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: _cat.isEmpty ? c.surface2 : c.ink,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _doneLabel(cat),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: _cat.isEmpty ? c.ink4 : c.bg,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _ErrorBanner extends StatelessWidget {
-  final String message;
-  const _ErrorBanner({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: SeeUColors.error.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(SeeURadii.small),
-        border: Border.all(color: SeeUColors.error.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(PhosphorIcons.warningCircle(), color: SeeUColors.error, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: SeeUTypography.caption.copyWith(color: SeeUColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
+  String _doneLabel(AudioCategoryModel? cat) {
+    if (cat == null) return 'Выбери категорию';
+    final sub = cat.subcategories
+        .where((s) => s.id == _sub)
+        .map((s) => s.titleRu)
+        .firstOrNull;
+    return 'Готово · ${[cat.title, if (sub != null) sub].join(' · ')}';
   }
+
+  Widget _step(SeeUThemeColors c, String text) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1,
+          color: c.ink3,
+        ),
+      );
 }

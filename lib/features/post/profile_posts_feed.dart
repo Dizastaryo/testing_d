@@ -66,7 +66,8 @@ class _ProfilePostsFeedState extends ConsumerState<ProfilePostsFeed> {
             padding: EdgeInsets.only(top: topInset, bottom: 100),
             itemCount: widget.posts.length,
             itemBuilder: (context, index) {
-              return PostCard(post: widget.posts[index]);
+              final post = widget.posts[index];
+              return PostCard(key: ValueKey(post.id), post: post);
             },
           ),
           Positioned(

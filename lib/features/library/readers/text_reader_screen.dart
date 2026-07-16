@@ -31,6 +31,10 @@ class TextReaderScreen extends ConsumerStatefulWidget {
   final String? coverUrl;
   final bool isBook;
 
+  /// Открыт по закладке → прыгаем на её долю прочитанного (0..1), а не на
+  /// последнюю сохранённую. null = обычное продолжение.
+  final double? initialFraction;
+
   const TextReaderScreen({
     super.key,
     required this.fileId,
@@ -40,6 +44,7 @@ class TextReaderScreen extends ConsumerStatefulWidget {
     this.author,
     this.coverUrl,
     this.isBook = false,
+    this.initialFraction,
   });
 
   @override
@@ -94,17 +99,51 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
     if (_tracker != null) futures.add(_tracker!.init());
     await Future.wait(futures);
     final progress = await progressFuture;
-    if (progress == null || !mounted) return;
-    final offset = (progress['offset'] as num?)?.toDouble() ?? 0;
-    if (offset > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollCtrl.hasClients) {
-          _scrollCtrl.jumpTo(
-            offset.clamp(0, _scrollCtrl.position.maxScrollExtent),
-          );
-        }
-      });
+    if (!mounted) return;
+    // Резюмим по СТАБИЛЬНОЙ доле прочитанного, а не по пикселям. Закладка
+    // важнее последнего прогресса.
+    var fraction = _savedFraction(progress) ?? 0;
+    if (widget.initialFraction != null && widget.initialFraction! > 0) {
+      fraction = widget.initialFraction!.clamp(0.0, 1.0);
     }
+    if (fraction > 0) _restoreScroll(fraction);
+  }
+
+  /// Достаёт стабильную долю прочитанного из сохранённой позиции. Понимает и
+  /// новый формат (`pct`), и старый пиксельный (`offset`/`total` → offset/total
+  /// = доля на момент сохранения) для обратной совместимости.
+  static double? _savedFraction(Map<String, dynamic>? pos) {
+    if (pos == null) return null;
+    final pct = (pos['pct'] as num?)?.toDouble();
+    if (pct != null) return pct.clamp(0.0, 1.0);
+    final offset = (pos['offset'] as num?)?.toDouble();
+    final total = (pos['total'] as num?)?.toDouble();
+    if (offset != null && total != null && total > 0) {
+      return (offset / total).clamp(0.0, 1.0);
+    }
+    return null;
+  }
+
+  /// Прыжок на долю [fraction] с ретраем по кадрам. В lazy-ListView
+  /// maxScrollExtent сначала лишь оценка и растёт по мере лэйаута; один jumpTo
+  /// клампился до слишком маленького текущего max, и на длинных файлах мы
+  /// приземлялись сильно раньше. Повторяем несколько кадров до стабилизации.
+  void _restoreScroll(double fraction) {
+    var attempts = 0;
+    void tryJump() {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      final max = _scrollCtrl.position.maxScrollExtent;
+      final target = (fraction * max).clamp(0.0, max);
+      if ((_scrollCtrl.offset - target).abs() > 4) {
+        _scrollCtrl.jumpTo(target);
+      }
+      attempts++;
+      if (attempts < 8) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => tryJump());
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => tryJump());
   }
 
   /// Computes a virtual page number from the scroll position.
@@ -237,9 +276,14 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
 
   void _onScroll() {
     if (!_scrollCtrl.hasClients) return;
+    final max = _scrollCtrl.position.maxScrollExtent;
+    final fraction = max > 0 ? (_scrollCtrl.offset / max).clamp(0.0, 1.0) : 0.0;
+    // Сохраняем СТАБИЛЬНУЮ долю + символьный оффсет, а не пиксели: пиксельная
+    // позиция зависит от шрифта/поворота и в lazy-списке резюмилась не туда.
     _positionNotifier.value = {
-      'offset': _scrollCtrl.offset,
-      'total': _scrollCtrl.position.maxScrollExtent,
+      'pct': fraction,
+      'char': _text != null ? (fraction * _text!.length).floor() : 0,
+      'chars_total': _text?.length ?? 0,
     };
     // Track virtual page for reading timer
     final vp = _virtualPage();
@@ -396,7 +440,8 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
 
     return ListView.builder(
       controller: _scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+      // Книжное поле: узкая мера строки, воздух сверху под матовой панелью.
+      padding: const EdgeInsets.fromLTRB(32, 20, 32, 48),
       itemCount: chunks.length + (showBanner ? 1 : 0),
       itemBuilder: (context, index) {
         if (showBanner && index == 0) {
@@ -407,6 +452,36 @@ class _TextReaderScreenState extends ConsumerState<TextReaderScreen> {
         if (chunk.trim().isEmpty) {
           return SizedBox(height: settings.fontSize);
         }
+
+        // Первая буква книги — крупная буквица в акценте (как в дизайне).
+        // Дальше текст идёт обычным потоком; выделение текста не ломается.
+        if (i == 0) {
+          final text = chunk.trimLeft();
+          if (text.isNotEmpty) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SelectableText.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: text.characters.first,
+                      style: textStyle.copyWith(
+                        fontFamily: AppFonts.I.serif,
+                        fontSize: settings.fontSize * 2.6,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: SeeUColors.accent,
+                      ),
+                    ),
+                    TextSpan(text: text.characters.skip(1).toString()),
+                  ],
+                ),
+                style: textStyle,
+              ),
+            );
+          }
+        }
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: SelectableText(chunk, style: textStyle),

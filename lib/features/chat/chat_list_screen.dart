@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,8 +18,6 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/following_candidates_provider.dart';
 import '../../core/providers/chat_provider.dart';
 import '../../core/providers/room_provider.dart';
-import '../../core/providers/room_invites_provider.dart';
-import 'room_invites_sheet.dart';
 import '../sbory/sbory_screen.dart' show sborRefreshProvider;
 import 'widgets/typing_dots.dart';
 
@@ -83,12 +82,70 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     context.push('/room/create');
   }
 
-  void _openRoomInvites() {
+  void _openJoinByCode() {
     HapticFeedback.selectionClick();
+    final ctrl = TextEditingController();
+    bool busy = false;
     showSeeUBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const RoomInvitesSheet(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final c = ctx.seeuColors;
+          Future<void> submit() async {
+            final code = ctrl.text.trim();
+            if (code.isEmpty || busy) return;
+            setSheet(() => busy = true);
+            try {
+              final id =
+                  await ref.read(roomListProvider.notifier).joinByCode(code);
+              if (!mounted) return;
+              Navigator.of(context).pop();
+              context.push('/room/$id');
+            } on DioException catch (e) {
+              setSheet(() => busy = false);
+              if (mounted) {
+                showSeeUSnackBar(context, apiErrorMessage(e),
+                    tone: SeeUTone.danger);
+              }
+            }
+          }
+
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                  20, 8, 20, MediaQuery.of(ctx).viewInsets.bottom + 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Войти по коду',
+                      style: SeeUTypography.subtitle
+                          .copyWith(fontWeight: FontWeight.w700, color: c.ink)),
+                  const SizedBox(height: 6),
+                  Text('Введи код комнаты, который тебе дали.',
+                      style: SeeUTypography.caption.copyWith(color: c.ink3)),
+                  const SizedBox(height: 14),
+                  SeeUInput(
+                    controller: ctrl,
+                    hintText: 'Например: K7M2QP',
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    onSubmitted: (_) => submit(),
+                  ),
+                  const SizedBox(height: 14),
+                  SeeUButton(
+                    label: 'Войти',
+                    isLoading: busy,
+                    onTap: busy ? null : submit,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -152,49 +209,19 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                   : null,
               actions: _showRooms
                   ? [
-                      // Invite badge button
+                      // Войти по коду доступа (вместо приглашений)
                       GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          _openRoomInvites();
-                        },
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 36, height: 36,
-                              decoration: BoxDecoration(
-                                color: c.surface2,
-                                borderRadius: BorderRadius.circular(SeeURadii.small),
-                              ),
-                              child: Icon(
-                                PhosphorIcons.envelope(PhosphorIconsStyle.fill),
-                                size: 18, color: c.ink2,
-                              ),
-                            ),
-                            Consumer(builder: (_, ref, __) {
-                              final count = ref.watch(roomInvitesProvider).valueOrNull?.length ?? 0;
-                              if (count == 0) return const SizedBox.shrink();
-                              return Positioned(
-                                top: -4, right: -4,
-                                child: Container(
-                                  width: 18, height: 18,
-                                  decoration: const BoxDecoration(
-                                    color: SeeUColors.accent,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    count > 9 ? '9+' : '$count',
-                                    style: const TextStyle(
-                                      fontSize: 10, fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }),
-                          ],
+                        onTap: _openJoinByCode,
+                        child: Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            color: c.surface2,
+                            borderRadius: BorderRadius.circular(SeeURadii.small),
+                          ),
+                          child: Icon(
+                            PhosphorIcons.key(PhosphorIconsStyle.fill),
+                            size: 18, color: c.ink2,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -244,7 +271,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                       ),
                     ],
             ),
-            // Tab switcher: Чаты / Комнаты
+            // Tab switcher: Чаты / Комнаты (с агрегированными бейджами
+            // непрочитанного — видно новое на соседней вкладке).
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
               child: Row(
@@ -254,6 +282,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                     icon: PhosphorIcons.chatCircle(PhosphorIconsStyle.fill),
                     active: !_showRooms,
                     c: c,
+                    badgeCount: chatState.chats
+                        .where((ch) => !ch.isArchived)
+                        .fold<int>(0, (sum, ch) => sum + ch.unreadCount),
                     onTap: () {
                       HapticFeedback.selectionClick();
                       setState(() => _showRooms = false);
@@ -265,6 +296,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                     icon: PhosphorIcons.usersThree(PhosphorIconsStyle.fill),
                     active: _showRooms,
                     c: c,
+                    badgeCount: ref
+                        .watch(roomListProvider)
+                        .rooms
+                        .fold<int>(0, (sum, r) => sum + r.unreadCount),
                     onTap: () {
                       HapticFeedback.selectionClick();
                       setState(() => _showRooms = true);
@@ -1598,6 +1633,9 @@ class _TabChip extends StatelessWidget {
   final bool active;
   final SeeUThemeColors c;
   final VoidCallback onTap;
+  /// Суммарный unread вкладки — находясь на «Комнатах», видно, что в
+  /// «Чатах» есть непрочитанное (и наоборот). 0 = без бейджа.
+  final int badgeCount;
 
   const _TabChip({
     required this.label,
@@ -1605,6 +1643,7 @@ class _TabChip extends StatelessWidget {
     required this.active,
     required this.c,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -1633,6 +1672,27 @@ class _TabChip extends StatelessWidget {
                 color: active ? c.bg : c.ink2,
               ),
             ),
+            if (badgeCount > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                constraints: const BoxConstraints(minWidth: 16),
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1775,6 +1835,28 @@ class _RoomCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // Бейдж непрочитанного (паритет с карточками чатов) — раньше
+            // понять, что в комнате есть новое, было невозможно не заходя.
+            if (room.unreadCount > 0)
+              Container(
+                constraints: const BoxConstraints(minWidth: 18),
+                height: 18,
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(SeeURadii.pill),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  room.unreadCount > 99 ? '99+' : '${room.unreadCount}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             Icon(PhosphorIcons.caretRight(), size: 16, color: c.ink4),
           ],
         ),

@@ -107,6 +107,7 @@ dependencies:
   nfc_manager: ^3.5.0  # Чтение NFC-тега браслета: знакомство + пара (Фазы 4/5)
   ffmpeg_kit_flutter_new: ^4.2.1  # Обрезка/склейка видео при создании постов. Только реальное устройство.
   livekit_client: ^2.5.0+hotfix.3
+  app_links: ^7.2.1
 
 dev_dependencies:
   flutter_test:
@@ -121,7 +122,10 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/app_icon.png"
   remove_alpha_ios: true
-  adaptive_icon_background: "#FF5A3C"
+  # Android adaptive: фон под цвет иконки (виден только в inset-кайме), передний
+  # план — та же полноразмерная иконка (белые углы уже залиты красным).
+  adaptive_icon_background: "#E5200F"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
 
 flutter:
   uses-material-design: true

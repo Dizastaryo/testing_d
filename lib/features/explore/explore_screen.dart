@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,6 +20,8 @@ import '../../core/models/live_stream.dart';
 import '../../core/providers/explore_feed_provider.dart';
 import '../../core/providers/live_streams_provider.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/providers/waves_feed_provider.dart';
+import '../feed/widgets/post_card.dart';
 import '../live/live_viewer_screen.dart';
 
 // ===========================================================================
@@ -254,9 +255,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             Expanded(
               child: hasQuery
                   ? _buildSearchResults(searchState)
-                  : ref.watch(exploreFeedProvider.select((s) => s.filter)) == 'live'
-                      ? _buildLiveSection()
-                      : _buildMixedGrid(),
+                  : _contentForFilter(
+                      ref.watch(exploreFeedProvider.select((s) => s.filter))),
             ),
           ],
         ),
@@ -274,8 +274,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   // Browse-mode category chips (no query). Each maps to a BACKEND filter on the
   // unified /explore feed — no client-side composition. People are reached via
   // search, so there is no "Люди" chip here.
-  static const List<String> _browseFilters = ['Все', 'Reels', 'Посты', 'Прямой эфир'];
-  static const List<String> _browseFilterKeys = ['all', 'reels', 'posts', 'live'];
+  static const List<String> _browseFilters = ['Все', 'Reels', 'Посты', 'Волны', 'Эфиры'];
+  static const List<String> _browseFilterKeys = ['all', 'reels', 'posts', 'waves', 'live'];
   // TODO(tags): re-add a 'Теги' tab once the backend supports tag search.
   // The /search endpoint currently returns only {users, posts} (type ∈
   // users|posts|all; anything else is coerced to 'all') and SearchResult has
@@ -289,19 +289,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Editorial kicker over the serif title.
+          // Дизайн-ядро (§04): «Интересное» — про открытие. Крупный серифный
+          // заголовок убран, остаётся только kicker и строка поиска, чтобы
+          // мозаика дышала и сразу открывалась под рукой.
           Text(
             'ИНТЕРЕСНОЕ',
             style: SeeUTypography.kicker.copyWith(color: c.ink3),
-          ),
-          const SizedBox(height: 4),
-          // Serif "Поиск" title
-          Text(
-            'Поиск',
-            style: SeeUTypography.displayL.copyWith(
-              height: 1.0,
-              letterSpacing: -0.64,
-            ),
           ),
           const SizedBox(height: 12),
 
@@ -365,6 +358,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                     return _filterChip(
                       label: _browseFilters[i],
                       active: !isFeedShortcut && key == activeFilter,
+                      showLiveDot: key == 'live',
                       onTap: () {
                         ref.read(interestTrackerProvider).track(
                           eventType: 'explore_filter_select',
@@ -401,6 +395,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     required String label,
     required bool active,
     required VoidCallback onTap,
+    bool showLiveDot = false,
   }) {
     final c = context.seeuColors;
     return Padding(
@@ -422,14 +417,89 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               width: active ? 1 : 0.5,
             ),
           ),
-          child: Text(
-            label.toUpperCase(),
-            style: SeeUTypography.kicker.copyWith(
-              color: active ? SeeUColors.accent : c.ink3,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // «Эфиры» несут живую красную точку — прямая трансляция сейчас.
+              if (showLiveDot) ...[
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: SeeUColors.live,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label.toUpperCase(),
+                style: SeeUTypography.kicker.copyWith(
+                  color: active ? SeeUColors.accent : c.ink3,
+                ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  // Что показываем под чипами в режиме открытия (без активного поиска).
+  Widget _contentForFilter(String filter) {
+    switch (filter) {
+      case 'live':
+        return _buildLiveSection();
+      case 'waves':
+        return _buildWavesFeed();
+      default:
+        return _buildMixedGrid();
+    }
+  }
+
+  // =========================================================================
+  // Волны — лента текст-первых постов (§04 D)
+  // =========================================================================
+
+  Widget _buildWavesFeed() {
+    final c = context.seeuColors;
+    final async = ref.watch(wavesFeedProvider);
+    return async.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: SeeUColors.accent),
+      ),
+      error: (e, _) => SeeUErrorState(
+        title: 'Не удалось загрузить волны',
+        onRetry: () => ref.invalidate(wavesFeedProvider),
+      ),
+      data: (waves) {
+        if (waves.isEmpty) {
+          return const SeeUEmptyState(
+            icon: PhosphorIconsRegular.waveform,
+            title: 'Пока нет волн',
+            subtitle: 'Волна — текст-первый пост. Появятся здесь.',
+          );
+        }
+        return RefreshIndicator(
+          color: SeeUColors.accent,
+          onRefresh: () async => ref.invalidate(wavesFeedProvider),
+          child: ListView.separated(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: const EdgeInsets.only(top: 8, bottom: 100),
+            itemCount: waves.length,
+            separatorBuilder: (_, __) => Divider(
+              height: 0.5,
+              thickness: 0.5,
+              color: c.line,
+              indent: 16,
+              endIndent: 16,
+            ),
+            itemBuilder: (_, i) => PostCard(post: waves[i]),
+          ),
+        );
+      },
     );
   }
 
@@ -446,23 +516,25 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
-    return SeeURadarRefresh(
-      onRefresh: () => ref.read(liveStreamsProvider.notifier).refresh(),
-      child: ListView(
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        children: [
-          if (state.error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Ошибка загрузки',
-                style: SeeUTypography.caption.copyWith(color: SeeUColors.error),
+    // Эфиры — живой полосой в две колонки (§04 E): каждая карточка иммерсивная
+    // плитка с бейджем «Трансляция», числом зрителей и автором снизу.
+    if (state.streams.isEmpty) {
+      return SeeURadarRefresh(
+        onRefresh: () => ref.read(liveStreamsProvider.notifier).refresh(),
+        child: ListView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          children: [
+            if (state.error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                child: Text(
+                  'Ошибка загрузки',
+                  style:
+                      SeeUTypography.caption.copyWith(color: SeeUColors.error),
+                ),
               ),
-            ),
-          if (state.streams.isEmpty && !state.isLoading)
             const Padding(
               padding: EdgeInsets.only(top: 80),
               child: SeeUEmptyState(
@@ -470,18 +542,38 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 title: 'Нет активных эфиров',
                 subtitle: 'Начните свой или подождите',
               ),
-            )
-          else
-            ...state.streams.map((s) => _LiveStreamCard(
-                  stream: s,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => LiveViewerScreen(streamId: s.id),
-                    ),
-                  ),
-                )),
-          const SizedBox(height: 100),
-        ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SeeURadarRefresh(
+      onRefresh: () => ref.read(liveStreamsProvider.notifier).refresh(),
+      child: GridView.builder(
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisExtent: 150,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: state.streams.length,
+        itemBuilder: (_, i) {
+          final s = state.streams[i];
+          return _LiveGridCard(
+            stream: s,
+            paletteIndex: i,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => LiveViewerScreen(streamId: s.id),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -629,7 +721,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
     return AnimationLimiter(
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 100),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
           if (filteredUsers.isNotEmpty) ...[
             const Padding(
@@ -1157,163 +1249,172 @@ class _LoadingMoreIndicator extends StatelessWidget {
 // Live stream card for the Прямой эфир explore tab
 // ============================================================================
 
-class _LiveStreamCard extends StatelessWidget {
+class _LiveGridCard extends StatelessWidget {
   final LiveStream stream;
+  final int paletteIndex;
   final VoidCallback onTap;
 
-  const _LiveStreamCard({required this.stream, required this.onTap});
+  const _LiveGridCard({
+    required this.stream,
+    required this.paletteIndex,
+    required this.onTap,
+  });
+
+  // Палитра иммерсивных плиток — гряда живых окон, как в дизайне §04 E.
+  static const List<List<Color>> _palettes = [
+    [Color(0xFF2FA84F), Color(0xFF1E88E5)],
+    [Color(0xFFFFB547), Color(0xFFFF3B6B)],
+    [Color(0xFFFF5A3C), Color(0xFFC04CFD)],
+    [Color(0xFF7B61FF), Color(0xFF5DB1FF)],
+    [Color(0xFFFF8060), Color(0xFFC04CFD)],
+    [Color(0xFF1AC8B8), Color(0xFF5DB1FF)],
+  ];
+
+  String _formatViewers(int n) {
+    if (n >= 1000) {
+      final k = n / 1000;
+      return '${k.toStringAsFixed(k >= 10 ? 0 : 1)}K';
+    }
+    return '$n';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.seeuColors;
+    final palette = _palettes[paletteIndex % _palettes.length];
+    final name = stream.fullName.isNotEmpty ? stream.fullName : stream.username;
+
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: c.line),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              // Avatar
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Builder(builder: (_) {
-                    final fallback = Container(
-                      color: c.surface2,
-                      alignment: Alignment.center,
-                      child: Icon(PhosphorIconsRegular.user,
-                          color: c.ink3, size: 24),
-                    );
-                    return ClipOval(
-                      child: SizedBox(
-                        width: 52,
-                        height: 52,
-                        child: stream.avatarUrl.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: stream.avatarUrl,
-                                fit: BoxFit.cover,
-                                // 52px avatar — decode/cache small, not full-res.
-                                memCacheWidth: (52 *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round(),
-                                maxWidthDiskCache: (52 *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round(),
-                                placeholder: (_, __) => fallback,
-                                errorWidget: (_, __, ___) => fallback,
-                              )
-                            : fallback,
-                      ),
-                    );
-                  }),
-                  Positioned(
-                    bottom: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: SeeUColors.live,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: c.bg, width: 1.5),
-                      ),
-                      child: const Text(
-                        'LIVE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // У эфира нет статичного превью — рисуем живое градиентное окно.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: palette,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            // Нижний скрим + автор.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0x80000000)],
+                  ),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      stream.fullName.isNotEmpty
-                          ? stream.fullName
-                          : stream.username,
-                      style: SeeUTypography.body.copyWith(
-                        fontWeight: FontWeight.w700,
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white24,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        image: stream.avatarUrl.isNotEmpty
+                            ? DecorationImage(
+                                image: CachedNetworkImageProvider(
+                                    stream.avatarUrl),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (stream.title.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        stream.title,
-                        style:
-                            SeeUTypography.caption.copyWith(color: c.ink2),
-                        maxLines: 2,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(PhosphorIconsFill.eye,
-                            size: 12, color: c.ink3),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${stream.viewerCount} зрителей',
-                          style: SeeUTypography.micro
-                              .copyWith(color: c.ink3),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              // Стеклянный pill с accent-тинтом вместо сплошной заливки.
-              ClipRRect(
-                borderRadius: BorderRadius.circular(SeeURadii.pill),
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          SeeUColors.accent.withValues(alpha: 0.14),
-                          SeeUColors.accent.withValues(alpha: 0.34),
-                        ],
-                      ),
-                      borderRadius:
-                          BorderRadius.circular(SeeURadii.pill),
-                      border: Border.all(
-                        color: SeeUColors.accent.withValues(alpha: 0.45),
-                        width: 0.8,
-                      ),
-                    ),
-                    child: Text(
-                      'Смотреть',
-                      style: SeeUTypography.caption.copyWith(
+            ),
+            // «Трансляция» бейдж.
+            Positioned(
+              top: 10,
+              left: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
                         color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                        shape: BoxShape.circle,
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'Трансляция',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+            // Число зрителей.
+            Positioned(
+              top: 10,
+              right: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0x6B000000),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsFill.eye,
+                        size: 11, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatViewers(stream.viewerCount),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

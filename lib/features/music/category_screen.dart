@@ -1,17 +1,22 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_category.dart';
-import '../../core/models/audio_track.dart';
 import '../../core/providers/audio_discovery_provider.dart';
-import '../../core/utils/format.dart';
-import '../../widgets/full_screen_player.dart';
+import 'audio_design.dart';
+import 'music_search_screen.dart' show AudioErrorState;
+import 'widgets/track_row.dart';
 
+/// Экран категории.
+///
+/// У «Музыки» шестнадцать подкатегорий. Стена из шестнадцати чипов съедает
+/// первый экран и пугает, поэтому здесь **рельс**: одна строка, листается вбок,
+/// «Все» слева — точка возврата, активный чип красится цветом категории.
+/// У «Новостей» и «Другого» подкатегорий нет — рельс не рисуется вовсе.
 class CategoryScreen extends ConsumerStatefulWidget {
   final String categoryId;
 
@@ -22,157 +27,125 @@ class CategoryScreen extends ConsumerStatefulWidget {
 }
 
 class _CategoryScreenState extends ConsumerState<CategoryScreen> {
-  String _selectedSubcategory = '';
-  String _selectedSort = 'trending';
-
-  static const _sorts = [
-    ('trending', 'Тренды'),
-    ('newest', 'Новые'),
-    ('popular', 'Популярные'),
-    ('most_used', 'Для видео'),
-  ];
-
-  CategoryTracksParams get _params => CategoryTracksParams(
-        category: widget.categoryId,
-        subcategory: _selectedSubcategory,
-        sort: _selectedSort,
-      );
-
-  void _playTrack(AudioTrack track, List<AudioTrack> queue) async {
-    final idx = queue.indexWhere((t) => t.id == track.id);
-    try {
-      await ref.read(miniPlayerProvider.notifier).playWithQueue(
-            track: track,
-            queue: queue,
-            index: idx >= 0 ? idx : 0,
-            source: 'category:${widget.categoryId}',
-          );
-    } catch (e) {
-      if (!mounted) return;
-      showSeeUSnackBar(context, friendlyError(e), tone: SeeUTone.danger);
-    }
-  }
-
-  void _showTrackMenu(AudioTrack track, List<AudioTrack> queue) {
-    final c = context.seeuColors;
-    showSeeUBottomSheet<void>(
-      context: context,
-      builder: (sheetCtx) => SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(SeeURadii.small),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: track.coverUrl.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: track.coverUrl, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(color: c.surface2))
-                      : Container(color: c.surface2,
-                          child: Icon(PhosphorIcons.musicNote(), color: c.ink3, size: 16)),
-                ),
-              ),
-              title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: SeeUTypography.subtitle
-                      .copyWith(fontWeight: FontWeight.w600, color: c.ink)),
-              subtitle: Text(track.displayArtist,
-                  style: SeeUTypography.caption.copyWith(color: c.ink2)),
-            ),
-            Divider(height: 1, thickness: 0.5, color: c.line),
-            ListTile(
-              leading: Icon(PhosphorIcons.queue(), color: c.ink),
-              title: Text('В плейлист',
-                  style: SeeUTypography.body.copyWith(color: c.ink)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                showAddToPlaylistSheet(context, ref, track.id);
-              },
-            ),
-            ListTile(
-              leading: Icon(PhosphorIcons.info(), color: c.ink),
-              title: Text('Подробнее',
-                  style: SeeUTypography.body.copyWith(color: c.ink)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                context.push('/music/track/${track.id}');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  String _subcategory = '';
+  String _sort = 'trending';
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final theme = Theme.of(context);
-    final staticCat = findCategory(widget.categoryId);
-    final async = ref.watch(audioCategoryTracksProvider(_params));
+    final cat = findCategory(widget.categoryId);
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: SeeURadarRefresh(
-        onRefresh: () async => ref.invalidate(audioCategoryTracksProvider(_params)),
-        child: CustomScrollView(
-          slivers: [
-            // Header
-            SliverToBoxAdapter(
-              child: _buildHeader(staticCat, c, theme),
-            ),
-            // Sort selector
-            SliverToBoxAdapter(
-              child: _buildSortBar(c),
-            ),
-            // Subcategory chips
-            if (staticCat != null && staticCat.subcategories.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildSubcategoryChips(staticCat, c),
-              ),
-            // Tracks
-            async.when(
-              loading: () => const SliverToBoxAdapter(
-                child: SizedBox(height: 400, child: SeeUListSkeleton(count: 8)),
-              ),
-              error: (e, _) => SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
-                  child: SeeUErrorState(
-                    title: 'Не удалось загрузить категорию',
-                    onRetry: () => ref.invalidate(audioCategoryTracksProvider(_params)),
-                  ),
+    if (cat == null) {
+      return Scaffold(
+        backgroundColor: c.bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+                child: Row(
+                  children: [
+                    AudioSquareButton(
+                      icon: PhosphorIcons.arrowLeft(),
+                      onTap: () => context.pop(),
+                    ),
+                  ],
                 ),
               ),
-              data: (data) {
-                if (data.tracks.isEmpty) {
-                  return SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: SeeUEmptyState(
-                        icon: PhosphorIconsRegular.musicNote,
-                        title: 'Пока здесь нет треков',
-                        subtitle: 'Загрузите первый трек в эту категорию',
-                        action: SeeUStateAction(
-                          label: 'Загрузить трек',
-                          icon: PhosphorIconsRegular.uploadSimple,
-                          onTap: () => context.push('/music/upload'),
-                        ),
+              const Spacer(),
+              Text(
+                'Категория не найдена',
+                style: SeeUTypography.displayS
+                    .copyWith(fontSize: 22, color: c.ink),
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final params = CategoryTracksParams(
+      category: cat.id,
+      subcategory: _subcategory,
+      sort: _sort,
+    );
+    final async = ref.watch(audioCategoryTracksProvider(params));
+
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+              child: AudioSquareButton(
+                icon: PhosphorIcons.arrowLeft(),
+                onTap: () => context.pop(),
+              ),
+            ),
+            _hero(c, cat, async.valueOrNull?.total ?? cat.trackCount),
+            if (cat.subcategories.isNotEmpty) _rail(c, cat),
+            Expanded(
+              child: async.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(color: SeeUColors.accent),
+                ),
+                error: (_, __) => AudioErrorState(
+                  onRetry: () =>
+                      ref.invalidate(audioCategoryTracksProvider(params)),
+                ),
+                data: (data) {
+                  if (data.tracks.isEmpty) return _empty(c, cat);
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(
+                        22, 16, 22, 24 + context.bottomBarInset),
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Треки',
+                            style: SeeUTypography.displayS.copyWith(
+                              fontSize: 19,
+                              color: c.ink,
+                            ),
+                          ),
+                          const Spacer(),
+                          Tappable(
+                            onTap: _cycleSort,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(PhosphorIcons.sortAscending(),
+                                    size: 14, color: c.ink3),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _sortLabel,
+                                  style:
+                                      TextStyle(fontSize: 12.5, color: c.ink3),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      for (var i = 0; i < data.tracks.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 15),
+                          child: TrackRow(
+                            track: data.tracks[i],
+                            queue: data.tracks,
+                            index: i,
+                            source: 'category',
+                          ),
+                        ),
+                    ],
                   );
-                }
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 120),
-                  sliver: SliverList.builder(
-                    itemCount: data.tracks.length,
-                    itemBuilder: (_, i) =>
-                        _trackTile(data.tracks[i], data.tracks, c),
-                  ),
-                );
-              },
+                },
+              ),
             ),
           ],
         ),
@@ -180,221 +153,201 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     );
   }
 
-  Widget _buildHeader(
-      AudioCategoryModel? cat, SeeUThemeColors c, ThemeData theme) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-          20, MediaQuery.of(context).padding.top + 12, 20, 16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            (cat?.color ?? SeeUColors.accent).withValues(alpha: 0.15),
-            theme.scaffoldBackgroundColor,
-          ],
-        ),
-      ),
+  // ── Шапка категории ───────────────────────────────────────────────────────
+
+  Widget _hero(SeeUThemeColors c, AudioCategoryModel cat, int total) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const SeeUBackButton(),
-              const Spacer(),
-              // Search access — navigates to the shared MusicSearchScreen.
-              // Placed inside _buildHeader (a normal box widget) so it is
-              // never directly in CustomScrollView.slivers.
-              GestureDetector(
-                onTap: () => context.push(
-                    '/music/search?category=${Uri.encodeComponent(widget.categoryId)}'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Icon(PhosphorIconsRegular.magnifyingGlass,
-                      size: 20, color: c.ink),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: cat.color,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(cat.iconData, size: 18, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'КАТЕГОРИЯ',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2,
+                  color: AudioColors.kicker(context),
                 ),
               ),
-              if (cat != null) ...[
-                const SizedBox(width: 4),
-                SeeUChip(
-                  label: cat.titleRu,
-                  icon: cat.iconData,
-                  bgColor: cat.color.withValues(alpha: 0.15),
-                  fgColor: cat.color,
-                ),
-              ],
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          // Заголовок цветом категории — экран сразу «музыкальный» или
+          // «подкастовый», без подписи.
           Text(
-            'КАТЕГОРИЯ',
-            style: SeeUTypography.kicker.copyWith(color: c.ink3),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            cat?.titleRu ?? widget.categoryId,
-            style: SeeUTypography.displayM
-                .copyWith(color: theme.colorScheme.onSurface),
-          ),
-          if (cat?.description.isNotEmpty == true)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                cat!.description,
-                style: TextStyle(fontSize: 13, color: c.ink3),
-              ),
+            cat.title,
+            style: SeeUTypography.displayS.copyWith(
+              fontSize: 36,
+              letterSpacing: -1,
+              color: c.ink,
             ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            [
+              if (total > 0) '$total ${_tracksWord(total)}',
+              if (cat.description.isNotEmpty) cat.description,
+            ].join(' · '),
+            style: TextStyle(fontSize: 13, color: c.ink3),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSortBar(SeeUThemeColors c) {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-        itemCount: _sorts.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final (id, label) = _sorts[i];
-          final selected = _selectedSort == id;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedSort = id),
-            child: SeeUChip(
-              label: label,
-              bgColor: selected ? SeeUColors.accentSoft : c.surface2,
-              fgColor: selected ? SeeUColors.accent : c.ink2,
-            ),
-          );
-        },
-      ),
-    );
-  }
+  // ── Рельс подкатегорий ────────────────────────────────────────────────────
 
-  Widget _buildSubcategoryChips(AudioCategoryModel cat, SeeUThemeColors c) {
-    final subs = [
-      const AudioSubcategoryModel(id: '', titleRu: 'Все', titleEn: 'All'),
-      ...cat.subcategories,
+  Widget _rail(SeeUThemeColors c, AudioCategoryModel cat) {
+    final items = <(String, String)>[
+      ('', 'Все'),
+      for (final s in cat.subcategories) (s.id, s.titleRu),
     ];
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-        itemCount: subs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final sub = subs[i];
-          final selected = _selectedSubcategory == sub.id;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedSubcategory = sub.id),
-            child: SeeUChip(
-              label: sub.titleRu,
-              bgColor: selected
-                  ? cat.color.withValues(alpha: 0.15)
-                  : c.surface2,
-              fgColor: selected ? cat.color : c.ink2,
-            ),
-          );
-        },
-      ),
-    );
-  }
 
-  Widget _trackTile(AudioTrack track, List<AudioTrack> queue, SeeUThemeColors c) {
-    final player = ref.watch(miniPlayerProvider);
-    final isCurrent = player.track?.id == track.id;
-    final isPlaying = isCurrent && player.playing;
-
-    return InkWell(
-      onTap: () {
-        if (isCurrent) {
-          ref.read(miniPlayerProvider.notifier).toggle();
-        } else {
-          _playTrack(track, queue);
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(SeeURadii.small),
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: track.coverUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: track.coverUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: c.surface2),
-                        errorWidget: (_, __, ___) =>
-                            Container(color: c.surface2),
-                      )
-                    : Container(
-                        color: c.surface2,
-                        child: Icon(PhosphorIconsRegular.musicNote,
-                            color: c.ink3, size: 20),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: SeeUTypography.subtitle.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isCurrent ? SeeUColors.accent : c.ink,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 34,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final (id, label) = items[i];
+              final active = _subcategory == id;
+              return Tappable.scaled(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _subcategory = id);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active ? cat.color : c.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: active ? cat.color : c.line),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      color: active ? Colors.white : c.ink2,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    track.displayArtist,
-                    style: SeeUTypography.caption.copyWith(color: c.ink2),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            if (track.isLikedByMe)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Icon(
-                    PhosphorIcons.heart(PhosphorIconsStyle.fill),
-                    color: SeeUColors.like,
-                    size: 14),
-              ),
-            Text(
-              track.durationFormatted,
-              style: SeeUTypography.mono.copyWith(fontSize: 11, color: c.ink3),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              isPlaying ? PhosphorIconsFill.pause : PhosphorIconsFill.play,
-              color: isCurrent ? SeeUColors.accent : c.ink2,
-              size: 28,
-            ),
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 40, minHeight: 40),
-              icon: Icon(PhosphorIconsRegular.dotsThreeVertical,
-                  color: c.ink3, size: 18),
-              onPressed: () => _showTrackMenu(track, queue),
-            ),
-          ],
+                ),
+              );
+            },
+          ),
         ),
-      ),
+        if (cat.subcategories.length > 4)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
+            child: Text(
+              '← листай вбок · ${cat.subcategories.length} подкатегорий',
+              style: TextStyle(fontSize: 10.5, color: c.ink4),
+            ),
+          ),
+      ],
     );
   }
 
+  // ── Пусто ─────────────────────────────────────────────────────────────────
+
+  Widget _empty(SeeUThemeColors c, AudioCategoryModel cat) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(44, 70, 44, 0),
+      children: [
+        Center(
+          child: Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: cat.color.withValues(alpha: 0.12),
+            ),
+            child: Icon(cat.iconData, size: 38, color: cat.color),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          _subcategory.isEmpty ? 'Здесь пока пусто' : 'В этой ветке пусто',
+          textAlign: TextAlign.center,
+          style: SeeUTypography.displayS.copyWith(fontSize: 22, color: c.ink),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _subcategory.isEmpty
+              ? 'Загрузи первый трек в эту категорию — он появится здесь'
+              : 'Попробуй соседнюю подкатегорию или вернись ко «Всем»',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14, height: 1.5, color: c.ink3),
+        ),
+        if (_subcategory.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Center(
+            child: Tappable.scaled(
+              onTap: () => setState(() => _subcategory = ''),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                decoration: BoxDecoration(
+                  color: cat.color,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'Показать все',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Сортировка ────────────────────────────────────────────────────────────
+
+  static const _sorts = ['trending', 'new', 'popular'];
+
+  String get _sortLabel => switch (_sort) {
+        'new' => 'Новое',
+        'popular' => 'Популярное',
+        _ => 'Тренды',
+      };
+
+  void _cycleSort() {
+    HapticFeedback.selectionClick();
+    final i = _sorts.indexOf(_sort);
+    setState(() => _sort = _sorts[(i + 1) % _sorts.length]);
+  }
+
+  static String _tracksWord(int n) {
+    final m10 = n % 10, m100 = n % 100;
+    if (m100 >= 11 && m100 <= 14) return 'треков';
+    if (m10 == 1) return 'трек';
+    if (m10 >= 2 && m10 <= 4) return 'трека';
+    return 'треков';
+  }
 }

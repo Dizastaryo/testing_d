@@ -264,7 +264,10 @@ class _InfoCard extends StatelessWidget {
               ],
               if (hasAudio) ...[
                 const SizedBox(height: SeeUSpacing.md),
-                _MusicPill(),
+                _MusicPill(
+                  title: post.audioTrackTitle,
+                  artist: post.audioTrackArtist,
+                ),
               ],
             ],
           ),
@@ -275,9 +278,18 @@ class _InfoCard extends StatelessWidget {
 }
 
 /// Плоский вложенный music-чип (без своего блюра — внутри стеклянной карты).
+/// Показывает реальные «название · исполнитель» прикреплённого трека;
+/// «Оригинальный звук» — только когда метаданных нет.
 class _MusicPill extends StatelessWidget {
+  final String title;
+  final String artist;
+  const _MusicPill({this.title = '', this.artist = ''});
+
   @override
   Widget build(BuildContext context) {
+    final label = title.isEmpty
+        ? 'Оригинальный звук'
+        : (artist.isEmpty ? title : '$title · $artist');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -296,7 +308,7 @@ class _MusicPill extends StatelessWidget {
           const SizedBox(width: SeeUSpacing.sm),
           Flexible(
             child: Text(
-              'Оригинальный звук',
+              label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: SeeUTypography.mono.copyWith(color: Colors.white),

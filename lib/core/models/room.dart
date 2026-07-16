@@ -32,39 +32,6 @@ class RoomMember {
       );
 }
 
-class RoomInvite {
-  final String id;
-  final String roomId;
-  final String roomName;
-  final String roomCover;
-  final String inviterName;
-  final String inviterUsername;
-  final String inviterAvatar;
-  final DateTime createdAt;
-
-  const RoomInvite({
-    required this.id,
-    required this.roomId,
-    required this.roomName,
-    this.roomCover = '',
-    required this.inviterName,
-    required this.inviterUsername,
-    this.inviterAvatar = '',
-    required this.createdAt,
-  });
-
-  factory RoomInvite.fromJson(Map<String, dynamic> j) => RoomInvite(
-        id: j['id'] as String,
-        roomId: j['room_id'] as String,
-        roomName: j['room_name'] as String? ?? '',
-        roomCover: j['room_cover'] as String? ?? '',
-        inviterName: j['inviter_name'] as String? ?? '',
-        inviterUsername: j['inviter_username'] as String? ?? '',
-        inviterAvatar: j['inviter_avatar'] as String? ?? '',
-        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ?? DateTime.now(),
-      );
-}
-
 class RoomParticipant {
   final String userId;
   final String fullName;
@@ -131,6 +98,8 @@ class Room {
   final String name;
   final String? description;
   final String? coverUrl;
+  /// Код входа в комнату — участники делятся им, чтобы позвать других.
+  final String code;
   final bool isActive;
   final String? creatorName;
   final int participantCount;
@@ -138,6 +107,9 @@ class Room {
   final String? lastMessage;
   final String lastSenderUsername;
   final DateTime? lastMessageAt;
+  /// Непрочитанные сообщения viewer'а (паритет с чатами) — без него список
+  /// комнат никак не показывал, что внутри есть новое.
+  final int unreadCount;
   final bool isJoined;
   final bool isMuted;
   final bool isAdmin;
@@ -156,6 +128,7 @@ class Room {
     required this.name,
     this.description,
     this.coverUrl,
+    this.code = '',
     this.isActive = true,
     this.creatorName,
     this.participantCount = 0,
@@ -163,6 +136,7 @@ class Room {
     this.lastMessage,
     this.lastSenderUsername = '',
     this.lastMessageAt,
+    this.unreadCount = 0,
     this.isJoined = false,
     this.isMuted = false,
     this.isAdmin = false,
@@ -182,6 +156,7 @@ class Room {
         name: j['name'] as String,
         description: j['description'] as String?,
         coverUrl: j['cover_url'] as String?,
+        code: j['join_code'] as String? ?? '',
         isActive: j['is_active'] as bool? ?? true,
         creatorName: j['creator_name'] as String?,
         participantCount: j['participant_count'] as int? ?? 0,
@@ -192,8 +167,9 @@ class Room {
         lastMessage: j['last_message'] as String?,
         lastSenderUsername: j['last_sender_username'] as String? ?? '',
         lastMessageAt: j['last_message_at'] != null
-            ? DateTime.tryParse(j['last_message_at'] as String)
+            ? DateTime.tryParse(j['last_message_at'].toString())
             : null,
+        unreadCount: (j['unread_count'] as num?)?.toInt() ?? 0,
         isJoined: j['is_joined'] as bool? ?? false,
         isMuted: j['is_muted'] as bool? ?? false,
         isAdmin: j['is_admin'] as bool? ?? false,
@@ -219,6 +195,7 @@ class Room {
     String? lastMessage,
     String? lastSenderUsername,
     DateTime? lastMessageAt,
+    int? unreadCount,
     String? name,
     String? description,
     String? coverUrl,
@@ -236,6 +213,7 @@ class Room {
         name: name ?? this.name,
         description: description ?? this.description,
         coverUrl: coverUrl ?? this.coverUrl,
+        code: code,
         isActive: isActive ?? this.isActive,
         creatorName: creatorName,
         participantCount: participantCount ?? this.participantCount,
@@ -243,6 +221,7 @@ class Room {
         lastMessage: lastMessage ?? this.lastMessage,
         lastSenderUsername: lastSenderUsername ?? this.lastSenderUsername,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+        unreadCount: unreadCount ?? this.unreadCount,
         isJoined: isJoined ?? this.isJoined,
         isMuted: isMuted ?? this.isMuted,
         isAdmin: isAdmin ?? this.isAdmin,
@@ -281,6 +260,11 @@ class RoomMessage {
   final int readCount;
   final int recipientsCount;
 
+  /// Reply/quote (паритет с чатами, миграция 000147). replyTo — сжатое
+  /// превью оригинала; null если оригинал удалён.
+  final String? replyToMessageId;
+  final RoomReplyPreview? replyTo;
+
   const RoomMessage({
     required this.id,
     required this.roomId,
@@ -303,6 +287,8 @@ class RoomMessage {
     this.deliveredCount = 0,
     this.readCount = 0,
     this.recipientsCount = 0,
+    this.replyToMessageId,
+    this.replyTo,
   });
 
   RoomMessage copyWith({
@@ -338,8 +324,12 @@ class RoomMessage {
     deliveredCount: deliveredCount ?? this.deliveredCount,
     readCount: readCount ?? this.readCount,
     recipientsCount: recipientsCount ?? this.recipientsCount,
+    replyToMessageId: replyToMessageId,
+    replyTo: replyTo,
   );
 
+  // Толерантный парсинг (?.toString() + tryParse): одно «битое» сообщение
+  // раньше роняло весь .map() выдачи и комната выглядела пустой.
   factory RoomMessage.fromJson(Map<String, dynamic> j) {
     final rawReactions = j['reactions'];
     final Map<String, int> reactions = {};
@@ -353,27 +343,60 @@ class RoomMessage {
       });
     }
     return RoomMessage(
-      id: j['id'] as String,
-      roomId: j['room_id'] as String,
-      senderId: j['sender_id'] as String,
-      senderName: j['sender_name'] as String? ?? '',
-      senderUsername: j['sender_username'] as String? ?? '',
-      senderAvatar: j['sender_avatar_url'] as String?,
-      text: j['text'] as String? ?? '',
-      kind: j['kind'] as String? ?? 'text',
-      attachedMediaUrl: j['attached_media_url'] as String?,
-      attachedMediaType: j['attached_media_type'] as String?,
-      createdAt: DateTime.parse(j['created_at'] as String),
+      id: j['id']?.toString() ?? '',
+      roomId: j['room_id']?.toString() ?? '',
+      senderId: j['sender_id']?.toString() ?? '',
+      senderName: j['sender_name']?.toString() ?? '',
+      senderUsername: j['sender_username']?.toString() ?? '',
+      senderAvatar: j['sender_avatar_url']?.toString(),
+      text: j['text']?.toString() ?? '',
+      kind: j['kind']?.toString() ?? 'text',
+      attachedMediaUrl: j['attached_media_url']?.toString(),
+      attachedMediaType: j['attached_media_type']?.toString(),
+      createdAt: DateTime.tryParse(j['created_at']?.toString() ?? '') ??
+          DateTime.now(),
       reactions: reactions,
-      myReaction: j['my_reaction'] as String? ?? '',
-      isDeletedForAll: j['is_deleted_for_all'] as bool? ?? false,
-      forwardedFromMessageId: j['forwarded_from_message_id'] as String?,
-      forwardedFromSender: j['forwarded_from_sender'] as String? ?? '',
-      isRead: j['is_read'] as bool? ?? false,
-      isDelivered: j['is_delivered'] as bool? ?? false,
+      myReaction: j['my_reaction']?.toString() ?? '',
+      isDeletedForAll: (j['is_deleted_for_all'] as bool?) ?? false,
+      forwardedFromMessageId: j['forwarded_from_message_id']?.toString(),
+      forwardedFromSender: j['forwarded_from_sender']?.toString() ?? '',
+      isRead: (j['is_read'] as bool?) ?? false,
+      isDelivered: (j['is_delivered'] as bool?) ?? false,
       deliveredCount: (j['delivered_count'] as num?)?.toInt() ?? 0,
       readCount: (j['read_count'] as num?)?.toInt() ?? 0,
       recipientsCount: (j['recipients_count'] as num?)?.toInt() ?? 0,
+      replyToMessageId: j['reply_to_message_id']?.toString(),
+      replyTo: j['reply_to'] is Map
+          ? RoomReplyPreview.fromJson(
+              (j['reply_to'] as Map).cast<String, dynamic>())
+          : null,
     );
   }
+}
+
+/// Сжатое превью оригинала для reply-bubble (зеркало бэкендового
+/// RoomReplyPreview).
+class RoomReplyPreview {
+  final String id;
+  final String senderId;
+  final String senderUsername;
+  final String text;
+  final String kind;
+
+  const RoomReplyPreview({
+    required this.id,
+    this.senderId = '',
+    this.senderUsername = '',
+    this.text = '',
+    this.kind = 'text',
+  });
+
+  factory RoomReplyPreview.fromJson(Map<String, dynamic> j) =>
+      RoomReplyPreview(
+        id: j['id']?.toString() ?? '',
+        senderId: j['sender_id']?.toString() ?? '',
+        senderUsername: j['sender_username']?.toString() ?? '',
+        text: j['text']?.toString() ?? '',
+        kind: j['kind']?.toString() ?? 'text',
+      );
 }

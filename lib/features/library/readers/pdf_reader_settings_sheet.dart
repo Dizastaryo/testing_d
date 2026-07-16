@@ -7,7 +7,18 @@ import '../../../core/design/design.dart';
 import 'pdf_reader_settings.dart';
 
 class PdfReaderSettingsSheet extends ConsumerWidget {
-  const PdfReaderSettingsSheet({super.key});
+  /// Текущая и общая страницы + переход — секция «Перейти к странице».
+  /// Если ридер их не передал, секция не показывается.
+  final int currentPage;
+  final int totalPages;
+  final ValueChanged<int>? onGoToPage;
+
+  const PdfReaderSettingsSheet({
+    super.key,
+    this.currentPage = 0,
+    this.totalPages = 0,
+    this.onGoToPage,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,21 +37,67 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
             Row(
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
-                    color: SeeUColors.accent.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(SeeURadii.small),
+                    color: SeeUColors.accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(PhosphorIconsRegular.filePdf,
-                      size: 18, color: SeeUColors.accent),
+                  child: Icon(PhosphorIconsRegular.gear,
+                      size: 19, color: SeeUColors.accent),
                 ),
                 const SizedBox(width: 10),
-                Text('Настройки PDF',
-                    style: SeeUTypography.displayS.copyWith(color: c.ink)),
+                Text(
+                  'Настройки PDF',
+                  style: SeeUTypography.displayS.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
+                  ),
+                ),
               ],
             ),
+            const SizedBox(height: 14),
+
+            // Почему тут нет шрифта и кегля — у PDF вёрстка зашита в файл.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+              decoration: BoxDecoration(
+                color: SeeUColors.amber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: SeeUColors.amber.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  Icon(PhosphorIconsRegular.info,
+                      size: 16, color: SeeUColors.amber),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'Фиксированный формат — шрифт и кегль изменить нельзя',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.4,
+                        color: c.isDark
+                            ? SeeUColors.amber
+                            : const Color(0xFFC99A3F),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 16),
+
+            if (onGoToPage != null && totalPages > 0) ...[
+              _GoToPageRow(
+                current: currentPage,
+                total: totalPages,
+                onGo: onGoToPage!,
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Quick presets ────────────────────────────────────────────
             Row(
@@ -189,18 +246,9 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
                 notifier.setAutoSpacing(v);
               },
             ),
-            const SizedBox(height: 4),
-            _ToggleRow(
-              icon: PhosphorIconsRegular.sunDim,
-              label: 'Не гасить экран',
-              subtitle: 'Экран остаётся включённым',
-              value: settings.keepAwake,
-              onChanged: (v) {
-                HapticFeedback.selectionClick();
-                notifier.setKeepAwake(v);
-              },
-            ),
-
+            // Тумблер «Не гасить экран» убран: он ничего не делал (wakelock
+            // нигде не подключён) — показывать неработающий контрол хуже, чем
+            // не показывать. Вернём, когда появится зависимость wakelock.
             const SizedBox(height: 20),
 
             // ── Background color ────────────────────────────────────────
@@ -258,6 +306,106 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
 }
 
 // ─── Section label ──────────────────────────────────────────────────────────
+
+/// «Перейти к странице» — поле с текущей/общей страницей и коралловой стрелкой.
+class _GoToPageRow extends StatefulWidget {
+  final int current;
+  final int total;
+  final ValueChanged<int> onGo;
+
+  const _GoToPageRow({
+    required this.current,
+    required this.total,
+    required this.onGo,
+  });
+
+  @override
+  State<_GoToPageRow> createState() => _GoToPageRowState();
+}
+
+class _GoToPageRowState extends State<_GoToPageRow> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.current > 0 ? '${widget.current}' : '');
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _go() {
+    final page = int.tryParse(_ctrl.text.trim());
+    if (page == null || page < 1 || page > widget.total) {
+      HapticFeedback.heavyImpact();
+      return;
+    }
+    HapticFeedback.selectionClick();
+    widget.onGo(page);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Row(
+      children: [
+        Icon(PhosphorIconsRegular.bookOpen, size: 16, color: c.ink3),
+        const SizedBox(width: 12),
+        Text('Перейти к странице',
+            style: TextStyle(fontSize: 13, color: c.ink2)),
+        const Spacer(),
+        Container(
+          width: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: c.line),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  onSubmitted: (_) => _go(),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: c.ink,
+                  ),
+                  decoration: const InputDecoration(
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              Text(
+                ' / ${widget.total}',
+                style: TextStyle(fontSize: 13, color: c.ink3),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tappable.scaled(
+          onTap: _go,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: SeeUColors.accent,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(PhosphorIconsBold.arrowRight,
+                size: 14, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _SectionLabel extends StatelessWidget {
   final String label;

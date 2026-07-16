@@ -26,12 +26,6 @@ class Story {
   final bool isLiked;
   final DateTime createdAt;
   final DateTime expiresAt;
-  /// Aggregate emoji-reaction counts per emoji (server-aggregated). Visible
-  /// to author for analytics; viewers see it too but UI rarely renders
-  /// counts for non-authors.
-  final Map<String, int> reactions;
-  /// Emoji the *current viewer* placed on this story; empty when none.
-  final String myReaction;
   /// Audio-track UUID для photo-story (Spotify-style музыка). null = без музыки.
   /// Story-viewer лениво подгружает /audio-tracks/:id и проигрывает через just_audio.
   final String? audioTrackId;
@@ -58,8 +52,6 @@ class Story {
     this.isLiked = false,
     required this.createdAt,
     required this.expiresAt,
-    this.reactions = const {},
-    this.myReaction = '',
     this.audioTrackId,
     this.audioStartSeconds = 0,
     this.bgColor = '',
@@ -70,13 +62,18 @@ class Story {
   /// true если это text-сторис (без media, с фоном bg_color и текстом
   /// в text_overlay).
   bool get isText => mediaType == StoryMediaType.text;
+  bool get isVideo => mediaType == StoryMediaType.video;
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
   factory Story.fromJson(Map<String, dynamic> json) {
+    // Автор: безопасный каст как в Post.fromJson — прямой `as Map<String,
+    // dynamic>?` падал бы на Map с другим generic-типом.
+    final rawAuthor = json['author'] ?? json['user'];
     return Story(
       id: json['id']?.toString() ?? '',
-      author: User.fromJson((json['author'] ?? json['user']) as Map<String, dynamic>? ?? {}),
+      author: User.fromJson(
+          rawAuthor is Map ? rawAuthor.cast<String, dynamic>() : {}),
       mediaUrl: _toAbsUrl(json['media_url']?.toString() ?? ''),
       mediaType: switch (json['media_type']) {
         'video' => StoryMediaType.video,
@@ -84,7 +81,9 @@ class Story {
         _ => StoryMediaType.image,
       },
       textOverlay: json['text_overlay']?.toString(),
-      isSeen: (json['is_seen'] ?? json['isSeen'] as bool?) ?? false,
+      // Приоритет `as` выше `??`: старая запись `(a ?? b as bool?)` кастовала
+      // только второй операнд и падала бы на не-bool значении is_seen.
+      isSeen: ((json['is_seen'] ?? json['isSeen']) as bool?) ?? false,
       // BUG-20: num? для счётчика.
       viewsCount: (json['views_count'] as num?)?.toInt() ?? 0,
       likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
@@ -96,14 +95,6 @@ class Story {
           ? DateTime.tryParse(json['expires_at'].toString()) ??
               DateTime.now().add(const Duration(hours: 24))
           : DateTime.now().add(const Duration(hours: 24)),
-      reactions: json['reactions'] is Map
-          ? Map<String, int>.from(
-              (json['reactions'] as Map).map(
-                (k, v) => MapEntry(k.toString(), (v as num?)?.toInt() ?? 0),
-              ),
-            )
-          : const {},
-      myReaction: json['my_reaction']?.toString() ?? '',
       audioTrackId: json['audio_track_id']?.toString(),
       audioStartSeconds:
           (json['audio_start_seconds'] as num?)?.toInt() ?? 0,
@@ -135,8 +126,6 @@ class Story {
     int? viewsCount,
     int? likesCount,
     bool? isLiked,
-    Map<String, int>? reactions,
-    String? myReaction,
     StoryPoll? poll,
   }) {
     return Story(
@@ -151,8 +140,6 @@ class Story {
       isLiked: isLiked ?? this.isLiked,
       createdAt: createdAt,
       expiresAt: expiresAt,
-      reactions: reactions ?? this.reactions,
-      myReaction: myReaction ?? this.myReaction,
       audioTrackId: audioTrackId,
       audioStartSeconds: audioStartSeconds,
       bgColor: bgColor,

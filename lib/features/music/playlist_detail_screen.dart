@@ -1,346 +1,646 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
+import '../../core/models/playlist.dart';
+import '../../core/providers/audio_provider.dart';
 import '../../core/providers/playlist_provider.dart';
-import '../../core/services/logger.dart';
-import '../camera/widgets/camera_ui_kit.dart' show BrandedLoader;
+import 'audio_design.dart';
+import 'music_search_screen.dart' show AudioErrorState;
+import 'widgets/playlist_cover.dart';
 
-class PlaylistDetailScreen extends ConsumerStatefulWidget {
+/// Экран плейлиста. Обложка — мозаика из обложек треков. Пустой плейлист не
+/// молчит: сразу даёт кнопку «Добавить треки», а не оставляет человека гадать.
+class PlaylistDetailScreen extends ConsumerWidget {
   final String playlistId;
   const PlaylistDetailScreen({super.key, required this.playlistId});
 
   @override
-  ConsumerState<PlaylistDetailScreen> createState() =>
-      _PlaylistDetailScreenState();
-}
-
-class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  Future<void> _toggleTrack(AudioTrack track, List<AudioTrack> queue) async {
-    final notifier = ref.read(miniPlayerProvider.notifier);
-    final current = ref.read(miniPlayerProvider).track;
-    if (current?.id == track.id) {
-      await notifier.toggle();
-    } else {
-      final idx = queue.indexWhere((t) => t.id == track.id);
-      await notifier.playWithQueue(
-        track: track,
-        queue: queue,
-        index: idx >= 0 ? idx : 0,
-        source: 'playlist',
-      );
-    }
-  }
-
-  Future<void> _renamePlaylist(String currentName) async {
-    final ctrl = TextEditingController(text: currentName);
-    final String? name;
-    try {
-      name = await showDialog<String>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Переименовать плейлист'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 60,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(null),
-            child: const Text('Отмена'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogCtx).pop(ctrl.text.trim()),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    } finally {
-      ctrl.dispose();
-    }
-    if (name == null || name.isEmpty || name == currentName) return;
-    final ok = await ref
-        .read(myPlaylistsProvider.notifier)
-        .rename(widget.playlistId, name);
-    if (!mounted) return;
-    if (ok) {
-      // Reload detail to reflect new name in app bar.
-      await ref
-          .read(playlistDetailProvider(widget.playlistId).notifier)
-          .load();
-    } else {
-      showSeeUSnackBar(context, 'Не удалось переименовать',
-          tone: SeeUTone.danger);
-    }
-  }
-
-  Future<void> _deletePlaylist(String name) async {
-    final confirmed = await showSeeUConfirm(
-      context,
-      title: 'Удалить плейлист?',
-      message: '«$name» будет удалён, треки останутся в каталоге.',
-      confirmLabel: 'Удалить',
-      destructive: true,
-      icon: PhosphorIcons.trash(),
-    );
-    if (!confirmed) return;
-    final ok = await ref
-        .read(myPlaylistsProvider.notifier)
-        .delete(widget.playlistId);
-    if (!mounted) return;
-    if (ok) {
-      Navigator.of(context).pop();
-    } else {
-      showSeeUSnackBar(context, 'Не удалось удалить', tone: SeeUTone.danger);
-    }
-  }
-
-  void _showPlaylistMenu(String playlistName) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
-    showSeeUBottomSheet<void>(
-      context: context,
-      builder: (sheetCtx) => SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(PhosphorIcons.pencilSimple(), color: c.ink),
-              title: Text('Переименовать',
-                  style: SeeUTypography.body.copyWith(color: c.ink)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _renamePlaylist(playlistName);
-              },
-            ),
-            ListTile(
-              leading:
-                  Icon(PhosphorIcons.trash(), color: SeeUColors.danger),
-              title: Text('Удалить',
-                  style:
-                      SeeUTypography.body.copyWith(color: SeeUColors.danger)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _deletePlaylist(playlistName);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final theme = Theme.of(context);
-    final async = ref.watch(playlistDetailProvider(widget.playlistId));
+    final async = ref.watch(playlistDetailProvider(playlistId));
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Column(
-        children: [
-          SeeUGlassBar(
-            kicker: 'ПЛЕЙЛИСТ',
-            title: async.maybeWhen(
-              data: (d) => Text(d.playlist.name,
-                  style: SeeUTypography.displayS.copyWith(color: c.ink),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              orElse: () => const SizedBox.shrink(),
-            ),
-            leading: const SeeUBackButton(),
-            actions: [
-              async.maybeWhen(
-                data: (d) => IconButton(
-                  icon: Icon(PhosphorIcons.dotsThreeVertical(), color: c.ink),
-                  onPressed: () => _showPlaylistMenu(d.playlist.name),
+      backgroundColor: c.bg,
+      body: SafeArea(
+        bottom: false,
+        child: async.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: SeeUColors.accent),
+          ),
+          error: (_, __) => Column(
+            children: [
+              _bar(context, ref, null),
+              Expanded(
+                child: AudioErrorState(
+                  onRetry: () =>
+                      ref.read(playlistDetailProvider(playlistId).notifier).load(),
                 ),
-                orElse: () => const SizedBox.shrink(),
               ),
             ],
           ),
-          Expanded(
-            child: async.when(
-        loading: () => const Center(child: BrandedLoader(onDark: false)),
-        error: (e, _) {
-          appLog.error('playlistDetailProvider failed', e);
-          return SeeUErrorState(
-            title: 'Не удалось загрузить плейлист',
-            onRetry: () =>
-                ref.read(playlistDetailProvider(widget.playlistId).notifier).load(),
-          );
-        },
-        data: (d) => Column(
-          children: [
-            Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(child: _header(d.playlist.coverUrl,
-                      d.playlist.name, d.tracks.length, c)),
-                  if (d.tracks.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(40),
-                        child: Center(
-                          child: Text(
-                            'Плейлист пуст. Добавьте треки из каталога.',
-                            style: TextStyle(color: c.ink3),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 120),
-                      sliver: SliverList.builder(
-                        itemCount: d.tracks.length,
-                        itemBuilder: (_, i) =>
-                            _trackTile(d.tracks[i], d.tracks, c),
+          data: (detail) => _body(context, ref, detail),
+        ),
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, WidgetRef ref, PlaylistDetail detail) {
+    final c = context.seeuColors;
+    final p = detail.playlist;
+    final tracks = detail.tracks;
+
+    return ListView(
+      padding: EdgeInsets.only(bottom: 24 + context.bottomBarInset),
+      children: [
+        _bar(context, ref, p),
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: PlaylistCover(playlist: p, radius: 18),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'ПЛЕЙЛИСТ',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                        color: AudioColors.kicker(context),
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      p.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: SeeUTypography.displayS.copyWith(
+                        fontSize: 28,
+                        height: 1.02,
+                        color: c.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      tracks.isEmpty
+                          ? 'Пока пусто'
+                          : '${tracks.length} ${_word(tracks.length)} · '
+                              '${_totalTime(tracks)}',
+                      style: TextStyle(fontSize: 12.5, color: c.ink3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        if (tracks.isEmpty)
+          _empty(context)
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Tappable.scaled(
+                    onTap: () => ref.read(miniPlayerProvider.notifier).playWithQueue(
+                          track: tracks.first,
+                          queue: tracks,
+                          index: 0,
+                          source: 'playlist',
+                        ),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: SeeUColors.accent,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: SeeUColors.accent.withValues(alpha: 0.55),
+                            blurRadius: 22,
+                            offset: const Offset(0, 10),
+                            spreadRadius: -10,
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(PhosphorIconsFill.play,
+                              size: 15, color: Colors.white),
+                          SizedBox(width: 8),
+                          Text(
+                            'Слушать',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _iconButton(
+                  c,
+                  PhosphorIcons.shuffle(),
+                  () async {
+                    HapticFeedback.selectionClick();
+                    // Играем плейлист в исходном порядке и включаем настоящий
+                    // shuffle плеера: тогда его тумблер показывает ВКЛ, а
+                    // originalQueue = реальный порядок, и выключение shuffle
+                    // корректно его восстанавливает. Раньше очередь тасовалась
+                    // вручную, а флаг оставался OFF (рассинхрон тумблера).
+                    final notifier = ref.read(miniPlayerProvider.notifier);
+                    await notifier.playWithQueue(
+                      track: tracks.first,
+                      queue: tracks,
+                      index: 0,
+                      source: 'playlist',
+                    );
+                    await notifier.toggleShuffle();
+                  },
+                ),
+                const SizedBox(width: 10),
+                _iconButton(
+                  c,
+                  PhosphorIcons.plus(),
+                  () => _addTracks(context, ref),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          for (var i = 0; i < tracks.length; i++)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 15),
+              child: _PlaylistRow(
+                track: tracks[i],
+                queue: tracks,
+                index: i,
+                onRemove: () => ref
+                    .read(playlistDetailProvider(playlistId).notifier)
+                    .removeTrack(tracks[i].id),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  // ── Шапка ─────────────────────────────────────────────────────────────────
+
+  Widget _bar(BuildContext context, WidgetRef ref, Playlist? p) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+      child: Row(
+        children: [
+          AudioSquareButton(
+            icon: PhosphorIcons.arrowLeft(),
+            onTap: () => context.pop(),
+          ),
+          const Spacer(),
+          if (p != null)
+            AudioSquareButton(
+              icon: PhosphorIcons.dotsThree(),
+              onTap: () => _menu(context, ref, p),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _menu(BuildContext context, WidgetRef ref, Playlist p) async {
+    await showSeeUBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.pencilSimple(), color: c.ink2),
+                title: Text('Переименовать',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: c.ink)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _rename(context, ref, p);
+                },
+              ),
+              ListTile(
+                leading:
+                    Icon(PhosphorIcons.trash(), color: SeeUColors.danger),
+                title: const Text(
+                  'Удалить плейлист',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: SeeUColors.danger),
+                ),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  final ok = await showSeeUConfirm(
+                    context,
+                    title: 'Удалить плейлист?',
+                    message:
+                        'Сам плейлист исчезнет, но треки останутся — они никуда '
+                        'не денутся из Аудиотеки.',
+                    confirmLabel: 'Удалить',
+                    destructive: true,
+                    icon: PhosphorIcons.trash(),
+                  );
+                  if (!ok) return;
+                  await ref.read(myPlaylistsProvider.notifier).delete(p.id);
+                  if (context.mounted) context.pop();
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _rename(
+      BuildContext context, WidgetRef ref, Playlist p) async {
+    final ctrl = TextEditingController(text: p.name);
+    try {
+      await _renameFlow(context, ref, p, ctrl);
+    } finally {
+      // Контроллер жил вне State — утекал на каждый вызов переименования.
+      ctrl.dispose();
+    }
+  }
+
+  Future<void> _renameFlow(BuildContext context, WidgetRef ref, Playlist p,
+      TextEditingController ctrl) async {
+    final ok = await showSeeUBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+              22, 4, 22, MediaQuery.viewInsetsOf(ctx).bottom + 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Переименовать',
+                style:
+                    SeeUTypography.displayS.copyWith(fontSize: 22, color: c.ink),
+              ),
+              const SizedBox(height: 14),
+              SeeUInput(controller: ctrl, autofocus: true),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: SeeUButton(
+                  label: 'Сохранить',
+                  onTap: () => Navigator.of(ctx).pop(true),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (ok != true) return;
+    final name = ctrl.text.trim();
+    if (name.isEmpty || name == p.name) return;
+    final renamed =
+        await ref.read(myPlaylistsProvider.notifier).rename(p.id, name);
+    if (!renamed) {
+      if (context.mounted) {
+        showSeeUSnackBar(context, 'Не удалось переименовать',
+            tone: SeeUTone.danger);
+      }
+      return;
+    }
+    ref.read(playlistDetailProvider(p.id).notifier).load();
+  }
+
+  /// Добавление — чек-лист, а не поход по карточкам треков.
+  Future<void> _addTracks(BuildContext context, WidgetRef ref) async {
+    final saved = ref.read(savedTracksProvider).valueOrNull ?? const [];
+    final trending = ref.read(trendingTracksProvider).valueOrNull ?? const [];
+    // Предлагаем то, что человек уже отметил, и то, что набирает — это
+    // осмысленнее, чем показывать пустой поиск.
+    final pool = <AudioTrack>[
+      ...saved,
+      ...trending.where((t) => !saved.any((s) => s.id == t.id)),
+    ];
+
+    if (pool.isEmpty) {
+      showSeeUSnackBar(context, 'Нечего добавить — сохрани что-нибудь сначала');
+      return;
+    }
+
+    final picked = <String>{};
+    await showSeeUBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final c = ctx.seeuColors;
+          return SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.75,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 4, 22, 10),
+                    child: Text(
+                      'Добавить треки',
+                      style: SeeUTypography.displayS
+                          .copyWith(fontSize: 22, color: c.ink),
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final t in pool)
+                          ListTile(
+                            leading: TrackCover(track: t, size: 42, radius: 10),
+                            title: Text(
+                              t.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, color: c.ink),
+                            ),
+                            subtitle: Text(
+                              t.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: c.ink3),
+                            ),
+                            trailing: Icon(
+                              picked.contains(t.id)
+                                  ? PhosphorIconsFill.checkCircle
+                                  : PhosphorIcons.circle(),
+                              color: picked.contains(t.id)
+                                  ? SeeUColors.accent
+                                  : c.ink4,
+                            ),
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setSheet(() {
+                                if (!picked.remove(t.id)) picked.add(t.id);
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 10, 22, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: SeeUButton(
+                        label: picked.isEmpty
+                            ? 'Выбери треки'
+                            : 'Добавить · ${picked.length}',
+                        onTap: picked.isEmpty
+                            ? null
+                            : () => Navigator.of(ctx).pop(),
+                      ),
+                    ),
+                  ),
                 ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (picked.isEmpty) return;
+    for (final id in picked) {
+      await ref.read(myPlaylistsProvider.notifier).addTrack(playlistId, id);
+    }
+    ref.read(playlistDetailProvider(playlistId).notifier).load();
+  }
+
+  // ── Пусто ─────────────────────────────────────────────────────────────────
+
+  Widget _empty(BuildContext context) {
+    final c = context.seeuColors;
+    return Consumer(
+      builder: (context, ref, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(44, 70, 44, 0),
+        child: Column(
+          children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: SeeUColors.accent.withValues(alpha: 0.1),
+              ),
+              child: const Icon(PhosphorIconsRegular.plus,
+                  size: 38, color: SeeUColors.accent),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Наполним его',
+              style:
+                  SeeUTypography.displayS.copyWith(fontSize: 22, color: c.ink),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Добавляй треки прямо отсюда или кнопкой «В плейлист» на любой '
+              'карточке.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, height: 1.55, color: c.ink3),
+            ),
+            const SizedBox(height: 22),
+            Tappable.scaled(
+              onTap: () => _addTracks(context, ref),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
+                decoration: BoxDecoration(
+                  color: SeeUColors.accent,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(PhosphorIconsBold.plus, size: 15, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text(
+                      'Добавить треки',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-          ),
-        ],
+    );
+  }
+
+  // ── Мелочи ────────────────────────────────────────────────────────────────
+
+  Widget _iconButton(SeeUThemeColors c, IconData icon, VoidCallback onTap) {
+    return Tappable.scaled(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: c.surface2,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.line),
+        ),
+        child: Icon(icon, size: 21, color: c.ink2),
       ),
     );
   }
 
-  Widget _header(String coverUrl, String name, int count, SeeUThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 100,
-              height: 100,
-              child: coverUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: coverUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(color: c.surface2),
-                      errorWidget: (_, __, ___) =>
-                          Container(color: c.surface2),
-                    )
-                  : Container(
-                      color: c.surface2,
-                      child: Icon(PhosphorIcons.musicNotesSimple(),
-                          color: c.ink3, size: 36),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: SeeUTypography.displayS,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text('$count треков', style: TextStyle(color: c.ink2)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  static String _word(int n) {
+    final m10 = n % 10, m100 = n % 100;
+    if (m100 >= 11 && m100 <= 14) return 'треков';
+    if (m10 == 1) return 'трек';
+    if (m10 >= 2 && m10 <= 4) return 'трека';
+    return 'треков';
   }
 
-  Widget _trackTile(AudioTrack track, List<AudioTrack> queue, SeeUThemeColors c) {
-    final playerState = ref.watch(miniPlayerProvider);
-    final isCurrent = playerState.track?.id == track.id;
-    final isPlaying = isCurrent && playerState.playing;
-    return InkWell(
-      onTap: () => _toggleTrack(track, queue),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  static String _totalTime(List<AudioTrack> tracks) {
+    final total = tracks.fold<int>(0, (s, t) => s + t.durationSeconds);
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    if (h > 0) return '$h ч ${m > 0 ? '$m мин' : ''}'.trim();
+    return '$m мин';
+  }
+}
+
+// ─── Строка плейлиста ───────────────────────────────────────────────────────
+
+class _PlaylistRow extends ConsumerWidget {
+  final AudioTrack track;
+  final List<AudioTrack> queue;
+  final int index;
+  final VoidCallback onRemove;
+
+  const _PlaylistRow({
+    required this.track,
+    required this.queue,
+    required this.index,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.seeuColors;
+    final player = ref.watch(miniPlayerProvider);
+    final isCurrent = player.track?.id == track.id;
+    final mode = modeOf(track);
+
+    return Dismissible(
+      key: ValueKey(track.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 8),
+        child: Icon(PhosphorIcons.trash(), color: SeeUColors.danger),
+      ),
+      confirmDismiss: (_) async {
+        HapticFeedback.mediumImpact();
+        onRemove();
+        return false;
+      },
+      child: Tappable.scaled(
+        onTap: () => ref.read(miniPlayerProvider.notifier).playWithQueue(
+              track: track,
+              queue: queue,
+              index: index,
+              source: 'playlist',
+            ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: track.coverUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: track.coverUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: c.surface2),
-                        errorWidget: (_, __, ___) =>
-                            Container(color: c.surface2),
-                      )
-                    : Container(color: c.surface2),
-              ),
+            TrackCover(
+              track: track,
+              size: 46,
+              radius: 10,
+              playing: isCurrent && player.playing,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(track.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: isCurrent ? SeeUColors.accent : c.ink)),
-                  const SizedBox(height: 2),
                   Text(
-                    track.genre.isNotEmpty
-                        ? '${track.artist} · ${track.genre}'
-                        : track.artist,
-                    style: TextStyle(fontSize: 12, color: c.ink2),
+                    track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isCurrent ? mode.color : c.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (track.artist.isNotEmpty) track.artist,
+                      formatDuration(track.durationSeconds),
+                    ].where((e) => e.isNotEmpty).join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: c.ink3),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Text(track.durationFormatted,
-                style: TextStyle(
-                    fontFamily: 'JetBrains Mono', fontSize: 11, color: c.ink3)),
             const SizedBox(width: 4),
-            Icon(
-              isPlaying ? PhosphorIconsFill.pauseCircle : PhosphorIconsFill.playCircle,
-              color: isCurrent ? SeeUColors.accent : c.ink2,
-              size: 32,
-            ),
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: Icon(PhosphorIcons.x(), color: c.ink2, size: 18),
-              tooltip: 'Удалить из плейлиста',
-              onPressed: () async {
-                final ok = await ref
-                    .read(playlistDetailProvider(widget.playlistId).notifier)
-                    .removeTrack(track.id);
-                if (!mounted) return;
-                showSeeUSnackBar(
-                    context, ok ? 'Удалено из плейлиста' : 'Ошибка',
-                    tone: ok ? SeeUTone.success : SeeUTone.danger);
-                if (ok) {
-                  // Refresh main list (cover + tracks_count may change).
-                  ref.read(myPlaylistsProvider.notifier).load();
-                }
-              },
+            // Была иконка-грип перетаскивания (dotsSixVertical), но реордер
+            // плейлистов не поддержан — грип вводил в заблуждение. Заменили на
+            // настоящую кнопку «убрать из плейлиста» (дублирует свайп).
+            Tappable.scaled(
+              onTap: onRemove,
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(PhosphorIcons.minusCircle(), size: 20, color: c.ink4),
+              ),
             ),
           ],
         ),

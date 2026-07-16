@@ -44,6 +44,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   bool _emojiPanelOpen = false;
   bool _hasText = false;
   int _unreadCount = 0;
+  /// Сообщение, на которое отвечаем (reply-quote, паритет с чатами).
+  RoomMessage? _replyTo;
 
   // ── Search ──────────────────────────────────────────────────────────────
   bool _isSearching = false;
@@ -171,7 +173,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           _atBottom = atBottom;
           if (atBottom) _unreadCount = 0;
         });
+        // Докрутил вниз → фактически прочитал: синкаем с сервером, иначе
+        // бейдж в списке и read-receipts отправителям висят до перезахода.
+        if (atBottom) {
+          ref.read(roomMessagesProvider(widget.roomId).notifier).markRead();
+        }
       }
+    }
+    // Подгрузка истории при скролле к верху (раньше страница была одна —
+    // сообщения старше первых 50 были недостижимы).
+    if (pos.pixels <= 200) {
+      ref.read(roomMessagesProvider(widget.roomId).notifier).loadOlder();
     }
   }
 
@@ -190,15 +202,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
+    final replyTo = _replyTo;
     _inputController.clear();
     setState(() {
       _sending = true;
       _emojiPanelOpen = false;
       _unreadCount = 0;
+      _replyTo = null;
     });
     try {
-      await ref.read(roomMessagesProvider(widget.roomId).notifier).send(text);
+      await ref.read(roomMessagesProvider(widget.roomId).notifier).send(
+            text,
+            replyToMessageId: replyTo?.id,
+          );
       _scrollToBottom();
+    } catch (_) {
+      // Раньше ошибка сети тихо съедала набранный текст (поле уже очищено,
+      // catch отсутствовал) — возвращаем текст и контекст ответа, сообщаем.
+      if (mounted) {
+        _inputController.text = text;
+        setState(() => _replyTo = replyTo);
+        showSeeUSnackBar(context, 'Не удалось отправить сообщение',
+            tone: SeeUTone.danger);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -233,6 +259,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             attachedMediaType: 'sticker',
           );
       _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        showSeeUSnackBar(context, 'Не удалось отправить стикер',
+            tone: SeeUTone.danger);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -247,6 +278,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             attachedMediaType: 'gif',
           );
       _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        showSeeUSnackBar(context, 'Не удалось отправить GIF',
+            tone: SeeUTone.danger);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -320,6 +356,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     ),
                   ),
                 Divider(height: 1, color: c.line),
+                if (!isDeleted)
+                  ListTile(
+                    leading:
+                        Icon(PhosphorIcons.arrowBendUpLeft(), color: c.ink),
+                    title: const Text('Ответить'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      setState(() => _replyTo = m);
+                    },
+                  ),
                 if (m.text.isNotEmpty && !isDeleted)
                   ListTile(
                     leading: Icon(PhosphorIcons.copy(), color: c.ink),
@@ -1746,6 +1792,37 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+    // Плашка «Ответ @username» над инпутом (reply-quote, паритет с чатами).
+    if (_replyTo != null)
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+        decoration: BoxDecoration(
+          color: c.accentSoft,
+          borderRadius: BorderRadius.circular(SeeURadii.pill),
+        ),
+        child: Row(
+          children: [
+            Icon(PhosphorIcons.arrowBendUpLeft(),
+                size: 14, color: SeeUColors.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Ответ @${_replyTo!.senderUsername}: ${_replyTo!.text.isEmpty ? 'медиа' : _replyTo!.text}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: SeeUTypography.caption
+                    .copyWith(color: SeeUColors.accent),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => setState(() => _replyTo = null),
+              child: Icon(PhosphorIcons.x(),
+                  size: 16, color: SeeUColors.accent),
+            ),
+          ],
+        ),
+      ),
     // Стеклянная оболочка (рецепт SeeUGlassInputBar): blur + тинт фона +
     // верхний hairline; внутри — плоское pill-поле (no glass-on-glass).
     ClipRect(
@@ -2170,6 +2247,42 @@ class _MessageBubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (forwardBanner != null) forwardBanner,
+          // Quoted-блок ответа (reply-quote, паритет с чатами).
+          if (msg.replyTo != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: c.surface2.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(color: SeeUColors.accent, width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '@${msg.replyTo!.senderUsername}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                  Text(
+                    msg.replyTo!.text.isEmpty
+                        ? 'медиа'
+                        : msg.replyTo!.text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: c.ink2),
+                  ),
+                ],
+              ),
+            ),
           _buildText(msg.text),
           const SizedBox(height: 2),
           Row(

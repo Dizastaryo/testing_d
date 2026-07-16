@@ -8,6 +8,8 @@ import '../../core/models/user.dart';
 import '../../core/services/haptics.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/user_provider.dart';
 
 /// Shared screen for followers / following lists.
 /// Differences are parameterised: title, endpoint, empty-state text/icon.
@@ -234,30 +236,62 @@ class _UserRow extends ConsumerStatefulWidget {
 
 class _UserRowState extends ConsumerState<_UserRow> {
   late bool _isFollowing;
+  late bool _pending;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
     _isFollowing = widget.user.isFollowing;
+    _pending = widget.user.hasPendingFollowRequest;
   }
 
   Future<void> _toggleFollow() async {
+    if (_busy) return; // guard от двойного тапа
     SeeUHaptics.press();
-    final previous = _isFollowing;
-    // BUGFIX: раньше здесь всегда слался POST, независимо от направления —
-    // "Отписаться" на самом деле заново подписывал. DELETE отписывает,
-    // POST подписывает (см. корректную реализацию в user_provider.dart).
-    final wasFollowing = previous;
-    setState(() => _isFollowing = !_isFollowing);
+    final prevFollowing = _isFollowing;
+    final prevPending = _pending;
+    final wasActive = _isFollowing || _pending; // подписан ИЛИ заявка висит
+    setState(() {
+      _busy = true;
+      if (wasActive) {
+        _isFollowing = false;
+        _pending = false;
+      } else {
+        _isFollowing = true; // оптимистично; статус уточним из ответа
+      }
+    });
     try {
       final api = ref.read(apiClientProvider);
-      if (wasFollowing) {
+      if (wasActive) {
         await api.delete(ApiEndpoints.followUser(widget.user.username));
       } else {
-        await api.post(ApiEndpoints.followUser(widget.user.username));
+        final resp = await api.post(ApiEndpoints.followUser(widget.user.username));
+        // Приватный аккаунт возвращает status:'requested' — это заявка, а
+        // не подписка. Раньше кнопка сразу показывала «Отписаться».
+        final data = resp.data is Map && resp.data.containsKey('data')
+            ? resp.data['data']
+            : resp.data;
+        final status =
+            data is Map ? data['status']?.toString() : null;
+        if (mounted && status == 'requested') {
+          setState(() {
+            _isFollowing = false;
+            _pending = true;
+          });
+        }
       }
+      // Синхронизируем профиль цели, чтобы счётчики/кнопка там совпали.
+      ref.invalidate(userProfileProvider(widget.user.username));
     } catch (_) {
-      if (mounted) setState(() => _isFollowing = previous);
+      if (mounted) {
+        setState(() {
+          _isFollowing = prevFollowing;
+          _pending = prevPending;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -265,6 +299,9 @@ class _UserRowState extends ConsumerState<_UserRow> {
   Widget build(BuildContext context) {
     final user = widget.user;
     final c = context.seeuColors;
+    // Своя строка в чужом списке не должна давать «подписаться на себя».
+    final myId = ref.watch(authProvider.select((s) => s.user?.id));
+    final isMe = myId != null && myId == user.id;
     // Плоская строка в стиле SeeUListRow (hairline снизу). Собрана вручную,
     // т.к. рядом с именем нужен inline sealCheck-бейдж (title там — String).
     return Tappable.faded(
@@ -319,9 +356,16 @@ class _UserRowState extends ConsumerState<_UserRow> {
               ),
             ),
             const SizedBox(width: 12),
-            _isFollowing
-                ? _buildPillButton('Отписаться', SeeUButtonVariant.secondary)
-                : _buildPillButton('Подписаться', SeeUButtonVariant.primary),
+            // Себе кнопку не показываем; иначе три состояния: подписан /
+            // заявка отправлена / не подписан.
+            if (!isMe)
+              _isFollowing
+                  ? _buildPillButton('Отписаться', SeeUButtonVariant.secondary)
+                  : _pending
+                      ? _buildPillButton(
+                          'Запрос отправлен', SeeUButtonVariant.secondary)
+                      : _buildPillButton(
+                          'Подписаться', SeeUButtonVariant.primary),
           ],
         ),
       ),
