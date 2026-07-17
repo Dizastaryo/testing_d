@@ -1,4 +1,6 @@
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+// CupertinoPageTransitionsBuilder приходит из material.dart — отдельный
+// show-импорт из cupertino.dart тянул имя, которого там нет (видно только на
+// целевой 3.41.6; на 3.44 оно есть, поэтому предупреждение пряталось).
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../design/tokens.dart';

@@ -79,6 +79,12 @@ class ARFaceMaskPlatformView: NSObject, FlutterPlatformView {
     private var config: MaskConfig
     private var sessionRunning = false
 
+    /// Узел, который ARKit привязал к лицу (создаётся в `nodeFor`).
+    /// ARKit зовёт `nodeFor` РОВНО ОДИН РАЗ на анкер, поэтому при смене маски
+    /// новую модель некому было прикрепить — держим ссылку и пересобираем
+    /// содержимое узла на месте.
+    private weak var faceRootNode: SCNNode?
+
     // Model bounding-box info for adaptive scaling
     private var modelBBMaxDim: Float = 1.0
     private var modelBBWidth: Float = 1.0      // X-axis extent (ring diameter for crowns)
@@ -250,32 +256,24 @@ class ARFaceMaskPlatformView: NSObject, FlutterPlatformView {
         smoothedMinZ = -0.04
 
         NSLog("[ARFaceMask] Loaded '\(config.assetPath)' anchor=\(config.anchor) bbMaxDim=\(bbMaxDim) bbW=\(bbWidth) bbH=\(bbHeight) bbD=\(bbDepth)")
-    }
 
-    private func clearMask() {
-        preparedMask = nil
-        arView.scene.rootNode.enumerateChildNodes { node, _ in
-            if node.name == "faceMaskRoot" {
-                node.removeFromParentNode()
-            }
+        // Лицо уже трекается — `nodeFor` больше не позовут, поэтому вешаем
+        // новую модель в существующий узел сами. Без этого работала только
+        // первая маска (та, что успевала подготовиться до появления анкера).
+        if let root = faceRootNode {
+            populateFaceRoot(root)
         }
     }
 
-    private func lookupFlutterAssetKey(_ assetPath: String) -> String? {
-        let key = FlutterDartProject.lookupKey(forAsset: assetPath)
-        return key.isEmpty ? nil : key
-    }
-}
-
-// MARK: - ARSCNViewDelegate
-
-extension ARFaceMaskPlatformView: ARSCNViewDelegate {
-
-    func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
-        guard anchor is ARFaceAnchor else { return nil }
-
-        let root = SCNNode()
-        root.name = "faceMaskRoot"
+    /// Наполняет привязанный к лицу узел по ТЕКУЩЕМУ конфигу: окклюдер лица,
+    /// череп-окклюдер для головных уборов и сама модель. Вызывается и при
+    /// первом появлении лица (`nodeFor`), и при каждой смене маски.
+    private func populateFaceRoot(_ root: SCNNode) {
+        // Старое содержимое (окклюдеры + прошлая модель) убираем — конфиг
+        // окклюзии зависит от маски и должен пересобираться вместе с ней.
+        for child in root.childNodes {
+            child.removeFromParentNode()
+        }
 
         // 1) Occlusion geometry — invisible face that hides mask parts behind the head.
         //    Skip when occludeFace=true so the mask renders fully in front of the face.
@@ -323,7 +321,39 @@ extension ARFaceMaskPlatformView: ARSCNViewDelegate {
             mask.renderingOrder = 1
             root.addChildNode(mask)
         }
+    }
 
+    private func clearMask() {
+        preparedMask = nil
+        // Сам узел лица НЕ трогаем: его создал и держит ARKit под анкер, и
+        // после его удаления `nodeFor` уже не позовут — маска не вернётся.
+        // Чистим только содержимое.
+        if let root = faceRootNode {
+            for child in root.childNodes {
+                child.removeFromParentNode()
+            }
+        }
+    }
+
+    private func lookupFlutterAssetKey(_ assetPath: String) -> String? {
+        let key = FlutterDartProject.lookupKey(forAsset: assetPath)
+        return key.isEmpty ? nil : key
+    }
+}
+
+// MARK: - ARSCNViewDelegate
+
+extension ARFaceMaskPlatformView: ARSCNViewDelegate {
+
+    func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
+        guard anchor is ARFaceAnchor else { return nil }
+
+        let root = SCNNode()
+        root.name = "faceMaskRoot"
+        // Запоминаем: ARKit зовёт этот метод один раз на анкер, а маски
+        // меняются много раз — дальше пересобираем содержимое сами.
+        faceRootNode = root
+        populateFaceRoot(root)
         return root
     }
 

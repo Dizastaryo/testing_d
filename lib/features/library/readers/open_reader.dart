@@ -22,9 +22,12 @@ void openReader(BuildContext context, FileItem file,
   final isBook = file.category?.slug == 'books';
   final jumpPage = (jumpTo?['page'] as num?)?.toInt();
   final jumpFraction = _fractionFrom(jumpTo);
+  // rootNavigator: ридер закрывает весь экран, включая нижнее меню Библиотеки.
+  // Библиотечные под-экраны теперь живут внутри Shell, поэтому без root таб-бар
+  // «прилипал» бы под текстом книги.
   switch (ext) {
     case 'pdf':
-      Navigator.of(context).push(MaterialPageRoute(
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => PdfReaderScreen(
           fileId: file.id,
           title: file.displayTitle,
@@ -36,7 +39,7 @@ void openReader(BuildContext context, FileItem file,
         ),
       ));
     case 'epub':
-      Navigator.of(context).push(MaterialPageRoute(
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => EpubReaderScreen(
           fileId: file.id,
           title: file.displayTitle,
@@ -47,7 +50,7 @@ void openReader(BuildContext context, FileItem file,
       ));
     case 'txt':
     case 'md':
-      Navigator.of(context).push(MaterialPageRoute(
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => TextReaderScreen(
           fileId: file.id,
           title: file.displayTitle,
@@ -65,7 +68,7 @@ void openReader(BuildContext context, FileItem file,
     case 'odt':
     case 'pptx':
     case 'odp':
-      Navigator.of(context).push(MaterialPageRoute(
+      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => ConvertedPdfReaderScreen(
           fileId: file.id,
           title: file.displayTitle,

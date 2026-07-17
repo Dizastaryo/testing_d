@@ -88,7 +88,7 @@ class MyUploadsScreen extends ConsumerWidget {
                   child: LibBackButton(),
                 ),
                 actions: [
-                  SeeUGlassCircleButton(
+                  SeeUSolidCircleButton(
                     icon: PhosphorIcon(PhosphorIconsRegular.funnel,
                         color: c.ink, size: 20),
                     onTap: () => _showSortSheet(context, ref, sort),

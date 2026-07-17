@@ -36,6 +36,12 @@ class ScannerResolvedEntry {
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
+/// Намерение пользователя: должен ли идти скан. Живёт ВНЕ State намеренно —
+/// экран пересоздаётся при каждом заходе на /scanner, и состояние внутри State
+/// не переживает уход на другую вкладку. По умолчанию true: первый заход в
+/// Сканер сразу ищет людей рядом; дальше уважается последний выбор.
+bool _scanEnabledByUser = true;
+
 class ScannerScreen extends ConsumerStatefulWidget {
   const ScannerScreen({super.key});
 
@@ -93,7 +99,10 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
     });
 
     WidgetsBinding.instance.addObserver(this);
-    _startScan();
+    // Уважаем прошлый выбор: экран пересоздаётся при каждом заходе на
+    // /scanner, и безусловный _startScan() включал скан заново, даже если его
+    // выключили перед уходом (кнопка «Остановить» появлялась сама).
+    if (_scanEnabledByUser) _startScan();
   }
 
   void _pauseAnimations() {
@@ -117,8 +126,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       FlutterBluePlus.stopScan();
     } else if (state == AppLifecycleState.resumed) {
       _resumeAnimations();
-      // Возобновляем скан при возврате (если экран ещё жив и BT включён).
-      if (mounted && _bluetoothOn && !FlutterBluePlus.isScanningNow) {
+      // Возобновляем скан при возврате — но только если пользователь его не
+      // выключал сам.
+      if (mounted &&
+          _scanEnabledByUser &&
+          _bluetoothOn &&
+          !FlutterBluePlus.isScanningNow) {
         _startScan();
       }
     }
@@ -272,8 +285,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
   void _toggleScan() {
     HapticFeedback.lightImpact();
     if (_isScanning) {
+      // Явное намерение пользователя — запоминаем, чтобы возврат на экран
+      // не включил скан заново.
+      _scanEnabledByUser = false;
       _stopScan();
     } else {
+      _scanEnabledByUser = true;
       _startScan();
     }
   }
@@ -372,7 +389,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen>
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
       child: Row(
         children: [
-          if (hasPeople) _nearbyPill(c, count),
+          // Бренд-wordmark «SeeU» слева — как в шапках Ленты и Интересного.
+          const SeeUWordmark(),
+          if (hasPeople) ...[
+            const SizedBox(width: 10),
+            _nearbyPill(c, count),
+          ],
           const Spacer(),
           _roundIconButton(
             c,

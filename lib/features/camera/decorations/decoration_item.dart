@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../filters/filter_presets.dart';
@@ -30,6 +33,20 @@ class DecorationItem {
 class DecorationCatalog {
   DecorationCatalog._();
 
+  /// Есть ли на этой платформе НАСТОЯЩИЙ рендерер 3D-масок.
+  ///
+  /// Только iOS (ARKit, `ios/Runner/ARFaceMaskViewFactory.swift`). На Android
+  /// нативный рендерер отключён — Sceneform тянул legacy `com.android.support`
+  /// и перестал компилироваться, вместо него заглушка-пустышка
+  /// (`ARFaceMaskViewFactory.kt`). При этом camera_screen на выбор маски
+  /// ОТПУСКАЕТ камеру и показывает вместо превью этот прозрачный вью — то есть
+  /// маска на Android давала не «просто без эффекта», а ЧЁРНЫЙ ЭКРАН.
+  ///
+  /// Поэтому там, где рендерера нет, маски не предлагаем вовсе: сломанная
+  /// кнопка хуже отсутствующей. 2D-фильтры работают везде и не затронуты.
+  /// Снять ограничение вместе с настоящим ARCore-рендерером (задача #52).
+  static bool get maskRenderingSupported => !kIsWeb && Platform.isIOS;
+
   static final List<DecorationItem> all = _build();
 
   static List<DecorationItem> _build() {
@@ -46,15 +63,17 @@ class DecorationCatalog {
       ));
     }
 
-    for (final m in MaskCatalog.all) {
-      items.add(DecorationItem(
-        id: 'm_${m.id}',
-        label: m.label,
-        category: DecorationCategory.mask,
-        previewColor: const Color(0xFF5ABFFA),
-        previewIcon: m.previewIcon,
-        mask: m,
-      ));
+    if (maskRenderingSupported) {
+      for (final m in MaskCatalog.all) {
+        items.add(DecorationItem(
+          id: 'm_${m.id}',
+          label: m.label,
+          category: DecorationCategory.mask,
+          previewColor: const Color(0xFF5ABFFA),
+          previewIcon: m.previewIcon,
+          mask: m,
+        ));
+      }
     }
 
     return items;

@@ -300,7 +300,6 @@ class _PostCardState extends ConsumerState<PostCard>
           _buildActions(context, post),
           _buildLikesRow(context, post),
           _buildCaption(context, post),
-          _buildCommentsPreview(context, post),
           // Hairline-разделитель между подписью/комментами и меткой времени.
           Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -597,10 +596,26 @@ class _PostCardState extends ConsumerState<PostCard>
           ),
         ),
         const SizedBox(width: 8),
+        // Число ответов — сразу у иконки. Раньше оно жило только чипом под
+        // подписью, и счётчик приходилось искать (а то и открывать
+        // комментарии, чтобы узнать, сколько их).
         PostActionButton(
           icon: PhosphorIcon(PhosphorIcons.chatCircle()),
           onTap: () => context.push('/post/${post.id}/comments'),
         ),
+        if (post.commentsCount > 0)
+          GestureDetector(
+            onTap: () => context.push('/post/${post.id}/comments'),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 2, right: 2),
+              child: Text(
+                formatCount(post.commentsCount),
+                style: SeeUTypography.caption
+                    .copyWith(fontWeight: FontWeight.w600, color: c.ink2),
+              ),
+            ),
+          ),
         const SizedBox(width: 8),
         PostActionButton(
           icon: PhosphorIcon(PhosphorIcons.shareFat()),
@@ -1087,23 +1102,6 @@ class _PostCardState extends ConsumerState<PostCard>
         postId: post.id,
         username: post.author.username,
         caption: post.caption!,
-      ),
-    );
-  }
-
-  Widget _buildCommentsPreview(BuildContext context, Post post) {
-    final c = context.seeuColors;
-    if (post.commentsCount == 0) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: GestureDetector(
-        onTap: () => context.push('/post/${post.id}/comments'),
-        child: SeeUChip(
-          label:
-              '${formatCount(post.commentsCount)} ${pluralRu(post.commentsCount, 'комментарий', 'комментария', 'комментариев')}',
-          bgColor: c.accentSoft,
-          fgColor: SeeUColors.accent,
-        ),
       ),
     );
   }

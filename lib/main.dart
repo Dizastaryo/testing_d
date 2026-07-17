@@ -24,7 +24,6 @@ import 'features/auth/register_screen.dart';
 import 'features/auth/splash_screen.dart';
 import 'features/feed/feed_screen.dart';
 import 'features/explore/explore_screen.dart';
-import 'features/explore/search_screen.dart';
 import 'features/post/post_detail_screen.dart';
 import 'features/post/comments_screen.dart';
 import 'features/post/wave_compose_screen.dart';
@@ -77,7 +76,6 @@ import 'features/music/playlist_detail_screen.dart';
 import 'features/music/track_detail_screen.dart';
 import 'features/services/services_screen.dart';
 import 'features/post/publish_success_screen.dart';
-import 'features/stories/text_story_compose_screen.dart';
 import 'features/sbory/sbory_screen.dart';
 import 'features/sbory/sbor_detail_screen.dart';
 import 'features/sbory/sbor_create_screen.dart';
@@ -284,43 +282,11 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
             child: RoomScreen(roomId: state.pathParameters['roomId']!),
           ),
         ),
-        GoRoute(
-          path: '/files/:id',
-          pageBuilder: (_, state) => CupertinoPage(
-            child: FileDetailScreen(id: state.pathParameters['id']!),
-          ),
-        ),
-        // Подборка книг. Открывается и по ссылке от другого человека —
-        // тогда она read-only и видна, только если владелец её открыл.
-        GoRoute(
-          path: '/collection/:id',
-          pageBuilder: (_, state) => CupertinoPage(
-            child: CollectionDetailScreen(
-              collectionId: state.pathParameters['id']!,
-            ),
-          ),
-        ),
-        GoRoute(
-          path: '/library/offline',
-          pageBuilder: (_, __) => const CupertinoPage(child: OfflineLibraryScreen()),
-        ),
-        GoRoute(
-          path: '/library/category/:slug',
-          pageBuilder: (_, state) {
-            // Happy path: category passed via extra (in-app navigation).
-            // Cold-start / deep-link: extra is null → CategoryDetailScreen
-            // self-resolves from the :slug param via fileCategoriesProvider.
-            final cat = state.extra as FileCategory?;
-            final slug = state.pathParameters['slug'] ?? '';
-            return CupertinoPage(
-              child: CategoryDetailScreen(category: cat, slug: slug),
-            );
-          },
-        ),
-        GoRoute(
-          path: '/reading/leaderboard',
-          pageBuilder: (_, __) => const CupertinoPage(child: ReadingLeaderboardScreen()),
-        ),
+        // Библиотечные под-экраны (/files/:id, /collection/:id,
+        // /library/offline, /library/category, /reading/leaderboard) ПЕРЕЕХАЛИ
+        // внутрь ShellRoute — иначе при открытии книги/категории/скачанного
+        // нижнее библиотечное меню исчезало (экраны были fullscreen). Теперь
+        // они держат 4-таб меню Библиотеки (см. _isLibrary в main_scaffold).
         GoRoute(
           path: '/sbory/create',
           pageBuilder: (_, __) => const CupertinoPage(child: SborCreateScreen()),
@@ -386,12 +352,18 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
           builder: (context, state, child) {
             final loc = state.matchedLocation;
             // Полноэкранные поверхности живут БЕЗ нижнего меню: плеер и
-            // загрузка — свои контролы; поиск (§04 B) — фуллскрин с «Отмена»
-            // как единственным выходом. Плейлист же — служебная подстраница
+            // загрузка — свои контролы. Плейлист же — служебная подстраница
             // Аудиотеки и держит аудио-меню (см. _isAudio).
-            final showTabs = !loc.startsWith('/explore/search') &&
-                !loc.startsWith('/music/player') &&
-                !loc.startsWith('/music/upload');
+            //
+            // Камера — тоже fullscreen, и это ГЕЙТИТСЯ ЗДЕСЬ, а не глобальным
+            // bottomNavHiddenNotifier: раньше меню пряталось только на свайпе
+            // из ленты (там камера — страница внутри /feed), а вход через
+            // «плюсик» открывал /post/create|/story/create внутри Shell — и
+            // меню оставалось видимым. Отсюда «через раз видно».
+            final showTabs = !loc.startsWith('/music/player') &&
+                !loc.startsWith('/music/upload') &&
+                !loc.startsWith('/post/create') &&
+                !loc.startsWith('/story/create');
             return MainScaffold(showTabs: showTabs, child: child);
           },
           routes: [
@@ -409,14 +381,8 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 transitionsBuilder: _fadeTransition,
               ),
             ),
-            // §04 B: поиск — отдельный экран, вход тапом по строке.
-            GoRoute(
-              path: '/explore/search',
-              pageBuilder: (_, __) => CustomTransitionPage(
-                child: const ExploreSearchScreen(),
-                transitionsBuilder: _fadeTransition,
-              ),
-            ),
+            // Поиск живёт ПРЯМО в «Интересном» одним полем — отдельного экрана
+            // (и второго инпута) больше нет.
             // «Топ недели по лайкам» убит дизайном (§10) — маршрут
             // /leaderboard и его экран удалены совсем.
             GoRoute(
@@ -478,6 +444,47 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
                 child: const LibraryProfileScreen(),
                 transitionsBuilder: _fadeTransition,
               ),
+            ),
+            // Библиотечные под-экраны — ВНУТРИ Shell, чтобы держать 4-таб меню
+            // Библиотеки (книгу/категорию/скачанное открываешь — меню на месте).
+            GoRoute(
+              path: '/files/:id',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: FileDetailScreen(id: state.pathParameters['id']!),
+              ),
+            ),
+            // Подборка книг. Открывается и по ссылке от другого человека —
+            // тогда она read-only и видна, только если владелец её открыл.
+            GoRoute(
+              path: '/collection/:id',
+              pageBuilder: (_, state) => CupertinoPage(
+                child: CollectionDetailScreen(
+                  collectionId: state.pathParameters['id']!,
+                ),
+              ),
+            ),
+            GoRoute(
+              path: '/library/offline',
+              pageBuilder: (_, __) =>
+                  const CupertinoPage(child: OfflineLibraryScreen()),
+            ),
+            GoRoute(
+              path: '/library/category/:slug',
+              pageBuilder: (_, state) {
+                // Happy path: category passed via extra (in-app navigation).
+                // Cold-start / deep-link: extra is null → CategoryDetailScreen
+                // self-resolves from the :slug param via fileCategoriesProvider.
+                final cat = state.extra as FileCategory?;
+                final slug = state.pathParameters['slug'] ?? '';
+                return CupertinoPage(
+                  child: CategoryDetailScreen(category: cat, slug: slug),
+                );
+              },
+            ),
+            GoRoute(
+              path: '/reading/leaderboard',
+              pageBuilder: (_, __) =>
+                  const CupertinoPage(child: ReadingLeaderboardScreen()),
             ),
             GoRoute(
               path: '/sbory',
@@ -546,12 +553,6 @@ class _SeeUAppState extends ConsumerState<SeeUApp> {
               path: '/story/create',
               pageBuilder: (_, __) => const CupertinoPage(
                 child: _StoryCreateCameraWrapper(),
-              ),
-            ),
-            GoRoute(
-              path: '/story/create-text',
-              pageBuilder: (_, __) => const CupertinoPage(
-                child: TextStoryComposeScreen(),
               ),
             ),
             GoRoute(

@@ -26,32 +26,19 @@ class ReadingRoomScreen extends ConsumerWidget {
           bottom: false,
           child: Column(
             children: [
-              LibMainBar(
-                title: 'Читальня',
-                action: LibSquareButton(
-                  icon: PhosphorIcons.magnifyingGlass(),
-                  onTap: () => context.go('/library/discover'),
-                ),
-              ),
+              const LibMainBar(title: 'Читальня'),
               Expanded(
                 child: RefreshIndicator(
                   color: SeeUColors.accent,
                   onRefresh: () async {
                     ref.invalidate(recentlyReadProvider);
                     ref.invalidate(readingListProvider('reading'));
-                    ref.invalidate(readingStatsProvider);
-                    ref.invalidate(readingGoalProvider);
-                    ref.invalidate(fileCategoriesProvider);
                   },
                   child: ListView(
                     padding: EdgeInsets.fromLTRB(
                         20, 0, 20, 28 + context.bottomBarInset),
                     children: const [
                       _ContinueHero(),
-                      SizedBox(height: 18),
-                      _StreakGoalStrip(),
-                      SizedBox(height: 28),
-                      _CategoriesBlock(),
                       SizedBox(height: 28),
                       _ReadingNowBlock(),
                     ],
@@ -73,18 +60,34 @@ class _ContinueHero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recent = ref.watch(recentlyReadProvider).valueOrNull ?? const [];
-    final reading =
-        ref.watch(readingListProvider('reading')).valueOrNull ?? const [];
+    final recentAsync = ref.watch(recentlyReadProvider);
+    final readingAsync = ref.watch(readingListProvider('reading'));
 
     // «Вы остановились на» — последняя открытая книга; если истории чтения ещё
     // нет, берём первую из «читаю».
+    final recent = recentAsync.valueOrNull ?? const <FileItem>[];
+    final reading = readingAsync.valueOrNull ?? const <FileItem>[];
     final file = recent.isNotEmpty
         ? recent.first
         : (reading.isNotEmpty ? reading.first : null);
+    if (file != null) return _HeroCard(file: file);
 
-    if (file == null) return const _EmptyHero();
-    return _HeroCard(file: file);
+    // Пока грузится — скелет в форме hero, а не мгновенный пустой CTA.
+    if (recentAsync.isLoading || readingAsync.isLoading) {
+      return const _HeroSkeleton();
+    }
+    // Не смогли загрузить — предлагаем повторить, а не притворяемся, что читать
+    // нечего.
+    if (recentAsync.hasError || readingAsync.hasError) {
+      return _HeroError(
+        onRetry: () {
+          ref.invalidate(recentlyReadProvider);
+          ref.invalidate(readingListProvider('reading'));
+        },
+      );
+    }
+    // Данные загружены и действительно пусты — приглашаем начать.
+    return const _EmptyHero();
   }
 }
 
@@ -414,97 +417,38 @@ class _EmptyHero extends StatelessWidget {
   }
 }
 
-// ─── Серия + цель года ──────────────────────────────────────────────────────
+// ─── Скелет и ошибка hero ────────────────────────────────────────────────────
 
-class _StreakGoalStrip extends ConsumerWidget {
-  const _StreakGoalStrip();
+/// Пока грузится «на чём остановились» — форма обложки и строк, а не пустой CTA.
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.seeuColors;
-    final stats = ref.watch(readingStatsProvider).valueOrNull ?? const {};
-    final goal = ref.watch(readingGoalProvider).valueOrNull;
-    final streak = (stats['reading_streak'] as num?)?.toInt() ?? 0;
-
-    return Tappable.scaled(
-      onTap: () => context.go('/library/profile'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: LibColors.line(context)),
-        ),
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Row(
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                const Icon(PhosphorIconsFill.flame,
-                    size: 18, color: SeeUColors.amber),
-                const SizedBox(width: 6),
-                Text(
-                  '$streak',
-                  style: SeeUTypography.displayS.copyWith(
-                    fontSize: 22,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                    color: c.ink,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text('дней',
-                    style: TextStyle(fontSize: 11, color: c.ink3)),
-              ],
-            ),
-            Container(
-              width: 1,
-              height: 26,
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              color: LibColors.line(context),
-            ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            ShimmerBox(width: 118, height: 172, radius: 12),
+            SizedBox(width: 22),
             Expanded(
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        'Цель года · ${goal?.year ?? DateTime.now().year}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          letterSpacing: 0.2,
-                          color: c.ink3,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        goal == null
-                            ? 'не задана'
-                            : '${goal.doneBooks} / ${goal.goalBooks}',
-                        style: SeeUTypography.displayS.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: c.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  LibProgressBar(
-                    value: goal?.progress ?? 0,
-                    gradient: const LinearGradient(
-                      colors: [SeeUColors.accent, SeeUColors.accentSecondary],
-                    ),
-                  ),
+                  ShimmerBox(width: 92, height: 12, radius: 6),
+                  SizedBox(height: 12),
+                  ShimmerBox(width: double.infinity, height: 22, radius: 8),
+                  SizedBox(height: 8),
+                  ShimmerBox(width: 130, height: 12, radius: 6),
+                  SizedBox(height: 26),
+                  ShimmerBox(width: double.infinity, height: 8, radius: 4),
+                  SizedBox(height: 16),
+                  ShimmerBox(width: double.infinity, height: 48, radius: 15),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            Icon(PhosphorIcons.caretRight(), size: 14, color: c.ink4),
           ],
         ),
       ),
@@ -512,146 +456,60 @@ class _StreakGoalStrip extends ConsumerWidget {
   }
 }
 
-// ─── Категории — книжные корешки ────────────────────────────────────────────
-
-class _CategoriesBlock extends ConsumerWidget {
-  const _CategoriesBlock();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(fileCategoriesProvider);
-    final cats = async.valueOrNull ?? const <FileCategory>[];
-    if (cats.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LibSectionHeader(
-          title: 'Категории',
-          onTap: () => context.go('/library/discover'),
-          trailing: Icon(PhosphorIcons.arrowRight(),
-              size: 15, color: LibColors.mutedWarm),
-        ),
-        const SizedBox(height: 16),
-        for (var i = 0; i < cats.length; i += 2) ...[
-          if (i > 0) const SizedBox(height: 13),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: _CategorySpine(cat: cats[i])),
-              const SizedBox(width: 13),
-              Expanded(
-                child: i + 1 < cats.length
-                    ? _CategorySpine(cat: cats[i + 1])
-                    : const SizedBox(),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _CategorySpine extends StatelessWidget {
-  final FileCategory cat;
-  const _CategorySpine({required this.cat});
+/// Компактная ошибка в форме hero — не молчим, если «продолжить» не загрузилось.
+class _HeroError extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _HeroError({required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final base = cat.colorValue;
-    // На тёмной теме цифра/иконка светлее — на бумаге, наоборот, глубже.
-    final label = dark
-        ? Color.lerp(base, Colors.white, 0.28)!
-        : Color.lerp(base, Colors.black, 0.22)!;
-
-    return Tappable.scaled(
-      onTap: () => context.push('/library/category/${cat.slug}', extra: cat),
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: LibColors.line(context)),
-          boxShadow: dark
-              ? null
-              : [
-                  BoxShadow(
-                    color: const Color(0xFF1E1914).withValues(alpha: 0.45),
-                    blurRadius: 26,
-                    offset: const Offset(0, 12),
-                    spreadRadius: -18,
+    return Container(
+      height: 160,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: LibColors.line(context)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIcons.cloudWarning(), size: 32, color: c.ink3),
+          const SizedBox(height: 10),
+          Text(
+            'Не удалось загрузить',
+            style: TextStyle(fontSize: 14, color: c.ink2),
+          ),
+          const SizedBox(height: 14),
+          Tappable.scaled(
+            onTap: onRetry,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: LibColors.line(context)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIcons.arrowClockwise(),
+                      size: 14, color: SeeUColors.accent),
+                  const SizedBox(width: 7),
+                  const Text(
+                    'Повторить',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: SeeUColors.accent,
+                    ),
                   ),
                 ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Корешок книги.
-                Container(
-                  width: 9,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: LibColors.spineOf(base),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(15, 16, 15, 16),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          top: -3,
-                          right: -3,
-                          child: Icon(
-                            cat.iconData,
-                            size: 26,
-                            color: base.withValues(alpha: dark ? 0.34 : 0.24),
-                          ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(height: 30),
-                            Text(
-                              cat.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: SeeUTypography.displayS.copyWith(
-                                fontSize: 18,
-                                height: 1.02,
-                                fontWeight: FontWeight.w600,
-                                color: c.ink,
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              booksCountLabel(cat.filesCount),
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.2,
-                                color: label,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

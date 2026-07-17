@@ -125,13 +125,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                         child: ShaderMask(
                           shaderCallback: (rect) =>
                               SeeUGradients.heroOrange.createShader(rect),
-                          child: Text(
-                            'SeeU',
-                            style: SeeUTypography.displayXL.copyWith(
-                              fontFamily: AppFonts.I.brand,
-                              fontSize: 64,
-                              letterSpacing: 0,
-                              color: Colors.white,
+                          // Pacifico — рукописный: росчерк «U» вылезает за
+                          // layout-бокс текста. ShaderMask красит строго свой
+                          // rect (= размер ребёнка), поэтому вылезший хвостик
+                          // оставался некрашеным («бесцветный кончик»).
+                          // Паддинг расширяет бокс — росчерк попадает под
+                          // градиент целиком.
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Text(
+                              'SeeU',
+                              style: SeeUTypography.displayXL.copyWith(
+                                fontFamily: AppFonts.I.brand,
+                                fontSize: 64,
+                                letterSpacing: 0,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),

@@ -44,15 +44,7 @@ class LibraryProfileScreen extends ConsumerWidget {
                     children: const [
                       _Identity(),
                       SizedBox(height: 22),
-                      _StatsStrip(),
-                      SizedBox(height: 18),
-                      _GoalCard(),
-                      SizedBox(height: 20),
-                      _StreakWeek(),
-                      SizedBox(height: 12),
-                      _LeaderboardRow(),
-                      SizedBox(height: 18),
-                      _Achievements(),
+                      _StatsSection(),
                     ],
                   ),
                 ),
@@ -147,6 +139,147 @@ class _Identity extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Секция статистики: единый скелет/ошибка вместо фейковых нулей ───────────
+
+/// Вся сводка читателя грузится из двух источников (статистика + цель года).
+/// Пока они грузятся — один скелет; при ошибке — одна кнопка «Повторить».
+/// Дочерние блоки строятся только на готовых данных, поэтому нигде не мелькают
+/// «0 книг / 0 ч / место —».
+class _StatsSection extends ConsumerWidget {
+  const _StatsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statsAsync = ref.watch(readingStatsProvider);
+    final goalAsync = ref.watch(readingGoalProvider);
+
+    // Есть данные из обоих источников (в т.ч. пока идёт фоновое обновление) —
+    // показываем сводку. Иначе: скелет при загрузке, ошибку — если упало и
+    // прежних данных ещё нет.
+    final hasData = statsAsync.hasValue && goalAsync.hasValue;
+    if (!hasData) {
+      if (statsAsync.hasError || goalAsync.hasError) {
+        return _StatsError(
+          onRetry: () {
+            ref.invalidate(readingStatsProvider);
+            ref.invalidate(readingGoalProvider);
+          },
+        );
+      }
+      return const _StatsSkeleton();
+    }
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _StatsStrip(),
+        SizedBox(height: 18),
+        _GoalCard(),
+        SizedBox(height: 20),
+        _StreakWeek(),
+        SizedBox(height: 12),
+        _LeaderboardRow(),
+        SizedBox(height: 18),
+        _Achievements(),
+      ],
+    );
+  }
+}
+
+/// Скелет сводки: полоса из четырёх чисел, карточка цели и две карточки ниже.
+class _StatsSkeleton extends StatelessWidget {
+  const _StatsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(
+                4,
+                (_) => const Column(
+                  children: [
+                    ShimmerBox(width: 44, height: 30, radius: 8),
+                    SizedBox(height: 10),
+                    ShimmerBox(width: 40, height: 9, radius: 4),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const ShimmerBox(width: double.infinity, height: 98, radius: 20),
+          const SizedBox(height: 20),
+          const ShimmerBox(width: double.infinity, height: 96, radius: 18),
+          const SizedBox(height: 12),
+          const ShimmerBox(width: double.infinity, height: 70, radius: 18),
+        ],
+      ),
+    );
+  }
+}
+
+/// Компактная ошибка сводки — не показываем нули, если статистика не пришла.
+class _StatsError extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _StatsError({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: LibColors.line(context)),
+      ),
+      child: Column(
+        children: [
+          Icon(PhosphorIcons.cloudWarning(), size: 32, color: c.ink3),
+          const SizedBox(height: 10),
+          Text(
+            'Статистика не загрузилась',
+            style: TextStyle(fontSize: 14, color: c.ink2),
+          ),
+          const SizedBox(height: 14),
+          Tappable.scaled(
+            onTap: onRetry,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: LibColors.line(context)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIcons.arrowClockwise(),
+                      size: 14, color: SeeUColors.accent),
+                  const SizedBox(width: 7),
+                  const Text(
+                    'Повторить',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

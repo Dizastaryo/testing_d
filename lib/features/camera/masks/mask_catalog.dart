@@ -195,6 +195,32 @@ class MaskCatalog {
       ),
     ),
 
+    // ── Усы ───────────────────────────────────────────────────────────────
+    // Зона усов = под основанием носа, над верхней губой. Начало координат
+    // face-анкера — переносица, поэтому нужная высота ≈ −0.030 м:
+    //   anchor lowerFace даёт базу −0.035 м (рот), а offsetY поднимает обратно
+    //   к фильтруму: −0.035 + 0.03 × ширина_лица(≈0.15) ≈ −0.030 м.
+    // scale 0.45 — усы примерно вполовину ширины лица (≈6–7 см), как в жизни.
+    // offsetZ −0.15 — модель плоская, поэтому автовынос перед кончиком носа
+    //   небольшой, и её достаточно чуть притянуть назад на кожу над губой
+    //   (у очков минус куда больше: их дужки делают bbox глубоким).
+    // occludeFace: true — усы всегда рисуются поверх лица. С face-окклюдером
+    //   малейший уход модели «внутрь» кожи срезал бы её целиком.
+    MaskDescriptor(
+      id: 'mustache',
+      label: 'Усы',
+      assetPath: 'assets/masks/3d/mustache.glb',
+      previewIcon: PhosphorIcons.smiley(),
+      anchor: MaskAnchor.lowerFace,
+      transform: const MaskTransform(
+        scale: 0.45,
+        offsetX: 0.0,
+        offsetY: 0.03,
+        offsetZ: -0.15,
+        occludeFace: true,
+      ),
+    ),
+
     // ── Lower face / menpo masks ──────────────────────────────────────────
     // occludeFace=true — no occlusion geometry, mask renders fully in front
     // of the face so cheeks don't show through.

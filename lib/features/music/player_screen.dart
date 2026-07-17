@@ -10,6 +10,7 @@ import '../../core/api/api_endpoints.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
 import '../../core/models/audio_track.dart';
+import '../../widgets/report_sheet.dart';
 import 'audio_design.dart';
 import 'lyrics_screen.dart';
 import 'queue_sheet.dart';
@@ -84,14 +85,14 @@ class PlayerScreen extends ConsumerWidget {
 
 // ─── Шапка ──────────────────────────────────────────────────────────────────
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
   final AudioTrack track;
   final ListenMode mode;
 
   const _TopBar({required this.track, required this.mode});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.seeuColors;
     return Row(
       children: [
@@ -135,7 +136,11 @@ class _TopBar extends StatelessWidget {
           ),
         ),
         Tappable(
-          onTap: () => context.push('/music/track/${track.id}'),
+          // Раньше «три точки» ОТКРЫВАЛИ страницу трека (/music/track/:id) —
+          // почти такую же полноэкранную страницу, что путало («открылась та же
+          // страница, другие кнопки»). Теперь это нормальное меню; страница
+          // трека доступна из него явным пунктом «Подробнее о треке».
+          onTap: () => _moreSheet(context, ref),
           child: SizedBox(
             width: 40,
             height: 40,
@@ -157,6 +162,57 @@ class _TopBar extends StatelessWidget {
         'continue' => 'Продолжить',
         _ => track.artist.isNotEmpty ? track.artist : 'Аудиотека',
       };
+
+  /// Меню «ещё» (три точки). Не открывает дубль-страницу трека, а даёт
+  /// действия; страница трека доступна отдельным явным пунктом.
+  void _moreSheet(BuildContext context, WidgetRef ref) {
+    showSeeUBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        final c = ctx.seeuColors;
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(PhosphorIcons.info(), color: c.ink2),
+                title: const Text('Подробнее о треке'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  context.push('/music/track/${track.id}');
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.link(), color: c.ink2),
+                title: const Text('Скопировать ссылку'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  Clipboard.setData(
+                      ClipboardData(text: 'seeu://track/${track.id}'));
+                  showSeeUSnackBar(context, 'Ссылка скопирована');
+                },
+              ),
+              ListTile(
+                leading: Icon(PhosphorIcons.flag(), color: SeeUColors.like),
+                title: const Text('Пожаловаться'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  showReportSheet(
+                    context: context,
+                    ref: ref,
+                    targetType: 'track',
+                    targetId: track.id,
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ─── Обложка ────────────────────────────────────────────────────────────────

@@ -339,7 +339,7 @@ class _OfflineLibraryScreenState extends ConsumerState<OfflineLibraryScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    SeeUGlassCircleButton(
+                    SeeUSolidCircleButton(
                       icon: PhosphorIcon(PhosphorIconsRegular.x,
                           color: c.ink2, size: 20),
                       onTap: () => setState(() {

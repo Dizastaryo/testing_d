@@ -249,14 +249,14 @@ class _SboryScreenState extends ConsumerState<SboryScreen> {
                 ],
               ),
               const Spacer(),
-              SeeUGlassCircleButton(
+              SeeUSolidCircleButton(
                 size: 36,
                 icon: PhosphorIcon(PhosphorIcons.magnifyingGlass(),
-                    size: 17, color: Colors.white),
+                    size: 17, color: c.ink),
                 onTap: () => setState(() => _showSearch = !_showSearch),
               ),
               const SizedBox(width: 8),
-              SeeUGlassCircleButton(
+              SeeUSolidCircleButton(
                 size: 36,
                 tint: SeeUColors.accent,
                 icon: PhosphorIcon(PhosphorIcons.plus(PhosphorIconsStyle.bold),

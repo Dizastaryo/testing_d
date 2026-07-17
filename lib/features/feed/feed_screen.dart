@@ -342,18 +342,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final topInset = MediaQuery.of(context).padding.top;
     const contentHeight = 60.0;
 
-    // Бренд-wordmark «SeeU» подписным Pacifico, сплошной коралл — как задаёт
-    // дизайн-ядро (§03). Без градиента: логотип должен читаться как один
-    // фирменный знак, а не как декоративная плашка.
-    final wordmark = Text(
-      'SeeU',
-      style: TextStyle(
-        fontFamily: AppFonts.I.brand,
-        fontSize: 27,
-        height: 1.0,
-        color: SeeUColors.accent,
-      ),
-    );
+    // Бренд-wordmark «SeeU» — единый знак (SeeUWordmark), тот же в шапках
+    // Интересного и Сканера.
+    const wordmark = SeeUWordmark();
 
     // §03: wordmark слева, справа bell (с точкой непрочитанного) и chat.
     // «+» из хедера убран — создание живёт в профиле и свайпе к камере.

@@ -83,7 +83,7 @@ class BookmarksScreen extends ConsumerWidget {
           Align(
             alignment: Alignment.topCenter,
             child: SeeUGlassBar(
-              leading: SeeUGlassCircleButton(
+              leading: SeeUSolidCircleButton(
                 icon: PhosphorIcon(PhosphorIconsRegular.arrowLeft,
                     color: c.ink, size: 20),
                 onTap: () => Navigator.of(context).pop(),

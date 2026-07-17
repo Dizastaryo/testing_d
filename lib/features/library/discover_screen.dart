@@ -253,32 +253,134 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
 class _Shelf extends ConsumerWidget {
   final _Pill pill;
-  final ProviderListenable<AsyncValue<List<FileItem>>> provider;
+  final FutureProvider<List<FileItem>> provider;
 
   const _Shelf({required this.pill, required this.provider});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final files = ref.watch(provider).valueOrNull ?? const <FileItem>[];
-    if (files.isEmpty) return const SizedBox.shrink();
+    return ref.watch(provider).when(
+          data: (files) {
+            if (files.isEmpty) return const SizedBox.shrink();
+            return _frame(
+              SizedBox(
+                height: 210,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.none,
+                  padding: EdgeInsets.zero,
+                  itemCount: files.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  itemBuilder: (_, i) => _ShelfCard(file: files[i]),
+                ),
+              ),
+            );
+          },
+          loading: () => _frame(const _ShelfSkeleton()),
+          error: (_, __) => _frame(
+            _SectionError(onRetry: () => ref.invalidate(provider)),
+          ),
+          // Во время pull-to-refresh не мигаем скелетом поверх готовой ленты.
+          skipLoadingOnReload: true,
+        );
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        pill,
-        const SizedBox(height: 14),
-        SizedBox(
-          height: 210,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            clipBehavior: Clip.none,
-            padding: EdgeInsets.zero,
-            itemCount: files.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => _ShelfCard(file: files[i]),
+  Widget _frame(Widget body) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          pill,
+          const SizedBox(height: 14),
+          body,
+        ],
+      );
+}
+
+/// Скелет полки — форма обложек, пока грузится лента.
+class _ShelfSkeleton extends StatelessWidget {
+  const _ShelfSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: SizedBox(
+        height: 210,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          clipBehavior: Clip.none,
+          padding: EdgeInsets.zero,
+          itemCount: 4,
+          separatorBuilder: (_, __) => const SizedBox(width: 14),
+          itemBuilder: (_, __) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              ShimmerBox(width: 120, height: 160, radius: 12),
+              SizedBox(height: 8),
+              ShimmerBox(width: 100, height: 12, radius: 6),
+              SizedBox(height: 6),
+              ShimmerBox(width: 70, height: 10, radius: 5),
+            ],
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+/// Компактная ошибка раздела витрины: не прячем секцию, даём «Повторить».
+class _SectionError extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _SectionError({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: LibColors.line(context)),
+      ),
+      child: Row(
+        children: [
+          Icon(PhosphorIcons.cloudWarning(), size: 20, color: c.ink3),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Не удалось загрузить',
+              style: TextStyle(fontSize: 13, color: c.ink2),
+            ),
+          ),
+          Tappable.scaled(
+            onTap: onRetry,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: LibColors.line(context)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(PhosphorIcons.arrowClockwise(),
+                      size: 13, color: SeeUColors.accent),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Повторить',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: SeeUColors.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -384,24 +486,29 @@ class _AuthorsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.seeuColors;
-    final authors = ref.watch(popularAuthorsProvider).valueOrNull ?? const [];
-    if (authors.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _Pill(
-          label: 'Авторы',
-          icon: PhosphorIconsFill.pencilLine,
-          color: SeeUColors.success,
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+    // Авторы — второстепенная лента-обогащение: пока грузится, показываем
+    // лёгкий скелет; ошибку не выпячиваем (её уже озвучат полки выше).
+    return ref.watch(popularAuthorsProvider).when(
+      loading: () => const _AuthorsSkeleton(),
+      error: (_, __) => const SizedBox.shrink(),
+      skipLoadingOnReload: true,
+      data: (authors) {
+        if (authors.isEmpty) return const SizedBox.shrink();
+        final c = context.seeuColors;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final a in authors)
+            const _Pill(
+              label: 'Авторы',
+              icon: PhosphorIconsFill.pencilLine,
+              color: SeeUColors.success,
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final a in authors)
               Tappable.scaled(
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -438,7 +545,43 @@ class _AuthorsRow extends ConsumerWidget {
                   ),
                 ),
               ),
+              ],
+            ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Скелет ленты авторов — плашка «Авторы» + чипы-заглушки.
+class _AuthorsSkeleton extends StatelessWidget {
+  const _AuthorsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Pill(
+          label: 'Авторы',
+          icon: PhosphorIconsFill.pencilLine,
+          color: SeeUColors.success,
+        ),
+        const SizedBox(height: 14),
+        SeeUShimmer(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: List.generate(
+              6,
+              (i) => ShimmerBox(
+                width: i.isEven ? 120 : 90,
+                height: 40,
+                radius: 999,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -452,68 +595,126 @@ class _CategoryList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.seeuColors;
-    final cats = ref.watch(fileCategoriesProvider).valueOrNull ?? const [];
-    if (cats.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LibSectionHeader(title: 'Категории'),
-        const SizedBox(height: 14),
-        for (final cat in cats) ...[
-          Tappable.scaled(
-            onTap: () =>
-                context.push('/library/category/${cat.slug}', extra: cat),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: LibColors.line(context)),
-              ),
-              child: Row(
+    return ref.watch(fileCategoriesProvider).when(
+          data: (cats) {
+            if (cats.isEmpty) return const SizedBox.shrink();
+            final c = context.seeuColors;
+            return _frame(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: cat.colorValue.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(cat.iconData,
-                        size: 20, color: cat.colorValue),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          cat.name,
-                          style: SeeUTypography.displayS.copyWith(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: c.ink,
-                          ),
+                  for (final cat in cats)
+                    Tappable.scaled(
+                      onTap: () => context.push(
+                          '/library/category/${cat.slug}',
+                          extra: cat),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: LibColors.line(context)),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          booksCountLabel(cat.filesCount),
-                          style: TextStyle(fontSize: 12, color: c.ink3),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color:
+                                    cat.colorValue.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(cat.iconData,
+                                  size: 20, color: cat.colorValue),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    cat.name,
+                                    style: SeeUTypography.displayS.copyWith(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: c.ink,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    booksCountLabel(cat.filesCount),
+                                    style: TextStyle(
+                                        fontSize: 12, color: c.ink3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(PhosphorIcons.caretRight(),
+                                size: 15, color: c.ink4),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  Icon(PhosphorIcons.caretRight(), size: 15, color: c.ink4),
                 ],
               ),
+            );
+          },
+          loading: () => _frame(const _CategoryListSkeleton()),
+          error: (_, __) => _frame(
+            _SectionError(
+                onRetry: () => ref.invalidate(fileCategoriesProvider)),
+          ),
+          skipLoadingOnReload: true,
+        );
+  }
+
+  Widget _frame(Widget body) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LibSectionHeader(title: 'Категории'),
+          const SizedBox(height: 14),
+          body,
+        ],
+      );
+}
+
+/// Скелет списка категорий — иконка + две строки, повторённые несколько раз.
+class _CategoryListSkeleton extends StatelessWidget {
+  const _CategoryListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SeeUShimmer(
+      child: Column(
+        children: List.generate(
+          4,
+          (_) => Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: const [
+                ShimmerBox(width: 40, height: 40, radius: 12),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ShimmerBox(width: 140, height: 14, radius: 6),
+                      SizedBox(height: 6),
+                      ShimmerBox(width: 80, height: 11, radius: 5),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ],
+        ),
+      ),
     );
   }
 }

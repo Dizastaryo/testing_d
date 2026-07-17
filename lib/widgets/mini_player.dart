@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -118,124 +117,72 @@ class SeeUMiniPlayer extends ConsumerWidget {
             ),
           ],
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            onLongPress: () => _showSpeedSheet(context, ref),
-            child: Stack(
-              children: [
-                // Контент: cover, title, controls
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                  child: Row(
-                    children: [
-                      _Cover(track: track),
-                      const SizedBox(width: 11),
-                      Expanded(child: _TitleArtist(track: track)),
-                      const _PlayPauseBtn(),
-                      _ContextAction(track: track),
-                    ],
+        // Раньше весь бар был одним InkWell(onTap→плеер), и вложенная в него
+        // кнопка X «проваливалась» в этот же тап — открывался плеер вместо
+        // закрытия. Теперь тап-на-раскрытие живёт ТОЛЬКО на обложке+названии, а
+        // play/pause и закрытие — отдельные соседние hit-области, поэтому не
+        // конфликтуют. Закрытие теперь есть ВСЕГДА (в т.ч. для подкастов/мемов —
+        // раньше там вместо X стояли +Nс/повтор, и закрыть было нечем).
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: onTap,
+                      onLongPress: () => _showSpeedSheet(context, ref),
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(
+                        children: [
+                          _Cover(track: track),
+                          const SizedBox(width: 11),
+                          Expanded(child: _TitleArtist(track: track)),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-                // Тонкая progress-полоска СВЕРХУ (эталон F).
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: _MiniProgressBar(),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  const _PlayPauseBtn(),
+                  const SizedBox(width: 2),
+                  const _CloseBtn(),
+                ],
+              ),
             ),
-          ),
+            // Тонкая progress-полоска СВЕРХУ (эталон F).
+            const Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _MiniProgressBar(),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Один контекстный элемент — и только там, где он честно нужен.
-///
-/// Мини-плеер виден во всём SeeU, поэтому дисциплина жёсткая: он не пульт.
-/// У разговора вместо «закрыть» полезнее «+30 секунд» (промотать рекламу или
-/// затянутое место, не открывая плеер), у мема — «повторить». В остальном —
-/// закрытие.
-class _ContextAction extends ConsumerWidget {
-  const _ContextAction({required this.track});
-  final AudioTrack track;
+/// Закрыть мини-плеер — доступно ВСЕГДА, в любом режиме (песня/подкаст/мем/
+/// книга). Свернуть можно и свайпом вниз, но явная кнопка обязательна: свайп
+/// неочевиден, а раньше у подкастов/мемов закрытия не было вовсе.
+class _CloseBtn extends ConsumerWidget {
+  const _CloseBtn();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mode = modeOf(track);
-
-    switch (mode) {
-      case ListenMode.talk:
-        return Tappable.scaled(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            final pos = ref.read(miniPlayerProvider).position;
-            ref
-                .read(miniPlayerProvider.notifier)
-                .seek(pos + Duration(seconds: mode.skipSeconds));
-          },
-          child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(PhosphorIcons.arrowClockwise(),
-                    size: 20, color: mode.color),
-                Text(
-                  '${mode.skipSeconds}',
-                  style: TextStyle(
-                    fontSize: 7,
-                    fontWeight: FontWeight.w700,
-                    color: mode.color,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-
-      case ListenMode.moment:
-        return Tappable.scaled(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            final notifier = ref.read(miniPlayerProvider.notifier);
-            notifier.seek(Duration.zero);
-            // Мем — одиночная очередь: доиграв, он в состоянии completed
-            // (playing == false), и один seek(0) звук не возобновляет. Если
-            // не играет — досылаем toggle, чтобы «повтор» реально зазвучал.
-            if (!ref.read(miniPlayerProvider).playing) {
-              notifier.toggle();
-            }
-          },
-          child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Icon(PhosphorIconsFill.repeat, size: 19, color: mode.color),
-          ),
-        );
-
-      case ListenMode.song:
-      case ListenMode.book:
-        return Tappable.scaled(
-          onTap: () => ref.read(miniPlayerProvider.notifier).close(),
-          child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Center(
-              child: Icon(
-                PhosphorIcons.x(),
-                size: 18,
-                color: SeeUColors.textSecondary,
-              ),
-            ),
-          ),
-        );
-    }
+    final c = context.seeuColors;
+    return Tappable.scaled(
+      onTap: () => ref.read(miniPlayerProvider.notifier).close(),
+      child: SizedBox(
+        width: 34,
+        height: 34,
+        child: Center(
+          child: Icon(PhosphorIcons.x(), size: 18, color: c.ink3),
+        ),
+      ),
+    );
   }
 }
 

@@ -53,7 +53,9 @@ class _GifPickerGridState extends ConsumerState<GifPickerGrid> {
                 itemBuilder: (context, i) {
                   final cat = categories[i];
                   return _GifCategoryChip(
-                    label: cat,
+                    // Подпись — по-русски; сам `cat` остаётся английским id
+                    // и уходит в API фильтром как есть.
+                    label: gifCategoryLabel(cat),
                     active: cat == category,
                     c: c,
                     onTap: () => setState(() => _category = cat),

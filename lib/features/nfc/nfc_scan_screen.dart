@@ -179,7 +179,7 @@ class _NfcScanScreenState extends ConsumerState<NfcScanScreen>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SeeUGlassCircleButton(
+                      SeeUSolidCircleButton(
                         icon: PhosphorIcon(PhosphorIconsRegular.caretLeft,
                             size: 20, color: c.ink),
                         onTap: () => context.pop(),

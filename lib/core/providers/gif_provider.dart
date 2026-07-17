@@ -36,6 +36,42 @@ final gifCategoryProvider = FutureProvider<List<String>>((ref) async {
   return categories.map((e) => e.toString()).toList();
 });
 
+/// Русские подписи категорий GIF.
+///
+/// Сами id остаются английскими намеренно: они приходят с бэкенда
+/// (domain.GifCategories — единый источник) и уходят обратно в API фильтром,
+/// поэтому переводим ТОЛЬКО отображение, не трогая протокол.
+const Map<String, String> _kGifCategoryLabels = {
+  'happy': 'Радость',
+  'sad': 'Грусть',
+  'angry': 'Злость',
+  'love': 'Любовь',
+  'laughing': 'Смех',
+  'crying': 'Слёзы',
+  'surprised': 'Удивление',
+  'confused': 'Растерянность',
+  'excited': 'Восторг',
+  'bored': 'Скука',
+  'tired': 'Усталость',
+  'thumbsup': 'Одобряю',
+  'thumbsdown': 'Против',
+  'celebration': 'Праздник',
+  'facepalm': 'Фейспалм',
+  'shocked': 'Шок',
+  'wink': 'Подмигиваю',
+  'nervous': 'Волнение',
+};
+
+/// Подпись категории для UI. Незнакомый id (бэкенд завёл новую категорию, а
+/// словарь ещё не пополнили) показываем как есть с заглавной буквы — это
+/// честнее пустой пилюли и сразу видно, что нужно добавить перевод.
+String gifCategoryLabel(String id) {
+  final ru = _kGifCategoryLabels[id];
+  if (ru != null) return ru;
+  if (id.isEmpty) return id;
+  return id[0].toUpperCase() + id.substring(1);
+}
+
 class GifListNotifier extends StateNotifier<AsyncValue<List<GifModel>>> {
   final ApiClient _api;
   final String category;

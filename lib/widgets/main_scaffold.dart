@@ -79,12 +79,27 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     '/library/profile',
   ];
 
+  /// Библиотека — это не только 4 вкладки, но и все её под-экраны (карточка
+  /// книги, категория, скачанное, подборка, топ читателей): все они теперь
+  /// живут внутри Shell и должны держать библиотечное меню, а не коренное SeeU.
   static bool _isLibrary(String loc) =>
-      _libraryTabs.any((t) => loc == t || loc.startsWith('$t/'));
+      loc == '/files' ||
+      loc.startsWith('/files/') ||
+      loc.startsWith('/library') ||
+      loc.startsWith('/collection') ||
+      loc.startsWith('/reading');
 
   static int _libraryIndex(String loc) {
+    // Точная вкладка.
     final i = _libraryTabs.indexWhere((t) => loc == t || loc.startsWith('$t/'));
-    return i < 0 ? 0 : i;
+    if (i >= 0) return i;
+    // Под-экраны подсвечивают ближайшую по смыслу вкладку.
+    if (loc.startsWith('/library/category') || loc.startsWith('/collection')) {
+      return 1; // Обзор
+    }
+    if (loc.startsWith('/library/offline')) return 2; // Полка
+    if (loc.startsWith('/reading')) return 3; // Профиль
+    return 0; // книга и прочее → Читальня
   }
 
   /// Аудиотека — свой каркас: три вкладки, а не четыре. Каталог маленький,
@@ -110,9 +125,14 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     return 0;
   }
 
+  /// Просмотрщик публикаций открывается только из «Интересного» и живёт
+  /// внутри Shell — пока он открыт, активной должна читаться вкладка
+  /// «Интересное», а сама панель — тёмной под чёрный полноэкранный контент.
+  static bool _isViewer(String loc) => loc.startsWith('/view');
+
   static int _locationToIndex(String loc) {
     if (loc.startsWith('/feed')) return 0;
-    if (loc.startsWith('/explore')) return 1;
+    if (loc.startsWith('/explore') || _isViewer(loc)) return 1;
     if (loc.startsWith('/scanner')) return 2;
     if (loc.startsWith('/services') ||
         loc.startsWith('/music') ||
@@ -149,13 +169,19 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     // null value" inside Riverpod's _SelectorSubscription.read), taking the
     // whole bottom nav bar down so navigation stopped working on Android.
     final track = ref.watch(miniPlayerProvider).track;
-    final hasMiniPlayer = track != null;
+    final loc = GoRouterState.of(context).matchedLocation;
+    // На большом плеере мини-плеер не рисуем — он бы дублировал/перекрывал его
+    // снизу. Сам плеер и так живёт fullscreen (showTabs=false там).
+    final onFullPlayer = loc.startsWith('/music/player');
+    final hasMiniPlayer = track != null && !onFullPlayer;
     final showTabs = widget.showTabs;
 
     if (!hasMiniPlayer && !showTabs) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final loc = GoRouterState.of(context).matchedLocation;
+    // Во вьюере контент чёрный на весь экран — светлая панель рядом с ним
+    // выглядит сломанной, поэтому меню там всегда в тёмной палитре.
+    final onViewer = _isViewer(loc);
     final isLibrary = showTabs && _isLibrary(loc);
     final isAudio = showTabs && _isAudio(loc);
     final currentIndex = showTabs ? _locationToIndex(loc) : 0;
@@ -193,7 +219,7 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
             ],
           )
         else if (showTabs)
-          _buildTabBar(context, isDark, currentIndex),
+          _buildTabBar(context, isDark || onViewer, currentIndex),
       ],
     );
   }
@@ -319,16 +345,19 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
     );
   }
 
-  Widget _buildTabBar(BuildContext context, bool isDark, int currentIndex) {
+  /// [dark] — тёмная палитра панели: либо тёмная тема, либо вьюер (чёрный
+  /// полноэкранный контент). Флаг прокидывается в [_NavItem], иначе на светлой
+  /// теме во вьюере иконки остались бы светлыми на тёмной панели.
+  Widget _buildTabBar(BuildContext context, bool dark, int currentIndex) {
     // Непрозрачная нижняя панель: сплошная заливка фоном темы и тонкая линия
     // сверху. Никакого blur — контент под панель не заезжает, размывать нечего,
     // а BackdropFilter на каждом кадре стоил дорого.
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isDark ? SeeUColors.darkBg : SeeUColors.background,
+        color: dark ? SeeUColors.darkBg : SeeUColors.background,
         border: Border(
           top: BorderSide(
-            color: isDark ? SeeUColors.darkLine : SeeUColors.borderSubtle,
+            color: dark ? SeeUColors.darkLine : SeeUColors.borderSubtle,
             width: 0.5,
           ),
         ),
@@ -345,6 +374,7 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
                 activeIcon: _navIcon('feed', true),
                 label: 'Лента',
                 isSelected: currentIndex == 0,
+                dark: dark,
                 onTap: () => _onTabTap(0),
               ),
               _NavItem(
@@ -352,6 +382,7 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
                 activeIcon: _navIcon('search', true),
                 label: 'Интересное',
                 isSelected: currentIndex == 1,
+                dark: dark,
                 onTap: () => _onTabTap(1),
               ),
               _ScannerPill(
@@ -363,6 +394,7 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
                 activeIcon: _navIcon('services', true),
                 label: 'Сервисы',
                 isSelected: currentIndex == 3,
+                dark: dark,
                 onTap: () => _onTabTap(3),
               ),
               _NavItem(
@@ -370,6 +402,7 @@ class _SeeUBottomAreaState extends ConsumerState<_SeeUBottomArea> {
                 activeIcon: _navIcon('user', true),
                 label: 'Профиль',
                 isSelected: currentIndex == 4,
+                dark: dark,
                 onTap: () => _onTabTap(4),
                 // Бейдж «требует внимания» (§05): входящие запросы доступа +
                 // follow-запросы. Best-effort — 0 прячет бейдж.
@@ -480,6 +513,9 @@ class _NavItem extends StatefulWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final int badgeCount;
+  /// Тёмная палитра панели — задаётся снаружи, а не берётся из темы: во вьюере
+  /// панель тёмная даже на светлой теме.
+  final bool dark;
 
   const _NavItem({
     required this.icon,
@@ -487,6 +523,7 @@ class _NavItem extends StatefulWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    required this.dark,
     this.badgeCount = 0,
   });
 
@@ -539,7 +576,7 @@ class _NavItemState extends State<_NavItem>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = widget.dark;
     final activeColor = SeeUColors.accent;
     final inactiveColor = isDark
         ? Colors.white.withValues(alpha: 0.55)

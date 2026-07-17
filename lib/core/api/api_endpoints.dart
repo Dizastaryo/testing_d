@@ -41,7 +41,6 @@ class ApiEndpoints {
   // Users
   static const String me = '/users/me';
   static const String deleteMe = '/users/me';
-  static const String exportMe = '/users/me/export';
   static const String myBlocks = '/users/me/blocks';
   static String blockUser(String username) => '/users/$username/block';
 

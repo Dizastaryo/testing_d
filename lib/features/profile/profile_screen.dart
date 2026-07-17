@@ -200,30 +200,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   context.push('/wave/create');
                 },
               ),
-              ListTile(
-                leading: Icon(PhosphorIconsBold.textT, color: SeeUColors.accent),
-                title: const Text('Текстовая история'),
-                onTap: () { Navigator.pop(context); context.push('/story/create-text'); },
-              ),
-              const Divider(height: 8),
-              // «Сохранённое» переехало сюда из топбара — топбар по дизайну
-              // §05 держит ровно три иконки: доступ · создать · настройки.
-              ListTile(
-                leading: Icon(PhosphorIcons.bookmarkSimple(),
-                    color: SeeUColors.accent),
-                title: const Text('Сохранённое'),
-                onTap: () {
-                  Navigator.pop(context);
-                  final username =
-                      ref.read(authProvider).user?.username ?? '';
-                  if (username.isEmpty) return;
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _SavedPostsScreen(username: username),
-                    ),
-                  );
-                },
-              ),
             ],
           ),
         ),
@@ -276,11 +252,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             SeeUGlassBar(
               blur: 18,
               leading: widget.username != null
-                  ? SeeUGlassCircleButton(
+                  ? ProfileHeaderIconButton(
+                      icon: PhosphorIcons.arrowLeft(),
+                      tooltip: 'Назад',
                       onTap: () => Navigator.of(context).pop(),
-                      size: 44,
-                      icon: Icon(PhosphorIcons.arrowLeft(),
-                          size: 20, color: c.ink),
                     )
                   : null,
               // Логин — латиницей, без @ (§05): в шапке это идентификатор, а не
@@ -320,32 +295,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             .watch(incomingRequestsProvider)
                             .valueOrNull ??
                         const [];
-                    return Tooltip(
-                      message: 'Доступ',
-                      child: SeeUGlassCircleButton(
-                        onTap: () => context.push('/access/list'),
-                        size: 44,
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            SeeUAccessIcon(size: 21, color: c.ink),
-                            if (pending.isNotEmpty)
-                              Positioned(
-                                top: -2,
-                                right: -3,
-                                child: Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: SeeUColors.accent,
-                                    shape: BoxShape.circle,
-                                    border:
-                                        Border.all(color: c.bg, width: 1.5),
-                                  ),
+                    return ProfileHeaderIconButton(
+                      tooltip: 'Доступ',
+                      onTap: () => context.push('/access/list'),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          SeeUAccessIcon(size: 21, color: c.ink),
+                          if (pending.isNotEmpty)
+                            Positioned(
+                              top: -2,
+                              right: -3,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: SeeUColors.accent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: c.bg, width: 1.5),
                                 ),
                               ),
-                          ],
-                        ),
+                            ),
+                        ],
                       ),
                     );
                   }),
@@ -815,63 +786,3 @@ Widget _avatarFallback(SeeUThemeColors c, User user) {
   );
 }
 
-/// Сохранённые публикации — отдельный экран (закладка в шапке профиля §05).
-/// Раньше это была третья вкладка профиля; теперь вкладок две, а сохранённое
-/// открывается по иконке-закладке.
-class _SavedPostsScreen extends ConsumerStatefulWidget {
-  final String username;
-  const _SavedPostsScreen({required this.username});
-
-  @override
-  ConsumerState<_SavedPostsScreen> createState() => _SavedPostsScreenState();
-}
-
-class _SavedPostsScreenState extends ConsumerState<_SavedPostsScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(userProfileProvider(widget.username).notifier)
-          .loadSavedPosts();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final state = ref.watch(userProfileProvider(widget.username));
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(PhosphorIcons.arrowLeft(), color: c.ink, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text('Сохранённое', style: SeeUTypography.subtitle),
-      ),
-      body: SafeArea(
-        child: state.savedPostsLoading && state.savedPosts.isEmpty
-            ? const Center(
-                child: CircularProgressIndicator(color: SeeUColors.accent))
-            : state.savedPostsError && state.savedPosts.isEmpty
-                ? SeeUErrorState(
-                    error: 'Не удалось загрузить сохранённое',
-                    onRetry: () => ref
-                        .read(userProfileProvider(widget.username).notifier)
-                        .loadSavedPosts(),
-                  )
-                : state.savedPosts.isEmpty
-                    ? const SeeUEmptyState(
-                        icon: PhosphorIconsRegular.bookmarkSimple,
-                        title: 'Пока ничего не сохранено',
-                        subtitle:
-                            'Сохраняйте публикации закладкой — они появятся здесь',
-                      )
-                    : ProfilePostsGrid(posts: state.savedPosts),
-      ),
-    );
-  }
-}

@@ -15,8 +15,11 @@ import '../../widgets/share_sheet.dart';
 import '../../core/design/design.dart';
 import '../../core/models/explore_item.dart';
 import '../../core/models/live_stream.dart';
+import '../../core/models/post.dart';
+import '../../core/models/user.dart';
 import '../../core/providers/explore_feed_provider.dart';
 import '../../core/providers/live_streams_provider.dart';
+import '../../core/providers/user_provider.dart';
 import '../../core/providers/waves_feed_provider.dart';
 import '../feed/widgets/post_card.dart';
 import '../live/live_viewer_screen.dart';
@@ -35,10 +38,22 @@ class ExploreScreen extends ConsumerStatefulWidget {
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   final _scrollController = ScrollController();
 
+  // §04: поиск живёт ПРЯМО здесь, одним полем. Отдельного экрана поиска нет —
+  // тап по строке фокусирует её на месте, результаты заменяют мозаику. Раньше
+  // тап открывал второй экран со своим полем: два инпута на одно действие.
+  final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
+  Timer? _searchDebounce;
+  int _searchTab = 0; // 0 — Публикации, 1 — Аккаунты
+  bool _searchOpen = false;
+
+  static const List<String> _searchTabs = ['Публикации', 'Аккаунты'];
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _searchFocus.addListener(_onSearchFocusChange);
     // Best-effort: record the Explore visit and start a fresh impression window.
     final tracker = ref.read(interestTrackerProvider);
     tracker.resetImpressions();
@@ -49,7 +64,52 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchFocus.removeListener(_onSearchFocusChange);
+    _searchFocus.dispose();
+    _searchCtrl.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onSearchFocusChange() {
+    if (_searchFocus.hasFocus && !_searchOpen) {
+      // searchProvider живёт всё время жизни приложения: сбрасываем тип на
+      // «посты», иначе он мог остаться 'users' с прошлого раза, а вкладка
+      // открывается на «Публикациях» — и они бы показали пусто.
+      ref.read(searchProvider.notifier)
+        ..clear()
+        ..setSearchType('posts');
+      setState(() {
+        _searchOpen = true;
+        _searchTab = 0;
+      });
+    }
+  }
+
+  void _closeSearch() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
+    _searchFocus.unfocus();
+    ref.read(searchProvider.notifier).clear();
+    setState(() => _searchOpen = false);
+  }
+
+  void _onSearchChanged(String value) {
+    // searchProvider.search() уже дебаунсит — второй таймер только для аналитики.
+    ref.read(searchProvider.notifier).search(value);
+    _searchDebounce?.cancel();
+    final q = value.trim();
+    if (q.isNotEmpty) {
+      _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+        ref.read(interestTrackerProvider).track(
+          eventType: 'explore_search',
+          entityType: 'query',
+          source: 'explore',
+          metadata: {'q': q.length > 64 ? q.substring(0, 64) : q},
+        );
+      });
+    }
+    setState(() {});
   }
 
   void _onScroll() {
@@ -209,13 +269,15 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // -- Header: kicker + строка-вход в поиск + вкладки --
+            // -- Header: wordmark + поле поиска + вкладки --
             _buildHeader(),
 
-            // -- Content --
+            // -- Content: в поиске — результаты, иначе мозаика --
             Expanded(
-              child: _contentForFilter(
-                  ref.watch(exploreFeedProvider.select((s) => s.filter))),
+              child: _searchOpen
+                  ? _buildSearchResults()
+                  : _contentForFilter(
+                      ref.watch(exploreFeedProvider.select((s) => s.filter))),
             ),
           ],
         ),
@@ -239,75 +301,137 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'ИНТЕРЕСНОЕ',
-            style: SeeUTypography.kicker.copyWith(color: c.ink3),
-          ),
-          const SizedBox(height: 12),
+          // Бренд-wordmark вместо серого кикера «Интересное» — тот же знак
+          // «SeeU», что в шапке Ленты и Сканера.
+          const SeeUWordmark(),
+          const SizedBox(height: 14),
 
-          // §04: поисковая СТРОКА — не поле. Тап открывает отдельный экран
-          // поиска (мозаика дышит, экран открытий не перегружен).
-          Tappable(
-            onTap: () => context.push('/explore/search'),
-            child: Container(
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: c.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: c.line),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF161310).withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+          // §04: одно поле поиска НА МЕСТЕ. В фокусе — коралловая обводка и
+          // «Отмена» рядом; отдельного экрана со вторым полем больше нет.
+          Row(
+            children: [
+              Expanded(
+                child: AnimatedContainer(
+                  duration: SeeUMotion.quick,
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _searchOpen ? SeeUColors.accent : c.line,
+                      width: _searchOpen ? 1.5 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _searchOpen
+                            ? SeeUColors.accent.withValues(alpha: 0.10)
+                            : const Color(0xFF161310).withValues(alpha: 0.04),
+                        blurRadius: _searchOpen ? 10 : 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIconsRegular.magnifyingGlass,
+                          size: 18,
+                          color: _searchOpen ? SeeUColors.accent : c.ink3),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchCtrl,
+                          focusNode: _searchFocus,
+                          onChanged: _onSearchChanged,
+                          textInputAction: TextInputAction.search,
+                          cursorColor: SeeUColors.accent,
+                          style: SeeUTypography.body
+                              .copyWith(fontSize: 14, color: c.ink),
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            border: InputBorder.none,
+                            hintText: 'Искать людей и публикации',
+                            hintStyle: SeeUTypography.body
+                                .copyWith(fontSize: 14, color: c.ink3),
+                          ),
+                        ),
+                      ),
+                      if (_searchCtrl.text.isNotEmpty)
+                        Tappable(
+                          onTap: () {
+                            _searchCtrl.clear();
+                            ref.read(searchProvider.notifier).clear();
+                            setState(() {});
+                          },
+                          child: Icon(PhosphorIconsFill.xCircle,
+                              size: 18, color: c.ink4),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-              child: Row(
-                children: [
-                  Icon(PhosphorIconsRegular.magnifyingGlass,
-                      size: 18, color: c.ink3),
-                  const SizedBox(width: 10),
-                  Text('Искать людей, звуки, теги',
-                      style: SeeUTypography.body
-                          .copyWith(fontSize: 14, color: c.ink3)),
-                ],
-              ),
-            ),
+              if (_searchOpen) ...[
+                const SizedBox(width: 12),
+                Tappable(
+                  onTap: _closeSearch,
+                  child: Text('Отмена',
+                      style: SeeUTypography.body.copyWith(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: SeeUColors.accent)),
+                ),
+              ],
+            ],
           ),
 
-          // Вкладки-фильтры мозаики: Все · Reels · Посты · Волны · Эфиры.
           const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: List.generate(
-                _browseFilters.length,
-                (i) {
-                  final activeFilter = ref.watch(
-                      exploreFeedProvider.select((s) => s.filter));
-                  final key = _browseFilterKeys[i];
-                  return _filterChip(
-                    label: _browseFilters[i],
-                    active: key == activeFilter,
-                    showLiveDot: key == 'live',
-                    onTap: () {
-                      ref.read(interestTrackerProvider).track(
-                        eventType: 'explore_filter_select',
-                        entityType: 'filter',
-                        source: 'explore',
-                        metadata: {'filter': key},
-                      );
-                      ref.read(interestTrackerProvider).resetImpressions();
-                      ref.read(exploreFeedProvider.notifier).setFilter(key);
-                    },
-                  );
-                },
+          // В поиске вкладки мозаики уступают место вкладкам результатов —
+          // на экране всегда ровно один ряд вкладок, а не два.
+          if (_searchOpen)
+            Row(
+              children: List.generate(_searchTabs.length, (i) {
+                return _filterChip(
+                  label: _searchTabs[i],
+                  active: _searchTab == i,
+                  onTap: () {
+                    setState(() => _searchTab = i);
+                    ref
+                        .read(searchProvider.notifier)
+                        .setSearchType(i == 0 ? 'posts' : 'users');
+                  },
+                );
+              }),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: List.generate(
+                  _browseFilters.length,
+                  (i) {
+                    final activeFilter = ref.watch(
+                        exploreFeedProvider.select((s) => s.filter));
+                    final key = _browseFilterKeys[i];
+                    return _filterChip(
+                      label: _browseFilters[i],
+                      active: key == activeFilter,
+                      showLiveDot: key == 'live',
+                      onTap: () {
+                        ref.read(interestTrackerProvider).track(
+                          eventType: 'explore_filter_select',
+                          entityType: 'filter',
+                          source: 'explore',
+                          metadata: {'filter': key},
+                        );
+                        ref.read(interestTrackerProvider).resetImpressions();
+                        ref.read(exploreFeedProvider.notifier).setFilter(key);
+                      },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
 
           const SizedBox(height: 10),
         ],
@@ -366,6 +490,136 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 
   // Что показываем под чипами в режиме открытия (без активного поиска).
+  // =========================================================================
+  // Результаты поиска (на месте мозаики, пока поле в фокусе)
+  // =========================================================================
+
+  Widget _buildSearchResults() {
+    final c = context.seeuColors;
+    final searchState = ref.watch(searchProvider);
+
+    // До ввода запроса экран не пустует — короткая подсказка.
+    if (_searchCtrl.text.trim().isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+        child: Text(
+          'Ищи людей по нику или имени, публикации — по подписи.',
+          style: SeeUTypography.caption.copyWith(fontSize: 12, color: c.ink3),
+        ),
+      );
+    }
+
+    if (searchState.isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: SeeUColors.accent),
+      );
+    }
+
+    final users = _searchTab == 1 ? searchState.users : <User>[];
+    final posts = _searchTab == 0 ? searchState.posts : <Post>[];
+
+    if (users.isEmpty && posts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(PhosphorIconsRegular.magnifyingGlass,
+                    size: 24, color: c.ink3),
+              ),
+              const SizedBox(height: 10),
+              Text('Ничего не нашлось',
+                  style: SeeUTypography.displayS
+                      .copyWith(fontSize: 18, color: c.ink)),
+              const SizedBox(height: 6),
+              Text('Проверь запрос или поищи по другому слову.',
+                  textAlign: TextAlign.center,
+                  style: SeeUTypography.caption
+                      .copyWith(fontSize: 12, color: c.ink3)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_searchTab == 1) {
+      return ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+        itemCount: users.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (_, i) => UserSearchCard(user: users[i]),
+      );
+    }
+
+    // Публикации — 2 колонки (§04 B), плитки r14.
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        mainAxisExtent: 150,
+      ),
+      itemCount: posts.length,
+      itemBuilder: (context, index) {
+        final post = posts[index];
+        final imgUrl = post.gridThumbnailUrl;
+        final hasVideo = post.media.any((m) => m.type == MediaType.video);
+        return GestureDetector(
+          onTap: () => context.push('/post/${post.id}'),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                imgUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imgUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: c.surface2),
+                        errorWidget: (_, __, ___) =>
+                            Container(color: c.surface2),
+                      )
+                    : Container(color: c.surface2),
+                if (hasVideo)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Icon(
+                        PhosphorIcons.playCircle(PhosphorIconsStyle.fill),
+                        color: Colors.white,
+                        size: 20,
+                        shadows: const [
+                          Shadow(color: SeeUColors.mediumScrim, blurRadius: 4),
+                        ]),
+                  )
+                else if (post.media.length > 1)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Icon(PhosphorIcons.images(PhosphorIconsStyle.fill),
+                        color: Colors.white,
+                        size: 18,
+                        shadows: const [
+                          Shadow(color: SeeUColors.mediumScrim, blurRadius: 4),
+                        ]),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _contentForFilter(String filter) {
     switch (filter) {
       case 'live':
@@ -945,6 +1199,78 @@ class _LiveGridCard extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Карточка человека в результатах поиска.
+class UserSearchCard extends StatelessWidget {
+  final User user;
+  const UserSearchCard({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.seeuColors;
+    return GestureDetector(
+      onTap: () => context.push('/profile/${user.username}'),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(SeeURadii.medium),
+          border: Border.all(color: c.line, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: c.surface2,
+              backgroundImage:
+                  user.avatarUrl != null && user.avatarUrl!.isNotEmpty
+                      ? CachedNetworkImageProvider(user.avatarUrl!)
+                      : null,
+              child: (user.avatarUrl == null || user.avatarUrl!.isEmpty)
+                  ? Text(
+                      user.username.isNotEmpty
+                          ? user.username[0].toUpperCase()
+                          : '?',
+                      style: SeeUTypography.subtitle,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.username,
+                          style: SeeUTypography.subtitle
+                              .copyWith(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (user.isVerified) ...[
+                        const SizedBox(width: 4),
+                        Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
+                            color: SeeUColors.accent, size: 14),
+                      ],
+                    ],
+                  ),
+                  Text(
+                    user.fullName,
+                    style: SeeUTypography.caption.copyWith(color: c.ink3),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],

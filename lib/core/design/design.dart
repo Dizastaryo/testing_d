@@ -1,5 +1,6 @@
 export 'tokens.dart';
 export 'seeu_theme_colors.dart';
+export 'seeu_wordmark.dart';
 export 'seeu_insets.dart';
 export 'seeu_button.dart';
 export 'seeu_card.dart';
@@ -17,6 +18,7 @@ export 'swipe_to_dismiss.dart';
 export 'seeu_back_button.dart';
 export 'seeu_glass_bar.dart';
 export 'seeu_glass_circle_button.dart';
+export 'seeu_solid_circle_button.dart';
 export 'seeu_section_header.dart';
 export 'seeu_snackbar.dart';
 export 'seeu_confirm.dart';

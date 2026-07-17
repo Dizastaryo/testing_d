@@ -36,6 +36,15 @@ class _DecorationPickerState extends State<DecorationPicker> {
   late PageController _pageController;
   int _currentPage = 0;
 
+  /// Последний ЗАКОММИЧЕННЫЙ элемент (тот, что реально отдан наверх и загружен).
+  /// Пролетающие мимо кружки сюда не попадают: грузить маску на каждом шаге —
+  /// это парсинг GLB на каждый кружок, отсюда и были тормоза «по одному».
+  int? _committedPage;
+
+  /// Идёт программный доводочный скролл — не даём ScrollEndNotification
+  /// зациклиться на самом себе.
+  bool _snapping = false;
+
   @override
   void initState() {
     super.initState();
@@ -89,9 +98,57 @@ class _DecorationPickerState extends State<DecorationPicker> {
       final idx = _items.indexWhere((i) => i?.id == widget.selectedId);
       _currentPage = idx >= 0 ? idx : _noneIndex;
     }
+    // То, что уже показано, считается закоммиченным — иначе доводка после
+    // переупорядочивания списка повторно дёрнула бы загрузку той же маски.
+    _committedPage = _currentPage;
   }
 
   DecorationItem? get _currentItem => _items[_currentPage];
+
+  /// Скролл остановился — доводим до ближайшего кружка и только теперь отдаём
+  /// выбор наверх (одна загрузка вместо загрузки каждого пролетевшего).
+  void _settle() {
+    if (_snapping || !_pageController.hasClients) return;
+    final raw = _pageController.page;
+    if (raw == null) return;
+    final target = raw.round().clamp(0, _items.length - 1);
+    if ((raw - target).abs() > 0.02) {
+      _snapping = true;
+      _pageController
+          .animateToPage(target,
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut)
+          .whenComplete(() {
+        _snapping = false;
+        _commit(target);
+      });
+    } else {
+      _commit(target);
+    }
+  }
+
+  /// Отдать выбор наверх (= загрузить маску). Идемпотентно.
+  void _commit(int index) {
+    if (_committedPage == index) return;
+    _committedPage = index;
+    if (mounted) setState(() => _currentPage = index);
+    widget.onChanged(_items[index]);
+  }
+
+  /// Прыжок к произвольному кружку по тапу — сразу к нему, а не по одному.
+  void _jumpTo(int index) {
+    if (index == _currentPage || !_pageController.hasClients) return;
+    HapticFeedback.selectionClick();
+    _snapping = true;
+    _pageController
+        .animateToPage(index,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic)
+        .whenComplete(() {
+      _snapping = false;
+      _commit(index);
+    });
+  }
 
   @override
   void dispose() {
@@ -109,42 +166,50 @@ class _DecorationPickerState extends State<DecorationPicker> {
         const SizedBox(height: 4),
         SizedBox(
           height: 62,
-          child: PageView.builder(
-            controller: _pageController,
-            clipBehavior: Clip.none,
-            itemCount: _items.length,
-            onPageChanged: (page) {
-              setState(() => _currentPage = page);
-              HapticFeedback.selectionClick();
-              widget.onChanged(_items[page]);
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n is ScrollEndNotification) _settle();
+              return false;
             },
-            itemBuilder: (context, index) {
-              final item = _items[index];
-              final isCurrent = index == _currentPage;
-              final isSaved = item != null && widget.savedIds.contains(item.id);
+            child: PageView.builder(
+              controller: _pageController,
+              clipBehavior: Clip.none,
+              itemCount: _items.length,
+              // «Рулетка»: инерция несёт сразу через несколько кружков.
+              // Дефолтный PageScrollPhysics снапит строго на СОСЕДНИЙ — отсюда
+              // и было «скролл идёт по одному». Доводку до центра делаем сами
+              // в _settle().
+              pageSnapping: false,
+              physics: const BouncingScrollPhysics(),
+              onPageChanged: (page) {
+                // Только подсветка — маску грузим в _settle(), когда скролл
+                // остановится. Иначе каждый пролетевший кружок = загрузка GLB.
+                if (page != _currentPage && mounted) {
+                  setState(() => _currentPage = page);
+                  HapticFeedback.selectionClick();
+                }
+              },
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                final isCurrent = index == _currentPage;
+                final isSaved =
+                    item != null && widget.savedIds.contains(item.id);
 
-              return GestureDetector(
-                onLongPress: () {
-                  if (item == null) return;
-                  HapticFeedback.mediumImpact();
-                  widget.onToggleSave(item.id);
-                },
-                onTap: () {
-                  if (index != _currentPage) {
-                    _pageController.animateToPage(
-                      index,
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOut,
-                    );
-                  }
-                },
-                child: _DecorationCircle(
-                  item: item,
-                  isCurrent: isCurrent,
-                  isSaved: isSaved,
-                ),
-              );
-            },
+                return GestureDetector(
+                  onLongPress: () {
+                    if (item == null) return;
+                    HapticFeedback.mediumImpact();
+                    widget.onToggleSave(item.id);
+                  },
+                  onTap: () => _jumpTo(index),
+                  child: _DecorationCircle(
+                    item: item,
+                    isCurrent: isCurrent,
+                    isSaved: isSaved,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],

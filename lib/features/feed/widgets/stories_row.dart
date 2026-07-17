@@ -23,7 +23,7 @@ import 'story_poll_overlay.dart';
 import 'story_viewers_sheet.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/story.dart';
-import '../../stories/text_story_compose_screen.dart';
+import '../../stories/text_story_backgrounds.dart';
 import 'story_circle.dart';
 
 class StoriesRow extends ConsumerWidget {

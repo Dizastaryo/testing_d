@@ -1,6 +1,3 @@
-import 'dart:convert';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,7 +14,7 @@ import '../../core/providers/invites_provider.dart';
 import '../../core/providers/profile_badge_provider.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../widgets/share_sheet.dart';
-import '_export_download_web.dart' if (dart.library.io) '_export_download_io.dart' as exporter;
+import '../profile/saved_posts_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -63,10 +60,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'АККАУНТ',
                   items: [
                     _SettingsRowData(
-                      icon: PhosphorIcons.pencilSimple(),
-                      label: 'Редактировать профиль',
-                      value: ref.watch(authProvider).user?.username ?? '',
-                      onTap: () => context.push('/profile/edit'),
+                      icon: PhosphorIcons.bookmarkSimple(),
+                      label: 'Сохранённое',
+                      value: '',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SavedPostsScreen(),
+                        ),
+                      ),
                     ),
                     _SettingsRowData(
                       icon: PhosphorIcons.shield(),
@@ -110,31 +111,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ref.watch(authProvider).user?.isPrivate ?? false,
                   onToggle: () => _togglePrivate(),
                 ),
-                const SizedBox(height: 12),
-                // PROFILE-6: privacy для last_seen. Когда on — другие зрители
-                // не видят «онлайн / был N мин назад» (self видит).
-                _buildSectionWithToggle(
-                  title: '',
-                  icon: PhosphorIcons.eyeSlash(),
-                  label: 'Скрыть «был в сети»',
-                  isDark:
-                      ref.watch(authProvider).user?.hideLastSeen ?? false,
-                  onToggle: () => _toggleHideLastSeen(),
-                ),
                 const SizedBox(height: 24),
                 _buildSection(
-                  title: 'ЧИП',
+                  title: 'СКАНЕР',
                   items: [
-                    _SettingsRowData(
-                      icon: PhosphorIcons.bluetoothConnected(),
-                      label: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
-                          ? 'Браслет ${ref.watch(authProvider).user!.devicePublicId}'
-                          : 'Браслет не привязан',
-                      value: ref.watch(authProvider).user?.devicePublicId?.isNotEmpty == true
-                          ? 'управление'
-                          : 'привязать',
-                      onTap: () => context.push('/settings/chip'),
-                    ),
                     _SettingsRowData(
                       icon: PhosphorIcons.ghost(),
                       label: 'Видимость в сканере',
@@ -174,12 +154,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       label: 'Условия использования',
                       value: '',
                       onTap: () => _openLegal('${AppConfig.apiOrigin}/terms'),
-                    ),
-                    _SettingsRowData(
-                      icon: PhosphorIcons.downloadSimple(),
-                      label: 'Скачать мои данные',
-                      value: 'JSON',
-                      onTap: () => _exportData(),
                     ),
                   ],
                 ),
@@ -355,34 +329,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  /// PROFILE-6: переключает hide_last_seen. Бэк скрывает is_online +
-  /// last_seen_at от других зрителей, владелец продолжает видеть свой
-  /// реальный статус.
-  Future<void> _toggleHideLastSeen() async {
-    final auth = ref.read(authProvider.notifier);
-    final user = ref.read(authProvider).user;
-    if (user == null) return;
-    final next = !user.hideLastSeen;
-    auth.updateUser(user.copyWith(hideLastSeen: next));
-    try {
-      final api = ref.read(apiClientProvider);
-      await api.put(ApiEndpoints.me, data: {'hide_last_seen': next});
-      if (!mounted) return;
-      showSeeUSnackBar(
-        context,
-        next
-            ? 'Статус «был в сети» скрыт от других.'
-            : 'Статус «был в сети» виден другим.',
-        tone: SeeUTone.success,
-      );
-    } on DioException catch (e) {
-      auth.updateUser(user); // откат
-      if (!mounted) return;
-      showSeeUSnackBar(context, 'Не удалось обновить: ${apiErrorMessage(e)}',
-          tone: SeeUTone.danger);
-    }
-  }
-
   Future<void> _inviteFriend() async {
     showSeeUSnackBar(context, 'Создаём код…');
     final code = await ref.read(invitesProvider.notifier).createCode();
@@ -400,23 +346,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       title: 'Пригласить друга в SeeU',
       subtitle: 'Код: $code',
     );
-  }
-
-  Future<void> _exportData() async {
-    showSeeUSnackBar(context, 'Готовим экспорт…');
-    try {
-      final api = ref.read(apiClientProvider);
-      final r = await api.get(ApiEndpoints.exportMe);
-      final bytes = utf8.encode(jsonEncode(r.data));
-      await exporter.saveExport(bytes: bytes, filename: 'seeu-export.json');
-      if (!mounted) return;
-      showSeeUSnackBar(context, kIsWeb ? 'Файл скачан' : 'Файл сохранён',
-          tone: SeeUTone.success);
-    } catch (e) {
-      if (!mounted) return;
-      showSeeUSnackBar(context, 'Не удалось экспортировать: $e',
-          tone: SeeUTone.danger);
-    }
   }
 
   Future<void> _openLegal(String url) async {

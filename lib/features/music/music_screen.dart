@@ -7,7 +7,6 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_endpoints.dart';
 import '../../core/audio/audio_player_service.dart';
 import '../../core/design/design.dart';
-import '../../core/models/audio_category.dart';
 import '../../core/models/audio_track.dart';
 import '../../core/providers/audio_discovery_provider.dart';
 import '../../core/providers/audio_provider.dart';
@@ -46,12 +45,14 @@ class MusicScreen extends ConsumerWidget {
                 child: ListView(
                   padding: EdgeInsets.fromLTRB(
                       0, 16, 0, 24 + context.bottomBarInset),
+                  // Категории уехали на вкладку «Поиск» (там их место) —
+                  // раньше они дублировались тут, и Главная с Поиском выглядели
+                  // одинаково. Главная теперь чисто «слушать сейчас».
                   children: const [
                     _SearchField(),
                     SizedBox(height: 18),
                     _DailyMixHero(),
                     _ContinueBlock(),
-                    _CategoriesBlock(),
                     _TrendingBlock(),
                   ],
                 ),
@@ -419,88 +420,6 @@ class _ContinueCard extends ConsumerWidget {
   }
 }
 
-// ─── Категории ──────────────────────────────────────────────────────────────
-
-class _CategoriesBlock extends StatelessWidget {
-  const _CategoriesBlock();
-
-  @override
-  Widget build(BuildContext context) {
-    // Шесть на главной, остальные — за «Все 9». Стена из девяти плиток
-    // съедает экран и ничего не добавляет.
-    final shown = kAudioCategories.take(6).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 22),
-        _SectionHeader(
-          title: 'Категории',
-          trailing: 'Все ${kAudioCategories.length}',
-          onTrailing: () => context.go('/music/search'),
-        ),
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: GridView.count(
-            crossAxisCount: 3,
-            crossAxisSpacing: 9,
-            mainAxisSpacing: 9,
-            childAspectRatio: 1.65,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [for (final cat in shown) _CategoryTile(cat: cat)],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CategoryTile extends StatelessWidget {
-  final AudioCategoryModel cat;
-  const _CategoryTile({required this.cat});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.seeuColors;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final color = cat.color;
-    final bg = dark
-        ? color.withValues(alpha: 0.14)
-        : Color.alphaBlend(color.withValues(alpha: 0.12), Colors.white);
-
-    return Tappable.scaled(
-      onTap: () => context.push('/music/category/${cat.id}'),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: dark ? 0.24 : 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Icon(cat.iconData, size: 18, color: color),
-            Text(
-              cat.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: c.ink,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ─── «Набирают» ─────────────────────────────────────────────────────────────
 
 class _TrendingBlock extends ConsumerWidget {
@@ -536,10 +455,8 @@ class _TrendingBlock extends ConsumerWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  final String? trailing;
-  final VoidCallback? onTrailing;
 
-  const _SectionHeader({required this.title, this.trailing, this.onTrailing});
+  const _SectionHeader({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -558,20 +475,6 @@ class _SectionHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(child: Container(height: 1, color: c.line)),
-          if (trailing != null) ...[
-            const SizedBox(width: 10),
-            Tappable(
-              onTap: onTrailing,
-              child: Text(
-                trailing!,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AudioColors.kicker(context),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

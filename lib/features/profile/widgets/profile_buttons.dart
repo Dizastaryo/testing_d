@@ -13,19 +13,31 @@ import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/user_provider.dart';
 
 
+/// Круглая кнопка шапки профиля (§05). Раньше это было «стекло»
+/// (SeeUGlassCircleButton) — но оно рассчитано на фон-медиа и над сплошным
+/// фоном профиля мутнело в невнятный серый. Теперь — сплошной фирменный круг:
+/// тёплая surface2 (#F4EFE8) + hairline-бордюр + ink-иконка (как «Назад» в
+/// Библиотеке). [child] — кастомная иконка (напр. SeeUAccessIcon со счётчиком).
 class ProfileHeaderIconButton extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? child;
   final VoidCallback onTap;
   final String? tooltip;
-  const ProfileHeaderIconButton({super.key, required this.icon, required this.onTap, this.tooltip});
+  const ProfileHeaderIconButton({
+    super.key,
+    this.icon,
+    this.child,
+    required this.onTap,
+    this.tooltip,
+  }) : assert(icon != null || child != null);
 
   @override
   Widget build(BuildContext context) {
     final c = context.seeuColors;
-    Widget button = SeeUGlassCircleButton(
+    Widget button = SeeUSolidCircleButton(
       onTap: onTap,
       size: 44,
-      icon: Icon(icon, size: 18, color: c.ink),
+      icon: child ?? Icon(icon, size: 19, color: c.ink),
     );
     if (tooltip != null) {
       button = Tooltip(message: tooltip!, child: button);
@@ -76,8 +88,12 @@ class ProfileActionButton extends StatelessWidget {
         border = Border.all(color: SeeUColors.accent, width: 1.5);
         break;
       case ProfileButtonStyle.soft:
+        // Была плоская surface2 без бордюра — читалась как невнятный серый
+        // блок. Hairline даёт кнопке границу и «на тему» вид (напр. «Отписаться»,
+        // «Редактировать»).
         bg = c.surface2;
         fg = c.ink;
+        border = Border.all(color: c.line);
         break;
       case ProfileButtonStyle.muted:
         bg = c.surface2;

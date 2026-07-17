@@ -51,3 +51,6 @@ grep.exe.stackdump
 
 # Claude Code agent worktrees / local state
 .claude/
+
+# Kotlin compile-daemon session files (мусор локальной Android-сборки)
+android/.kotlin/
